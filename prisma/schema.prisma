@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -29,4 +23,44 @@ model Post {
   authorId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Portfolio {
+  id        String   @id @default(cuid())
+  sessionId String   @default("default")
+  ticker    String
+  company   String
+  sector    String
+  shares    Float
+  avgPrice  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trades    Trade[]
+}
+
+model Trade {
+  id         String   @id @default(cuid())
+  sessionId  String   @default("default")
+  ticker     String
+  company    String
+  action     String
+  shares     Float
+  price      Float
+  totalValue Float
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  portfolioId String?
+  portfolio   Portfolio? @relation(fields: [portfolioId], references: [id])
+}
+
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  sessionId String   @default("default")
+  ticker    String
+  company   String
+  sector    String
+  note      String?
+  createdAt DateTime @default(now())
 }
