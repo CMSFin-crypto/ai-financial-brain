@@ -44,7 +44,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
         suppressHydrationWarning
       >
-        {children}
+        <div suppressHydrationWarning>
+          {children}
+        </div>
         <Toaster />
       </body>
     </html>
