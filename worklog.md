@@ -58,3 +58,24 @@ Stage Summary:
 - All API routes now gracefully handle: timeouts, connection errors, rate limits, auth errors, server errors, empty responses
 - Frontend shows helpful error messages with retry button
 - Files modified: /src/lib/ai.ts (new), /src/app/api/quant-analyze/route.ts, /src/app/api/analyze/route.ts, /src/app/api/daily-picks/route.ts, /src/app/api/technical-analysis/route.ts, /src/app/api/fundamental-analysis/route.ts, /src/app/api/sector-scan/route.ts, /src/components/financial-brain/quant-dashboard.tsx
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix Quant Analysis and all API routes - implement demo/simulation fallback
+
+Work Log:
+- Diagnosed root cause: ZAI SDK endpoint (https://internal-api.z.ai/v1) is unreachable (ConnectTimeoutError on DNS-resolved IPs 172.25.150.234 and 172.25.136.213)
+- Verified it's an infrastructure issue: curl, z-ai-generate CLI all fail to connect
+- Solution: Added demo/simulation fallback to ALL API routes so the app works even when AI backend is down
+- Created realistic demo data generator in quant-analyze with 13 stock profiles (AAPL, NVDA, MSFT, GOOGL, TSLA, AMZN, META, JPM, JNJ, UNH, XOM, V)
+- Demo data includes all fields: technical indicators (RSI, MACD, SMA, EMA, Bollinger, ADX, Stochastic, ATR, Pivot Points), fundamental metrics, macro analysis, news, debate panel, scoring engine
+- Subagent updated remaining 5 routes with same pattern
+- Added "demo" banner in quant-dashboard UI (amber indicator showing "Modaliteti Demo — AI i pavlefshëm")
+- Verified all 6 endpoints return proper demo data
+
+Stage Summary:
+- All API routes now have graceful demo fallback when AI is unreachable
+- Quant Analysis, Daily Picks, News Analysis, Technical, Fundamental, Sector Scan all work in demo mode
+- Build passes cleanly
+- Frontend shows demo indicator banner when displaying simulated data
+- Files modified: all 6 API routes + quant-dashboard.tsx

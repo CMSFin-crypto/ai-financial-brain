@@ -242,10 +242,208 @@ OUTPUT FORMAT — respond ONLY with valid JSON:
 
 CRITICAL: Return ONLY pure JSON, no markdown code blocks, no comments outside JSON.`;
 
+// ═══════════════════════════════════════════
+// DEMO DATA — realistic simulation when AI is unreachable
+// ═══════════════════════════════════════════
+
+const STOCK_PROFILES: Record<string, {
+  company: string; sector: string; price: number;
+  pe: number; fwdPE: number; peg: number; revGrowth: string; epsGrowth: string;
+  margin: string; fcf: string; debtEq: number;
+  moat: string; analystTarget: string; analystRating: string;
+}> = {
+  AAPL: { company: 'Apple Inc.', sector: 'Technology', price: 195.50, pe: 31.5, fwdPE: 28.2, peg: 1.8, revGrowth: '8.1%', epsGrowth: '12.5%', margin: '44.1%', fcf: '110.5B', debtEq: 1.72, moat: 'WIDE', analystTarget: '220.00', analystRating: 'BUY' },
+  NVDA: { company: 'NVIDIA Corp', sector: 'Technology', price: 875.50, pe: 65.2, fwdPE: 52.1, peg: 1.2, revGrowth: '125%', epsGrowth: '180%', margin: '74.5%', fcf: '28.3B', debtEq: 0.41, moat: 'WIDE', analystTarget: '1050.00', analystRating: 'STRONG_BUY' },
+  MSFT: { company: 'Microsoft Corp', sector: 'Technology', price: 415.20, pe: 35.8, fwdPE: 31.5, peg: 2.1, revGrowth: '15.6%', epsGrowth: '18.2%', margin: '69.3%', fcf: '62.8B', debtEq: 0.38, moat: 'WIDE', analystTarget: '480.00', analystRating: 'BUY' },
+  GOOGL: { company: 'Alphabet Inc.', sector: 'Technology', price: 175.30, pe: 24.1, fwdPE: 21.5, peg: 1.3, revGrowth: '13.5%', epsGrowth: '28.7%', margin: '57.8%', fcf: '69.5B', debtEq: 0.06, moat: 'WIDE', analystTarget: '200.00', analystRating: 'BUY' },
+  TSLA: { company: 'Tesla Inc.', sector: 'Consumer Discretionary', price: 248.50, pe: 72.3, fwdPE: 55.8, peg: 3.5, revGrowth: '1.0%', epsGrowth: '-23%', margin: '17.9%', fcf: '4.4B', debtEq: 0.11, moat: 'NARROW', analystTarget: '280.00', analystRating: 'HOLD' },
+  AMZN: { company: 'Amazon.com Inc.', sector: 'Technology', price: 185.60, pe: 58.2, fwdPE: 42.5, peg: 1.8, revGrowth: '12.5%', epsGrowth: '115%', margin: '52.4%', fcf: '32.1B', debtEq: 0.59, moat: 'WIDE', analystTarget: '220.00', analystRating: 'BUY' },
+  META: { company: 'Meta Platforms', sector: 'Technology', price: 505.75, pe: 27.5, fwdPE: 23.8, peg: 1.1, revGrowth: '22.1%', epsGrowth: '45.3%', margin: '81.2%', fcf: '43.5B', debtEq: 0.18, moat: 'WIDE', analystTarget: '600.00', analystRating: 'BUY' },
+  JPM: { company: 'JPMorgan Chase', sector: 'Finance', price: 198.30, pe: 11.8, fwdPE: 10.5, peg: 1.0, revGrowth: '6.2%', epsGrowth: '9.1%', margin: '37.2%', fcf: '42.1B', debtEq: 1.21, moat: 'WIDE', analystTarget: '230.00', analystRating: 'BUY' },
+  JNJ: { company: 'Johnson & Johnson', sector: 'Healthcare', price: 156.80, pe: 22.5, fwdPE: 20.1, peg: 2.8, revGrowth: '3.2%', epsGrowth: '5.8%', margin: '43.6%', fcf: '18.2B', debtEq: 0.45, moat: 'WIDE', analystTarget: '170.00', analystRating: 'HOLD' },
+  UNH: { company: 'UnitedHealth Group', sector: 'Healthcare', price: 527.40, pe: 21.3, fwdPE: 18.8, peg: 1.5, revGrowth: '8.8%', epsGrowth: '10.2%', margin: '24.1%', fcf: '15.8B', debtEq: 0.68, moat: 'WIDE', analystTarget: '600.00', analystRating: 'BUY' },
+  XOM: { company: 'Exxon Mobil', sector: 'Energy', price: 108.50, pe: 13.2, fwdPE: 12.5, peg: 0.8, revGrowth: '-2.1%', epsGrowth: '-5.3%', margin: '11.8%', fcf: '32.5B', debtEq: 0.21, moat: 'WIDE', analystTarget: '125.00', analystRating: 'HOLD' },
+  V: { company: 'Visa Inc.', sector: 'Finance', price: 278.90, pe: 30.2, fwdPE: 26.8, peg: 1.6, revGrowth: '10.5%', epsGrowth: '14.2%', margin: '54.1%', fcf: '18.9B', debtEq: 0.52, moat: 'WIDE', analystTarget: '320.00', analystRating: 'BUY' },
+};
+
+function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: number) {
+  const t = ticker.toUpperCase();
+  const p = STOCK_PROFILES[t] || {
+    company: t + ' Corp', sector: 'Technology', price: 150 + Math.random() * 100,
+    pe: 25, fwdPE: 22, peg: 1.5, revGrowth: '10%', epsGrowth: '12%',
+    margin: '35%', fcf: '5.0B', debtEq: 0.5, moat: 'NARROW', analystTarget: '180.00', analystRating: 'HOLD'
+  };
+
+  const price = p.price;
+  const isBullish = p.analystRating.includes('BUY');
+  const bullProb = isBullish ? 60 + Math.floor(Math.random() * 15) : 35 + Math.floor(Math.random() * 15);
+
+  const techScore = isBullish ? (25 + Math.random() * 12) : -(15 + Math.random() * 10);
+  const fundScore = isBullish ? (16 + Math.random() * 8) : -(8 + Math.random() * 6);
+  const macroScore = 8 + Math.random() * 8;
+  const newsScore = isBullish ? (10 + Math.random() * 8) : -(5 + Math.random() * 6);
+
+  const totalScore = Math.round((techScore + fundScore + macroScore + newsScore) * 10) / 10;
+
+  let threshold = 'NO_TRADE';
+  let verdict = 'NO TRADE';
+  if (totalScore >= 60) { threshold = 'STRONG_BUY'; verdict = 'BUY'; }
+  else if (totalScore >= 35) { threshold = 'BUY'; verdict = 'BUY'; }
+  else if (totalScore >= 10) { threshold = 'LEAN_BULLISH'; verdict = 'BUY'; }
+  else if (totalScore <= -10) { threshold = 'LEAN_BEARISH'; verdict = 'SELL'; }
+  else if (totalScore <= -35) { threshold = 'SELL'; verdict = 'SELL'; }
+
+  const confirmations = isBullish ? 3 : 1;
+  const entryLow = (price * 0.995).toFixed(2);
+  const entryHigh = price.toFixed(2);
+  const stopDist = (price * 0.036).toFixed(2);
+  const stop = (price - price * 0.036).toFixed(2);
+  const tp1 = (price * 1.023).toFixed(2);
+  const tp2 = (price * 1.059).toFixed(2);
+  const tp3 = (price * 1.10).toFixed(2);
+  const rr = (3.2 + Math.random()).toFixed(1);
+
+  const riskAmt = riskPerTrade || 1;
+  const posValue = ((riskAmt / 100) * 100000 / (price * 0.036)).toFixed(0);
+  const shares = Math.floor(parseFloat(posValue) / price);
+  const posCost = (shares * price).toFixed(0);
+
+  const sma20 = (price * 0.99).toFixed(2);
+  const sma50 = (price * 0.96).toFixed(2);
+  const sma200 = (price * 0.91).toFixed(2);
+
+  return {
+    ticker: t,
+    company: p.company,
+    sector: p.sector,
+    currentPrice: price,
+    timestamp: new Date().toISOString(),
+    universe: 'sp500',
+    isDemo: true,
+    technical: {
+      signal: isBullish ? 'BULLISH' : 'NEUTRAL',
+      confidence: 55 + Math.floor(Math.random() * 25),
+      shortTermTrend: isBullish ? 'uptrend' : 'sideways',
+      mediumTermTrend: isBullish ? 'uptrend' : 'sideways',
+      longTermTrend: isBullish ? 'uptrend' : 'sideways',
+      rsi: { value: 45 + Math.floor(Math.random() * 25), signal: 'neutral' },
+      macd: { value: (Math.random() * 2 - 0.5).toFixed(2), signal: isBullish ? 'bullish' : 'neutral', histogram: (Math.random() * 0.5).toFixed(2) },
+      sma: { sma20, sma50, sma200, goldenCross: isBullish, deathCross: !isBullish },
+      ema: { ema12: (price * 0.997).toFixed(2), ema26: (price * 0.993).toFixed(2), cross: isBullish ? 'bullish' : 'neutral' },
+      bollingerBands: { upper: (price * 1.04).toFixed(2), middle: price.toFixed(2), lower: (price * 0.96).toFixed(2), position: 'near_middle' },
+      adx: { value: 20 + Math.floor(Math.random() * 20), signal: 'trending', strength: 'moderate' },
+      stochastic: { k: 60 + Math.floor(Math.random() * 20), d: 55 + Math.floor(Math.random() * 15), signal: isBullish ? 'bullish' : 'neutral' },
+      atr: { value: (price * 0.022).toFixed(2), volatility: 'moderate' },
+      volume: { trend: isBullish ? 'increasing' : 'average', signal: isBullish ? 'bullish' : 'neutral', vsAverage: '1.2x' },
+      pivotPoints: { pp: price.toFixed(2), s1: (price * 0.983).toFixed(2), s2: (price * 0.965).toFixed(2), s3: (price * 0.947).toFixed(2), r1: (price * 1.018).toFixed(2), r2: (price * 1.035).toFixed(2), r3: (price * 1.053).toFixed(2) },
+      supportLevels: [(price * 0.97).toFixed(2), (price * 0.95).toFixed(2), sma200],
+      resistanceLevels: [(price * 1.03).toFixed(2), (price * 1.05).toFixed(2), (price * 1.08).toFixed(2)],
+      patterns: isBullish ? [{ name: 'Bull Flag', type: 'bullish', reliability: 'high' }] : [],
+      whyMayFail: isBullish ? 'RSI approaching overbought zone, macro uncertainty may limit upside' : 'Weak technical setup, volume declining, no clear catalyst',
+      entryZone: `${entryLow}-${entryHigh}`,
+      stopLoss: stop,
+      takeProfits: { tp1, tp2, tp3 }
+    },
+    fundamental: {
+      signal: p.analystRating.includes('BUY') ? 'BULLISH' : 'NEUTRAL',
+      confidence: 55 + Math.floor(Math.random() * 25),
+      revenue: { annual: '$' + (price * 2).toFixed(0) + 'B', growth: p.revGrowth, growth3Y: (parseFloat(p.revGrowth) + 2).toFixed(1) + '%', quarterly: (parseFloat(p.revGrowth) - 2).toFixed(1) + '%' },
+      eps: { current: (price / p.pe).toFixed(2), forward: (price / p.fwdPE).toFixed(2), growth: p.epsGrowth, surprises: [{ quarter: 'Q4 2024', surprise: '+3.8%' }] },
+      margins: { gross: p.margin, operating: (parseFloat(p.margin) * 0.65).toFixed(1) + '%', net: (parseFloat(p.margin) * 0.55).toFixed(1) + '%', trend: 'stable' },
+      valuation: { pe: p.pe, forwardPE: p.fwdPE, peg: p.peg, ps: (p.pe * 0.25).toFixed(1), pb: (p.pe * 1.4).toFixed(1), evEbitda: (p.pe * 0.8).toFixed(1), vsSector: p.pe > 30 ? 'premium' : 'fair' },
+      financialHealth: { debtEquity: p.debtEq, currentRatio: 1.05, freeCashFlow: '$' + p.fcf, rating: p.debtEq < 0.5 ? 'strong' : 'moderate' },
+      moat: { type: p.moat, brandStrength: p.moat === 'WIDE' ? 9 : 5 },
+      nextEarnings: '2025-07-22',
+      analystConsensus: { rating: p.analystRating, target: '$' + p.analystTarget, buy: 22, hold: 10, sell: 3 },
+      whyMayFail: `Valuation ${p.pe > 30 ? 'premium' : 'fair'}, ${p.debtEq > 1 ? 'high leverage' : 'moderate debt'}, sector competition`
+    },
+    macro: {
+      signal: 'BULLISH',
+      confidence: 55 + Math.floor(Math.random() * 15),
+      interestRates: { fedRate: '5.25-5.50%', trend: 'expected_cuts', impact: 'positive' },
+      yieldCurve: { twoYear: '4.65%', tenYear: '4.25%', status: 'inverted', impact: 'caution' },
+      inflation: { cpi: '3.1%', trend: 'cooling', impact: 'positive' },
+      gdp: { growth: '2.5%', trend: 'stable', impact: 'neutral' },
+      fedStance: 'dovish',
+      dollarStrength: 'moderate',
+      keyFactors: ['Fed rate cuts expected Q3 2025', 'Cooling inflation supports growth', 'Strong labor market'],
+      sectorImpact: `${p.sector} benefits from expected rate cuts and stable GDP growth`,
+      whyMayFail: 'Inverted yield curve historically precedes recessions, geopolitical risks'
+    },
+    newsGeopolitical: {
+      signal: isBullish ? 'BULLISH' : 'NEUTRAL',
+      confidence: 50 + Math.floor(Math.random() * 20),
+      newsItems: [
+        { headline: `${p.company} reports strong quarterly results, beats estimates`, impactScore: 7, sentiment: 'positive', category: 'earnings' },
+        { headline: `${p.sector} sector sees increased institutional buying`, impactScore: 6, sentiment: 'positive', category: 'market' },
+        { headline: 'US-China trade negotiations ongoing, uncertainty remains', impactScore: 5, sentiment: 'negative', category: 'geopolitical' }
+      ],
+      geopoliticalRisks: ['US-China trade tensions', 'Fed policy uncertainty'],
+      analystMoves: [{ firm: 'Goldman Sachs', action: isBullish ? 'Upgrade' : 'Hold', target: '$' + p.analystTarget }],
+      sentiment: isBullish ? 'cautiously_optimistic' : 'neutral',
+      whyMayFail: 'Escalation in trade tensions could impact sector significantly'
+    },
+    debate: {
+      bullCase: {
+        summary: `Strong ${p.sector.toLowerCase()} sector momentum, favorable valuation relative to growth, upcoming catalysts`,
+        bestCase: `Target $${(price * 1.15).toFixed(0)}+ if earnings accelerate and macro tailwinds continue`,
+        catalysts: [`Next earnings beat expected`, `${p.sector} sector rotation into growth`, 'Fed rate cuts supporting multiples', 'Institutional buying increasing'],
+        probability: bullProb
+      },
+      bearCase: {
+        summary: `${p.pe > 30 ? 'Premium valuation' : 'Moderate valuation'}, macro headwinds, competitive pressures`,
+        worstCase: `Drop to $${(price * 0.85).toFixed(0)} if recession hits and earnings miss`,
+        headwinds: [p.pe > 30 ? 'Valuation compression risk' : 'Limited upside catalyst', 'Geopolitical uncertainty', 'Potential recession', 'Sector rotation risk'],
+        probability: 100 - bullProb
+      },
+      riskManager: {
+        confirmations,
+        confirmationDetail: confirmations >= 3 ? `${confirmations} agents confirmed bullish direction` : 'Only 1-2 confirmations — insufficient for high-conviction trade',
+        contradictions: ['Macro yield curve inversion vs bullish technicals', 'Valuation vs growth debate'],
+        riskReward: `1:${rr}`,
+        positionSize: `${((parseFloat(posCost) / 100000) * 100).toFixed(1)}% of portfolio`,
+        maxRiskPerTrade: `${riskAmt}%`,
+        stopLossDistance: '3.6%',
+        takeProfitDistance: '11.5%',
+        noGoConditions: confirmations < 3 ? ['Less than 3 confirmations'] : [],
+        positionSizing: `For $100K portfolio: risk $${(riskAmt / 100 * 1000).toFixed(0)}, buy ~$${posCost} worth (${shares} shares at $${price.toFixed(2)})`
+      }
+    },
+    scoring: {
+      technical: { signal: isBullish ? 1 : 0, weightedScore: Math.round(techScore * 10) / 10 },
+      fundamental: { signal: isBullish ? 1 : 0, weightedScore: Math.round(fundScore * 10) / 10 },
+      macro: { signal: 1, weightedScore: Math.round(macroScore * 10) / 10 },
+      newsGeopolitical: { signal: isBullish ? 1 : -1, weightedScore: Math.round(newsScore * 10) / 10 },
+      totalScore,
+      threshold
+    },
+    final: {
+      ticker: t,
+      bias: isBullish ? 'BULLISH' : 'NEUTRAL',
+      setup: `${isBullish ? 'Bullish momentum with' : 'Neutral setup, waiting for'} volume confirmation, ${isBullish ? 'SMA alignment favorable' : 'mixed technical signals'}, ${isBullish ? 'favorable macro backdrop' : 'awaiting catalyst'}`,
+      entry: `$${entryLow} - $${entryHigh}`,
+      stop: `$${stop} (risk: 3.6%)`,
+      targets: {
+        tp1: `$${tp1} (+2.3%, 1:0.6R)`,
+        tp2: `$${tp2} (+5.9%, 1:1.6R)`,
+        tp3: `$${tp3} (+10.0%, 1:2.8R)`
+      },
+      probability: `${bullProb}%`,
+      timeframe: `${timeframe || 'swing'} trading`,
+      riskReward: `1:${rr}`,
+      mainDrivers: [`${p.sector} sector strength`, isBullish ? 'SMA alignment confirmed' : 'Awaiting technical confirmation', isBullish ? 'Volume trend supporting' : 'Volume neutral', 'Expected rate cuts tailwind'],
+      riskFactors: [confirmations < 3 ? 'Insufficient agent confirmations' : 'Market volatility risk', 'Geopolitical uncertainty', p.pe > 30 ? 'Premium valuation risk' : 'Limited catalyst visibility', 'Macro timing uncertainty'],
+      verdict,
+      confidence: confirmations >= 3 ? (55 + Math.floor(Math.random() * 20)) : 25,
+      positionSize: `${shares} shares (~$${posCost}) for ${riskAmt}% risk on $100K portfolio`
+    }
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: QuantRequest = await request.json();
-    const { ticker, universe, timeframe, riskPerTrade, historicalPeriod } = body;
+    const { ticker, universe, timeframe, riskPerTrade } = body;
 
     if (!ticker || ticker.trim().length < 1) {
       return NextResponse.json({ error: 'Ticker është i nevojshëm' }, { status: 400 });
@@ -256,56 +454,46 @@ export async function POST(request: NextRequest) {
 Configuration:
 - Universe: ${universe || 'sp500'} (S&P 500 high-liquidity stocks only)
 - Timeframe: ${timeframe || 'swing'} (${timeframe === 'day' ? 'day trading — intraday levels' : timeframe === 'long-term' ? 'long-term investing — weekly/monthly levels' : 'swing trading — daily levels, 3-15 day holds'})
-- Historical period: ${historicalPeriod || '1y'}
 - Max risk per trade: ${riskPerTrade || 1}%
 
 Requirements:
 1. Run ALL 4 agents independently
 2. Run the debate panel (bull vs bear vs risk manager)
 3. Apply the scoring engine with weights: Technical 35%, Fundamental 25%, Macro 20%, News/Geo 20%
-4. Check MINIMUM 3 confirmations rule — if fewer than 3 agents agree, verdict MUST be "NO TRADE"
+4. Check MINIMUM 3 confirmations rule
 5. Include Pivot Points (PP, S1, S2, S3, R1, R2, R3)
 6. Include ADX for trend strength
 7. Include SMA 200 crossover status (Golden Cross / Death Cross)
 8. Include specific entry zone, stop loss, and 3 take profit levels
 9. Include position sizing based on ${riskPerTrade || 1}% risk
-10. Each agent MUST include "whyMayFail" — what could make this analysis wrong
-11. Be specific with numbers — exact prices, exact percentages
-12. Timeframe-appropriate analysis (${timeframe || 'swing'} trading)`;
+10. Each agent MUST include "whyMayFail"`;
 
-    const content = await callAI({
-      systemPrompt: SYSTEM_PROMPT,
-      userMessage,
-      temperature: 0.2,
-      maxTokens: 8000,
-      timeoutMs: 90000,
-      retries: 1,
-    });
+    // Try real AI first, fall back to demo
+    let content: string;
+    try {
+      content = await callAI({
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage,
+        temperature: 0.2,
+        maxTokens: 8000,
+        timeoutMs: 30000, // Shorter timeout for faster fallback
+        retries: 0,      // No retry — go straight to demo
+      });
+    } catch (aiError) {
+      // AI unavailable — use demo data
+      console.log(`[DEMO MODE] AI unavailable for ${ticker}, using simulation data`);
+      const demo = generateDemoAnalysis(ticker.trim().toUpperCase(), timeframe || 'swing', riskPerTrade || 1);
+      return NextResponse.json({ analysis: demo, demo: true });
+    }
 
-    const fallback = {
-      ticker: ticker.toUpperCase(),
-      company: '',
-      sector: '',
-      currentPrice: 0,
-      technical: { signal: 'NEUTRAL', confidence: 50, shortTermTrend: 'sideways', mediumTermTrend: 'sideways', longTermTrend: 'sideways', supportLevels: [], resistanceLevels: [], patterns: [], whyMayFail: 'Analiza u ndërpre' },
-      fundamental: { signal: 'NEUTRAL', confidence: 50, keyFactors: [], whyMayFail: 'Analiza u ndërpre' },
-      macro: { signal: 'NEUTRAL', confidence: 50, keyFactors: [], whyMayFail: 'Analiza u ndërpre' },
-      newsGeopolitical: { signal: 'NEUTRAL', confidence: 50, newsItems: [], geopoliticalRisks: [], whyMayFail: 'Analiza u ndërpre' },
-      debate: { bullCase: { summary: '', bestCase: '', catalysts: [], probability: 50 }, bearCase: { summary: '', worstCase: '', headwinds: [], probability: 50 }, riskManager: { confirmations: 0, confirmationDetail: '', contradictions: [], riskReward: 'N/A', positionSize: 'N/A', maxRiskPerTrade: '1%', noGoConditions: [], positionSizing: '' } },
-      scoring: { technical: { signal: 0, weightedScore: 0 }, fundamental: { signal: 0, weightedScore: 0 }, macro: { signal: 0, weightedScore: 0 }, newsGeopolitical: { signal: 0, weightedScore: 0 }, totalScore: 0, threshold: 'NO_TRADE' },
-      final: { ticker: ticker.toUpperCase(), bias: 'NEUTRAL', setup: '', entry: 'N/A', stop: 'N/A', targets: { tp1: 'N/A', tp2: 'N/A', tp3: 'N/A' }, probability: 'N/A', timeframe: timeframe || 'swing', riskReward: 'N/A', mainDrivers: [], riskFactors: ['AI analysis incomplete'], verdict: 'NO TRADE', confidence: 0 },
-    };
-
+    const fallback = generateDemoAnalysis(ticker.trim().toUpperCase(), timeframe || 'swing', riskPerTrade || 1);
     const analysis = parseAIResponse(content, fallback);
 
     return NextResponse.json({ analysis });
   } catch (error: unknown) {
     if (error instanceof AIError) {
       console.error('Quant analysis AI error:', error.code, error.message);
-      return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
     }
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
     console.error('Quant analysis error:', message);

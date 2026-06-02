@@ -225,6 +225,7 @@ export function QuantDashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<QuantResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     agents: true, debate: true, scoring: true, final: true,
   });
@@ -255,6 +256,7 @@ export function QuantDashboard() {
         return;
       }
       setAnalysis(data.analysis);
+      setIsDemo(!!data.demo);
     } catch {
       setError('Gabim rrjeti');
     } finally {
@@ -368,6 +370,17 @@ export function QuantDashboard() {
 
       {analysis && !isLoading && (
         <div className="space-y-4">
+          {/* Demo Banner */}
+          {isDemo && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <div>
+                <p className="text-xs text-amber-500 font-medium">Modaliteti Demo — AI i pavlefshëm</p>
+                <p className="text-[10px] text-muted-foreground">Të dhënat e mëposhtme janë simulime realistike. Kur AI të jetë në linjë, do të shihni analiza reale.</p>
+              </div>
+            </div>
+          )}
+
           {/* FINAL VERDICT — Top Banner */}
           <Card className={`border-2 ${
             analysis.final?.verdict?.toUpperCase().includes('BUY')

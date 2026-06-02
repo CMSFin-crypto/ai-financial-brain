@@ -72,24 +72,227 @@ You MUST respond ONLY with a valid JSON object (no markdown, no code blocks):
   ],
   "candlestickData": [
     {"date": "2025-01-06", "open": 190, "high": 194, "low": 189, "close": 193, "volume": 55000000},
-    {"date": "2025-01-07", "open": 193, "high": 196, "low": 192, "close": 195, "volume": 62000000},
-    {"date": "2025-01-08", "open": 195, "high": 197, "low": 194, "close": 196, "volume": 58000000},
-    {"date": "2025-01-09", "open": 196, "high": 199, "low": 195, "close": 198, "volume": 71000000},
-    {"date": "2025-01-10", "open": 198, "high": 201, "low": 197, "close": 200, "volume": 85000000},
-    {"date": "2025-01-13", "open": 200, "high": 202, "low": 198, "close": 199, "volume": 68000000},
-    {"date": "2025-01-14", "open": 199, "high": 203, "low": 198, "close": 202, "volume": 78000000},
-    {"date": "2025-01-15", "open": 202, "high": 205, "low": 201, "close": 204, "volume": 92000000},
-    {"date": "2025-01-16", "open": 204, "high": 206, "low": 202, "close": 203, "volume": 70000000},
-    {"date": "2025-01-17", "open": 203, "high": 207, "low": 202, "close": 206, "volume": 88000000},
-    {"date": "2025-01-20", "open": 206, "high": 208, "low": 204, "close": 205, "volume": 75000000},
-    {"date": "2025-01-21", "open": 205, "high": 209, "low": 204, "close": 208, "volume": 82000000},
-    {"date": "2025-01-22", "open": 208, "high": 210, "low": 206, "close": 207, "volume": 69000000},
-    {"date": "2025-01-23", "open": 207, "high": 211, "low": 206, "close": 209, "volume": 94000000},
-    {"date": "2025-01-24", "open": 209, "high": 212, "low": 208, "close": 211, "volume": 86000000}
+    {"date": "2025-01-07", "open": 193, "high": 196, "low": 192, "close": 195, "volume": 62000000}
   ],
   "summary": "2-3 sentence technical analysis summary with actionable recommendations",
   "actionPlan": "Specific entry, exit, and stop-loss levels"
 }`;
+
+// ═══════════════════════════════════════════
+// DEMO DATA — realistic simulation when AI is unreachable
+// ═══════════════════════════════════════════
+
+const STOCK_PROFILES: Record<string, {
+  company: string; sector: string; price: number;
+  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  trend: 'uptrend' | 'downtrend' | 'sideways';
+}> = {
+  AAPL: { company: 'Apple Inc.', sector: 'Technology', price: 195.50, signal: 'BULLISH', trend: 'uptrend' },
+  NVDA: { company: 'NVIDIA Corp', sector: 'Technology', price: 875.50, signal: 'BULLISH', trend: 'uptrend' },
+  MSFT: { company: 'Microsoft Corp', sector: 'Technology', price: 415.20, signal: 'BULLISH', trend: 'uptrend' },
+  GOOGL: { company: 'Alphabet Inc.', sector: 'Technology', price: 175.30, signal: 'BULLISH', trend: 'uptrend' },
+  TSLA: { company: 'Tesla Inc.', sector: 'Consumer Discretionary', price: 248.50, signal: 'NEUTRAL', trend: 'sideways' },
+  AMZN: { company: 'Amazon.com Inc.', sector: 'Technology', price: 185.60, signal: 'BULLISH', trend: 'uptrend' },
+  META: { company: 'Meta Platforms', sector: 'Technology', price: 505.75, signal: 'BULLISH', trend: 'uptrend' },
+  JPM: { company: 'JPMorgan Chase', sector: 'Finance', price: 198.30, signal: 'BULLISH', trend: 'uptrend' },
+  JNJ: { company: 'Johnson & Johnson', sector: 'Healthcare', price: 156.80, signal: 'NEUTRAL', trend: 'sideways' },
+  UNH: { company: 'UnitedHealth Group', sector: 'Healthcare', price: 527.40, signal: 'BULLISH', trend: 'uptrend' },
+  XOM: { company: 'Exxon Mobil', sector: 'Energy', price: 108.50, signal: 'BEARISH', trend: 'downtrend' },
+  V: { company: 'Visa Inc.', sector: 'Finance', price: 278.90, signal: 'BULLISH', trend: 'uptrend' },
+  LLY: { company: 'Eli Lilly & Co', sector: 'Healthcare', price: 782.30, signal: 'BULLISH', trend: 'uptrend' },
+  LULU: { company: "Lululemon Athletica", sector: 'Consumer Discretionary', price: 352.40, signal: 'NEUTRAL', trend: 'sideways' },
+  CAT: { company: 'Caterpillar Inc.', sector: 'Industrials', price: 345.20, signal: 'BULLISH', trend: 'uptrend' },
+};
+
+function generateCandlestickData(basePrice: number, trend: 'uptrend' | 'downtrend' | 'sideways') {
+  const data: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> = [];
+  let price = basePrice * 0.92;
+  const today = new Date();
+
+  for (let i = 14; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+
+    const drift = trend === 'uptrend' ? 0.003 : trend === 'downtrend' ? -0.002 : 0;
+    const change = (Math.random() - 0.45) * 0.02 + drift;
+    const open = price;
+    const close = +(open * (1 + change)).toFixed(2);
+    const high = +(Math.max(open, close) * (1 + Math.random() * 0.015)).toFixed(2);
+    const low = +(Math.min(open, close) * (1 - Math.random() * 0.015)).toFixed(2);
+    const volume = Math.floor(40000000 + Math.random() * 60000000);
+
+    data.push({ date: dateStr, open, high, low, close, volume });
+    price = close;
+  }
+
+  return data;
+}
+
+function generateDemoTechnicalAnalysis(ticker: string, company?: string) {
+  const t = ticker.toUpperCase();
+  const p = STOCK_PROFILES[t] || {
+    company: company || t + ' Corp',
+    sector: 'Technology',
+    price: 150 + Math.random() * 100,
+    signal: 'NEUTRAL' as const,
+    trend: 'sideways' as const,
+  };
+
+  const price = p.price;
+  const isBullish = p.signal === 'BULLISH';
+  const isBearish = p.signal === 'BEARISH';
+
+  const rsiValue = isBullish ? 55 + Math.floor(Math.random() * 20) : isBearish ? 25 + Math.floor(Math.random() * 15) : 45 + Math.floor(Math.random() * 10);
+  const rsiSignal = rsiValue > 70 ? 'overbought' : rsiValue < 30 ? 'oversold' : 'neutral';
+
+  const macdValue = isBullish ? +(0.5 + Math.random() * 2).toFixed(2) : isBearish ? +(-2 + Math.random()).toFixed(2) : +(Math.random() - 0.5).toFixed(2);
+  const macdSignal = macdValue > 0.2 ? 'bullish' : macdValue < -0.2 ? 'bearish' : 'neutral';
+
+  const sma20 = +(price * 0.99).toFixed(2);
+  const sma50 = +(price * 0.96).toFixed(2);
+  const sma200 = +(price * 0.91).toFixed(2);
+  const ema12 = +(price * 0.997).toFixed(2);
+
+  const bbUpper = +(price * 1.04).toFixed(2);
+  const bbMiddle = +price.toFixed(2);
+  const bbLower = +(price * 0.96).toFixed(2);
+
+  const stochK = isBullish ? 60 + Math.floor(Math.random() * 25) : isBearish ? 15 + Math.floor(Math.random() * 25) : 40 + Math.floor(Math.random() * 20);
+  const stochD = stochK - 5 - Math.floor(Math.random() * 10);
+
+  const candlestickData = generateCandlestickData(price, p.trend);
+
+  const confidence = isBullish ? 65 + Math.floor(Math.random() * 20) : isBearish ? 60 + Math.floor(Math.random() * 20) : 45 + Math.floor(Math.random() * 15);
+
+  const supports = [
+    (price * 0.97).toFixed(2),
+    (price * 0.95).toFixed(2),
+    sma200.toFixed(2),
+  ];
+  const resistances = [
+    (price * 1.03).toFixed(2),
+    (price * 1.05).toFixed(2),
+    (price * 1.08).toFixed(2),
+  ];
+
+  const patterns = [];
+  if (isBullish) {
+    patterns.push({
+      name: 'Golden Cross',
+      type: 'bullish',
+      reliability: 'high',
+      description: 'SMA 50 kaloi mbi SMA 200, sinjal ngjitës afatgjatë',
+    });
+    if (Math.random() > 0.5) {
+      patterns.push({
+        name: 'Bull Flag',
+        type: 'bullish',
+        reliability: 'moderate',
+        description: 'Model Flag Bistikut në formim pas lëvizjes së fortë ngjitëse',
+      });
+    }
+  } else if (isBearish) {
+    patterns.push({
+      name: 'Death Cross',
+      type: 'bearish',
+      reliability: 'high',
+      description: 'SMA 50 ra nën SMA 200, sinjal ulës afatgjatë',
+    });
+  }
+
+  const summary = isBullish
+    ? `${p.company} tregon tendencë ngjitëse të fortë me çmimin mbi të gjitha SMA-të kryesore. RSI në ${rsiValue} me hapësirë për rritje të mëtejshme. MACD pozitiv me moment ngjitës. Rekomandohet hyrja në zona $${(price * 0.99).toFixed(0)}-$${price.toFixed(0)} me stop loss $${(price * 0.96).toFixed(0)}.`
+    : isBearish
+      ? `${p.company} tregon tendencë ulëse me çmimin nën SMA 50. RSI në ${rsiValue} duke afrohet zonën e mbipëshit. MACD negativ me presion ulës. Këshillohet kujdes — prit stabilizimin përpara se të hapësh pozicion.`
+      : `${p.company} tregon lëvizje anësore pa drejtim të qartë. Indikatorët janë neutralë. Prit një thyerje mbi rezistencën $${(price * 1.03).toFixed(0)} ose nën suportin $${(price * 0.97).toFixed(0)} përpara se të veproni.`;
+
+  const actionPlan = isBullish
+    ? `Hyrje: $${(price * 0.99).toFixed(2)}-$${price.toFixed(2)} | Stop Loss: $${(price * 0.96).toFixed(2)} | Target 1: $${(price * 1.03).toFixed(2)} | Target 2: $${(price * 1.05).toFixed(2)} | Risk/Reward: 1:${(2.5 + Math.random()).toFixed(1)}`
+    : isBearish
+      ? `Kujdes: Tendencë ulëse aktive | Nëse shitet SHORT: Hyrje $${price.toFixed(2)} | Stop: $${(price * 1.03).toFixed(2)} | Target: $${(price * 0.95).toFixed(2)}`
+      : `Prisni: Asnjë veprim deri në thyerje | Suport: $${(price * 0.97).toFixed(2)} | Rezistencë: $${(price * 1.03).toFixed(2)} | Monitoroni vëllimin për konfirmim`;
+
+  return {
+    ticker: t,
+    company: p.company,
+    sector: p.sector,
+    overallSignal: p.signal,
+    confidence,
+    isDemo: true,
+    priceAnalysis: {
+      currentPrice: price,
+      trend: p.trend,
+      trendStrength: isBullish || isBearish ? 'moderate' : 'weak',
+    },
+    indicators: {
+      rsi: {
+        value: rsiValue,
+        signal: rsiSignal,
+        interpretation:
+          rsiSignal === 'overbought'
+            ? `RSI në ${rsiValue} — rreziqi i mbipëshit, mund të ketë korreksion afërsisht`
+            : rsiSignal === 'oversold'
+              ? `RSI në ${rsiValue} — zonë e nënshitjes, mund të ketë rikthim`
+              : `RSI në ${rsiValue} — zonë neutrale, asnjë sinjal i fortë`,
+      },
+      macd: {
+        value: macdValue,
+        signal: macdSignal,
+        interpretation:
+          macdSignal === 'bullish'
+            ? 'MACD vija kaloi mbi vijën e sinjalit, moment ngjitës'
+            : macdSignal === 'bearish'
+              ? 'MACD vija nën vijën e sinjalit, moment ulës'
+              : 'MACD neutral, nuk ka sinjal të qartë',
+      },
+      movingAverage: {
+        sma20: sma20.toFixed(2),
+        sma50: sma50.toFixed(2),
+        sma200: sma200.toFixed(2),
+        ema12: ema12.toFixed(2),
+        signal: isBullish ? 'bullish' : isBearish ? 'bearish' : 'neutral',
+        interpretation: isBullish
+          ? 'Çmimi mbi të gjitha SMA-të kryesore, tendencë ngjitëse e konfirmuar'
+          : isBearish
+            ? 'Çmimi nën SMA 50, presion ulës aktiv'
+            : 'Çmimi midis SMA 20 dhe SMA 50, pa drejtim të qartë',
+      },
+      bollingerBands: {
+        upper: bbUpper.toFixed(2),
+        middle: bbMiddle.toFixed(2),
+        lower: bbLower.toFixed(2),
+        signal: 'neutral',
+        interpretation: `Çmimi pranë brezit ${price > bbMiddle ? 'të sipërm' : 'të mesëm'}, pozicion ${price > bbMiddle ? 'ngjitës' : 'neutral'}`,
+      },
+      volume: {
+        trend: isBullish ? 'increasing' : isBearish ? 'decreasing' : 'average',
+        signal: isBullish ? 'bullish' : isBearish ? 'bearish' : 'neutral',
+        interpretation: isBullish
+          ? 'Vëllimi mbështet lëvizjen aktuale të çmimit'
+          : isBearish
+            ? 'Vëllimi në rritje me çmime në rënie — konfirmim ulës'
+            : 'Vëllimi mesatar, pa sinjal të veçantë',
+      },
+      stochastic: {
+        k: stochK,
+        d: stochD,
+        signal: stochK > 80 ? 'overbought' : stochK < 20 ? 'oversold' : isBullish ? 'bullish' : 'neutral',
+        interpretation:
+          stochK > 80
+            ? 'Stochastic në zonën e mbipëshit, kujdes për korreksion'
+            : stochK < 20
+              ? 'Stochastic në zonën e nënshitjes, mund të ketë rikthim'
+              : `Stochastic K:${stochK} D:${stochD} — moment ${isBullish ? 'ngjitës' : 'neutral'}`,
+      },
+    },
+    supportResistance: { supports, resistances },
+    patterns,
+    candlestickData,
+    summary,
+    actionPlan,
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -102,13 +305,22 @@ export async function POST(request: NextRequest) {
 
     const userMessage = `Perform a comprehensive technical analysis for ${ticker.toUpperCase()}. Include RSI, MACD, Moving Averages, Bollinger Bands, Volume analysis, Stochastic, support/resistance levels, chart patterns, and 15 days of simulated candlestick data. Provide specific entry/exit/stop-loss levels.`;
 
-    const content = await callAI({
-      systemPrompt: SYSTEM_PROMPT,
-      userMessage,
-      temperature: 0.3,
-      timeoutMs: 60000,
-      retries: 1,
-    });
+    // Try real AI first, fall back to demo
+    let content: string;
+    try {
+      content = await callAI({
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage,
+        temperature: 0.3,
+        timeoutMs: 30000,
+        retries: 0,
+      });
+    } catch {
+      // AI unavailable — use demo data
+      console.log(`[DEMO MODE] AI unavailable for technical-analysis of ${ticker}, using simulation data`);
+      const demo = generateDemoTechnicalAnalysis(ticker.trim().toUpperCase(), body.company);
+      return NextResponse.json({ analysis: demo, demo: true });
+    }
 
     const fallback = {
       ticker: ticker.toUpperCase(),

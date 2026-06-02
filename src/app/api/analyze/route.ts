@@ -55,6 +55,67 @@ You MUST respond ONLY with a valid JSON object in this exact format (no markdown
 
 Be thorough, specific, and professional. Use real companies with real ticker symbols. Your analysis should reflect actual market dynamics.`;
 
+// ═══════════════════════════════════════════
+// DEMO DATA — realistic simulation when AI is unreachable
+// ═══════════════════════════════════════════
+
+function generateDemoAnalysis() {
+  return {
+    sentiment: 'bullish',
+    sentimentScore: 68,
+    predictions: [
+      {
+        ticker: 'AAPL',
+        company: 'Apple Inc.',
+        sector: 'Technology',
+        description: 'Technology company making iPhones, Macs, and services',
+        signal: 'BUY',
+        confidence: 82,
+        reasoning: 'Strong product ecosystem and AI integration driving growth',
+        priceTargetDirection: 'UP',
+        riskLevel: 'MEDIUM',
+        impactLevel: 'HIGH',
+      },
+      {
+        ticker: 'NVDA',
+        company: 'NVIDIA Corp',
+        sector: 'Technology',
+        description: 'AI chip manufacturer dominating the GPU market',
+        signal: 'BUY',
+        confidence: 90,
+        reasoning: 'Unprecedented AI demand driving revenue growth 125% YoY',
+        priceTargetDirection: 'UP',
+        riskLevel: 'LOW',
+        impactLevel: 'HIGH',
+      },
+      {
+        ticker: 'MSFT',
+        company: 'Microsoft Corp',
+        sector: 'Technology',
+        description: 'Cloud computing and software giant with Azure and Copilot AI',
+        signal: 'BUY',
+        confidence: 78,
+        reasoning: 'Azure cloud growth accelerating with AI workloads',
+        priceTargetDirection: 'UP',
+        riskLevel: 'LOW',
+        impactLevel: 'MEDIUM',
+      },
+    ],
+    marketOverview:
+      'Mercatet tregojnë favorizëm me nxitimin e AI. Teknologjia udhëheq me forcat e korporatave të mëdha.',
+    keyInsights: [
+      'AI integration becoming key differentiator across sectors',
+      'Fed policy shift expected to support growth stocks',
+      'Institutional flows favoring large-cap tech',
+    ],
+    riskFactors: [
+      'Valuation stretch in mega-cap tech',
+      'Geopolitical tensions affecting supply chains',
+    ],
+    isDemo: true,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: AnalysisRequest = await request.json();
@@ -78,13 +139,22 @@ export async function POST(request: NextRequest) {
 
     const userMessage = `Analyze this ${sourceLabel} and generate financial signals:\n\n${text}`;
 
-    const content = await callAI({
-      systemPrompt: SYSTEM_PROMPT,
-      userMessage,
-      temperature: 0.3,
-      timeoutMs: 60000,
-      retries: 1,
-    });
+    // Try real AI first, fall back to demo
+    let content: string;
+    try {
+      content = await callAI({
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage,
+        temperature: 0.3,
+        timeoutMs: 30000,
+        retries: 0,
+      });
+    } catch {
+      // AI unavailable — use demo data
+      console.log('[DEMO MODE] AI unavailable for analyze, using simulation data');
+      const demo = generateDemoAnalysis();
+      return NextResponse.json({ analysis: demo, demo: true });
+    }
 
     const fallback = {
       sentiment: 'neutral',
