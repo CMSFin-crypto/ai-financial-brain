@@ -16,6 +16,8 @@ import { PaperTrading } from '@/components/financial-brain/paper-trading';
 import { TechnicalAnalysis } from '@/components/financial-brain/technical-analysis';
 import { FundamentalAnalysis } from '@/components/financial-brain/fundamental-analysis';
 import { DailyPicks } from '@/components/financial-brain/daily-picks';
+import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
+import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import {
   TrendingUp,
   Zap,
@@ -29,6 +31,8 @@ import {
   Building2,
   Sparkles,
   Target,
+  Crosshair,
+  Radar,
 } from 'lucide-react';
 
 interface StockPrediction {
@@ -58,6 +62,8 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAllPredictions, setShowAllPredictions] = useState(false);
+  const [activeTab, setActiveTab] = useState('quant');
+  const [quantTicker, setQuantTicker] = useState('');
 
   const handleAnalyze = async (
     text: string,
@@ -122,19 +128,27 @@ export default function Home() {
         </motion.section>
 
         {/* Main Tabs */}
-        <Tabs defaultValue="daily-picks" className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-5 gap-1 w-full h-auto p-1">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1 w-full h-auto p-1">
+            <TabsTrigger value="quant" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <Crosshair className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
+              Quant Analysis
+            </TabsTrigger>
+            <TabsTrigger value="sector" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <Radar className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
+              Sector Scan
+            </TabsTrigger>
             <TabsTrigger value="daily-picks" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Target className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
               Daily Picks
             </TabsTrigger>
             <TabsTrigger value="analyze" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Brain className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Analizë Lajmesh
+              Lajme
             </TabsTrigger>
             <TabsTrigger value="technical" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <LineChart className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Analiza Teknike
+              Teknike
             </TabsTrigger>
             <TabsTrigger value="fundamental" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Building2 className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
@@ -142,11 +156,57 @@ export default function Home() {
             </TabsTrigger>
             <TabsTrigger value="trading" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <ShoppingCart className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Paper Trading
+              Trading
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab 1: Daily Picks */}
+          {/* Tab: Quant Analysis */}
+          <TabsContent value="quant" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Crosshair className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">Multi-Agent Quant Analysis</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    4 agjentë të specializuar (Teknik 35%, Fundament 25%, Makro 20%, Lajme 20%) + Debate Bull/Bear + Risk Manager + Scoring Engine. Minimum 3 konfirmime për një sinjal. Mundëso 1% risk per trade.
+                  </p>
+                </CardContent>
+              </Card>
+              <QuantDashboard />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Sector Scanner */}
+          <TabsContent value="sector" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-border/50 bg-card/50">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Radar className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">Sector Scanner — 10 Stoqe per Sektor</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Skanim i plotë i 5 sektorëve kryesore: Teknologji, Shëndetësi, Financa, Energji, Konsum. 10 aksionet më të mira për sektor me multi-factor scoring.
+                  </p>
+                </CardContent>
+              </Card>
+              <SectorScanner onSelectStock={(t) => { setQuantTicker(t); setActiveTab('quant'); }} />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab 3: Daily Picks */}
           <TabsContent value="daily-picks" className="mt-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
