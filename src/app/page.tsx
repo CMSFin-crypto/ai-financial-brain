@@ -18,6 +18,7 @@ import { FundamentalAnalysis } from '@/components/financial-brain/fundamental-an
 import { DailyPicks } from '@/components/financial-brain/daily-picks';
 import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
+import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
 import {
   TrendingUp,
   Zap,
@@ -104,6 +105,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
+      <MarketTickerBar />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Hero Section */}

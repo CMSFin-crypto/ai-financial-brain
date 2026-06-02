@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
+import { getStock } from '@/lib/market-data';
 
 const SYSTEM_PROMPT = `You are an expert AI stock picker and market analyst. Generate today's top stock picks with detailed analysis.
 
@@ -50,122 +51,62 @@ Generate 5-6 top picks with strong potential. Include realistic price levels. Ma
 function generateDemoPicks() {
   const today = new Date().toISOString().split('T')[0];
 
+  const pickTickers = ['NVDA', 'AAPL', 'LLY', 'JPM', 'AMZN'];
+  const topPicks = pickTickers.map((ticker) => {
+    const s = getStock(ticker);
+    if (!s) return null;
+    const price = s.price;
+    const targetPrice = parseFloat(s.targetPrice) || price * 1.1;
+    const stopLoss = +(price * 0.96).toFixed(2);
+    const isBullish = s.signal === 'BULLISH';
+    const confidence = isBullish ? 80 + Math.floor(Math.random() * 12) : 60 + Math.floor(Math.random() * 15);
+    return {
+      ticker: s.ticker,
+      company: s.company,
+      sector: s.sector,
+      currentPrice: price,
+      targetPrice,
+      stopLoss,
+      signal: 'BUY',
+      confidence,
+      timeframe: 'medium-term' as const,
+      technicalReason: isBullish
+        ? `Tendencë ngjitëse e konfirmuar, çmimi mbi SMA kryesore, vëllimi në rritje`
+        : `Lëvizje anësore, çmimi pranë SMA, vëllimi mesatar`,
+      fundamentalReason: `Rritje të ardhurash ${s.revGrowth}, marzhë operative ${s.opMargin}, rating ${s.rating}`,
+      catalyst: `${s.sector} sector momentum, katalizatorë pozitiv, fitime rezultate`,
+      riskReward: `1:${(2 + Math.random()).toFixed(1)}`,
+      keyLevels: { support: `${(price * 0.97).toFixed(2)}`, resistance: `${(price * 1.05).toFixed(2)}`, pivot: `${price.toFixed(2)}` },
+    };
+  }).filter(Boolean);
+
+  // Market movers with real prices
+  const moverTicker = getStock('TSLA');
+  const xomTicker = getStock('XOM');
+  const metaTicker = getStock('META');
+
   return {
     date: today,
     marketCondition: 'bullish' as const,
     marketSummary:
       'Tregjet tregojnë ton pozitiv me rritje në sektorin e teknologjisë. Investitorët institucionalë po rrisin pozicionet në aksione me kapital të madh, duke nxitur performancën e përgjithshme të S&P 500.',
     isDemo: true,
-    topPicks: [
-      {
-        ticker: 'NVDA',
-        company: 'NVIDIA Corp',
-        sector: 'Technology',
-        currentPrice: 875.50,
-        targetPrice: 950.00,
-        stopLoss: 840.00,
-        signal: 'BUY',
-        confidence: 92,
-        timeframe: 'medium-term',
-        technicalReason:
-          'Golden Cross i konfirmuar në grafikun ditor, RSI në 65 me tendencë ngjitëse, vëllimi 1.5x mbi mesataren',
-        fundamentalReason:
-          'Rritja e të ardhurave 125% YoY, dominimi i tregut të çipeve AI, raporti PEG 1.2',
-        catalyst: 'Lançimi i GPU Blackwell brezit të ardhshëm, kërkesa masive për qendra të dhënash AI',
-        riskReward: '1:3.1',
-        keyLevels: { support: '855.00', resistance: '910.00', pivot: '878.00' },
-      },
-      {
-        ticker: 'AAPL',
-        company: 'Apple Inc.',
-        sector: 'Technology',
-        currentPrice: 195.50,
-        targetPrice: 215.00,
-        stopLoss: 188.00,
-        signal: 'BUY',
-        confidence: 84,
-        timeframe: 'medium-term',
-        technicalReason:
-          'Çmimi mbi SMA 20/50/200, EMA 12 kaloi mbi EMA 26, model Bull Flag në formim',
-        fundamentalReason:
-          'Ekosistemi i fortë produktesh, rritja e shërbimeve AI, marzha operative 29.8%',
-        catalyst: 'Lançimi i prodhimeve të reja me AI, programi i blerjes së aksioneve $100B',
-        riskReward: '1:2.5',
-        keyLevels: { support: '190.00', resistance: '205.00', pivot: '197.50' },
-      },
-      {
-        ticker: 'LLY',
-        company: 'Eli Lilly & Co',
-        sector: 'Healthcare',
-        currentPrice: 782.30,
-        targetPrice: 850.00,
-        stopLoss: 750.00,
-        signal: 'BUY',
-        confidence: 87,
-        timeframe: 'medium-term',
-        technicalReason:
-          'Tendencë ngjitëse e fortë në të gjitha afatet, MACD bosh me histogram pozitiv, vëllim në rritje',
-        fundamentalReason:
-          'Mounjaro dhe Zepbound duke dominuar tregun e ilaçeve për humbje peshe, rritje e të ardhurave 35%',
-        catalyst: 'Zgjerimi global i Mounjaro, rezultatet klinike të reja positive',
-        riskReward: '1:2.8',
-        keyLevels: { support: '760.00', resistance: '810.00', pivot: '785.00' },
-      },
-      {
-        ticker: 'JPM',
-        company: 'JPMorgan Chase',
-        sector: 'Finance',
-        currentPrice: 198.30,
-        targetPrice: 218.00,
-        stopLoss: 190.00,
-        signal: 'BUY',
-        confidence: 80,
-        timeframe: 'short-term',
-        technicalReason:
-          'Thyerje mbi rezistencën $196, RSI 58 me hapësirë, MACD duke treguar moment pozitiv',
-        fundamentalReason:
-          'Fitimet në rritje 9.1%, marzha neto 37.2%, P/E 11.8 nën mesataren e sektorit',
-        catalyst: 'Pritjet për ulje të normave të interesit nga Fed, sezoni i mirë i fitimeve bancare',
-        riskReward: '1:2.3',
-        keyLevels: { support: '192.00', resistance: '205.00', pivot: '198.00' },
-      },
-      {
-        ticker: 'AMZN',
-        company: 'Amazon.com Inc.',
-        sector: 'Technology',
-        currentPrice: 185.60,
-        targetPrice: 205.00,
-        stopLoss: 176.00,
-        signal: 'BUY',
-        confidence: 81,
-        timeframe: 'medium-term',
-        technicalReason:
-          'Recovery nga SMA 50, Bollinger Bands tregojnë zgjerim me moment ngjitës, vëllimi 1.3x',
-        fundamentalReason:
-          'AWS rritje 17% me kërkesë AI, fitimi i fundit $115/share, P/E Forward 42.5 me rritje EPS 115%',
-        catalyst: 'Zgjerimi i shërbimeve AI në AWS, sezoni i festave me shitje rekord',
-        riskReward: '1:2.2',
-        keyLevels: { support: '178.00', resistance: '195.00', pivot: '186.00' },
-      },
-    ],
+    topPicks,
     marketMovers: [
       {
         ticker: 'TSLA',
         direction: 'UP',
-        reason:
-          'Lansimi i modelit të ri Robotaxi duke shtuar optimizëm për të ardhmen e Tesla',
+        reason: moverTicker ? `Lansimi i modelit të ri Robotaxi duke shtuar optimizëm për të ardhmen e Tesla ($${moverTicker.price})` : 'Robotaxi news driving Tesla sentiment',
       },
       {
         ticker: 'XOM',
         direction: 'DOWN',
-        reason:
-          'Rënia e çmimeve të naftës duke goditur perspektivat e fitimeve të ExxonMobil',
+        reason: xomTicker ? `Rënia e çmimeve të naftës duke goditur perspektivat e fitimeve të ExxonMobil ($${xomTicker.price})` : 'Oil price decline impacting ExxonMobil outlook',
       },
       {
         ticker: 'META',
         direction: 'UP',
-        reason:
-          'Reklamat AI po rrisin të ardhurat, Reality Labs duke treguar përmirësim',
+        reason: metaTicker ? `Reklamat AI po rrisin të ardhurat, Reality Labs duke treguar përmirësim ($${metaTicker.price})` : 'AI advertising growth boosting Meta revenue',
       },
     ],
     warnings: [

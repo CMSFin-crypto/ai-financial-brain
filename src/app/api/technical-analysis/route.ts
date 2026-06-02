@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
+import { getStock } from '@/lib/market-data';
 
 interface TechnicalAnalysisRequest {
   ticker: string;
@@ -82,27 +83,7 @@ You MUST respond ONLY with a valid JSON object (no markdown, no code blocks):
 // DEMO DATA — realistic simulation when AI is unreachable
 // ═══════════════════════════════════════════
 
-const STOCK_PROFILES: Record<string, {
-  company: string; sector: string; price: number;
-  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
-  trend: 'uptrend' | 'downtrend' | 'sideways';
-}> = {
-  AAPL: { company: 'Apple Inc.', sector: 'Technology', price: 195.50, signal: 'BULLISH', trend: 'uptrend' },
-  NVDA: { company: 'NVIDIA Corp', sector: 'Technology', price: 875.50, signal: 'BULLISH', trend: 'uptrend' },
-  MSFT: { company: 'Microsoft Corp', sector: 'Technology', price: 415.20, signal: 'BULLISH', trend: 'uptrend' },
-  GOOGL: { company: 'Alphabet Inc.', sector: 'Technology', price: 175.30, signal: 'BULLISH', trend: 'uptrend' },
-  TSLA: { company: 'Tesla Inc.', sector: 'Consumer Discretionary', price: 248.50, signal: 'NEUTRAL', trend: 'sideways' },
-  AMZN: { company: 'Amazon.com Inc.', sector: 'Technology', price: 185.60, signal: 'BULLISH', trend: 'uptrend' },
-  META: { company: 'Meta Platforms', sector: 'Technology', price: 505.75, signal: 'BULLISH', trend: 'uptrend' },
-  JPM: { company: 'JPMorgan Chase', sector: 'Finance', price: 198.30, signal: 'BULLISH', trend: 'uptrend' },
-  JNJ: { company: 'Johnson & Johnson', sector: 'Healthcare', price: 156.80, signal: 'NEUTRAL', trend: 'sideways' },
-  UNH: { company: 'UnitedHealth Group', sector: 'Healthcare', price: 527.40, signal: 'BULLISH', trend: 'uptrend' },
-  XOM: { company: 'Exxon Mobil', sector: 'Energy', price: 108.50, signal: 'BEARISH', trend: 'downtrend' },
-  V: { company: 'Visa Inc.', sector: 'Finance', price: 278.90, signal: 'BULLISH', trend: 'uptrend' },
-  LLY: { company: 'Eli Lilly & Co', sector: 'Healthcare', price: 782.30, signal: 'BULLISH', trend: 'uptrend' },
-  LULU: { company: "Lululemon Athletica", sector: 'Consumer Discretionary', price: 352.40, signal: 'NEUTRAL', trend: 'sideways' },
-  CAT: { company: 'Caterpillar Inc.', sector: 'Industrials', price: 345.20, signal: 'BULLISH', trend: 'uptrend' },
-};
+// Stock profiles now imported from centralized market-data module
 
 function generateCandlestickData(basePrice: number, trend: 'uptrend' | 'downtrend' | 'sideways') {
   const data: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> = [];
@@ -131,7 +112,14 @@ function generateCandlestickData(basePrice: number, trend: 'uptrend' | 'downtren
 
 function generateDemoTechnicalAnalysis(ticker: string, company?: string) {
   const t = ticker.toUpperCase();
-  const p = STOCK_PROFILES[t] || {
+  const raw = getStock(t);
+  const p = raw ? {
+    company: raw.company,
+    sector: raw.sector,
+    price: raw.price,
+    signal: raw.signal,
+    trend: raw.trend,
+  } : {
     company: company || t + ' Corp',
     sector: 'Technology',
     price: 150 + Math.random() * 100,
@@ -176,7 +164,7 @@ function generateDemoTechnicalAnalysis(ticker: string, company?: string) {
     (price * 1.08).toFixed(2),
   ];
 
-  const patterns = [];
+  const patterns: Array<{ name: string; type: string; reliability: string; description: string }> = [];
   if (isBullish) {
     patterns.push({
       name: 'Golden Cross',

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
+import { getStock, type StockProfile } from '@/lib/market-data';
 
 interface QuantRequest {
   ticker: string;
@@ -246,29 +247,17 @@ CRITICAL: Return ONLY pure JSON, no markdown code blocks, no comments outside JS
 // DEMO DATA — realistic simulation when AI is unreachable
 // ═══════════════════════════════════════════
 
-const STOCK_PROFILES: Record<string, {
-  company: string; sector: string; price: number;
-  pe: number; fwdPE: number; peg: number; revGrowth: string; epsGrowth: string;
-  margin: string; fcf: string; debtEq: number;
-  moat: string; analystTarget: string; analystRating: string;
-}> = {
-  AAPL: { company: 'Apple Inc.', sector: 'Technology', price: 195.50, pe: 31.5, fwdPE: 28.2, peg: 1.8, revGrowth: '8.1%', epsGrowth: '12.5%', margin: '44.1%', fcf: '110.5B', debtEq: 1.72, moat: 'WIDE', analystTarget: '220.00', analystRating: 'BUY' },
-  NVDA: { company: 'NVIDIA Corp', sector: 'Technology', price: 875.50, pe: 65.2, fwdPE: 52.1, peg: 1.2, revGrowth: '125%', epsGrowth: '180%', margin: '74.5%', fcf: '28.3B', debtEq: 0.41, moat: 'WIDE', analystTarget: '1050.00', analystRating: 'STRONG_BUY' },
-  MSFT: { company: 'Microsoft Corp', sector: 'Technology', price: 415.20, pe: 35.8, fwdPE: 31.5, peg: 2.1, revGrowth: '15.6%', epsGrowth: '18.2%', margin: '69.3%', fcf: '62.8B', debtEq: 0.38, moat: 'WIDE', analystTarget: '480.00', analystRating: 'BUY' },
-  GOOGL: { company: 'Alphabet Inc.', sector: 'Technology', price: 175.30, pe: 24.1, fwdPE: 21.5, peg: 1.3, revGrowth: '13.5%', epsGrowth: '28.7%', margin: '57.8%', fcf: '69.5B', debtEq: 0.06, moat: 'WIDE', analystTarget: '200.00', analystRating: 'BUY' },
-  TSLA: { company: 'Tesla Inc.', sector: 'Consumer Discretionary', price: 248.50, pe: 72.3, fwdPE: 55.8, peg: 3.5, revGrowth: '1.0%', epsGrowth: '-23%', margin: '17.9%', fcf: '4.4B', debtEq: 0.11, moat: 'NARROW', analystTarget: '280.00', analystRating: 'HOLD' },
-  AMZN: { company: 'Amazon.com Inc.', sector: 'Technology', price: 185.60, pe: 58.2, fwdPE: 42.5, peg: 1.8, revGrowth: '12.5%', epsGrowth: '115%', margin: '52.4%', fcf: '32.1B', debtEq: 0.59, moat: 'WIDE', analystTarget: '220.00', analystRating: 'BUY' },
-  META: { company: 'Meta Platforms', sector: 'Technology', price: 505.75, pe: 27.5, fwdPE: 23.8, peg: 1.1, revGrowth: '22.1%', epsGrowth: '45.3%', margin: '81.2%', fcf: '43.5B', debtEq: 0.18, moat: 'WIDE', analystTarget: '600.00', analystRating: 'BUY' },
-  JPM: { company: 'JPMorgan Chase', sector: 'Finance', price: 198.30, pe: 11.8, fwdPE: 10.5, peg: 1.0, revGrowth: '6.2%', epsGrowth: '9.1%', margin: '37.2%', fcf: '42.1B', debtEq: 1.21, moat: 'WIDE', analystTarget: '230.00', analystRating: 'BUY' },
-  JNJ: { company: 'Johnson & Johnson', sector: 'Healthcare', price: 156.80, pe: 22.5, fwdPE: 20.1, peg: 2.8, revGrowth: '3.2%', epsGrowth: '5.8%', margin: '43.6%', fcf: '18.2B', debtEq: 0.45, moat: 'WIDE', analystTarget: '170.00', analystRating: 'HOLD' },
-  UNH: { company: 'UnitedHealth Group', sector: 'Healthcare', price: 527.40, pe: 21.3, fwdPE: 18.8, peg: 1.5, revGrowth: '8.8%', epsGrowth: '10.2%', margin: '24.1%', fcf: '15.8B', debtEq: 0.68, moat: 'WIDE', analystTarget: '600.00', analystRating: 'BUY' },
-  XOM: { company: 'Exxon Mobil', sector: 'Energy', price: 108.50, pe: 13.2, fwdPE: 12.5, peg: 0.8, revGrowth: '-2.1%', epsGrowth: '-5.3%', margin: '11.8%', fcf: '32.5B', debtEq: 0.21, moat: 'WIDE', analystTarget: '125.00', analystRating: 'HOLD' },
-  V: { company: 'Visa Inc.', sector: 'Finance', price: 278.90, pe: 30.2, fwdPE: 26.8, peg: 1.6, revGrowth: '10.5%', epsGrowth: '14.2%', margin: '54.1%', fcf: '18.9B', debtEq: 0.52, moat: 'WIDE', analystTarget: '320.00', analystRating: 'BUY' },
-};
+// Stock profiles now imported from centralized market-data module
 
 function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: number) {
   const t = ticker.toUpperCase();
-  const p = STOCK_PROFILES[t] || {
+  const raw = getStock(t);
+  const p = raw ? {
+    company: raw.company, sector: raw.sector, price: raw.price,
+    pe: raw.pe, fwdPE: raw.fwdPE, peg: raw.peg, revGrowth: raw.revGrowth, epsGrowth: raw.epsGrowth,
+    margin: raw.grossMargin, fcf: raw.fcf, debtEq: raw.debtEq,
+    moat: raw.moat, analystTarget: raw.targetPrice, analystRating: raw.rating
+  } : {
     company: t + ' Corp', sector: 'Technology', price: 150 + Math.random() * 100,
     pe: 25, fwdPE: 22, peg: 1.5, revGrowth: '10%', epsGrowth: '12%',
     margin: '35%', fcf: '5.0B', debtEq: 0.5, moat: 'NARROW', analystTarget: '180.00', analystRating: 'HOLD'
