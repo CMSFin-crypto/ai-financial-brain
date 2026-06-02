@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 
 interface SectorScanRequest {
   sector?: string;
@@ -71,39 +71,33 @@ export async function POST(request: NextRequest) {
     const sector = body.sector;
     const count = body.count || 10;
 
-    const zai = await ZAI.create();
-
     const userMessage = sector
       ? `Scan the ${sector.toUpperCase()} sector specifically. Return top ${count} stocks with full multi-factor analysis for each. Include market overview and sector trends.`
       : `Perform a FULL market scan of ALL 5 sectors (Technology, Healthcare, Finance, Energy, Consumer Discretionary). Return top ${count} stocks per sector with multi-factor scoring. Include overall market overview and sector rotation trends.`;
 
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
+    const content = await callAI({
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage,
       temperature: 0.3,
-      max_tokens: 6000,
+      maxTokens: 6000,
+      timeoutMs: 75000,
+      retries: 1,
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const fallback = {
+      marketOverview: { condition: 'neutral', sp500trend: 'sideways', keyMacroFactors: [], topSectors: [], weakSectors: [] },
+      sectors: [],
+    };
 
-    if (!content) {
-      return NextResponse.json({ error: 'Scan failed' }, { status: 500 });
-    }
-
-    let scan;
-    try {
-      const cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      scan = JSON.parse(cleaned);
-    } catch {
-      scan = { error: true, rawContent: content };
-    }
-
+    const scan = parseAIResponse(content, fallback);
     return NextResponse.json({ scan });
   } catch (error: unknown) {
+    if (error instanceof AIError) {
+      console.error('Sector scan AI error:', error.code, error.message);
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Sector scan error:', message);
-    return NextResponse.json({ error: 'Sector scan failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Skanimi i sektorit dështoi. Provo përsëri.' }, { status: 500 });
   }
 }

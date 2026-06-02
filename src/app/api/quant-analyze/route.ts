@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 
 interface QuantRequest {
   ticker: string;
@@ -251,8 +251,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ticker është i nevojshëm' }, { status: 400 });
     }
 
-    const zai = await ZAI.create();
-
     const userMessage = `Run the FULL multi-agent quant analysis for ${ticker.toUpperCase()}.
 
 Configuration:
@@ -275,39 +273,42 @@ Requirements:
 11. Be specific with numbers — exact prices, exact percentages
 12. Timeframe-appropriate analysis (${timeframe || 'swing'} trading)`;
 
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
+    const content = await callAI({
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage,
       temperature: 0.2,
-      max_tokens: 8000,
+      maxTokens: 8000,
+      timeoutMs: 90000,
+      retries: 1,
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const fallback = {
+      ticker: ticker.toUpperCase(),
+      company: '',
+      sector: '',
+      currentPrice: 0,
+      technical: { signal: 'NEUTRAL', confidence: 50, shortTermTrend: 'sideways', mediumTermTrend: 'sideways', longTermTrend: 'sideways', supportLevels: [], resistanceLevels: [], patterns: [], whyMayFail: 'Analiza u ndërpre' },
+      fundamental: { signal: 'NEUTRAL', confidence: 50, keyFactors: [], whyMayFail: 'Analiza u ndërpre' },
+      macro: { signal: 'NEUTRAL', confidence: 50, keyFactors: [], whyMayFail: 'Analiza u ndërpre' },
+      newsGeopolitical: { signal: 'NEUTRAL', confidence: 50, newsItems: [], geopoliticalRisks: [], whyMayFail: 'Analiza u ndërpre' },
+      debate: { bullCase: { summary: '', bestCase: '', catalysts: [], probability: 50 }, bearCase: { summary: '', worstCase: '', headwinds: [], probability: 50 }, riskManager: { confirmations: 0, confirmationDetail: '', contradictions: [], riskReward: 'N/A', positionSize: 'N/A', maxRiskPerTrade: '1%', noGoConditions: [], positionSizing: '' } },
+      scoring: { technical: { signal: 0, weightedScore: 0 }, fundamental: { signal: 0, weightedScore: 0 }, macro: { signal: 0, weightedScore: 0 }, newsGeopolitical: { signal: 0, weightedScore: 0 }, totalScore: 0, threshold: 'NO_TRADE' },
+      final: { ticker: ticker.toUpperCase(), bias: 'NEUTRAL', setup: '', entry: 'N/A', stop: 'N/A', targets: { tp1: 'N/A', tp2: 'N/A', tp3: 'N/A' }, probability: 'N/A', timeframe: timeframe || 'swing', riskReward: 'N/A', mainDrivers: [], riskFactors: ['AI analysis incomplete'], verdict: 'NO TRADE', confidence: 0 },
+    };
 
-    if (!content) {
-      return NextResponse.json({ error: 'Analiza dështoi' }, { status: 500 });
-    }
-
-    let analysis;
-    try {
-      const cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      analysis = JSON.parse(cleaned);
-    } catch {
-      analysis = {
-        ticker: ticker.toUpperCase(),
-        final: { verdict: 'NO TRADE', bias: 'NEUTRAL', confidence: 0 },
-        scoring: { totalScore: 0 },
-        error: true,
-        rawContent: content,
-      };
-    }
+    const analysis = parseAIResponse(content, fallback);
 
     return NextResponse.json({ analysis });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (error instanceof AIError) {
+      console.error('Quant analysis AI error:', error.code, error.message);
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 502 }
+      );
+    }
+    const message = error instanceof Error ? error.message : 'Gabim i panjohur';
     console.error('Quant analysis error:', message);
-    return NextResponse.json({ error: 'Quant analysis failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Quant analysis dështoi. Provo përsëri.' }, { status: 500 });
   }
 }

@@ -38,3 +38,23 @@ Stage Summary:
 - Sector scanner with 10 stocks per sector (50 total)
 - 7-tab navigation with professional UI
 - All components use emerald/teal theme with shadcn/ui
+---
+Task ID: 1
+Agent: Main Agent
+Task: Diagnose and fix Quant Analysis API failure
+
+Work Log:
+- Tested the quant-analyze API endpoint with curl → returned "Quant analysis failed"
+- Tested ZAI SDK directly → discovered ConnectTimeoutError: connection to AI backend timing out (10s timeout)
+- Root cause: ZAI SDK cannot reach the AI backend (infrastructure/network issue, not code bug)
+- Created shared utility /src/lib/ai.ts with: timeout wrapper, retry logic with exponential backoff, error classification, clean error messages in Albanian
+- Updated all 5 API routes (quant-analyze, analyze, daily-picks, technical-analysis, fundamental-analysis, sector-scan) to use the new shared utility
+- Updated quant-dashboard.tsx error display with better UX (alert icon, retry button, Albanian help text)
+- Build verified clean with no errors
+
+Stage Summary:
+- Root cause: Network connectivity issue between ZAI SDK and AI backend (ConnectTimeoutError)
+- Solution: Added robust error handling with timeout (60-90s), retry logic (1 retry with exponential backoff), and clear Albanian error messages
+- All API routes now gracefully handle: timeouts, connection errors, rate limits, auth errors, server errors, empty responses
+- Frontend shows helpful error messages with retry button
+- Files modified: /src/lib/ai.ts (new), /src/app/api/quant-analyze/route.ts, /src/app/api/analyze/route.ts, /src/app/api/daily-picks/route.ts, /src/app/api/technical-analysis/route.ts, /src/app/api/fundamental-analysis/route.ts, /src/app/api/sector-scan/route.ts, /src/components/financial-brain/quant-dashboard.tsx

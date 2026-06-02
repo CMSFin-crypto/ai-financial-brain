@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 
 const SYSTEM_PROMPT = `You are an expert AI stock picker and market analyst. Generate today's top stock picks with detailed analysis.
 
@@ -45,45 +45,36 @@ Generate 5-6 top picks with strong potential. Include realistic price levels. Ma
 
 export async function GET() {
   try {
-    const zai = await ZAI.create();
-
     const today = new Date().toISOString().split('T')[0];
 
     const userMessage = `Generate today's top stock picks for ${today}. Focus on stocks with the highest probability of moving up today or this week. Include technical levels, catalysts, and risk/reward ratios. Make the picks realistic and based on current market conditions.`;
 
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
+    const content = await callAI({
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage,
       temperature: 0.4,
+      timeoutMs: 60000,
+      retries: 1,
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const fallback = {
+      date: today,
+      marketCondition: 'neutral',
+      marketSummary: content,
+      topPicks: [],
+      marketMovers: [],
+      warnings: [],
+    };
 
-    if (!content) {
-      return NextResponse.json({ error: 'Failed to generate picks' }, { status: 500 });
-    }
-
-    let picks;
-    try {
-      const cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      picks = JSON.parse(cleaned);
-    } catch {
-      picks = {
-        date: today,
-        marketCondition: 'neutral',
-        marketSummary: content,
-        topPicks: [],
-        marketMovers: [],
-        warnings: [],
-      };
-    }
-
+    const picks = parseAIResponse(content, fallback);
     return NextResponse.json({ picks });
   } catch (error: unknown) {
+    if (error instanceof AIError) {
+      console.error('Daily picks AI error:', error.code, error.message);
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Daily picks error:', message);
-    return NextResponse.json({ error: 'Failed to generate daily picks' }, { status: 500 });
+    return NextResponse.json({ error: 'Përzgjedhjet dështuan. Provo përsëri.' }, { status: 500 });
   }
 }

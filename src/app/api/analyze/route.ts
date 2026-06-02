@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 
 interface AnalysisRequest {
   text: string;
@@ -62,12 +62,10 @@ export async function POST(request: NextRequest) {
 
     if (!text || text.trim().length < 20) {
       return NextResponse.json(
-        { error: 'Please provide at least 20 characters of text to analyze.' },
+        { error: 'Ju lutemi jepni të paktën 20 karaktere për analizë.' },
         { status: 400 }
       );
     }
-
-    const zai = await ZAI.create();
 
     const sourceLabel =
       sourceType === 'news'
@@ -80,51 +78,32 @@ export async function POST(request: NextRequest) {
 
     const userMessage = `Analyze this ${sourceLabel} and generate financial signals:\n\n${text}`;
 
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
+    const content = await callAI({
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage,
       temperature: 0.3,
+      timeoutMs: 60000,
+      retries: 1,
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const fallback = {
+      sentiment: 'neutral',
+      sentimentScore: 50,
+      predictions: [],
+      marketOverview: content,
+      keyInsights: [],
+      riskFactors: [],
+    };
 
-    if (!content) {
-      return NextResponse.json(
-        { error: 'AI analysis failed. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    // Try to parse JSON from the response
-    let analysis;
-    try {
-      // Clean potential markdown code block wrappers
-      const cleaned = content
-        .replace(/```json\s*/g, '')
-        .replace(/```\s*/g, '')
-        .trim();
-      analysis = JSON.parse(cleaned);
-    } catch {
-      // If JSON parsing fails, return the raw content as the overview
-      analysis = {
-        sentiment: 'neutral',
-        sentimentScore: 50,
-        predictions: [],
-        marketOverview: content,
-        keyInsights: [],
-        riskFactors: [],
-      };
-    }
-
+    const analysis = parseAIResponse(content, fallback);
     return NextResponse.json({ analysis });
   } catch (error: unknown) {
+    if (error instanceof AIError) {
+      console.error('Analysis AI error:', error.code, error.message);
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Analysis error:', message);
-    return NextResponse.json(
-      { error: 'Failed to analyze. Please try again.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Analiza dështoi. Provo përsëri.' }, { status: 500 });
   }
 }

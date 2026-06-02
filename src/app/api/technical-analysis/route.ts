@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 
 interface TechnicalAnalysisRequest {
   ticker: string;
@@ -97,45 +97,42 @@ export async function POST(request: NextRequest) {
     const { ticker } = body;
 
     if (!ticker || ticker.trim().length < 1) {
-      return NextResponse.json({ error: 'Ticker is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Ticker është i nevojshëm' }, { status: 400 });
     }
-
-    const zai = await ZAI.create();
 
     const userMessage = `Perform a comprehensive technical analysis for ${ticker.toUpperCase()}. Include RSI, MACD, Moving Averages, Bollinger Bands, Volume analysis, Stochastic, support/resistance levels, chart patterns, and 15 days of simulated candlestick data. Provide specific entry/exit/stop-loss levels.`;
 
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
+    const content = await callAI({
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage,
       temperature: 0.3,
+      timeoutMs: 60000,
+      retries: 1,
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const fallback = {
+      ticker: ticker.toUpperCase(),
+      company: body.company || ticker.toUpperCase(),
+      overallSignal: 'NEUTRAL',
+      confidence: 50,
+      summary: content,
+      priceAnalysis: { currentPrice: 0, trend: 'sideways', trendStrength: 'weak' },
+      indicators: { rsi: { value: 50, signal: 'neutral', interpretation: '' }, macd: { value: 0, signal: 'neutral', interpretation: '' }, movingAverage: { sma20: '0', sma50: '0', sma200: '0', ema12: '0', signal: 'neutral', interpretation: '' }, bollingerBands: { upper: '0', middle: '0', lower: '0', signal: 'neutral', interpretation: '' }, volume: { trend: 'average', signal: 'neutral', interpretation: '' }, stochastic: { k: 50, d: 50, signal: 'neutral', interpretation: '' } },
+      supportResistance: { supports: [], resistances: [] },
+      patterns: [],
+      candlestickData: [],
+      actionPlan: '',
+    };
 
-    if (!content) {
-      return NextResponse.json({ error: 'Analysis failed' }, { status: 500 });
-    }
-
-    let analysis;
-    try {
-      const cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      analysis = JSON.parse(cleaned);
-    } catch {
-      analysis = {
-        ticker: ticker.toUpperCase(),
-        company: body.company || ticker.toUpperCase(),
-        overallSignal: 'NEUTRAL',
-        confidence: 50,
-        summary: content,
-      };
-    }
-
+    const analysis = parseAIResponse(content, fallback);
     return NextResponse.json({ analysis });
   } catch (error: unknown) {
+    if (error instanceof AIError) {
+      console.error('Technical AI error:', error.code, error.message);
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Technical analysis error:', message);
-    return NextResponse.json({ error: 'Technical analysis failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Analiza teknike dështoi. Provo përsëri.' }, { status: 500 });
   }
 }

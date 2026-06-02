@@ -332,7 +332,28 @@ export function QuantDashboard() {
         </CardContent>
       </Card>
 
-      {error && <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg p-3">{error}</div>}
+      {error && (
+        <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-4 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-red-500 font-medium">{error}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Nëse problemi vazhdon, provoni të rifilloni aplikacionin.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={runAnalysis}
+            className="border-red-500/30 text-red-500 hover:bg-red-500/10"
+          >
+            <Activity className="w-3 h-3 mr-1.5" />
+            Provo Përsëri
+          </Button>
+        </div>
+      )}
 
       {isLoading && (
         <div className="space-y-4">
