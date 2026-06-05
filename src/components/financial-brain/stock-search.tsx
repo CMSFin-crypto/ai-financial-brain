@@ -82,25 +82,37 @@ export function StockSearch({ onSelect, placeholder = 'Kërko aksion...', classN
 
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-[250px] overflow-y-auto">
-          {results.map((stock) => (
+          {results.length > 0 ? (
+            results.map((stock) => (
+              <button
+                key={stock.ticker}
+                onClick={() => handleSelect(stock.ticker)}
+                className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/50 text-left transition-colors"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-bold shrink-0">{stock.ticker}</span>
+                  <span className="text-[10px] text-muted-foreground truncate">{stock.company}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  <span className="text-[10px] text-muted-foreground">${stock.price}</span>
+                  <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${stock.change >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                    {stock.change >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                    {stock.change >= 0 ? '+' : ''}{stock.change}%
+                  </span>
+                </div>
+              </button>
+            ))
+          ) : (
             <button
-              key={stock.ticker}
-              onClick={() => handleSelect(stock.ticker)}
-              className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/50 text-left transition-colors"
+              onClick={() => handleSelect(query.trim())}
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 text-left transition-colors"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-bold shrink-0">{stock.ticker}</span>
-                <span className="text-[10px] text-muted-foreground truncate">{stock.company}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 ml-2">
-                <span className="text-[10px] text-muted-foreground">${stock.price}</span>
-                <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${stock.change >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                  {stock.change >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                  {stock.change >= 0 ? '+' : ''}{stock.change}%
-                </span>
-              </div>
+              <Search className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                Kërko <span className="font-bold text-foreground">{query.trim().toUpperCase()}</span> — shtyp Enter
+              </span>
             </button>
-          ))}
+          )}
         </div>
       )}
     </div>
