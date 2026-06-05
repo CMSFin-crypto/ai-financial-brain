@@ -37,6 +37,7 @@ interface SectorStock {
   fundamentalNote: string;
   catalyst: string;
   quickScore: number;
+  industry?: string;
 }
 
 interface SectorData {
@@ -109,7 +110,7 @@ function SectorCard({ sector, onClickStock }: { sector: SectorData; onClickStock
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold">{stock.ticker}</span>
-                    <span className="text-[9px] text-muted-foreground truncate max-w-[80px]">{stock.company}</span>
+                    <span className="text-[9px] text-muted-foreground truncate max-w-[80px]">{stock.industry || stock.company}</span>
                   </div>
                   <p className="text-[9px] text-muted-foreground truncate max-w-[200px]">{stock.technicalNote}</p>
                 </div>
@@ -192,6 +193,8 @@ export function SectorScanner({ onSelectStock }: { onSelectStock: (ticker: strin
             <SelectItem value="Finance">Financa</SelectItem>
             <SelectItem value="Energy">Energji</SelectItem>
             <SelectItem value="Industry">Industri</SelectItem>
+            <SelectItem value="Retail">Retail</SelectItem>
+            <SelectItem value="Defense">Mbrojtje</SelectItem>
           </SelectContent>
         </Select>
         <Button

@@ -19,13 +19,15 @@ For each stock in each sector, provide:
 - quick technical note (1 sentence)
 - key catalyst (if any)
 
-Sectors to scan (10 stocks per sector = 60 total):
-1. TECHNOLOGY: AAPL, MSFT, GOOGL, AMZN, META, CRM, NFLX, ADBE, NOW, ORCL
-2. SEMICONDUCTORS: NVDA, AVGO, AMD, INTC, QCOM, TXN, MU, MRVL, ON, LRCX
-3. HEALTHCARE: UNH, JNJ, LLY, ABBV, MRK, PFE, TMO, ABT, ISRG, VRTX
-4. FINANCE: JPM, BAC, GS, MS, V, MA, BLK, SCHW, C, WFC
-5. ENERGY: XOM, CVX, COP, SLB, EOG, MPC, PARR, FANG, DVN, WFRD
-6. INDUSTRY: CAT, GE, HON, UNP, RTX, LMT, DE, UPS, ETN, BA
+Sectors to scan (5 stocks per sector = 40 total):
+1. TECHNOLOGY: AAPL, MSFT, GOOGL, AMZN, META
+2. SEMICONDUCTORS: NVDA, AVGO, AMD, INTC, QCOM
+3. HEALTHCARE: LLY, UNH, ISRG, VRTX, ABBV
+4. FINANCE: JPM, V, MA, GS, BLK
+5. ENERGY: XOM, CVX, COP, SLB, EOG
+6. INDUSTRY: CAT, GE, HON, UNP, ETN
+7. RETAIL: COST, WMT, TGT, HD, TJX
+8. DEFENSE: LMT, RTX, NOC, GD, LHX
 
 For each stock, give a QUICK multi-factor score combining:
 - Technical momentum (trend, volume, MA alignment)
@@ -83,6 +85,7 @@ interface DemoStock {
   fundamentalNote: string;
   catalyst: string;
   quickScore: number;
+  industry?: string;
 }
 
 interface DemoSector {
@@ -93,7 +96,7 @@ interface DemoSector {
   stocks: DemoStock[];
 }
 
-function mapStockToDemo(s: { ticker: string; company: string; price: number; sector: string; signal: string; rating: string; revGrowth: string; opMargin: string; trend: string }, livePrice?: number) {
+function mapStockToDemo(s: { ticker: string; company: string; price: number; sector: string; signal: string; rating: string; revGrowth: string; opMargin: string; trend: string; industry?: string }, livePrice?: number) {
   const confidence = s.signal === 'BULLISH' ? 75 + Math.floor(Math.random() * 20)
     : s.signal === 'BEARISH' ? 35 + Math.floor(Math.random() * 15)
     : 50 + Math.floor(Math.random() * 15);
@@ -125,6 +128,7 @@ function mapStockToDemo(s: { ticker: string; company: string; price: number; sec
     fundamentalNote,
     catalyst,
     quickScore,
+    industry: s.industry,
   };
 }
 
@@ -134,7 +138,9 @@ function generateDemoSectorScan(livePrices?: Record<string, { price: number }>) 
   const healthcareStocks = getStocksBySector('Healthcare').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
   const financeStocks = getStocksBySector('Finance').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
   const energyStocks = getStocksBySector('Energy').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
-  const consumerStocks = getStocksBySector('Consumer Discretionary').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const industryStocks = getStocksBySector('Industry').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const retailStocks = getStocksBySector('Retail').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const defenseStocks = getStocksBySector('Defense').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
 
   const sectors: DemoSector[] = [
     {
@@ -173,11 +179,25 @@ function generateDemoSectorScan(livePrices?: Record<string, { price: number }>) 
       stocks: energyStocks,
     },
     {
-      name: 'Consumer Discretionary',
+      name: 'Industry',
+      overallSignal: 'BULLISH',
+      sectorConfidence: 72,
+      trend: 'Sektori industrial n\u00eb tendenc\u00eb pozitive me rritjen e kërkesave për makineri t\u00eb r\u00ebnda dhe automatizim. Caterpillar dhe Eaton udh\u00ebheqin.',
+      stocks: industryStocks,
+    },
+    {
+      name: 'Retail',
       overallSignal: 'NEUTRAL',
-      sectorConfidence: 55,
-      trend: 'Sektori i konsumit me performanc\u00eb t\u00eb p\u00ebrzier. Amazon udh\u00ebheq, por Nike dhe Target n\u00ebn presion. Rip\u00ebrtuarja e konsumatorit po ndikohet nga inflacioni.',
-      stocks: consumerStocks,
+      sectorConfidence: 58,
+      trend: 'Sektori i retailit me performanc\u00eb t\u00eb ndryshueshme. Costco dhe Walmart tregojn\u00eb q\u00ebndrueshm\u00ebri, por Target dhe Home Depot n\u00ebn presion inflationi.',
+      stocks: retailStocks,
+    },
+    {
+      name: 'Defense',
+      overallSignal: 'BULLISH',
+      sectorConfidence: 82,
+      trend: 'Sektori i mbrojtjes n\u00eb tendenc\u00eb ngjit\u00ebse me rritjen e buxhetit t\u00eb mbrojtjes EVROPÊb dhe NATO. Lockheed dhe RTX udh\u00ebheqin me backlog rekord.',
+      stocks: defenseStocks,
     },
   ];
 
@@ -224,7 +244,7 @@ export async function POST(request: NextRequest) {
 
     let userMessage = sector
       ? `Scan the ${sector.toUpperCase()} sector specifically. Return top ${count} stocks with full multi-factor analysis for each. Include market overview and sector trends.`
-      : `Perform a FULL market scan of ALL 6 sectors (Technology, Semiconductors, Healthcare, Finance, Energy, Consumer Discretionary). Return top ${count} stocks per sector with multi-factor scoring. Include overall market overview and sector rotation trends.`;
+      : `Perform a FULL market scan of ALL 8 sectors (Technology, Semiconductors, Healthcare, Finance, Energy, Industry, Retail, Defense). Return top ${count} stocks per sector with multi-factor scoring. Include overall market overview and sector rotation trends.`;
 
     // Inject real prices into prompt
     if (Object.keys(livePrices).length > 0) {
