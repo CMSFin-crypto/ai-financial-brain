@@ -230,7 +230,7 @@ export default function Home() {
                     <h3 className="text-sm font-semibold">Sector Scanner — 10 Stoqe per Sektor</h3>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Skanim i plotë i 5 sektorëve kryesore: Teknologji, Shëndetësi, Financa, Energji, Konsum. 10 aksionet më të mira për sektor me multi-factor scoring.
+                    Skanim i plotë i 9 sektorëve: Teknologji, Semikonduktorë, Shëndetësi, Financa, Energji, Industri, Retail, Mbrojtje, Inteligjencë Artificiale. 10 aksionet më të mira për sektor me multi-factor scoring.
                   </p>
                 </CardContent>
               </Card>

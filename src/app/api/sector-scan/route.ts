@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
 
     let userMessage = sector
       ? `Scan the ${sector.toUpperCase()} sector specifically. Return top ${count} stocks with full multi-factor analysis for each. Include market overview and sector trends.`
-      : `Perform a FULL market scan of       ? `Perform a FULL market scan of ALL 9 sectors. Include ALL 9: Technology, Semiconductors, Healthcare, Finance, Energy, Industry, Retail, Defense, AI. Return ALL stocks per sector. The AI sector has 10 stocks (PLTR, AI, SMCI, SNOW, DDOG, ANET, ARM, CRWD, NET, HPE). You MUST include the AI sector in response.`
+      : `Perform a FULL market scan of ALL 9 sectors. Include ALL 9: Technology, Semiconductors, Healthcare, Finance, Energy, Industry, Retail, Defense, AI. Return ALL stocks per sector. The AI sector has 10 stocks (PLTR, AI, SMCI, SNOW, DDOG, ANET, ARM, CRWD, NET, HPE). You MUST include the AI sector in response.`
 
     // Inject real prices into prompt
     if (Object.keys(livePrices).length > 0) {

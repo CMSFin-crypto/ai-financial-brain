@@ -296,7 +296,7 @@ export function PaperTrading() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {['Technology', 'Healthcare', 'Finance', 'Energy', 'Consumer', 'Industrial', 'Real Estate', 'Utilities', 'Materials', 'Telecom'].map(
+                    {['Technology', 'Semiconductors', 'Healthcare', 'Finance', 'Energy', 'Industry', 'Retail', 'Defense', 'AI'].map(
                       (s) => (
                         <SelectItem key={s} value={s}>
                           {s}
