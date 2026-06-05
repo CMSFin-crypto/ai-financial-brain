@@ -149,6 +149,7 @@ function generateDemoSectorScan(livePrices?: Record<string, { price: number }>) 
   const industryStocks = getStocksBySector('Industry').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
   const retailStocks = getStocksBySector('Retail').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
   const defenseStocks = getStocksBySector('Defense').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const aiStocks = getStocksBySector('AI').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
 
   const sectors: DemoSector[] = [
     {
@@ -206,6 +207,13 @@ function generateDemoSectorScan(livePrices?: Record<string, { price: number }>) 
       sectorConfidence: 82,
       trend: 'Sektori i mbrojtjes n\u00eb tendenc\u00eb ngjit\u00ebse me rritjen e buxhetit t\u00eb mbrojtjes EVROPÊb dhe NATO. Lockheed dhe RTX udh\u00ebheqin me backlog rekord.',
       stocks: defenseStocks,
+    },
+    {
+      name: 'AI',
+      overallSignal: 'BULLISH',
+      sectorConfidence: 90,
+      trend: 'Sektori i AI-së në rritje eksplozive me kërkesa masive për infrastrukturë AI. Palantir udhëheq me platformë AIP dominuese. Serverët AI dhe data cloud po shpërthejnë.',
+      stocks: aiStocks,
     },
   ];
 

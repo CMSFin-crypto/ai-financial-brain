@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     const overview = {
       timestamp: new Date().toISOString(),
       totalStocks: stocks.length,
-      sectors: ['Technology', 'Semiconductors', 'Healthcare', 'Finance', 'Energy', 'Industry', 'Retail', 'Defense'],
+      sectors: ['Technology', 'Semiconductors', 'Healthcare', 'Finance', 'Energy', 'Industry', 'Retail', 'Defense', 'AI'],
     };
 
     return NextResponse.json({ overview, stocks });

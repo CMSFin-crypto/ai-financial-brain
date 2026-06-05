@@ -1175,6 +1175,93 @@ const STOCKS: Record<string, StockProfile> = {
     signal: 'BULLISH', trend: 'uptrend',
   },
 
+  // ═══════ AI & ARTIFICIAL INTELLIGENCE ═══════
+  PLTR: {
+    ticker: 'PLTR', company: 'Palantir Technologies', sector: 'AI', industry: 'AI/Data Analytics',
+    price: 125.50, change: 2.35, volume: '42.5M', marketCap: '$285B', shares: 2272,
+    pe: 185.5, fwdPE: 145.2, peg: 3.5, ps: 42.5, pb: 28.5, evEbitda: 155.5, divYield: '0.00%',
+    grossMargin: '82.5%', opMargin: '28.5%', netMargin: '22.8%', roe: '18.5%', roa: '12.5%',
+    revGrowth: '25%', epsGrowth: '42%', revGrowth3Y: '20.5%', epsGrowth3Y: '38.5%',
+    qRevGrowth: '28%', qEpsGrowth: '45%',
+    currentRatio: 5.85, quickRatio: 5.52, debtEq: 0.12, debtAssets: 0.05,
+    fcf: '6.5B', eps: '0.68', fwdEps: '0.86',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '160.00', lowTarget: '100.00', highTarget: '200.00',
+    buyCount: 22, holdCount: 10, sellCount: 5,
+    strengths: ['AIP platform dominuese', 'Government contracts masive', 'Commercial AI rritje eksplozive', 'Data ontology moat'],
+    weaknesses: ['Vlerësim shumë i lartë', 'Government concentration risk', 'Rritje e vështirë për mbajtje'],
+    position: 'Leaderi në AI platforma për enterprise dhe qeveri me rritje komerciale eksplozive',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  AI: {
+    ticker: 'AI', company: 'C3.ai Inc.', sector: 'AI', industry: 'Enterprise AI Software',
+    price: 38.85, change: 1.52, volume: '12.8M', marketCap: '$4.8B', shares: 124,
+    pe: -35.5, fwdPE: -28.2, peg: 0.0, ps: 12.5, pb: 8.5, evEbitda: -25.5, divYield: '0.00%',
+    grossMargin: '58.5%', opMargin: '-42.5%', netMargin: '-55.8%', roe: '-28.5%', roa: '-15.2%',
+    revGrowth: '22%', epsGrowth: '-15%', revGrowth3Y: '18.5%', epsGrowth3Y: '-25.5%',
+    qRevGrowth: '25%', qEpsGrowth: '-10%',
+    currentRatio: 8.25, quickRatio: 7.85, debtEq: 0.08, debtAssets: 0.04,
+    fcf: '-0.3B', eps: '-1.09', fwdEps: '-0.68',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'HOLD', targetPrice: '50.00', lowTarget: '25.00', highTarget: '65.00',
+    buyCount: 10, holdCount: 12, sellCount: 8,
+    strengths: ['Enterprise AI platform e plotë', 'Partneritet Baker Hughes/DoD', 'Rritje revenue 22%', 'Cash position i fortë'],
+    weaknesses: ['Pa profit', 'Valuation e diskutueshme', 'Konkurrencë nga Big Tech', 'Stock-based compensation i lartë'],
+    position: 'Enterprise AI software pure-play me rritje por akoma pa profitizim',
+    signal: 'NEUTRAL', trend: 'sideways',
+  },
+  SMCI: {
+    ticker: 'SMCI', company: 'Super Micro Computer', sector: 'AI', industry: 'AI Server Infrastructure',
+    price: 48.25, change: -1.82, volume: '28.5M', marketCap: '$8.2B', shares: 170,
+    pe: 18.5, fwdPE: 14.2, peg: 0.8, ps: 1.2, pb: 3.2, evEbitda: 12.5, divYield: '0.00%',
+    grossMargin: '12.5%', opMargin: '6.5%', netMargin: '4.2%', roe: '18.5%', roa: '8.5%',
+    revGrowth: '55%', epsGrowth: '65%', revGrowth3Y: '32.5%', epsGrowth3Y: '42.5%',
+    qRevGrowth: '48%', qEpsGrowth: '52%',
+    currentRatio: 2.55, quickRatio: 1.85, debtEq: 0.45, debtAssets: 0.18,
+    fcf: '0.5B', eps: '2.61', fwdEps: '3.40',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'HOLD', targetPrice: '65.00', lowTarget: '35.00', highTarget: '85.00',
+    buyCount: 12, holdCount: 12, sellCount: 8,
+    strengths: ['AI server demand eksplozive', 'NVIDIA GPU integration shpejtë', 'Liquid cooling technology', 'Rritje 55% YoY'],
+    weaknesses: ['Accounting investigation', 'Short seller allegations', 'Gross margin të ulëta', 'Kompetim Dell/HP'],
+    position: 'AI server manufacturer me rritje të shpejtë por risk kontabili',
+    signal: 'NEUTRAL', trend: 'sideways',
+  },
+  SNOW: {
+    ticker: 'SNOW', company: 'Snowflake Inc.', sector: 'AI', industry: 'AI Data Cloud',
+    price: 178.50, change: 1.85, volume: '8.5M', marketCap: '$58B', shares: 325,
+    pe: -120.5, fwdPE: 95.2, peg: 2.5, ps: 22.5, pb: 15.5, evEbitda: -85.5, divYield: '0.00%',
+    grossMargin: '72.5%', opMargin: '-8.5%', netMargin: '-22.5%', roe: '-18.5%', roa: '-12.5%',
+    revGrowth: '28%', epsGrowth: '-35%', revGrowth3Y: '38.5%', epsGrowth3Y: '-15.5%',
+    qRevGrowth: '32%', qEpsGrowth: '-20%',
+    currentRatio: 2.15, quickRatio: 2.02, debtEq: 0.25, debtAssets: 0.12,
+    fcf: '0.8B', eps: '-1.48', fwdEps: '0.65',
+    moat: 'NARROW', brandStrength: 7,
+    rating: 'HOLD', targetPrice: '220.00', lowTarget: '140.00', highTarget: '270.00',
+    buyCount: 15, holdCount: 12, sellCount: 5,
+    strengths: ['AI Data Cloud platform', 'Net revenue retention >135%', 'Cortex AI rritje', 'Consumption model scalable'],
+    weaknesses: ['Pa profit akoma', 'Valuation premium', 'Konkurrencë Databricks/Big Tech', 'Founder departure'],
+    position: 'Data cloud platform me AI/ML capabilities dhe rritje të shpejtë por pa profit',
+    signal: 'NEUTRAL', trend: 'sideways',
+  },
+  DDOG: {
+    ticker: 'DDOG', company: 'Datadog Inc.', sector: 'AI', industry: 'AI Observability/Monitoring',
+    price: 148.25, change: 0.95, volume: '5.2M', marketCap: '$48B', shares: 324,
+    pe: 82.5, fwdPE: 62.5, peg: 3.5, ps: 18.5, pb: 12.5, evEbitda: 72.5, divYield: '0.00%',
+    grossMargin: '80.5%', opMargin: '22.5%', netMargin: '18.2%', roe: '15.5%', roa: '8.5%',
+    revGrowth: '22%', epsGrowth: '28%', revGrowth3Y: '32.5%', epsGrowth3Y: '38.5%',
+    qRevGrowth: '20%', qEpsGrowth: '25%',
+    currentRatio: 3.15, quickRatio: 2.85, debtEq: 0.35, debtAssets: 0.12,
+    fcf: '1.2B', eps: '1.80', fwdEps: '2.37',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '185.00', lowTarget: '130.00', highTarget: '220.00',
+    buyCount: 22, holdCount: 8, sellCount: 3,
+    strengths: ['Observability platform lider', 'AI-powered monitoring Bits', 'Net revenue retention >120%', 'Multi-product expansion'],
+    weaknesses: ['Vlerësim premium', 'Konkurrencë New Relic/Dynatrace', 'Rritje deceleration risk'],
+    position: 'Cloud observability lider me AI integration dhe multi-product moat',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+
   // ═══════ DEFENSE ═══════
   NOC: {
     ticker: 'NOC', company: 'Northrop Grumman', sector: 'Defense', industry: 'Defense/Space Technology',
@@ -1261,7 +1348,7 @@ export function getTopStocks(count: number = 10): StockProfile[] {
 }
 
 export function getSectorList(): string[] {
-  return ['Technology', 'Semiconductors', 'Healthcare', 'Finance', 'Energy', 'Industry', 'Retail', 'Defense'];
+  return ['Technology', 'Semiconductors', 'Healthcare', 'Finance', 'Energy', 'Industry', 'Retail', 'Defense', 'AI'];
 }
 
 // ═══════════════════════════════════════════════════
