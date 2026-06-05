@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStock, type StockProfile } from '@/lib/market-data';
+import { getRealPrice, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
 
 interface FundamentalAnalysisRequest {
   ticker: string;
@@ -63,9 +64,9 @@ You MUST respond ONLY with a valid JSON object (no markdown, no code blocks):
     "eps": "6.42",
     "epsGrowth": "12.5%",
     "forwardEps": "7.15",
-    "nextEarningsDate": "2025-04-24",
+    "nextEarningsDate": "2026-07-22",
     "surprises": [
-      {"quarter": "Q4 2024", "expected": "2.10", "actual": "2.18", "surprise": "+3.8%"}
+      {"quarter": "Q1 2026", "expected": "2.10", "actual": "2.18", "surprise": "+3.8%"}
     ],
     "rating": "STRONG|MODERATE|WEAK",
     "summary": "Brief earnings assessment"
@@ -98,7 +99,7 @@ You MUST respond ONLY with a valid JSON object (no markdown, no code blocks):
 
 // Stock profiles now imported from centralized market-data module
 
-function generateDemoFundamentalAnalysis(ticker: string, company?: string) {
+function generateDemoFundamentalAnalysis(ticker: string, company?: string, livePriceNum?: number | null) {
   const t = ticker.toUpperCase();
   const raw = getStock(t);
   const p = raw ? {
@@ -118,7 +119,7 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string) {
     position: raw.position,
   } : {
     company: company || t + ' Corp', sector: 'Technology', industry: 'General',
-    price: 150, shares: 1000,
+    price: 0, shares: 1000,
     pe: 22, fwdPE: 19, peg: 1.5, ps: 5, pb: 8, evEbitda: 15, divYield: '1.2%',
     grossMargin: '35%', opMargin: '22%', netMargin: '15%', roe: '25%', roa: '10%', roi: '18%',
     revGrowth: '10%', epsGrowth: '12%', revGrowth3Y: '11%', epsGrowth3Y: '14%',
@@ -133,6 +134,9 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string) {
     position: 'Aktiv me pozicion të mirë por konkurrencë aktive',
   };
 
+  // CRITICAL: Use live price if available, otherwise use market-data price
+  const effectivePrice = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+
   const valuationRating = p.pe > 50 ? 'OVERVALUED' : p.pe > 30 ? 'FAIRLY_VALUED' : 'UNDERVALUED';
   const profitRating = parseFloat(p.grossMargin) > 50 ? 'EXCELLENT' : parseFloat(p.grossMargin) > 30 ? 'GOOD' : 'AVERAGE';
   const growthRating = parseFloat(p.revGrowth) > 20 ? 'STRONG' : parseFloat(p.revGrowth) > 5 ? 'MODERATE' : 'WEAK';
@@ -144,7 +148,7 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string) {
     p.rating === 'HOLD' ? 50 + Math.floor(Math.random() * 12) :
     30 + Math.floor(Math.random() * 10);
 
-  const marketCap = p.price * p.shares;
+  const marketCap = effectivePrice * p.shares;
   const marketCapStr = marketCap > 1e12 ? `$${(marketCap / 1e12).toFixed(1)}T` :
     marketCap > 1e9 ? `$${(marketCap / 1e9).toFixed(0)}B` : `$${(marketCap / 1e6).toFixed(0)}M`;
 
@@ -213,10 +217,10 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string) {
       eps: p.eps,
       epsGrowth: p.epsGrowth,
       forwardEps: p.fwdEps,
-      nextEarningsDate: '2025-07-22',
+      nextEarningsDate: '2026-07-22',
       surprises: [
-        { quarter: 'Q4 2024', expected: p.eps, actual: (parseFloat(p.eps) * 1.04).toFixed(2), surprise: '+4.0%' },
-        { quarter: 'Q3 2024', expected: p.eps, actual: (parseFloat(p.eps) * 1.02).toFixed(2), surprise: '+2.5%' },
+        { quarter: 'Q1 2026', expected: p.eps, actual: (parseFloat(p.eps) * 1.04).toFixed(2), surprise: '+4.0%' },
+        { quarter: 'Q4 2025', expected: p.eps, actual: (parseFloat(p.eps) * 1.02).toFixed(2), surprise: '+2.5%' },
       ],
       rating: earnRating,
       summary: earnRating === 'STRONG'
@@ -252,6 +256,8 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string) {
   };
 }
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body: FundamentalAnalysisRequest = await request.json();
@@ -262,7 +268,19 @@ export async function POST(request: NextRequest) {
     }
 
     const companyInfo = company ? ` (${company})` : '';
-    const userMessage = `Perform a comprehensive fundamental analysis for ${ticker.toUpperCase()}${companyInfo}. Include valuation metrics, profitability ratios, growth rates, financial health, earnings data, competitive advantage (moat), and analyst consensus. Provide a clear investment verdict.`;
+    const tickerUpper = ticker.trim().toUpperCase();
+
+    // ═══ FETCH REAL PRICE BEFORE AI CALL ═══
+    const livePrice = await getRealPrice(tickerUpper);
+    const realPriceNum = livePrice ? livePrice.price : null;
+    console.log(`[FUNDAMENTAL] Real price for ${tickerUpper}:`, livePrice ? `$${livePrice.price} [${livePrice.source}]` : 'unavailable');
+
+    let userMessage = `Perform a comprehensive fundamental analysis for ${tickerUpper}${companyInfo}. Include valuation metrics, profitability ratios, growth rates, financial health, earnings data, competitive advantage (moat), and analyst consensus. Provide a clear investment verdict.`;
+
+    // Inject real prices into prompt
+    if (livePrice) {
+      userMessage = injectPricesIntoPrompt(userMessage, { [tickerUpper]: livePrice });
+    }
 
     // Try real AI first, fall back to demo
     let content: string;
@@ -275,9 +293,9 @@ export async function POST(request: NextRequest) {
         retries: 0,
       });
     } catch {
-      // AI unavailable — use demo data
-      console.log(`[DEMO MODE] AI unavailable for fundamental-analysis of ${ticker}, using simulation data`);
-      const demo = generateDemoFundamentalAnalysis(ticker.trim().toUpperCase(), company);
+      // AI unavailable — use demo data with REAL price for ALL calculations
+      console.log(`[DEMO MODE] AI unavailable for fundamental-analysis of ${tickerUpper}, using simulation with real price: $${realPriceNum || 'N/A'}`);
+      const demo = generateDemoFundamentalAnalysis(tickerUpper, company, realPriceNum);
       return NextResponse.json({ analysis: demo, demo: true });
     }
 
@@ -299,6 +317,25 @@ export async function POST(request: NextRequest) {
     };
 
     const analysis = parseAIResponse(content, fallback);
+
+    // Force real price into AI response (AI may hallucinate prices)
+    if (livePrice && analysis && typeof analysis === 'object') {
+      // Update price-related fields with real data
+      if ('valuation' in analysis && analysis.valuation && typeof analysis.valuation === 'object') {
+        const v = analysis.valuation as Record<string, unknown>;
+        // Recalculate market cap with real price if we have shares info
+        const raw = getStock(tickerUpper);
+        if (raw?.shares) {
+          const mcap = livePrice.price * raw.shares;
+          v.marketCap = mcap > 1e12
+            ? `$${(mcap / 1e12).toFixed(1)}T`
+            : mcap > 1e9
+              ? `$${(mcap / 1e9).toFixed(0)}B`
+              : `$${(mcap / 1e6).toFixed(0)}M`;
+        }
+      }
+    }
+
     return NextResponse.json({ analysis });
   } catch (error: unknown) {
     if (error instanceof AIError) {

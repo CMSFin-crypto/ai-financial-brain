@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
+import { getRealPrices, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
 
 interface AnalysisRequest {
   text: string;
   sourceType: 'news' | 'policy' | 'tweet' | 'mixed';
 }
+
+export const maxDuration = 60;
 
 const SYSTEM_PROMPT = `You are an expert AI Financial Analyst — a "Financial Brain" that processes news articles, government policies, social media posts, and market commentary to generate actionable trading signals.
 
@@ -137,7 +140,16 @@ export async function POST(request: NextRequest) {
             ? 'social media post or tweet from a notable figure'
             : 'mixed market commentary';
 
-    const userMessage = `Analyze this ${sourceLabel} and generate financial signals:\n\n${text}`;
+    // ═══ FETCH REAL PRICES FOR COMMON STOCKS ═══
+    const commonTickers = ['AAPL','MSFT','NVDA','GOOGL','AMZN'];
+    const livePrices = await getRealPrices(commonTickers);
+
+    let userMessage = `Analyze this ${sourceLabel} and generate financial signals:\n\n${text}`;
+
+    // Inject real prices into prompt
+    if (Object.keys(livePrices).length > 0) {
+      userMessage = injectPricesIntoPrompt(userMessage, livePrices);
+    }
 
     // Try real AI first, fall back to demo
     let content: string;

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStock } from '@/lib/market-data';
+import { getRealPrices, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
 
 const SYSTEM_PROMPT = `You are an expert AI stock picker and market analyst. Generate today's top stock picks with detailed analysis.
 
@@ -48,22 +49,26 @@ Generate 5-6 top picks with strong potential. Include realistic price levels. Ma
 // DEMO DATA — realistic simulation when AI is unreachable
 // ═══════════════════════════════════════════
 
-function generateDemoPicks() {
+function generateDemoPicks(livePrices?: Record<string, { price: number }>) {
   const today = new Date().toISOString().split('T')[0];
 
   const pickTickers = ['NVDA', 'AAPL', 'LLY', 'JPM', 'AMZN'];
   const topPicks = pickTickers.map((ticker) => {
     const s = getStock(ticker);
-    if (!s) return null;
-    const price = s.price;
-    const targetPrice = parseFloat(s.targetPrice) || price * 1.1;
+    const liveData = livePrices?.[ticker];
+    if (!s && !liveData) return null;
+    // CRITICAL: Use live price if available
+    const price = liveData?.price || s?.price || 0;
+    const company = s?.company || ticker + ' Corp';
+    const sector = s?.sector || 'Technology';
+    const targetPrice = liveData ? +(price * 1.10).toFixed(2) : (parseFloat(s?.targetPrice || '0') || price * 1.1);
     const stopLoss = +(price * 0.96).toFixed(2);
-    const isBullish = s.signal === 'BULLISH';
+    const isBullish = s?.signal === 'BULLISH' || !!liveData;
     const confidence = isBullish ? 80 + Math.floor(Math.random() * 12) : 60 + Math.floor(Math.random() * 15);
     return {
-      ticker: s.ticker,
-      company: s.company,
-      sector: s.sector,
+      ticker: s?.ticker || ticker,
+      company,
+      sector,
       currentPrice: price,
       targetPrice,
       stopLoss,
@@ -73,17 +78,21 @@ function generateDemoPicks() {
       technicalReason: isBullish
         ? `Tendencë ngjitëse e konfirmuar, çmimi mbi SMA kryesore, vëllimi në rritje`
         : `Lëvizje anësore, çmimi pranë SMA, vëllimi mesatar`,
-      fundamentalReason: `Rritje të ardhurash ${s.revGrowth}, marzhë operative ${s.opMargin}, rating ${s.rating}`,
-      catalyst: `${s.sector} sector momentum, katalizatorë pozitiv, fitime rezultate`,
+      fundamentalReason: s ? `Rritje të ardhurash ${s.revGrowth}, marzhë operative ${s.opMargin}, rating ${s.rating}` : 'Fundamentale të mira',
+      catalyst: `${sector} sector momentum, katalizatorë pozitiv, fitime rezultate`,
       riskReward: `1:${(2 + Math.random()).toFixed(1)}`,
       keyLevels: { support: `${(price * 0.97).toFixed(2)}`, resistance: `${(price * 1.05).toFixed(2)}`, pivot: `${price.toFixed(2)}` },
     };
   }).filter(Boolean);
 
   // Market movers with real prices
-  const moverTicker = getStock('TSLA');
-  const xomTicker = getStock('XOM');
-  const metaTicker = getStock('META');
+  const moverTickers = ['TSLA', 'XOM', 'META'];
+  const marketMovers = moverTickers.map(ticker => {
+    const s = getStock(ticker);
+    const live = livePrices?.[ticker];
+    const price = live?.price || s?.price || 0;
+    return { ticker, price };
+  });
 
   return {
     date: today,
@@ -92,23 +101,11 @@ function generateDemoPicks() {
       'Tregjet tregojnë ton pozitiv me rritje në sektorin e teknologjisë. Investitorët institucionalë po rrisin pozicionet në aksione me kapital të madh, duke nxitur performancën e përgjithshme të S&P 500.',
     isDemo: true,
     topPicks,
-    marketMovers: [
-      {
-        ticker: 'TSLA',
-        direction: 'UP',
-        reason: moverTicker ? `Lansimi i modelit të ri Robotaxi duke shtuar optimizëm për të ardhmen e Tesla ($${moverTicker.price})` : 'Robotaxi news driving Tesla sentiment',
-      },
-      {
-        ticker: 'XOM',
-        direction: 'DOWN',
-        reason: xomTicker ? `Rënia e çmimeve të naftës duke goditur perspektivat e fitimeve të ExxonMobil ($${xomTicker.price})` : 'Oil price decline impacting ExxonMobil outlook',
-      },
-      {
-        ticker: 'META',
-        direction: 'UP',
-        reason: metaTicker ? `Reklamat AI po rrisin të ardhurat, Reality Labs duke treguar përmirësim ($${metaTicker.price})` : 'AI advertising growth boosting Meta revenue',
-      },
-    ],
+    marketMovers: marketMovers.map(m => ({
+      ticker: m.ticker,
+      direction: m.ticker === 'XOM' ? 'DOWN' : 'UP',
+      reason: `${m.ticker} trading at $${m.price.toFixed(2)} with market activity`,
+    })),
     warnings: [
       'Vigilëncë e nevojshme për volatilitetin e Fed minutes këtë javë',
       'Tensionet gjeopolitike mes SHBA dhe Kinës mund të prekin zinxhirët e furnizimit',
@@ -116,11 +113,23 @@ function generateDemoPicks() {
   };
 }
 
+export const maxDuration = 60;
+
 export async function GET() {
   try {
     const today = new Date().toISOString().split('T')[0];
 
-    const userMessage = `Generate today's top stock picks for ${today}. Focus on stocks with the highest probability of moving up today or this week. Include technical levels, catalysts, and risk/reward ratios. Make the picks realistic and based on current market conditions.`;
+    // ═══ FETCH REAL PRICES FOR PICKS ═══
+    const pickTickers = ['NVDA','AAPL','LLY','JPM','AMZN'];
+    const livePrices = await getRealPrices(pickTickers);
+    console.log(`[DAILY PICKS] Fetched ${Object.keys(livePrices).length} live prices`);
+
+    let userMessage = `Generate today's top stock picks for ${today}. Focus on stocks with the highest probability of moving up today or this week. Include technical levels, catalysts, and risk/reward ratios. Make the picks realistic and based on current market conditions.`;
+
+    // Inject real prices into prompt
+    if (Object.keys(livePrices).length > 0) {
+      userMessage = injectPricesIntoPrompt(userMessage, livePrices);
+    }
 
     // Try real AI first, fall back to demo
     let content: string;
@@ -135,7 +144,7 @@ export async function GET() {
     } catch {
       // AI unavailable — use demo data
       console.log('[DEMO MODE] AI unavailable for daily-picks, using simulation data');
-      const demo = generateDemoPicks();
+      const demo = generateDemoPicks(livePrices);
       return NextResponse.json({ picks: demo, demo: true });
     }
 
@@ -149,6 +158,17 @@ export async function GET() {
     };
 
     const picks = parseAIResponse(content, fallback);
+
+    // Force real prices into AI response for each pick
+    if (picks?.topPicks && Array.isArray(picks.topPicks)) {
+      for (const pick of picks.topPicks) {
+        const lp = livePrices[pick.ticker?.toUpperCase()];
+        if (lp) {
+          pick.currentPrice = lp.price;
+        }
+      }
+    }
+
     return NextResponse.json({ picks });
   } catch (error: unknown) {
     if (error instanceof AIError) {

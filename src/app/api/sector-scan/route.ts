@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStocksBySector } from '@/lib/market-data';
+import { getRealPrices, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
 
 interface SectorScanRequest {
   sector?: string;
@@ -18,12 +19,13 @@ For each stock in each sector, provide:
 - quick technical note (1 sentence)
 - key catalyst (if any)
 
-Sectors to scan (10 stocks per sector = 50 total):
-1. TECHNOLOGY: AAPL, MSFT, NVDA, GOOGL, AMZN, META, AVGO, AMD, CRM, ORCL
-2. HEALTHCARE: UNH, JNJ, LLY, ABBV, MRK, PFE, TMO, ABT, ISRG, VRTX
-3. FINANCE: JPM, BAC, GS, MS, V, MA, BLK, SCHW, C, WFC
-4. ENERGY: XOM, CVX, COP, SLB, EOG, MPC, PARR, FANG, DVN, WFRD
-5. CONSUMER DISCRETIONARY: TSLA, AMZN, HD, NKE, MCD, SBUX, TGT, LOW, F, GM
+Sectors to scan (10 stocks per sector = 60 total):
+1. TECHNOLOGY: AAPL, MSFT, GOOGL, AMZN, META, CRM, NFLX, ADBE, NOW, ORCL
+2. SEMICONDUCTORS: NVDA, AVGO, AMD, INTC, QCOM, TXN, MU, MRVL, ON, LRCX
+3. HEALTHCARE: UNH, JNJ, LLY, ABBV, MRK, PFE, TMO, ABT, ISRG, VRTX
+4. FINANCE: JPM, BAC, GS, MS, V, MA, BLK, SCHW, C, WFC
+5. ENERGY: XOM, CVX, COP, SLB, EOG, MPC, PARR, FANG, DVN, WFRD
+6. CONSUMER DISCRETIONARY: TSLA, AMZN, HD, NKE, MCD, SBUX, TGT, LOW, F, GM
 
 For each stock, give a QUICK multi-factor score combining:
 - Technical momentum (trend, volume, MA alignment)
@@ -91,11 +93,14 @@ interface DemoSector {
   stocks: DemoStock[];
 }
 
-function mapStockToDemo(s: { ticker: string; company: string; price: number; sector: string; signal: string; rating: string; revGrowth: string; opMargin: string; trend: string }): DemoStock {
+function mapStockToDemo(s: { ticker: string; company: string; price: number; sector: string; signal: string; rating: string; revGrowth: string; opMargin: string; trend: string }, livePrice?: number) {
   const confidence = s.signal === 'BULLISH' ? 75 + Math.floor(Math.random() * 20)
     : s.signal === 'BEARISH' ? 35 + Math.floor(Math.random() * 15)
     : 50 + Math.floor(Math.random() * 15);
   const quickScore = confidence;
+
+  // CRITICAL: Use live price if available
+  const price = (livePrice && livePrice > 0) ? livePrice : s.price;
 
   const technicalNote = s.signal === 'BULLISH'
     ? 'Tendenc\u00eb ngjit\u00ebse e konfirmuar, \u00e7mimi mbi SMA kryesore, v\u00ebllimi n\u00eb rritje'
@@ -115,7 +120,7 @@ function mapStockToDemo(s: { ticker: string; company: string; price: number; sec
     company: s.company,
     signal: s.signal as 'BULLISH' | 'BEARISH' | 'NEUTRAL',
     confidence,
-    price: s.price,
+    price,
     technicalNote,
     fundamentalNote,
     catalyst,
@@ -123,12 +128,13 @@ function mapStockToDemo(s: { ticker: string; company: string; price: number; sec
   };
 }
 
-function generateDemoSectorScan() {
-  const techStocks = getStocksBySector('Technology').map(mapStockToDemo);
-  const healthcareStocks = getStocksBySector('Healthcare').map(mapStockToDemo);
-  const financeStocks = getStocksBySector('Finance').map(mapStockToDemo);
-  const energyStocks = getStocksBySector('Energy').map(mapStockToDemo);
-  const consumerStocks = getStocksBySector('Consumer Discretionary').map(mapStockToDemo);
+function generateDemoSectorScan(livePrices?: Record<string, { price: number }>) {
+  const techStocks = getStocksBySector('Technology').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const semiStocks = getStocksBySector('Semiconductors').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const healthcareStocks = getStocksBySector('Healthcare').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const financeStocks = getStocksBySector('Finance').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const energyStocks = getStocksBySector('Energy').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
+  const consumerStocks = getStocksBySector('Consumer Discretionary').map(s => mapStockToDemo(s, livePrices?.[s.ticker]?.price));
 
   const sectors: DemoSector[] = [
     {
@@ -137,6 +143,13 @@ function generateDemoSectorScan() {
       sectorConfidence: 85,
       trend: 'Tendenc\u00eb ngjit\u00ebse e fort\u00eb e udh\u00ebhequr nga AI dhe \u00e7ipat semikonduktor\u00eb. Kapitalizimi i madh n\u00eb rritje me k\u00ebrkesa t\u00eb papar\u00eb p\u00ebr infrastruktur\u00ebn AI.',
       stocks: techStocks,
+    },
+    {
+      name: 'Semiconductors',
+      overallSignal: 'BULLISH',
+      sectorConfidence: 88,
+      trend: 'Sektori m\u00eb i fuqish\u00ebm n\u00eb treg, i udh\u00ebhequr nga k\u00ebrkesa e eksplozive p\u00ebr AI/GPU. NVIDIA dominojn\u00eb me >90% market share. Broadcom, AMD, Qualcomm po fitojn\u00eb toke.',
+      stocks: semiStocks,
     },
     {
       name: 'Healthcare',
@@ -172,11 +185,17 @@ function generateDemoSectorScan() {
     marketOverview: {
       condition: 'bullish',
       sp500trend: 'uptrend',
+      sp500Value: 7553.68,
+      nasdaqValue: 26853.98,
+      dowValue: 50687.07,
+      vixValue: 16.34,
       keyMacroFactors: [
-        'Pritjet p\u00ebr ulje t\u00eb normave nga Fed n\u00eb H2 2025',
-        'Sezoni i fitimeve me rezultate pozitive nga teknologjia',
-        'Inflacioni duke u ftohur, CPI 3.1%',
-        'Tensionet gjeopolitike SHBA-Kin\u00eb',
+        'Fed funds rate 3.63% — zbritje graduale nën Kevin Warsh',
+        'Core CPI 2.7%, duke u afruar drejt targetit 2%',
+        'Yield curve NORMAL (2Y: 3.80% < 10Y: 4.49%)',
+        'Unemployment 4.3%, tregu punës stabil',
+        'DXY 99.33, dollar moderat',
+        'Tensionet gjeopolitike: Lufta e Iran, SHBA-Kinë',
       ],
       topSectors: ['Technology', 'Healthcare', 'Finance'],
       weakSectors: ['Energy'],
@@ -186,15 +205,31 @@ function generateDemoSectorScan() {
   };
 }
 
+// ═══ CACHED LIVE PRICES for sector scan ─══
+const sectorScanCache: Record<string, { prices: Record<string, {price: number}>; fetchedAt: number }> = {};
+const SECTOR_SCAN_CACHE_TTL = 3 * 60 * 1000;
+
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body: SectorScanRequest = await request.json();
     const sector = body.sector;
     const count = body.count || 10;
 
-    const userMessage = sector
+    // ═══ FETCH REAL PRICES FOR TOP TICKERS ONLY ═══
+    const topTickers = ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','LLY','JPM','TSLA','V'];
+    const livePrices = await getRealPrices(topTickers);
+    console.log(`[SECTOR SCAN] Fetched ${Object.keys(livePrices).length} live prices out of ${topTickers.length} tickers`);
+
+    let userMessage = sector
       ? `Scan the ${sector.toUpperCase()} sector specifically. Return top ${count} stocks with full multi-factor analysis for each. Include market overview and sector trends.`
-      : `Perform a FULL market scan of ALL 5 sectors (Technology, Healthcare, Finance, Energy, Consumer Discretionary). Return top ${count} stocks per sector with multi-factor scoring. Include overall market overview and sector rotation trends.`;
+      : `Perform a FULL market scan of ALL 6 sectors (Technology, Semiconductors, Healthcare, Finance, Energy, Consumer Discretionary). Return top ${count} stocks per sector with multi-factor scoring. Include overall market overview and sector rotation trends.`;
+
+    // Inject real prices into prompt
+    if (Object.keys(livePrices).length > 0) {
+      userMessage = injectPricesIntoPrompt(userMessage, livePrices);
+    }
 
     // Try real AI first, fall back to demo
     let content: string;
@@ -208,9 +243,9 @@ export async function POST(request: NextRequest) {
         retries: 0,
       });
     } catch {
-      // AI unavailable — use demo data
+      // AI unavailable — use demo data with real prices where available
       console.log('[DEMO MODE] AI unavailable for sector-scan, using simulation data');
-      const demo = generateDemoSectorScan();
+      const demo = generateDemoSectorScan(livePrices);
       return NextResponse.json({ scan: demo, demo: true });
     }
 

@@ -1,8 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 
-// Paper trading with virtual $100,000 starting balance
+// ═══════════════════════════════════════════════════════════════
+// PAPER TRADING — In-memory storage (works on Vercel serverless)
+// NOTE: State resets on each serverless cold start. For persistent
+// storage, use Vercel KV, Upstash Redis, or an external database.
+// ═══════════════════════════════════════════════════════════════
+
 const STARTING_BALANCE = 100000;
+
+interface PortfolioItem {
+  id: string;
+  ticker: string;
+  company: string;
+  sector: string;
+  shares: number;
+  avgPrice: number;
+}
+
+interface Trade {
+  id: string;
+  ticker: string;
+  company: string;
+  action: string;
+  shares: number;
+  price: number;
+  totalValue: number;
+  reason: string | null;
+  createdAt: string;
+}
 
 interface TradeRequest {
   action: 'BUY' | 'SELL';
@@ -14,46 +39,27 @@ interface TradeRequest {
   reason?: string;
 }
 
-interface BalanceRequest {
-  sessionId?: string;
+// In-memory state
+let portfolio: PortfolioItem[] = [];
+let trades: Trade[] = [];
+
+function generateId(): string {
+  return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
 }
 
 // GET: Get portfolio and balance
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get('sessionId') || 'default';
-
-    const portfolio = await db.portfolio.findMany({
-      where: { sessionId },
-    });
-
-    const trades = await db.trade.findMany({
-      where: { sessionId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-
-    const watchlist = await db.watchlistItem.findMany({
-      where: { sessionId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Calculate spent amount
     const totalSpent = portfolio.reduce((sum, p) => sum + p.avgPrice * p.shares, 0);
     const balance = STARTING_BALANCE - totalSpent;
-
-    // Calculate P&L (using current avg price as proxy since we don't have real-time prices)
-    const totalValue = portfolio.reduce((sum, p) => sum + p.avgPrice * p.shares, 0);
 
     return NextResponse.json({
       balance: Math.round(balance * 100) / 100,
       totalInvested: Math.round(totalSpent * 100) / 100,
-      portfolioValue: Math.round(totalValue * 100) / 100,
-      totalReturn: 0, // Will be calculated on frontend with current prices
+      portfolioValue: Math.round(totalSpent * 100) / 100,
+      totalReturn: 0,
       portfolio,
-      recentTrades: trades,
-      watchlist,
+      recentTrades: trades.slice(-50).reverse(),
       startingBalance: STARTING_BALANCE,
     });
   } catch (error: unknown) {
@@ -68,7 +74,6 @@ export async function POST(request: NextRequest) {
   try {
     const body: TradeRequest = await request.json();
     const { action, ticker, company, sector, shares, price, reason } = body;
-    const sessionId = 'default';
 
     if (!ticker || !shares || shares <= 0 || !price || price <= 0) {
       return NextResponse.json({ error: 'Invalid trade parameters' }, { status: 400 });
@@ -78,11 +83,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Action must be BUY or SELL' }, { status: 400 });
     }
 
-    // Get current portfolio
-    const portfolio = await db.portfolio.findMany({ where: { sessionId } });
     const totalSpent = portfolio.reduce((sum, p) => sum + p.avgPrice * p.shares, 0);
     const balance = STARTING_BALANCE - totalSpent;
-
     const totalValue = shares * price;
 
     if (action === 'BUY') {
@@ -93,61 +95,35 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Check if already holding this stock
-      const existing = await db.portfolio.findFirst({
-        where: { sessionId, ticker: ticker.toUpperCase() },
-      });
+      const existing = portfolio.find(p => p.ticker === ticker.toUpperCase());
 
       if (existing) {
-        // Add to existing position
         const newShares = existing.shares + shares;
         const newAvgPrice = (existing.avgPrice * existing.shares + price * shares) / newShares;
-
-        await db.portfolio.update({
-          where: { id: existing.id },
-          data: { shares: newShares, avgPrice: newAvgPrice },
-        });
-
-        await db.trade.create({
-          data: {
-            sessionId,
-            ticker: ticker.toUpperCase(),
-            company: company || ticker.toUpperCase(),
-            action: 'BUY',
-            shares,
-            price,
-            totalValue,
-            reason: reason || `Blerja e ${shares} aksioneve të ${ticker.toUpperCase()}`,
-            portfolioId: existing.id,
-          },
-        });
+        existing.shares = newShares;
+        existing.avgPrice = newAvgPrice;
       } else {
-        // New position
-        const newPortfolio = await db.portfolio.create({
-          data: {
-            sessionId,
-            ticker: ticker.toUpperCase(),
-            company: company || ticker.toUpperCase(),
-            sector: sector || 'Unknown',
-            shares,
-            avgPrice: price,
-          },
-        });
-
-        await db.trade.create({
-          data: {
-            sessionId,
-            ticker: ticker.toUpperCase(),
-            company: company || ticker.toUpperCase(),
-            action: 'BUY',
-            shares,
-            price,
-            totalValue,
-            reason: reason || `Hyrje e re në ${ticker.toUpperCase()}`,
-            portfolioId: newPortfolio.id,
-          },
+        portfolio.push({
+          id: generateId(),
+          ticker: ticker.toUpperCase(),
+          company: company || ticker.toUpperCase(),
+          sector: sector || 'Unknown',
+          shares,
+          avgPrice: price,
         });
       }
+
+      trades.push({
+        id: generateId(),
+        ticker: ticker.toUpperCase(),
+        company: company || ticker.toUpperCase(),
+        action: 'BUY',
+        shares,
+        price,
+        totalValue,
+        reason: reason || `Blerja e ${shares} aksioneve të ${ticker.toUpperCase()}`,
+        createdAt: new Date().toISOString(),
+      });
 
       return NextResponse.json({
         success: true,
@@ -157,9 +133,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'SELL') {
-      const existing = await db.portfolio.findFirst({
-        where: { sessionId, ticker: ticker.toUpperCase() },
-      });
+      const existing = portfolio.find(p => p.ticker === ticker.toUpperCase());
 
       if (!existing || existing.shares < shares) {
         return NextResponse.json(
@@ -171,29 +145,24 @@ export async function POST(request: NextRequest) {
       const newShares = existing.shares - shares;
 
       if (newShares === 0) {
-        await db.portfolio.delete({ where: { id: existing.id } });
+        portfolio = portfolio.filter(p => p.ticker !== ticker.toUpperCase());
       } else {
-        await db.portfolio.update({
-          where: { id: existing.id },
-          data: { shares: newShares },
-        });
+        existing.shares = newShares;
       }
 
-      await db.trade.create({
-        data: {
-          sessionId,
-          ticker: ticker.toUpperCase(),
-          company: company || ticker.toUpperCase(),
-          action: 'SELL',
-          shares,
-          price,
-          totalValue,
-          reason: reason || `Shitja e ${shares} aksioneve të ${ticker.toUpperCase()}`,
-          portfolioId: existing.id,
-        },
-      });
-
       const pnl = (price - existing.avgPrice) * shares;
+
+      trades.push({
+        id: generateId(),
+        ticker: ticker.toUpperCase(),
+        company: company || ticker.toUpperCase(),
+        action: 'SELL',
+        shares,
+        price,
+        totalValue,
+        reason: reason || `Shitja e ${shares} aksioneve të ${ticker.toUpperCase()}`,
+        createdAt: new Date().toISOString(),
+      });
 
       return NextResponse.json({
         success: true,
@@ -214,9 +183,8 @@ export async function POST(request: NextRequest) {
 // DELETE: Reset portfolio
 export async function DELETE() {
   try {
-    const sessionId = 'default';
-    await db.trade.deleteMany({ where: { sessionId } });
-    await db.portfolio.deleteMany({ where: { sessionId } });
+    portfolio = [];
+    trades = [];
     return NextResponse.json({ success: true, message: 'Portfolio u rivendos' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -187,6 +187,7 @@ export function SectorScanner({ onSelectStock }: { onSelectStock: (ticker: strin
           <SelectContent>
             <SelectItem value="all">Të gjithë sektorët</SelectItem>
             <SelectItem value="Technology">Teknologji</SelectItem>
+            <SelectItem value="Semiconductors">Semikonduktorë</SelectItem>
             <SelectItem value="Healthcare">Shëndetësi</SelectItem>
             <SelectItem value="Finance">Financa</SelectItem>
             <SelectItem value="Energy">Energji</SelectItem>

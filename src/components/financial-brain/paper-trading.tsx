@@ -155,7 +155,13 @@ export function PaperTrading() {
     );
   }
 
-  if (!portfolio) return null;
+  if (!portfolio) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <p className="text-sm">Duke ngarkuar portofolin...</p>
+      </div>
+    );
+  }
 
   const balancePercent = ((portfolio.balance / portfolio.startingBalance) * 100).toFixed(1);
   const investedPercent = ((portfolio.totalInvested / portfolio.startingBalance) * 100).toFixed(1);

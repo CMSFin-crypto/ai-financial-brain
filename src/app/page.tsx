@@ -19,8 +19,10 @@ import { DailyPicks } from '@/components/financial-brain/daily-picks';
 import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
+import { TopMovers } from '@/components/financial-brain/top-movers';
 import {
   TrendingUp,
+  TrendingDown,
   Zap,
   AlertCircle,
   ChevronDown,
@@ -34,6 +36,7 @@ import {
   Target,
   Crosshair,
   Radar,
+  Flame,
 } from 'lucide-react';
 
 interface StockPrediction {
@@ -63,7 +66,7 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAllPredictions, setShowAllPredictions] = useState(false);
-  const [activeTab, setActiveTab] = useState('quant');
+  const [activeTab, setActiveTab] = useState('top-movers');
   const [quantTicker, setQuantTicker] = useState('');
 
   const handleAnalyze = async (
@@ -103,7 +106,7 @@ export default function Home() {
     : [];
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background" suppressHydrationWarning>
       <Header />
       <MarketTickerBar />
 
@@ -131,14 +134,18 @@ export default function Home() {
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1 w-full h-auto p-1">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 w-full h-auto p-1">
+            <TabsTrigger value="top-movers" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <Flame className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
+              Top 5+5
+            </TabsTrigger>
             <TabsTrigger value="quant" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Crosshair className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Quant Analysis
+              Quant
             </TabsTrigger>
             <TabsTrigger value="sector" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Radar className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Sector Scan
+              Sector
             </TabsTrigger>
             <TabsTrigger value="daily-picks" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Target className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
@@ -161,6 +168,29 @@ export default function Home() {
               Trading
             </TabsTrigger>
           </TabsList>
+
+          {/* Tab: Top Movers */}
+          <TabsContent value="top-movers" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Flame className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">Top 5 Rritje + Top 5 Rrezik Renie</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Multi-factor scoring me 10 kriterë: signal teknik, trend, rating analistësh, rritja e të ardhurave, EPS, PEG, moat, momentum, marzhë operative, akselerim tremujor. Çmimet në kohë reale nga Yahoo Finance.
+                  </p>
+                </CardContent>
+              </Card>
+              <TopMovers />
+            </motion.div>
+          </TabsContent>
 
           {/* Tab: Quant Analysis */}
           <TabsContent value="quant" className="mt-4">

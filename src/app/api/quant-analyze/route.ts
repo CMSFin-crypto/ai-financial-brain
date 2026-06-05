@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStock, type StockProfile } from '@/lib/market-data';
+import { getRealPrice, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
 
 interface QuantRequest {
   ticker: string;
@@ -113,7 +114,7 @@ OUTPUT FORMAT — respond ONLY with valid JSON:
   "company": "Apple Inc.",
   "sector": "Technology",
   "currentPrice": 195.50,
-  "timestamp": "2025-01-24T10:30:00Z",
+  "timestamp": "2026-06-04T10:30:00Z",
   "universe": "sp500",
   "historicalPeriod": "1y",
 
@@ -146,12 +147,12 @@ OUTPUT FORMAT — respond ONLY with valid JSON:
     "signal": "BULLISH|BEARISH|NEUTRAL",
     "confidence": 72,
     "revenue": {"annual": "383.3B", "growth": "8.1%", "growth3Y": "10.2%", "quarterly": "6.2%"},
-    "eps": {"current": "6.42", "forward": "7.15", "growth": "12.5%", "surprises": [{"quarter": "Q4 2024", "surprise": "+3.8%"}]},
+    "eps": {"current": "6.42", "forward": "7.15", "growth": "12.5%", "surprises": [{"quarter": "Q1 2026", "surprise": "+3.8%"}]},
     "margins": {"gross": "44.1%", "operating": "29.8%", "net": "25.3%", "trend": "stable"},
     "valuation": {"pe": 31.5, "forwardPE": 28.2, "peg": 1.8, "ps": 7.8, "pb": 45.2, "evEbitda": 25.1, "vsSector": "premium"},
     "financialHealth": {"debtEquity": 1.72, "currentRatio": 1.05, "freeCashFlow": "110.5B", "rating": "strong"},
     "moat": {"type": "WIDE", "brandStrength": 9, "description": "Ecosystem lock-in, brand loyalty"},
-    "nextEarnings": "2025-04-24",
+    "nextEarnings": "2026-07-22",
     "analystConsensus": {"rating": "BUY", "target": "220.00", "buy": 28, "hold": 8, "sell": 2},
     "whyMayFail": "Premium valuation limits upside, China dependency risk"
   },
@@ -159,35 +160,40 @@ OUTPUT FORMAT — respond ONLY with valid JSON:
   "macro": {
     "signal": "BULLISH|BEARISH|NEUTRAL",
     "confidence": 65,
-    "interestRates": {"fedRate": "5.25-5.50%", "trend": "expected_cuts", "impact": "positive"},
-    "yieldCurve": {"twoYear": "4.65%", "tenYear": "4.25%", "status": "inverted", "impact": "caution"},
-    "inflation": {"cpi": "3.1%", "trend": "cooling", "impact": "positive"},
-    "gdp": {"growth": "2.5%", "trend": "stable", "impact": "neutral"},
+    "interestRates": {"fedRate": "3.63%", "trend": "cutting", "impact": "positive"},
+    "yieldCurve": {"twoYear": "3.80%", "tenYear": "4.49%", "status": "normal", "impact": "positive"},
+    "inflation": {"cpi": "3.3%", "coreCpi": "2.7%", "trend": "cooling", "impact": "neutral"},
+    "gdp": {"growth": "1.6%", "trend": "stable", "impact": "neutral"},
     "fedStance": "dovish",
-    "dollarStrength": "moderate",
-    "keyFactors": ["Fed rate cuts expected Q3", "Cooling inflation supports growth"],
-    "sectorImpact": "Tech benefits from lower rates due to DCF model impact",
-    "whyMayFail": "Inverted yield curve historically precedes recessions, delayed impact"
+    "dollarStrength": 99.33,
+    "keyFactors": ["Fed funds rate 3.63% under Kevin Warsh, gradual cuts continuing", "Core CPI 2.7% approaching 2% target", "Unemployment 4.3%, labor market stable", "DXY 99.33, moderate dollar", "Yield curve normal: 2Y 3.80% < 10Y 4.49%"]},
+    "sectorImpact": "Tech benefits from lower rates and normal yield curve",
+    "whyMayFail": "Iran war risk disrupting AI supply chains, geopolitical tensions"
   },
 
   "newsGeopolitical": {
     "signal": "BULLISH|BEARISH|NEUTRAL",
     "confidence": 70,
     "newsItems": [
-      {"headline": "AI chip breakthrough announced", "impactScore": 8, "sentiment": "positive", "category": "product"},
-      {"headline": "China regulatory pressure", "impactScore": 5, "sentiment": "negative", "category": "regulatory"}
+      {"headline": "7 Words From Fed Chair Kevin Warsh That Should Terrify Wall Street", "impactScore": 8, "sentiment": "negative", "category": "policy"},
+      {"headline": "Broadcom stock plunges on weak software sales", "impactScore": 7, "sentiment": "negative", "category": "earnings"},
+      {"headline": "SpaceX targets $135 IPO price at valuation of $1.77 trillion", "impactScore": 8, "sentiment": "positive", "category": "market"},
+      {"headline": "TSMC boss bets big on AI growth, wants to hike chip prices", "impactScore": 6, "sentiment": "positive", "category": "industry"},
+      {"headline": "Berkshire Hathaway doubles down on Google", "impactScore": 7, "sentiment": "positive", "category": "market"},
+      {"headline": "Iran war exposes weak spots in AI supply chain", "impactScore": 6, "sentiment": "negative", "category": "geopolitical"}
     ],
-    "geopoliticalRisks": ["US-China tensions", "Supply chain disruption risk"],
+    "geopoliticalRisks": ["Iran war and Middle East destabilization", "US-China trade tensions", "AI chip export controls"],
     "analystMoves": [{"firm": "Goldman Sachs", "action": "Upgrade", "target": "225"}],
     "sentiment": "cautiously_optimistic",
-    "whyMayFail": "Escalation in US-China trade war could severely impact supply chain"
+    "marketIndices": {"sp500": 7553.68, "nasdaq": 26853.98, "dow": 50687.07, "vix": 16.34},
+    "whyMayFail": "Iran war escalation could severely disrupt tech supply chains"
   },
 
   "debate": {
     "bullCase": {
       "summary": "Strong technical breakout with volume, AI catalyst, favorable macro shift",
-      "bestCase": "Target $225+ if AI revenue accelerates and Fed cuts rates",
-      "catalysts": ["M5 chip launch", "AI services revenue growth", "Fed rate cuts", "Buyback program"],
+      "bestCase": "Target $225+ if AI revenue accelerates and Fed maintains dovish stance",
+      "catalysts": ["AI services revenue acceleration", "Enterprise AI adoption", "Strong buyback program", "New product cycle"],
       "probability": 65
     },
     "bearCase": {
@@ -199,7 +205,7 @@ OUTPUT FORMAT — respond ONLY with valid JSON:
     "riskManager": {
       "confirmations": 3,
       "confirmationDetail": "Technical + Volume + Fundamental confirmed bullish",
-      "contradictions": ["Macro yield curve inversion vs technical bullish"],
+      "contradictions": ["Elevated rates vs strong earnings growth"],
       "riskReward": "1:3.2",
       "positionSize": "2.5% of portfolio",
       "maxRiskPerTrade": "1%",
@@ -234,7 +240,7 @@ OUTPUT FORMAT — respond ONLY with valid JSON:
     "timeframe": "swing trading",
     "riskReward": "1:3.2",
     "mainDrivers": ["AI chip catalyst", "Golden Cross confirmation", "Volume breakout", "Favorable macro shift"],
-    "riskFactors": ["Overbought RSI", "China regulatory risk", "Inverted yield curve", "Premium valuation"],
+    "riskFactors": ["Overbought RSI", "China regulatory risk", "Policy uncertainty", "Premium valuation"],
     "verdict": "BUY",
     "confidence": 72,
     "positionSize": "142 shares (~$27.7K) for 1% risk on $100K portfolio"
@@ -249,7 +255,7 @@ CRITICAL: Return ONLY pure JSON, no markdown code blocks, no comments outside JS
 
 // Stock profiles now imported from centralized market-data module
 
-function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: number) {
+function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: number, livePrice?: number | null) {
   const t = ticker.toUpperCase();
   const raw = getStock(t);
   const p = raw ? {
@@ -258,12 +264,13 @@ function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: n
     margin: raw.grossMargin, fcf: raw.fcf, debtEq: raw.debtEq,
     moat: raw.moat, analystTarget: raw.targetPrice, analystRating: raw.rating
   } : {
-    company: t + ' Corp', sector: 'Technology', price: 150 + Math.random() * 100,
+    company: t + ' Corp', sector: 'Technology', price: 0,
     pe: 25, fwdPE: 22, peg: 1.5, revGrowth: '10%', epsGrowth: '12%',
     margin: '35%', fcf: '5.0B', debtEq: 0.5, moat: 'NARROW', analystTarget: '180.00', analystRating: 'HOLD'
   };
 
-  const price = p.price;
+  // CRITICAL: Use live price if available, otherwise use market-data price
+  const price = (livePrice && livePrice > 0) ? livePrice : p.price;
   const isBullish = p.analystRating.includes('BUY');
   const bullProb = isBullish ? 60 + Math.floor(Math.random() * 15) : 35 + Math.floor(Math.random() * 15);
 
@@ -337,46 +344,51 @@ function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: n
       signal: p.analystRating.includes('BUY') ? 'BULLISH' : 'NEUTRAL',
       confidence: 55 + Math.floor(Math.random() * 25),
       revenue: { annual: '$' + (price * 2).toFixed(0) + 'B', growth: p.revGrowth, growth3Y: (parseFloat(p.revGrowth) + 2).toFixed(1) + '%', quarterly: (parseFloat(p.revGrowth) - 2).toFixed(1) + '%' },
-      eps: { current: (price / p.pe).toFixed(2), forward: (price / p.fwdPE).toFixed(2), growth: p.epsGrowth, surprises: [{ quarter: 'Q4 2024', surprise: '+3.8%' }] },
+      eps: { current: (price / p.pe).toFixed(2), forward: (price / p.fwdPE).toFixed(2), growth: p.epsGrowth, surprises: [{ quarter: 'Q1 2026', surprise: '+4.0%' }] },
       margins: { gross: p.margin, operating: (parseFloat(p.margin) * 0.65).toFixed(1) + '%', net: (parseFloat(p.margin) * 0.55).toFixed(1) + '%', trend: 'stable' },
       valuation: { pe: p.pe, forwardPE: p.fwdPE, peg: p.peg, ps: (p.pe * 0.25).toFixed(1), pb: (p.pe * 1.4).toFixed(1), evEbitda: (p.pe * 0.8).toFixed(1), vsSector: p.pe > 30 ? 'premium' : 'fair' },
       financialHealth: { debtEquity: p.debtEq, currentRatio: 1.05, freeCashFlow: '$' + p.fcf, rating: p.debtEq < 0.5 ? 'strong' : 'moderate' },
       moat: { type: p.moat, brandStrength: p.moat === 'WIDE' ? 9 : 5 },
-      nextEarnings: '2025-07-22',
+      nextEarnings: '2026-07-22',
       analystConsensus: { rating: p.analystRating, target: '$' + p.analystTarget, buy: 22, hold: 10, sell: 3 },
       whyMayFail: `Valuation ${p.pe > 30 ? 'premium' : 'fair'}, ${p.debtEq > 1 ? 'high leverage' : 'moderate debt'}, sector competition`
     },
     macro: {
       signal: 'BULLISH',
       confidence: 55 + Math.floor(Math.random() * 15),
-      interestRates: { fedRate: '5.25-5.50%', trend: 'expected_cuts', impact: 'positive' },
-      yieldCurve: { twoYear: '4.65%', tenYear: '4.25%', status: 'inverted', impact: 'caution' },
-      inflation: { cpi: '3.1%', trend: 'cooling', impact: 'positive' },
-      gdp: { growth: '2.5%', trend: 'stable', impact: 'neutral' },
+      interestRates: { fedRate: '3.63%', trend: 'cutting', impact: 'positive' },
+      yieldCurve: { twoYear: '3.80%', tenYear: '4.49%', status: 'normal', impact: 'positive' },
+      inflation: { cpi: '3.3%', coreCpi: '2.7%', trend: 'cooling', impact: 'neutral' },
+      gdp: { growth: '1.6%', trend: 'stable', impact: 'neutral' },
       fedStance: 'dovish',
-      dollarStrength: 'moderate',
-      keyFactors: ['Fed rate cuts expected Q3 2025', 'Cooling inflation supports growth', 'Strong labor market'],
-      sectorImpact: `${p.sector} benefits from expected rate cuts and stable GDP growth`,
-      whyMayFail: 'Inverted yield curve historically precedes recessions, geopolitical risks'
+      dollarStrength: 99.33,
+      dollarTrend: 'moderate',
+      keyFactors: ['Fed funds rate 3.63% — zbritje graduale nën kryesinë Kevin Warsh', 'Core CPI 2.7%, duke u afruar drejt targetit 2%', 'Treguesi DXY 99.33, dollar në nivel moderat', 'Unemployment 4.3%, tregu punës stabil', 'Yield curve NORMAL (2Y: 3.80% < 10Y: 4.49%)'],
+      sectorImpact: `${p.sector} përfiton nga norma të ulëta interesit dhe yield curve normal, GDP stabil 1.6%`,
+      whyMayFail: 'Rreziqe gjeopolitike (Iran, SHBA-Kinë), volatilitet prese eksportit AI chip'
     },
     newsGeopolitical: {
       signal: isBullish ? 'BULLISH' : 'NEUTRAL',
       confidence: 50 + Math.floor(Math.random() * 20),
       newsItems: [
-        { headline: `${p.company} reports strong quarterly results, beats estimates`, impactScore: 7, sentiment: 'positive', category: 'earnings' },
-        { headline: `${p.sector} sector sees increased institutional buying`, impactScore: 6, sentiment: 'positive', category: 'market' },
-        { headline: 'US-China trade negotiations ongoing, uncertainty remains', impactScore: 5, sentiment: 'negative', category: 'geopolitical' }
+        { headline: '7 fjalë nga kryetari i Fed Kevin Warsh që trembin Wall Street', impactScore: 8, sentiment: 'negative', category: 'policy', date: '2026-06-04' },
+        { headline: 'Broadcom (AVGO) bie për shitje të dobta software', impactScore: 7, sentiment: 'negative', category: 'earnings', date: '2026-06-04' },
+        { headline: 'SpaceX synon çmim IPO $135 me vlerësim $1.77 trillion', impactScore: 8, sentiment: 'positive', category: 'market', date: '2026-06-04' },
+        { headline: 'TSMC shefi ben investim të madh në AI, dëshiron të rrisë çmimet e çipave', impactScore: 6, sentiment: 'positive', category: 'industry', date: '2026-06-04' },
+        { headline: 'Berkshire Hathaway i dyfishon pozicionin në Google (GOOGL)', impactScore: 7, sentiment: 'positive', category: 'market', date: '2026-06-04' },
+        { headline: 'Lufta e Iran ekspozon pikat e dobëta në zinxhirin e furnizimit AI', impactScore: 6, sentiment: 'negative', category: 'geopolitical', date: '2026-06-03' }
       ],
-      geopoliticalRisks: ['US-China trade tensions', 'Fed policy uncertainty'],
+      geopoliticalRisks: ['Lufta e Iran dhe destabilizimi rajonal', 'Tensionet SHBA-Kinë tregtisë', 'Rregullimi i eksportit AI chip', 'Volatiliteti geopolitik në Lindjen e Mesme'],
       analystMoves: [{ firm: 'Goldman Sachs', action: isBullish ? 'Upgrade' : 'Hold', target: '$' + p.analystTarget }],
-      sentiment: isBullish ? 'cautiously_optimistic' : 'neutral',
-      whyMayFail: 'Escalation in trade tensions could impact sector significantly'
+      sentiment: 'cautiously_optimistic',
+      marketIndices: { sp500: 7553.68, nasdaq: 26853.98, dow: 50687.07, vix: 16.34 },
+      whyMayFail: 'Eskalimi i konfliktit në Iran mund të dëmtojë rëndë zinxhirët e furnizimit teknologjik'
     },
     debate: {
       bullCase: {
         summary: `Strong ${p.sector.toLowerCase()} sector momentum, favorable valuation relative to growth, upcoming catalysts`,
         bestCase: `Target $${(price * 1.15).toFixed(0)}+ if earnings accelerate and macro tailwinds continue`,
-        catalysts: [`Next earnings beat expected`, `${p.sector} sector rotation into growth`, 'Fed rate cuts supporting multiples', 'Institutional buying increasing'],
+        catalysts: [`Next earnings beat expected`, `${p.sector} sector rotation into growth`, 'Dovish Fed stance supporting valuations', 'Institutional buying increasing'],
         probability: bullProb
       },
       bearCase: {
@@ -388,7 +400,7 @@ function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: n
       riskManager: {
         confirmations,
         confirmationDetail: confirmations >= 3 ? `${confirmations} agents confirmed bullish direction` : 'Only 1-2 confirmations — insufficient for high-conviction trade',
-        contradictions: ['Macro yield curve inversion vs bullish technicals', 'Valuation vs growth debate'],
+        contradictions: ['Rate policy uncertainty vs bullish technicals', 'Valuation vs growth debate'],
         riskReward: `1:${rr}`,
         positionSize: `${((parseFloat(posCost) / 100000) * 100).toFixed(1)}% of portfolio`,
         maxRiskPerTrade: `${riskAmt}%`,
@@ -429,6 +441,8 @@ function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: n
   };
 }
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body: QuantRequest = await request.json();
@@ -438,7 +452,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ticker është i nevojshëm' }, { status: 400 });
     }
 
-    const userMessage = `Run the FULL multi-agent quant analysis for ${ticker.toUpperCase()}.
+    // ═══ FETCH REAL PRICE BEFORE AI CALL ═══
+    const tickerUpper = ticker.trim().toUpperCase();
+    const livePrice = await getRealPrice(tickerUpper);
+    const realPriceNum = livePrice ? livePrice.price : null;
+    console.log(`[QUANT] Real price for ${tickerUpper}:`, livePrice ? `$${livePrice.price} [${livePrice.source}]` : 'unavailable');
+
+    let userMessage = `Run the FULL multi-agent quant analysis for ${tickerUpper}.
 
 Configuration:
 - Universe: ${universe || 'sp500'} (S&P 500 high-liquidity stocks only)
@@ -457,6 +477,11 @@ Requirements:
 9. Include position sizing based on ${riskPerTrade || 1}% risk
 10. Each agent MUST include "whyMayFail"`;
 
+    // Inject real prices into prompt so AI uses them instead of hallucinating
+    if (livePrice) {
+      userMessage = injectPricesIntoPrompt(userMessage, { [tickerUpper]: livePrice });
+    }
+
     // Try real AI first, fall back to demo
     let content: string;
     try {
@@ -465,18 +490,25 @@ Requirements:
         userMessage,
         temperature: 0.2,
         maxTokens: 8000,
-        timeoutMs: 30000, // Shorter timeout for faster fallback
-        retries: 0,      // No retry — go straight to demo
+        timeoutMs: 30000,
+        retries: 0,
       });
     } catch (aiError) {
-      // AI unavailable — use demo data
-      console.log(`[DEMO MODE] AI unavailable for ${ticker}, using simulation data`);
-      const demo = generateDemoAnalysis(ticker.trim().toUpperCase(), timeframe || 'swing', riskPerTrade || 1);
+      // AI unavailable — use demo data with REAL price for ALL calculations
+      console.log(`[DEMO MODE] AI unavailable for ${tickerUpper}, using simulation with real price: $${realPriceNum || 'N/A'}`);
+      const demo = generateDemoAnalysis(tickerUpper, timeframe || 'swing', riskPerTrade || 1, realPriceNum);
+      if (livePrice && demo) {
+        demo.currentPrice = livePrice.price;
+      }
       return NextResponse.json({ analysis: demo, demo: true });
     }
 
-    const fallback = generateDemoAnalysis(ticker.trim().toUpperCase(), timeframe || 'swing', riskPerTrade || 1);
+    const fallback = generateDemoAnalysis(ticker.trim().toUpperCase(), timeframe || 'swing', riskPerTrade || 1, realPriceNum);
     const analysis = parseAIResponse(content, fallback);
+    // Force real price into AI response too
+    if (livePrice && analysis && typeof analysis === 'object' && 'currentPrice' in analysis) {
+      (analysis as Record<string, unknown>).currentPrice = livePrice.price;
+    }
 
     return NextResponse.json({ analysis });
   } catch (error: unknown) {

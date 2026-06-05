@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStock, getAllTickers, fetchLivePrices, getAllStocks } from '@/lib/market-data';
 
+export const maxDuration = 60;
+
 // GET /api/market-prices — fetches live prices with fallback to centralized data
 export async function GET(request: NextRequest) {
   try {

@@ -189,7 +189,7 @@ function AgentCard({ title, icon, signal, confidence, children, whyMayFail }: {
   signal: string;
   confidence: number;
   children: React.ReactNode;
-  whyMayFail: string;
+  whyMayFail?: string;
 }) {
   return (
     <Card className="border-border/50 bg-card/50">
@@ -264,18 +264,20 @@ export function QuantDashboard() {
     }
   };
 
+  const safeNum = (v: unknown, fallback = 0) => typeof v === 'number' && !isNaN(v) ? v : fallback;
+
   const scoringRadar = analysis ? [
-    { subject: 'Teknike', value: Math.abs(analysis.scoring?.technical?.weightedScore || 0) * 1.5 },
-    { subject: 'Fundamentale', value: Math.abs(analysis.scoring?.fundamental?.weightedScore || 0) * 2 },
-    { subject: 'Makro', value: Math.abs(analysis.scoring?.macro?.weightedScore || 0) * 2.5 },
-    { subject: 'Lajme/Geo', value: Math.abs(analysis.scoring?.newsGeopolitical?.weightedScore || 0) * 2.5 },
+    { subject: 'Teknike', value: Math.abs(safeNum(analysis.scoring?.technical?.weightedScore)) * 1.5 },
+    { subject: 'Fundamentale', value: Math.abs(safeNum(analysis.scoring?.fundamental?.weightedScore)) * 2 },
+    { subject: 'Makro', value: Math.abs(safeNum(analysis.scoring?.macro?.weightedScore)) * 2.5 },
+    { subject: 'Lajme/Geo', value: Math.abs(safeNum(analysis.scoring?.newsGeopolitical?.weightedScore)) * 2.5 },
   ] : [];
 
   const scoringBar = analysis ? [
-    { name: 'Teknike (35%)', score: analysis.scoring?.technical?.weightedScore || 0, max: 35, color: '#10b981' },
-    { name: 'Fundam. (25%)', score: analysis.scoring?.fundamental?.weightedScore || 0, max: 25, color: '#f59e0b' },
-    { name: 'Makro (20%)', score: analysis.scoring?.macro?.weightedScore || 0, max: 20, color: '#06b6d4' },
-    { name: 'Lajme (20%)', score: analysis.scoring?.newsGeopolitical?.weightedScore || 0, max: 20, color: '#8b5cf6' },
+    { name: 'Teknike (35%)', score: safeNum(analysis.scoring?.technical?.weightedScore), max: 35, color: '#10b981' },
+    { name: 'Fundam. (25%)', score: safeNum(analysis.scoring?.fundamental?.weightedScore), max: 25, color: '#f59e0b' },
+    { name: 'Makro (20%)', score: safeNum(analysis.scoring?.macro?.weightedScore), max: 20, color: '#06b6d4' },
+    { name: 'Lajme (20%)', score: safeNum(analysis.scoring?.newsGeopolitical?.weightedScore), max: 20, color: '#8b5cf6' },
   ] : [];
 
   return (
@@ -368,7 +370,20 @@ export function QuantDashboard() {
         </div>
       )}
 
-      {analysis && !isLoading && (
+      {analysis && !isLoading && (() => {
+        // Validate analysis has minimum required structure to prevent crashes
+        if (!analysis.ticker || !analysis.scoring || !analysis.final) {
+          return (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardContent className="py-6 text-center">
+                <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-amber-500" />
+                <p className="text-sm text-amber-500">Struktura e analizes eshte incomplete. Provo perseri.</p>
+                <Button variant="outline" size="sm" onClick={runAnalysis} className="mt-2">Riprovo</Button>
+              </CardContent>
+            </Card>
+          );
+        }
+        return (
         <div className="space-y-4">
           {/* Demo Banner */}
           {isDemo && (
@@ -383,9 +398,9 @@ export function QuantDashboard() {
 
           {/* FINAL VERDICT — Top Banner */}
           <Card className={`border-2 ${
-            analysis.final?.verdict?.toUpperCase().includes('BUY')
+            String(analysis.final?.verdict || '').toUpperCase().includes('BUY')
               ? 'border-emerald-500/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/10'
-              : analysis.final?.verdict?.toUpperCase().includes('SELL')
+              : String(analysis.final?.verdict || '').toUpperCase().includes('SELL')
                 ? 'border-red-500/50 bg-gradient-to-r from-red-500/10 to-rose-500/10'
                 : 'border-gray-500/50 bg-gradient-to-r from-gray-500/10 to-slate-500/10'
           }`}>
@@ -415,7 +430,7 @@ export function QuantDashboard() {
                   <p className="text-xs text-muted-foreground">Besueshmëria</p>
                   <p className="text-3xl font-bold">{analysis.final?.confidence}%</p>
                   <p className="text-xs text-muted-foreground">
-                    Score: {analysis.scoring?.totalScore?.toFixed(1)}
+                    Score: {safeNum(analysis.scoring?.totalScore).toFixed(1)}
                   </p>
                 </div>
               </div>
@@ -728,7 +743,7 @@ export function QuantDashboard() {
                     </div>
                   )}
                   {analysis.newsGeopolitical?.sentiment && (
-                    <p className="text-[10px] text-muted-foreground">Sentimenti: {analysis.newsGeopolitical.sentiment.replace(/_/g, ' ')}</p>
+                    <p className="text-[10px] text-muted-foreground">Sentimenti: {String(analysis.newsGeopolitical?.sentiment || '').replace(/_/g, ' ')}</p>
                   )}
                 </div>
               </AgentCard>
@@ -860,7 +875,8 @@ export function QuantDashboard() {
             </Card>
           )}
         </div>
-      )}
+      );
+    })()}
     </div>
   );
 }
