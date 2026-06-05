@@ -99,7 +99,7 @@ function SectorCard({ sector, onClickStock }: { sector: SectorData; onClickStock
       </CardHeader>
       <CardContent>
         <div className="space-y-1.5">
-          {sector.stocks.slice(0, 5).map((stock) => (
+          {sector.stocks.map((stock) => (
             <div
               key={stock.ticker}
               className="flex items-center justify-between p-2 rounded-lg bg-card/50 hover:bg-card transition-colors cursor-pointer group"
@@ -131,11 +131,7 @@ function SectorCard({ sector, onClickStock }: { sector: SectorData; onClickStock
               </div>
             </div>
           ))}
-          {sector.stocks.length > 5 && (
-            <p className="text-[10px] text-muted-foreground text-center mt-1">
-              + {sector.stocks.length - 5} të tjera...
-            </p>
-          )}
+
         </div>
       </CardContent>
     </Card>
