@@ -121,14 +121,14 @@ function drInt(ticker: string, index: number, min: number, max: number): number 
   return Math.round(dr(ticker, index, min, max));
 }
 
-// Generate 30 days of realistic candlestick data, deterministic per ticker
+// Generate ~130 days (6 months) of realistic candlestick data, deterministic per ticker
 function generateCandlestickData(ticker: string, basePrice: number, trend: 'uptrend' | 'downtrend' | 'sideways') {
   const data: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> = [];
   const today = new Date();
 
-  // Work backwards 30 days to find starting price
+  // Work backwards ~130 trading days (6 months)
   let price = basePrice;
-  const days = 30;
+  const days = 130;
 
   // First pass: calculate all closes working backwards
   const closes: number[] = [];

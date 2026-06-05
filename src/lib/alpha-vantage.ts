@@ -281,12 +281,12 @@ export async function fetchHistoricalData(ticker: string): Promise<HistoricalDat
     return cached.data;
   }
 
-  // Try Yahoo Finance v8 chart API with 1mo range
+  // Try Yahoo Finance v8 chart API with 6mo range
   const endpoints = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
 
   for (const base of endpoints) {
     try {
-      const url = `${base}/v8/finance/chart/${t}?range=1mo&interval=1d&includePrePost=false`;
+      const url = `${base}/v8/finance/chart/${t}?range=6mo&interval=1d&includePrePost=false`;
       const res = await fetch(url, {
         signal: AbortSignal.timeout(10000),
         headers: BROWSER_HEADERS,
