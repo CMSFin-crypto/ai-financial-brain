@@ -20,15 +20,16 @@ For each stock in each sector, provide:
 - quick technical note (1 sentence)
 - key catalyst (if any)
 
-Sectors to scan (Technology and Semiconductors have 10 stocks each, others have 5 = 50 total):
+Sectors to scan (Technology, Semiconductors and AI have 10 stocks each, others have 5 = 55 total):
 1. TECHNOLOGY (10): AAPL, MSFT, GOOGL, AMZN, META, CRM, NFLX, ADBE, NOW, ORCL
 2. SEMICONDUCTORS (10): NVDA, AVGO, AMD, INTC, QCOM, TXN, MU, MRVL, ON, LRCX
-3. HEALTHCARE: LLY, UNH, ISRG, VRTX, ABBV
-4. FINANCE: JPM, V, MA, GS, BLK
-5. ENERGY: XOM, CVX, COP, SLB, EOG
-6. INDUSTRY: CAT, GE, HON, UNP, ETN
-7. RETAIL: COST, WMT, TGT, HD, TJX
-8. DEFENSE: LMT, RTX, NOC, GD, LHX
+3. HEALTHCARE (10): LLY, UNH, ISRG, VRTX, ABBV, TMO, JNJ, MRK, ABT, PFE
+4. FINANCE (10): JPM, V, MA, GS, BLK, MS, SCHW, BAC, WFC, C
+5. ENERGY (10): XOM, CVX, COP, SLB, EOG, MPC, FANG, DVN, WFRD, PARR
+6. INDUSTRY (10): CAT, GE, HON, UNP, RTX, DE, UPS, ETN, BA
+7. RETAIL (5): COST, WMT, TGT, HD, TJX
+8. DEFENSE (3): NOC, GD, LHX
+9. AI (10): PLTR, AI, SMCI, SNOW, DDOG, ANET, ARM, CRWD, NET, HPE
 
 For each stock, give a QUICK multi-factor score combining:
 - Technical momentum (trend, volume, MA alignment)
@@ -260,7 +261,7 @@ export async function POST(request: NextRequest) {
 
     let userMessage = sector
       ? `Scan the ${sector.toUpperCase()} sector specifically. Return top ${count} stocks with full multi-factor analysis for each. Include market overview and sector trends.`
-      : `Perform a FULL market scan of ALL 8 sectors (Technology 10 stocks, Semiconductors 10 stocks, Healthcare 5, Finance 5, Energy 5, Industry 5, Retail 5, Defense 5). Return ALL stocks per sector with multi-factor scoring. Include overall market overview and sector rotation trends.`;
+      : `Perform a FULL market scan of       ? `Perform a FULL market scan of ALL 9 sectors. Include ALL 9: Technology, Semiconductors, Healthcare, Finance, Energy, Industry, Retail, Defense, AI. Return ALL stocks per sector. The AI sector has 10 stocks (PLTR, AI, SMCI, SNOW, DDOG, ANET, ARM, CRWD, NET, HPE). You MUST include the AI sector in response.`
 
     // Inject real prices into prompt
     if (Object.keys(livePrices).length > 0) {
