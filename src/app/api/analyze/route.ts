@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getRealPrices, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
+import { buildLearningContext, recordFromAIResponse } from '@/lib/ai-learning';
 
 interface AnalysisRequest {
   text: string;
@@ -56,7 +57,13 @@ You MUST respond ONLY with a valid JSON object in this exact format (no markdown
   "riskFactors": ["Risk 1", "Risk 2"]
 }
 
-Be thorough, specific, and professional. Use real companies with real ticker symbols. Your analysis should reflect actual market dynamics.`;
+Be thorough, specific, and professional. Use real companies with real ticker symbols. Your analysis should reflect actual market dynamics.
+
+IMPORTANT CALIBRATION RULES:
+- Default confidence should be 55-75% unless there is VERY strong evidence
+- Only give 80%+ confidence for clear catalyst events (earnings beat, FDA approval, etc.)
+- Always mention counter-arguments and risks
+- Prefer being correct over being bold`;
 
 // ═══════════════════════════════════════════
 // DEMO DATA — realistic simulation when AI is unreachable
@@ -151,6 +158,12 @@ export async function POST(request: NextRequest) {
       userMessage = injectPricesIntoPrompt(userMessage, livePrices);
     }
 
+    // ═══ INJECT LEARNED LESSONS ═══
+    const learningContext = await buildLearningContext();
+    if (learningContext) {
+      userMessage += `\n\n${learningContext}`;
+    }
+
     // Try real AI first, fall back to demo
     let content: string;
     try {
@@ -178,6 +191,28 @@ export async function POST(request: NextRequest) {
     };
 
     const analysis = parseAIResponse(content, fallback);
+
+    // ═══ RECORD PREDICTIONS FOR LEARNING ═══
+    if (analysis?.predictions && Array.isArray(analysis.predictions) && analysis.predictions.length > 0) {
+      try {
+        const tickers = analysis.predictions.map((p: { ticker: string }) => p.ticker);
+        const allPrices = { ...livePrices };
+        // Fetch prices for predicted tickers not already fetched
+        const missingTickers = tickers.filter((t: string) => !livePrices[t.toUpperCase()]);
+        if (missingTickers.length > 0 && missingTickers.length <= 6) {
+          const extraPrices = await getRealPrices(missingTickers);
+          Object.assign(allPrices, extraPrices);
+        }
+        await recordFromAIResponse('analyze', analysis.predictions.map((p: { ticker: string; company?: string; sector?: string; signal?: string; confidence?: number; reasoning?: string }) => ({
+          ...p,
+          currentPrice: allPrices[p.ticker?.toUpperCase()]?.price,
+        })));
+        console.log(`[ANALYZE] Recorded ${analysis.predictions.length} predictions for learning`);
+      } catch (learnErr) {
+        console.error('[ANALYZE] Failed to record predictions:', learnErr);
+      }
+    }
+
     return NextResponse.json({ analysis });
   } catch (error: unknown) {
     if (error instanceof AIError) {

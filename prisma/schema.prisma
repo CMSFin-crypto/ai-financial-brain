@@ -64,3 +64,55 @@ model WatchlistItem {
   note      String?
   createdAt DateTime @default(now())
 }
+
+// ═══════ AI LEARNING SYSTEM ═══════
+// Tracks predictions, evaluates accuracy, extracts lessons
+
+model Prediction {
+  id          String   @id @default(cuid())
+  source      String   // "analyze" | "daily-picks" | "sector-scan" | "technical"
+  ticker      String
+  company     String
+  sector      String
+  signal      String   // "BUY" | "SELL" | "HOLD" | "BULLISH" | "BEARISH" | "NEUTRAL"
+  confidence  Int      // 0-100
+  predictedAt DateTime @default(now())
+  predictedPrice Float?
+  targetPrice    Float?
+  stopLoss       Float?
+  timeframe      String?  // "short" | "medium" | "long"
+  reasoning      String?  // AI reasoning for this prediction
+  actualPrice    Float?
+  evaluatedAt    DateTime?
+  accuracy       Float?   // percentage accuracy: 0-100
+  wasCorrect     Boolean? // did the prediction play out?
+  lessonExtracted Boolean @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AILesson {
+  id          String   @id @default(cuid())
+  category    String   // "overconfidence" | "wrong_direction" | "timing" | "sector_bias" | "volatility" | "macro_miss"
+  ticker      String?  // specific ticker if applicable
+  sector      String?
+  mistake     String   // what went wrong
+  lesson      String   // what to do differently
+  severity    Int      // 1-5, how impactful the mistake was
+  timesApplied Int     @default(0) // how many times this lesson was referenced
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AIStats {
+  id              String   @id @default(cuid())
+  totalPredictions Int     @default(0)
+  correctPredictions Int   @default(0)
+  avgAccuracy      Float   @default(0)
+  bestSector       String?
+  worstSector      String?
+  streakCorrect    Int     @default(0)
+  streakWrong      Int     @default(0)
+  lessonsLearned   Int     @default(0)
+  updatedAt        DateTime @updatedAt
+}

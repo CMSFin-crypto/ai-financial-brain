@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStock } from '@/lib/market-data';
 import { getRealPrices, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
+import { buildLearningContext, recordFromAIResponse } from '@/lib/ai-learning';
 
 const SYSTEM_PROMPT = `You are an expert AI stock picker and market analyst. Generate today's top stock picks with detailed analysis.
 
@@ -43,7 +44,14 @@ You MUST respond ONLY with a valid JSON object (no markdown, no code blocks):
   "warnings": ["Any market warnings for today"]
 }
 
-Generate 5-6 top picks with strong potential. Include realistic price levels. Make picks across different sectors for diversification.`;
+Generate 5-6 top picks with strong potential. Include realistic price levels. Make picks across different sectors for diversification.
+
+IMPORTANT CALIBRATION RULES:
+- Default confidence should be 55-75% unless there is VERY strong evidence
+- Only give 80%+ confidence for clear catalyst events (earnings beat, FDA approval, etc.)
+- Always consider the current market trend before suggesting direction
+- Include stop-loss levels that make sense (2-5% from entry)
+- Prefer being correct over being bold`; 
 
 // ═══════════════════════════════════════════
 // DEMO DATA — realistic simulation when AI is unreachable
@@ -131,6 +139,12 @@ export async function GET() {
       userMessage = injectPricesIntoPrompt(userMessage, livePrices);
     }
 
+    // ═══ INJECT LEARNED LESSONS ═══
+    const learningContext = await buildLearningContext();
+    if (learningContext) {
+      userMessage += `\n\n${learningContext}`;
+    }
+
     // Try real AI first, fall back to demo
     let content: string;
     try {
@@ -159,13 +173,22 @@ export async function GET() {
 
     const picks = parseAIResponse(content, fallback);
 
-    // Force real prices into AI response for each pick
-    if (picks?.topPicks && Array.isArray(picks.topPicks)) {
-      for (const pick of picks.topPicks) {
-        const lp = livePrices[pick.ticker?.toUpperCase()];
-        if (lp) {
-          pick.currentPrice = lp.price;
-        }
+    // ═══ RECORD PICKS FOR LEARNING ═══
+    if (picks?.topPicks && Array.isArray(picks.topPicks) && picks.topPicks.length > 0) {
+      try {
+        await recordFromAIResponse('daily-picks', picks.topPicks.map((p: { ticker: string; company?: string; sector?: string; signal?: string; confidence?: number; currentPrice?: number; targetPrice?: number; technicalReason?: string }) => ({
+          ticker: p.ticker,
+          company: p.company,
+          sector: p.sector,
+          signal: p.signal,
+          confidence: p.confidence,
+          currentPrice: p.currentPrice,
+          targetPrice: p.targetPrice,
+          reasoning: p.technicalReason,
+        })));
+        console.log(`[DAILY PICKS] Recorded ${picks.topPicks.length} predictions for learning`);
+      } catch (learnErr) {
+        console.error('[DAILY PICKS] Failed to record predictions:', learnErr);
       }
     }
 

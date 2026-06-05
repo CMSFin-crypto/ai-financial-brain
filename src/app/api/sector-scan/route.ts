@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStocksBySector } from '@/lib/market-data';
 import { getRealPrices, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
+import { buildLearningContext, recordFromAIResponse } from '@/lib/ai-learning';
 
 interface SectorScanRequest {
   sector?: string;
@@ -68,7 +69,14 @@ Return ONLY valid JSON:
   ]
 }
 
-Make all data realistic and current. Return ONLY pure JSON.`;
+Make all data realistic and current. Return ONLY pure JSON.
+
+IMPORTANT CALIBRATION RULES:
+- Default confidence should be 55-75% unless there is VERY strong evidence
+- Only give 80%+ confidence for clear catalyst events
+- Verify trend direction before assigning BULLISH/BEARISH
+- Consider sector rotation and macro factors
+- Prefer being correct over being bold`;
 
 // ═══════════════════════════════════════════
 // DEMO DATA — realistic simulation when AI is unreachable
@@ -251,6 +259,12 @@ export async function POST(request: NextRequest) {
       userMessage = injectPricesIntoPrompt(userMessage, livePrices);
     }
 
+    // ═══ INJECT LEARNED LESSONS ═══
+    const learningContext = await buildLearningContext();
+    if (learningContext) {
+      userMessage += `\n\n${learningContext}`;
+    }
+
     // Try real AI first, fall back to demo
     let content: string;
     try {
@@ -275,6 +289,37 @@ export async function POST(request: NextRequest) {
     };
 
     const scan = parseAIResponse(content, fallback);
+
+    // ═══ RECORD SECTOR SCAN PREDICTIONS FOR LEARNING ═══
+    if (scan?.sectors && Array.isArray(scan.sectors)) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allPredictions: any[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const sector of scan.sectors as any[]) {
+          if (sector?.stocks && Array.isArray(sector.stocks)) {
+            for (const stock of sector.stocks) {
+              allPredictions.push({
+                ticker: stock.ticker,
+                company: stock.company,
+                sector: sector.name,
+                signal: stock.signal,
+                confidence: stock.confidence,
+                currentPrice: stock.price,
+                reasoning: stock.catalyst,
+              });
+            }
+          }
+        }
+        if (allPredictions.length > 0) {
+          await recordFromAIResponse('sector-scan', allPredictions);
+          console.log(`[SECTOR SCAN] Recorded ${allPredictions.length} predictions for learning`);
+        }
+      } catch (learnErr) {
+        console.error('[SECTOR SCAN] Failed to record predictions:', learnErr);
+      }
+    }
+
     return NextResponse.json({ scan });
   } catch (error: unknown) {
     if (error instanceof AIError) {
