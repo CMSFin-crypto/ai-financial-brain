@@ -299,6 +299,19 @@ export async function POST(request: NextRequest) {
 
     const scan = parseAIResponse(content, fallback);
 
+    // ═══ GUARANTEE AI SECTOR EXISTS ═══
+    if (scan?.sectors && Array.isArray(scan.sectors)) {
+      const hasAI = scan.sectors.some((s: { name?: string }) => s.name === 'AI');
+      if (!hasAI) {
+        console.log('[SECTOR SCAN] AI sector missing from AI response — injecting from demo data');
+        const demo = generateDemoSectorScan(livePrices);
+        const aiSector = demo.sectors.find(s => s.name === 'AI');
+        if (aiSector) {
+          scan.sectors.push(aiSector);
+        }
+      }
+    }
+
     // ═══ RECORD SECTOR SCAN PREDICTIONS FOR LEARNING ═══
     if (scan?.sectors && Array.isArray(scan.sectors)) {
       try {
