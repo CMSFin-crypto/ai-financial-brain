@@ -211,7 +211,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <QuantDashboard />
+              <QuantDashboard initialTicker={quantTicker} />
             </motion.div>
           </TabsContent>
 

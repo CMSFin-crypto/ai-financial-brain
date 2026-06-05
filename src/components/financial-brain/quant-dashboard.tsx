@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -217,7 +217,7 @@ function AgentCard({ title, icon, signal, confidence, children, whyMayFail }: {
   );
 }
 
-export function QuantDashboard() {
+export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
   const [ticker, setTicker] = useState('');
   const [universe, setUniverse] = useState('sp500');
   const [timeframe, setTimeframe] = useState('swing');
@@ -226,16 +226,31 @@ export function QuantDashboard() {
   const [analysis, setAnalysis] = useState<QuantResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const hasAutoAnalyzed = useRef<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     agents: true, debate: true, scoring: true, final: true,
   });
+
+  // Auto-analyze when initialTicker is set from Sector Scanner
+  useEffect(() => {
+    if (initialTicker && initialTicker !== hasAutoAnalyzed.current) {
+      hasAutoAnalyzed.current = initialTicker;
+      setTicker(initialTicker.toUpperCase());
+      // Run analysis on next tick after state updates
+      const timer = setTimeout(() => {
+        runAnalysisForTicker(initialTicker.toUpperCase());
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [initialTicker]);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const runAnalysis = async () => {
-    if (!ticker.trim()) return;
+  const runAnalysisForTicker = async (tickerSymbol?: string) => {
+    const sym = (tickerSymbol || ticker).trim().toUpperCase();
+    if (!sym) return;
     setIsLoading(true);
     setError(null);
     setAnalysis(null);
@@ -244,7 +259,7 @@ export function QuantDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ticker: ticker.trim().toUpperCase(),
+          ticker: sym,
           universe,
           timeframe,
           riskPerTrade: Number(riskPerTrade),
@@ -263,6 +278,8 @@ export function QuantDashboard() {
       setIsLoading(false);
     }
   };
+
+  const runAnalysis = () => runAnalysisForTicker();
 
   const safeNum = (v: unknown, fallback = 0) => typeof v === 'number' && !isNaN(v) ? v : fallback;
 
