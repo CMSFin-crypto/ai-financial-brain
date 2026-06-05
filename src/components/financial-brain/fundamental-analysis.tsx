@@ -21,6 +21,7 @@ import {
   BarChart3,
   PieChart,
 } from 'lucide-react';
+import { StockSearch } from './stock-search';
 import {
   RadarChart,
   Radar,
@@ -153,17 +154,18 @@ export function FundamentalAnalysis() {
   const [analysis, setAnalysis] = useState<FundamentalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const runAnalysis = async () => {
-    if (!ticker.trim()) return;
+  const runAnalysisForTicker = async (tickerSymbol?: string) => {
+    const sym = (tickerSymbol || ticker).trim().toUpperCase();
+    if (!sym) return;
+    setTicker(sym);
     setIsLoading(true);
     setError(null);
     setAnalysis(null);
-
     try {
       const res = await fetch('/api/fundamental-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: ticker.trim().toUpperCase() }),
+        body: JSON.stringify({ ticker: sym }),
       });
       const data = await res.json();
 
@@ -178,6 +180,8 @@ export function FundamentalAnalysis() {
       setIsLoading(false);
     }
   };
+
+  const runAnalysis = () => runAnalysisForTicker();
 
   // Radar chart data
   const getRadarData = () => {
@@ -196,16 +200,12 @@ export function FundamentalAnalysis() {
     <div className="space-y-4">
       {/* Search Bar */}
       <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Shkruaj ticker-in... p.sh. MSFT, GOOGL, AMZN"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === 'Enter' && runAnalysis()}
-            className="pl-9 h-10 text-sm"
-          />
-        </div>
+        <StockSearch
+          onSelect={(t) => runAnalysisForTicker(t)}
+          placeholder="Kërko ticker-in... MSFT, GOOGL, AMZN"
+          className="flex-1"
+          inputClassName="h-10 text-sm"
+        />
         <Button
           onClick={runAnalysis}
           disabled={isLoading || !ticker.trim()}

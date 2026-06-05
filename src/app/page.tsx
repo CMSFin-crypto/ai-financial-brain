@@ -20,6 +20,8 @@ import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
 import { TopMovers } from '@/components/financial-brain/top-movers';
+import { Watchlist } from '@/components/financial-brain/watchlist';
+import { AIChat } from '@/components/financial-brain/ai-chat';
 import {
   TrendingUp,
   TrendingDown,
@@ -37,6 +39,8 @@ import {
   Crosshair,
   Radar,
   Flame,
+  MessageSquare,
+  Eye,
 } from 'lucide-react';
 
 interface StockPrediction {
@@ -134,7 +138,11 @@ export default function Home() {
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 w-full h-auto p-1">
+          <TabsList className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-1 w-full h-auto p-1">
+            <TabsTrigger value="watchlist" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <Eye className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
+              Watchlist
+            </TabsTrigger>
             <TabsTrigger value="top-movers" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
               <Flame className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
               Top 5+5
@@ -167,7 +175,23 @@ export default function Home() {
               <ShoppingCart className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
               Trading
             </TabsTrigger>
+            <TabsTrigger value="chat" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <MessageSquare className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
+              AI Chat
+            </TabsTrigger>
           </TabsList>
+
+          {/* Tab: Watchlist */}
+          <TabsContent value="watchlist" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Watchlist />
+            </motion.div>
+          </TabsContent>
 
           {/* Tab: Top Movers */}
           <TabsContent value="top-movers" className="mt-4">
@@ -499,6 +523,29 @@ export default function Home() {
                 </CardContent>
               </Card>
               <PaperTrading />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: AI Chat */}
+          <TabsContent value="chat" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MessageSquare className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">AI Chat — Bisedë me Financial Brain</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Biseda konversacionale me AI. Pyet për çdo stock, koncept financiar, ose analizë tregu. Vendos ticker-in për kontekst shtesë të të dhënave të aksioneve.
+                  </p>
+                </CardContent>
+              </Card>
+              <AIChat />
             </motion.div>
           </TabsContent>
         </Tabs>

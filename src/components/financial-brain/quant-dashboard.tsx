@@ -42,6 +42,7 @@ import {
   ChevronUp,
   Gauge,
 } from 'lucide-react';
+import { StockSearch } from './stock-search';
 import {
   RadarChart,
   Radar,
@@ -303,16 +304,12 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
       <Card className="border-border/50 bg-card/50">
         <CardContent className="pt-4">
           <div className="flex flex-col lg:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Shkruaj ticker... AAPL, NVDA, MSFT..."
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && runAnalysis()}
-                className="pl-9 h-10 text-sm"
-              />
-            </div>
+            <StockSearch
+              onSelect={(t) => runAnalysisForTicker(t)}
+              placeholder="Kërko ticker... AAPL, NVDA, MSFT..."
+              className="flex-1"
+              inputClassName="h-10 text-sm"
+            />
             <div className="flex gap-2 flex-wrap">
               <Select value={universe} onValueChange={setUniverse}>
                 <SelectTrigger className="w-[130px] h-10 text-xs">

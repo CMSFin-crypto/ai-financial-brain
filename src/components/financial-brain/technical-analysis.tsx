@@ -9,14 +9,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   ResponsiveContainer,
   ComposedChart,
-  Line,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  Area,
+  Customized,
 } from 'recharts';
 import {
   BarChart3,
@@ -31,6 +30,7 @@ import {
   DollarSign,
   AlertTriangle,
 } from 'lucide-react';
+import { StockSearch } from './stock-search';
 
 interface CandleData {
   date: string;
@@ -101,8 +101,10 @@ export function TechnicalAnalysis() {
   const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const runAnalysis = async () => {
-    if (!ticker.trim()) return;
+  const runAnalysisForTicker = async (tickerSymbol?: string) => {
+    const sym = (tickerSymbol || ticker).trim().toUpperCase();
+    if (!sym) return;
+    setTicker(sym);
     setIsLoading(true);
     setError(null);
     setAnalysis(null);
@@ -111,7 +113,7 @@ export function TechnicalAnalysis() {
       const res = await fetch('/api/technical-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: ticker.trim().toUpperCase() }),
+        body: JSON.stringify({ ticker: sym }),
       });
       const data = await res.json();
 
@@ -126,6 +128,8 @@ export function TechnicalAnalysis() {
       setIsLoading(false);
     }
   };
+
+  const runAnalysis = () => runAnalysisForTicker();
 
   const getSignalIcon = (signal: string) => {
     const s = signal.toLowerCase();
@@ -157,16 +161,12 @@ export function TechnicalAnalysis() {
     <div className="space-y-4">
       {/* Search Bar */}
       <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Shkruaj ticker-in... p.sh. AAPL, TSLA, NVDA"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === 'Enter' && runAnalysis()}
-            className="pl-9 h-10 text-sm"
-          />
-        </div>
+        <StockSearch
+          onSelect={(t) => runAnalysisForTicker(t)}
+          placeholder="Kërko ticker-in... AAPL, TSLA, NVDA"
+          className="flex-1"
+          inputClassName="h-10 text-sm"
+        />
         <Button
           onClick={runAnalysis}
           disabled={isLoading || !ticker.trim()}
@@ -256,22 +256,22 @@ export function TechnicalAnalysis() {
             </CardContent>
           </Card>
 
-          {/* ═══ CHART — Price + Volume ═══ */}
+          {/* ═══ CHART — Candlestick + Volume ═══ */}
           {analysis.candlestickData && analysis.candlestickData.length > 0 && (
             <Card className="border-border/50 bg-card/50">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Activity className="w-4 h-4 text-emerald-500" />
-                  Grafiku i Çmimeve (30 ditë) dhe Volumit
+                  Candlestick Chart (30 ditë) + Volumi
                   {analysis.isRealChart && (
-                    <Badge variant="outline" className="text-[9px] border-blue-500/30 text-blue-400">Real Data</Badge>
+                    <Badge variant="outline" className="text-[9px] border-emerald-500/30 text-emerald-400">Real Data</Badge>
                   )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[320px]">
+                <div className="h-[360px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={analysis.candlestickData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <ComposedChart data={analysis.candlestickData} margin={{ top: 10, right: 60, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(v: string) => v.substring(5)} />
                       <YAxis yAxisId="price" domain={['auto', 'auto']} tick={{ fontSize: 10 }} />
@@ -287,20 +287,126 @@ export function TechnicalAnalysis() {
                           if (name === 'Volumi') return [`${(value / 1e6).toFixed(1)}M`, name];
                           return [`$${value.toFixed(2)}`, name];
                         }}
+                        content={({ payload, label }) => {
+                          if (!payload || payload.length === 0) return null;
+                          const d = payload[0]?.payload;
+                          if (!d) return null;
+                          const isUp = d.close >= d.open;
+                          return (
+                            <div className="bg-card border border-border rounded-lg p-2.5 shadow-lg text-[11px]">
+                              <p className="font-semibold mb-1">{label}</p>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                                <span className="text-muted-foreground">Hapurje:</span>
+                                <span className="text-right font-mono">${d.open?.toFixed(2)}</span>
+                                <span className="text-muted-foreground">Mbyllje:</span>
+                                <span className={`text-right font-mono ${isUp ? 'text-emerald-500' : 'text-red-500'}`}>${d.close?.toFixed(2)}</span>
+                                <span className="text-muted-foreground">High:</span>
+                                <span className="text-right font-mono text-emerald-400">${d.high?.toFixed(2)}</span>
+                                <span className="text-muted-foreground">Low:</span>
+                                <span className="text-right font-mono text-red-400">${d.low?.toFixed(2)}</span>
+                                <span className="text-muted-foreground">Volumi:</span>
+                                <span className="text-right font-mono">{((d.volume || 0) / 1e6).toFixed(1)}M</span>
+                              </div>
+                            </div>
+                          );
+                        }}
                       />
                       <Legend wrapperStyle={{ fontSize: '11px' }} />
-                      <Area yAxisId="price" type="monotone" dataKey="close" fill="url(#priceGradient)" stroke="#10b981" strokeWidth={2} name="Çmimi" />
-                      <Line yAxisId="price" type="monotone" dataKey="high" stroke="#22c55e" strokeWidth={1} strokeDasharray="3 3" dot={false} name="High" />
-                      <Line yAxisId="price" type="monotone" dataKey="low" stroke="#ef4444" strokeWidth={1} strokeDasharray="3 3" dot={false} name="Low" />
-                      <Bar yAxisId="volume" dataKey="volume" fill="hsl(var(--muted))" opacity={0.4} name="Volumi" />
-                      <defs>
-                        <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
+                      <Customized component={(props: any) => {
+                        const { formattedGraphicalItems, xAxisMap, yAxisMap, offset } = props;
+                        if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+
+                        const xAxis = Object.values(xAxisMap)[0] as any;
+                        const priceAxis = Object.values(yAxisMap)[0] as any;
+                        const volumeAxis = Object.values(yAxisMap)[1] as any;
+                        if (!xAxis || !priceAxis || !volumeAxis) return null;
+
+                        const data = analysis.candlestickData;
+                        const bandwidth = Math.max(
+                          (xAxis.bandSize || ((offset.width - 40) / data.length)) * 0.6,
+                          2
+                        );
+                        const barWidth = Math.max(bandwidth * 0.65, 1.5);
+                        const scaleX = xAxis.scale || xAxis.xScale;
+                        if (!scaleX) return null;
+
+                        const priceScale = priceAxis.scale;
+                        const volumeScale = volumeAxis.scale;
+
+                        return (
+                          <g>
+                            {data.map((d, i) => {
+                              const x = scaleX(d.date) - bandwidth / 2;
+                              const isUp = d.close >= d.open;
+
+                              // Candlestick body
+                              const bodyTop = priceScale(Math.max(d.open, d.close));
+                              const bodyBottom = priceScale(Math.min(d.open, d.close));
+                              const bodyHeight = Math.max(Math.abs(bodyBottom - bodyTop), 1);
+
+                              // Wick (high to low)
+                              const wickTop = priceScale(d.high);
+                              const wickBottom = priceScale(d.low);
+
+                              // Volume bar
+                              const volHeight = Math.max((volumeScale(d.volume) || 0), 0);
+                              const volBottom = volumeScale(0) || offset.top + offset.height;
+                              const volColor = isUp ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)';
+
+                              return (
+                                <g key={`candle-${i}`}>
+                                  {/* Volume bar at bottom */}
+                                  <rect
+                                    x={x}
+                                    y={volBottom - volHeight}
+                                    width={barWidth}
+                                    height={volHeight}
+                                    fill={volColor}
+                                    rx={1}
+                                  />
+                                  {/* Wick */}
+                                  <line
+                                    x1={x + bandwidth / 2}
+                                    y1={wickTop}
+                                    x2={x + bandwidth / 2}
+                                    y2={wickBottom}
+                                    stroke={isUp ? '#10b981' : '#ef4444'}
+                                    strokeWidth={1}
+                                  />
+                                  {/* Body */}
+                                  <rect
+                                    x={x + (bandwidth - barWidth) / 2}
+                                    y={bodyTop}
+                                    width={barWidth}
+                                    height={bodyHeight}
+                                    fill={isUp ? '#10b981' : '#ef4444'}
+                                    stroke={isUp ? '#10b981' : '#ef4444'}
+                                    strokeWidth={0.5}
+                                    rx={1}
+                                  />
+                                </g>
+                              );
+                            })}
+                          </g>
+                        );
+                      }} />
                     </ComposedChart>
                   </ResponsiveContainer>
+                </div>
+                {/* Legend explanation */}
+                <div className="flex items-center justify-center gap-4 mt-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm bg-emerald-500" />
+                    <span className="text-[10px] text-muted-foreground">Bullish (Çmimi u rrit)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm bg-red-500" />
+                    <span className="text-[10px] text-muted-foreground">Bearish (Çmimi u ul)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm bg-muted/40" />
+                    <span className="text-[10px] text-muted-foreground">Volumi</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>

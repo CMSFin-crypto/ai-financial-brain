@@ -56,13 +56,21 @@ model Trade {
 }
 
 model WatchlistItem {
-  id        String   @id @default(cuid())
-  sessionId String   @default("default")
-  ticker    String
-  company   String
-  sector    String
-  note      String?
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  sessionId   String   @default("default")
+  ticker      String
+  company     String
+  sector      String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  // Price alert
+  alertAbove  Float?
+  alertBelow  Float?
+  alertActive Boolean  @default(true)
+  alertedAt   DateTime?
+
+  @@unique([sessionId, ticker])
 }
 
 // ═══════ AI LEARNING SYSTEM ═══════
