@@ -191,7 +191,7 @@ export function SectorScanner({ onSelectStock }: { onSelectStock: (ticker: strin
             <SelectItem value="Healthcare">Shëndetësi</SelectItem>
             <SelectItem value="Finance">Financa</SelectItem>
             <SelectItem value="Energy">Energji</SelectItem>
-            <SelectItem value="Consumer Discretionary">Konsum</SelectItem>
+            <SelectItem value="Industry">Industri</SelectItem>
           </SelectContent>
         </Select>
         <Button

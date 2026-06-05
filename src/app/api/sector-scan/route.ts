@@ -25,7 +25,7 @@ Sectors to scan (10 stocks per sector = 60 total):
 3. HEALTHCARE: UNH, JNJ, LLY, ABBV, MRK, PFE, TMO, ABT, ISRG, VRTX
 4. FINANCE: JPM, BAC, GS, MS, V, MA, BLK, SCHW, C, WFC
 5. ENERGY: XOM, CVX, COP, SLB, EOG, MPC, PARR, FANG, DVN, WFRD
-6. CONSUMER DISCRETIONARY: TSLA, AMZN, HD, NKE, MCD, SBUX, TGT, LOW, F, GM
+6. INDUSTRY: CAT, GE, HON, UNP, RTX, LMT, DE, UPS, ETN, BA
 
 For each stock, give a QUICK multi-factor score combining:
 - Technical momentum (trend, volume, MA alignment)
