@@ -20,15 +20,15 @@ For each stock in each sector, provide:
 - quick technical note (1 sentence)
 - key catalyst (if any)
 
-Sectors to scan (Technology, Semiconductors and AI have 10 stocks each, others have 5 = 55 total):
+Sectors to scan (78 total stocks across 9 sectors):
 1. TECHNOLOGY (10): AAPL, MSFT, GOOGL, AMZN, META, CRM, NFLX, ADBE, NOW, ORCL
 2. SEMICONDUCTORS (10): NVDA, AVGO, AMD, INTC, QCOM, TXN, MU, MRVL, ON, LRCX
 3. HEALTHCARE (10): LLY, UNH, ISRG, VRTX, ABBV, TMO, JNJ, MRK, ABT, PFE
 4. FINANCE (10): JPM, V, MA, GS, BLK, MS, SCHW, BAC, WFC, C
 5. ENERGY (10): XOM, CVX, COP, SLB, EOG, MPC, FANG, DVN, WFRD, PARR
-6. INDUSTRY (10): CAT, GE, HON, UNP, RTX, DE, UPS, ETN, BA
+6. INDUSTRY (8): CAT, GE, HON, UNP, DE, UPS, ETN, BA
 7. RETAIL (5): COST, WMT, TGT, HD, TJX
-8. DEFENSE (3): NOC, GD, LHX
+8. DEFENSE (5): RTX, LMT, NOC, GD, LHX
 9. AI (10): PLTR, AI, SMCI, SNOW, DDOG, ANET, ARM, CRWD, NET, HPE
 
 For each stock, give a QUICK multi-factor score combining:
@@ -281,7 +281,7 @@ export async function POST(request: NextRequest) {
         systemPrompt: SYSTEM_PROMPT,
         userMessage,
         temperature: 0.3,
-        maxTokens: 6000,
+        maxTokens: 12000,
         timeoutMs: 30000,
         retries: 0,
       });
