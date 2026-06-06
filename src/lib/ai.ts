@@ -94,10 +94,10 @@ async function getAvailableModels(apiKey: string): Promise<string[]> {
 function sortModelsByPreference(models: string[]): string[] {
   // Priority tiers — models matching earlier patterns are preferred
   const tiers: Array<{ pattern: RegExp; priority: number }> = [
-    { pattern: /^gemini-3\.5-flash/, priority: 1 },      // Newest flash
-    { pattern: /^gemini-2\.5-flash$/, priority: 2 },       // Stable fast
-    { pattern: /^gemini-3-pro/, priority: 3 },              // New pro
-    { pattern: /^gemini-2\.5-pro$/, priority: 4 },         // Stable pro
+    { pattern: /^gemini-2\.5-flash/, priority: 1 },       // Preferred — smart & fast
+    { pattern: /^gemini-2\.5-pro/, priority: 2 },         // Stable pro
+    { pattern: /^gemini-3\.5-flash/, priority: 3 },      // Newest flash
+    { pattern: /^gemini-3-pro/, priority: 4 },            // New pro
     { pattern: /^gemini-3\.1-(pro|flash)/, priority: 5 },  // 3.1 family
     { pattern: /^gemini-3-flash/, priority: 6 },             // 3.0 flash
     { pattern: /^gemini-2\.0-flash-001/, priority: 7 },     // 2.0 variant (separate quota)
@@ -150,8 +150,8 @@ async function callGemini(
   }
 
   // PRIORITY 2: Try known working models directly (no discovery overhead)
-  // gemini-3.1-flash-lite-preview is confirmed working
-  const FAST_MODELS = ['gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-flash'];
+  // gemini-2.5-flash is the preferred model — smart, fast, good quality
+  const FAST_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3.5-flash', 'gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-lite'];
 
   let lastErr: Error | null = null;
   for (const model of FAST_MODELS) {
