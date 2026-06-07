@@ -14,10 +14,40 @@ interface Message {
   timestamp?: number;
 }
 
+const CHAT_STORAGE_KEY = 'ai-brain-chat-messages';
+const MAX_MESSAGES = 50;
+
+const WELCOME_MESSAGE: Message = {
+  role: 'assistant',
+  content: 'Përshëndetje! Jam AI Financial Brain. Mund t\'ju ndihmoj me analiza stoqesh, tregje, tendencë, dhe koncepte financiare. Çfarë dëshironi të dini?',
+  timestamp: Date.now(),
+};
+
+function loadChatMessages(): Message[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveChatMessages(messages: Message[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    const trimmed = messages.length > MAX_MESSAGES ? messages.slice(-MAX_MESSAGES) : messages;
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch {
+    // storage full
+  }
+}
+
 export function AIChat() {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Përshëndetje! Jam AI Financial Brain. Mund t\'ju ndihmoj me analiza stoqesh, tregje, tendencë, dhe koncepte financiare. Çfarë dëshironi të dini?', timestamp: Date.now() }
-  ]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = loadChatMessages();
+    return saved.length > 0 ? saved : [WELCOME_MESSAGE];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [ticker, setTicker] = useState('');
@@ -27,6 +57,11 @@ export function AIChat() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+  }, [messages]);
+
+  // Auto-save messages to localStorage
+  useEffect(() => {
+    saveChatMessages(messages);
   }, [messages]);
 
   const handleSend = async () => {
@@ -68,9 +103,8 @@ export function AIChat() {
   };
 
   const handleClear = () => {
-    setMessages([
-      { role: 'assistant', content: 'Biseda u fshi. Çfarë dëshironi të dini?', timestamp: Date.now() }
-    ]);
+    const fresh = [{ ...WELCOME_MESSAGE, timestamp: Date.now() }];
+    setMessages(fresh);
   };
 
   // Quick suggestion buttons

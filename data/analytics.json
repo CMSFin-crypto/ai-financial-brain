@@ -1,0 +1,49 @@
+{
+  "visits": [
+    {
+      "id": "1780859004509-5kp653",
+      "timestamp": "2026-06-07T19:03:24.509Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome"
+    },
+    {
+      "id": "1780861643342-amo7dn",
+      "timestamp": "2026-06-07T19:47:23.342Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome"
+    },
+    {
+      "id": "1780863005815-xd4k0s",
+      "timestamp": "2026-06-07T20:10:05.815Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome"
+    }
+  ]
+}

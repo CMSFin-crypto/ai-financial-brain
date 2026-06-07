@@ -135,7 +135,9 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string, liveP
   };
 
   // CRITICAL: Use live price if available, otherwise use market-data price
-  const effectivePrice = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+  // Guard: prevent $0 price
+  const rawPrice = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+  const effectivePrice = rawPrice > 0 ? rawPrice : 100;
 
   const valuationRating = p.pe > 50 ? 'OVERVALUED' : p.pe > 30 ? 'FAIRLY_VALUED' : 'UNDERVALUED';
   const profitRating = parseFloat(p.grossMargin) > 50 ? 'EXCELLENT' : parseFloat(p.grossMargin) > 30 ? 'GOOD' : 'AVERAGE';

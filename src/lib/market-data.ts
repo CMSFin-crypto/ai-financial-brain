@@ -1401,6 +1401,246 @@ const STOCKS: Record<string, StockProfile> = {
     position: 'Defense electronics lider me dominim në tactical communications dhe EW systems',
     signal: 'BULLISH', trend: 'uptrend',
   },
+
+  // ═══════ EXTRA — Stoke të kërkuara shpesh / të reja ═══════
+  VRT: {
+    ticker: 'VRT', company: 'Vertiv Holdings', sector: 'Industry', industry: 'Electrical Equipment/Power Management',
+    price: 82.50, change: 1.35, volume: '6.8M', marketCap: '$32B', shares: 388,
+    pe: 42.5, fwdPE: 32.8, peg: 1.8, ps: 3.2, pb: 8.5, evEbitda: 28.5, divYield: '0.00%',
+    grossMargin: '35.5%', opMargin: '18.5%', netMargin: '12.8%', roe: '28.5%', roa: '8.2%',
+    revGrowth: '18%', epsGrowth: '25%', revGrowth3Y: '15.5%', epsGrowth3Y: '22.5%',
+    qRevGrowth: '20%', qEpsGrowth: '28%',
+    currentRatio: 1.45, quickRatio: 0.95, debtEq: 1.85, debtAssets: 0.42,
+    fcf: '0.8B', eps: '1.94', fwdEps: '2.52',
+    moat: 'NARROW', brandStrength: 7,
+    rating: 'BUY', targetPrice: '100.00', lowTarget: '65.00', highTarget: '115.00',
+    buyCount: 18, holdCount: 8, sellCount: 2,
+    strengths: ['AI data center cooling lider', 'Power management rritje', 'Thermal solutions demand', 'Vertiv AI partnerships'],
+    weaknesses: ['Valuation premium', 'Debt i lartë pas aktrimite', 'Varësia nga data center capex'],
+    position: 'Lideri në thermal management dhe power supply për AI data center',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  WDC: {
+    ticker: 'WDC', company: 'Western Digital Corp', sector: 'Technology', industry: 'Data Storage',
+    price: 68.25, change: 0.85, volume: '5.5M', marketCap: '$21B', shares: 308,
+    pe: 18.5, fwdPE: 14.2, peg: 0.5, ps: 1.2, pb: 2.5, evEbitda: 8.5, divYield: '0.00%',
+    grossMargin: '28.5%', opMargin: '8.5%', netMargin: '5.2%', roe: '12.5%', roa: '4.8%',
+    revGrowth: '35%', epsGrowth: '85%', revGrowth3Y: '8.5%', epsGrowth3Y: '22.5%',
+    qRevGrowth: '42%', qEpsGrowth: '120%',
+    currentRatio: 2.15, quickRatio: 1.65, debtEq: 0.65, debtAssets: 0.28,
+    fcf: '0.5B', eps: '3.69', fwdEps: '4.81',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'BUY', targetPrice: '85.00', lowTarget: '50.00', highTarget: '100.00',
+    buyCount: 15, holdCount: 10, sellCount: 3,
+    strengths: ['NAND/HDD storage dual lider', 'AI data storage demand', 'Enterprise SSD rritje', 'Turnaround profitability'],
+    weaknesses: ['Ciklik shumë i fortë', 'Konkurrencë Seagate/Samsung', 'Detyrim borxh'],
+    position: 'Producenti #2 i storage me leverage në AI data center storage demand',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  GLW: {
+    ticker: 'GLW', company: 'Corning Inc.', sector: 'Technology', industry: 'Glass/Fiber Optics',
+    price: 42.85, change: 0.95, volume: '4.2M', marketCap: '$36B', shares: 841,
+    pe: 28.5, fwdPE: 22.2, peg: 1.5, ps: 3.5, pb: 3.8, evEbitda: 18.5, divYield: '2.85%',
+    grossMargin: '40.5%', opMargin: '18.5%', netMargin: '14.2%', roe: '28.5%', roa: '10.5%',
+    revGrowth: '12%', epsGrowth: '18%', revGrowth3Y: '8.5%', epsGrowth3Y: '12.5%',
+    qRevGrowth: '14%', qEpsGrowth: '20%',
+    currentRatio: 2.35, quickRatio: 1.65, debtEq: 0.45, debtAssets: 0.18,
+    fcf: '1.5B', eps: '1.50', fwdEps: '1.93',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '55.00', lowTarget: '38.00', highTarget: '62.00',
+    buyCount: 16, holdCount: 10, sellCount: 2,
+    strengths: ['Fiber optike AI data center demand', 'Gorilla Glass Apple/Samsung', 'GenAI cable rritje', 'Optical connectivity lider'],
+    weaknesses: ['Varësia nga disa klientë të mëdhenj', 'Legacy display business decline', 'Cyclicality'],
+    position: 'Lideri në fiber optike me ekspozim masiv në AI data center connectivity',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  ANSS: {
+    ticker: 'ANSS', company: 'Ansys Inc.', sector: 'Technology', industry: 'Engineering Software',
+    price: 355.80, change: 0.42, volume: '1.2M', marketCap: '$30B', shares: 84,
+    pe: 52.5, fwdPE: 42.8, peg: 3.2, ps: 12.5, pb: 12.5, evEbitda: 38.5, divYield: '0.00%',
+    grossMargin: '82.5%', opMargin: '35.2%', netMargin: '28.5%', roe: '18.5%', roa: '12.5%',
+    revGrowth: '8.5%', epsGrowth: '12%', revGrowth3Y: '7.5%', epsGrowth3Y: '10.8%',
+    qRevGrowth: '9.2%', qEpsGrowth: '13.5%',
+    currentRatio: 1.85, quickRatio: 1.55, debtEq: 0.35, debtAssets: 0.12,
+    fcf: '1.2B', eps: '6.78', fwdEps: '8.32',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'HOLD', targetPrice: '380.00', lowTarget: '300.00', highTarget: '420.00',
+    buyCount: 12, holdCount: 18, sellCount: 4,
+    strengths: ['CAE simulation monopolim', 'Cross-selling me Synopsys', 'Engineering SaaS', 'High switching cost'],
+    weaknesses: ['Vlerësim premium', 'Rritje organike e ngadalshme', 'Aktrimi Synopsys risk'],
+    position: 'Standardi në inxhinieri simulimi me rritje potenciale pas aktrimit Synopsys',
+    signal: 'NEUTRAL', trend: 'sideways',
+  },
+  CDNS: {
+    ticker: 'CDNS', company: 'Cadence Design Systems', sector: 'Technology', industry: 'EDA Software',
+    price: 325.50, change: 1.12, volume: '2.5M', marketCap: '$85B', shares: 261,
+    pe: 65.5, fwdPE: 48.2, peg: 3.0, ps: 15.5, pb: 18.5, evEbitda: 48.5, divYield: '0.00%',
+    grossMargin: '88.5%', opMargin: '32.5%', netMargin: '25.5%', roe: '22.5%', roa: '15.5%',
+    revGrowth: '15%', epsGrowth: '22%', revGrowth3Y: '12.5%', epsGrowth3Y: '18.5%',
+    qRevGrowth: '16.5%', qEpsGrowth: '24%',
+    currentRatio: 2.25, quickRatio: 1.85, debtEq: 0.25, debtAssets: 0.08,
+    fcf: '1.5B', eps: '4.97', fwdEps: '6.75',
+    moat: 'WIDE', brandStrength: 9,
+    rating: 'BUY', targetPrice: '360.00', lowTarget: '280.00', highTarget: '400.00',
+    buyCount: 22, holdCount: 8, sellCount: 1,
+    strengths: ['EDA software duopoly', 'IC design automation lider', 'System design expansion', 'AI chip design tailwind'],
+    weaknesses: ['Vlerësim premium', 'Rritje kërkon investim R&D të lartë', 'Varësia nga semiconductor cikll'],
+    position: 'EDA software lider #2 me rritje nga AI chip design wave',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  SNPS: {
+    ticker: 'SNPS', company: 'Synopsys Inc.', sector: 'Technology', industry: 'EDA Software',
+    price: 585.20, change: 0.88, volume: '1.8M', marketCap: '$92B', shares: 157,
+    pe: 62.5, fwdPE: 45.8, peg: 2.8, ps: 14.5, pb: 16.5, evEbitda: 45.5, divYield: '0.00%',
+    grossMargin: '85.5%', opMargin: '32.8%', netMargin: '25.8%', roe: '20.5%', roa: '14.2%',
+    revGrowth: '18%', epsGrowth: '28%', revGrowth3Y: '14.5%', epsGrowth3Y: '20.5%',
+    qRevGrowth: '19.5%', qEpsGrowth: '30%',
+    currentRatio: 2.45, quickRatio: 2.05, debtEq: 0.45, debtAssets: 0.15,
+    fcf: '2.0B', eps: '9.37', fwdEps: '12.78',
+    moat: 'WIDE', brandStrength: 9,
+    rating: 'BUY', targetPrice: '650.00', lowTarget: '520.00', highTarget: '720.00',
+    buyCount: 24, holdCount: 6, sellCount: 1,
+    strengths: ['EDA software lider #1', 'Silicon intellectual property', 'Ansys aktrimi synergies', 'AI verification demand'],
+    weaknesses: ['Vlerësim shumë i lartë', 'Ansys integration risk', 'Varësia nga semiconductor capex'],
+    position: 'Lideri absolut në EDA software me zgjerim në verification dhe IP',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  KLAC: {
+    ticker: 'KLAC', company: 'KLA Corp.', sector: 'Semiconductors', industry: 'Semiconductor Equipment',
+    price: 285.50, change: 1.65, volume: '1.8M', marketCap: '$105B', shares: 368,
+    pe: 38.5, fwdPE: 30.2, peg: 1.5, ps: 10.5, pb: 15.5, evEbitda: 32.5, divYield: '0.85%',
+    grossMargin: '52.5%', opMargin: '32.5%', netMargin: '28.2%', roe: '45.5%', roa: '18.5%',
+    revGrowth: '22%', epsGrowth: '30%', revGrowth3Y: '15.5%', epsGrowth3Y: '22.5%',
+    qRevGrowth: '24%', qEpsGrowth: '32%',
+    currentRatio: 4.25, quickRatio: 3.65, debtEq: 0.55, debtAssets: 0.15,
+    fcf: '2.5B', eps: '7.41', fwdEps: '9.45',
+    moat: 'WIDE', brandStrength: 9,
+    rating: 'BUY', targetPrice: '320.00', lowTarget: '250.00', highTarget: '360.00',
+    buyCount: 22, holdCount: 6, sellCount: 1,
+    strengths: ['Process control inspection monopolim', 'EUV/High-NA EUV check', 'AI chip quality demand', 'High-barrier entry'],
+    weaknesses: ['Çmimi premium', 'Varësia nga wafer fab spending', 'Konkurrencë Applied Materials'],
+    position: 'Monopoli në inspection/control procesi me AI chip manufacturing tailwind',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  AMAT: {
+    ticker: 'AMAT', company: 'Applied Materials Inc.', sector: 'Semiconductors', industry: 'Semiconductor Equipment',
+    price: 185.25, change: 1.28, volume: '5.2M', marketCap: '$152B', shares: 821,
+    pe: 25.5, fwdPE: 20.5, peg: 1.2, ps: 5.5, pb: 10.2, evEbitda: 18.5, divYield: '0.85%',
+    grossMargin: '48.5%', opMargin: '28.5%', netMargin: '22.5%', roe: '38.5%', roa: '15.2%',
+    revGrowth: '12%', epsGrowth: '18%', revGrowth3Y: '10.5%', epsGrowth3Y: '15.5%',
+    qRevGrowth: '14%', qEpsGrowth: '20%',
+    currentRatio: 2.85, quickRatio: 2.25, debtEq: 0.55, debtAssets: 0.18,
+    fcf: '4.2B', eps: '7.26', fwdEps: '9.04',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '225.00', lowTarget: '160.00', highTarget: '260.00',
+    buyCount: 20, holdCount: 8, sellCount: 2,
+    strengths: ['Deposition/etch equipment lider', 'Diversifikim gjeometrik', 'Display/glass expansion', 'AI chip kapitalizim'],
+    weaknesses: ['Ciklik me wafer fab spending', 'Varësia nga TSMC/Samsung', 'Geopolitik risk'],
+    position: 'Semiconductor equipment lider me diversifikim gjeometrik dhe AI tailwind',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  FI: {
+    ticker: 'FI', company: 'Fiserv Inc.', sector: 'Finance', industry: 'Fintech/Payments',
+    price: 185.50, change: 0.68, volume: '3.2M', marketCap: '$85B', shares: 458,
+    pe: 28.5, fwdPE: 22.8, peg: 1.8, ps: 5.5, pb: 3.5, evEbitda: 18.5, divYield: '0.55%',
+    grossMargin: '52.5%', opMargin: '28.5%', netMargin: '22.2%', roe: '18.5%', roa: '6.5%',
+    revGrowth: '8.5%', epsGrowth: '12%', revGrowth3Y: '7.5%', epsGrowth3Y: '10.2%',
+    qRevGrowth: '8.8%', qEpsGrowth: '11.5%',
+    currentRatio: 1.05, quickRatio: 0.92, debtEq: 1.25, debtAssets: 0.35,
+    fcf: '4.5B', eps: '6.51', fwdEps: '8.14',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '210.00', lowTarget: '165.00', highTarget: '240.00',
+    buyCount: 18, holdCount: 10, sellCount: 2,
+    strengths: ['Payment processing lider', 'First Data synergies', 'Merchant acquiring rritje', 'Fintech integration'],
+    weaknesses: ['Borxh i lartë pas Fiserv', 'Rritje organike e kufizuar', 'Konkurrencë FIS/Global Payments'],
+    position: 'Fintech/Payments lider me merchant services dhe payment processing scale',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  STX: {
+    ticker: 'STX', company: 'Seagate Technology', sector: 'Technology', industry: 'Data Storage',
+    price: 105.80, change: 1.15, volume: '3.8M', marketCap: '$22B', shares: 208,
+    pe: 15.5, fwdPE: 12.2, peg: 0.4, ps: 1.8, pb: 4.2, evEbitda: 7.5, divYield: '2.85%',
+    grossMargin: '32.5%', opMargin: '15.5%', netMargin: '12.2%', roe: '48.5%', roa: '15.5%',
+    revGrowth: '32%', epsGrowth: '65%', revGrowth3Y: '5.5%', epsGrowth3Y: '18.5%',
+    qRevGrowth: '38%', qEpsGrowth: '85%',
+    currentRatio: 2.15, quickRatio: 1.65, debtEq: 0.85, debtAssets: 0.32,
+    fcf: '1.2B', eps: '6.83', fwdEps: '8.68',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'BUY', targetPrice: '125.00', lowTarget: '80.00', highTarget: '145.00',
+    buyCount: 14, holdCount: 12, sellCount: 3,
+    strengths: ['HMB mass storage për AI', 'HAMR technology rritje', 'Enterprise HDD demand', 'Dividend i lartë'],
+    weaknesses: ['Ciklik shumë i fortë', 'Konkurrencë WDC', 'Varësia nga PC/data center'],
+    position: 'Producenti #1 i HDD me leverage në AI mass storage',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  MOD: {
+    ticker: 'MOD', company: 'Modine Manufacturing', sector: 'Industry', industry: 'Thermal Management',
+    price: 52.80, change: 2.85, volume: '2.2M', marketCap: '$3.2B', shares: 60,
+    pe: 55.5, fwdPE: 38.5, peg: 1.2, ps: 4.5, pb: 6.5, evEbitda: 35.5, divYield: '0.00%',
+    grossMargin: '32.5%', opMargin: '12.5%', netMargin: '8.5%', roe: '18.5%', roa: '6.5%',
+    revGrowth: '25%', epsGrowth: '45%', revGrowth3Y: '18.5%', epsGrowth3Y: '28.5%',
+    qRevGrowth: '28%', qEpsGrowth: '52%',
+    currentRatio: 2.15, quickRatio: 1.45, debtEq: 0.55, debtAssets: 0.22,
+    fcf: '0.1B', eps: '0.95', fwdEps: '1.37',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'BUY', targetPrice: '65.00', lowTarget: '38.00', highTarget: '78.00',
+    buyCount: 10, holdCount: 8, sellCount: 2,
+    strengths: ['AI data center cooling demand', 'Liquid cooling technology', 'EV thermal solutions', 'Rritje eksplozive'],
+    weaknesses: ['Çmimi shumë i lartë', 'Profitabilitet i ulët', 'Rreziku i bubble AI cooling'],
+    position: 'Pure-play AI cooling stock me rritje dramatike nga data center thermal demand',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  SNDK: {
+    ticker: 'SNDK', company: 'SanDisk Corporation', sector: 'Technology', industry: 'Data Storage/Flash Memory',
+    price: 78.50, change: 0.65, volume: '3.2M', marketCap: '$16B', shares: 204,
+    pe: 22.5, fwdPE: 18.2, peg: 0.8, ps: 2.8, pb: 4.5, evEbitda: 14.5, divYield: '0.65%',
+    grossMargin: '38.5%', opMargin: '15.5%', netMargin: '12.2%', roe: '18.5%', roa: '8.2%',
+    revGrowth: '12%', epsGrowth: '18%', revGrowth3Y: '8.5%', epsGrowth3Y: '14.5%',
+    qRevGrowth: '14%', qEpsGrowth: '20%',
+    currentRatio: 2.55, quickRatio: 1.95, debtEq: 0.45, debtAssets: 0.18,
+    fcf: '1.2B', eps: '3.85', fwdEps: '4.32',
+    moat: 'NARROW', brandStrength: 7,
+    rating: 'BUY', targetPrice: '95.00', lowTarget: '65.00', highTarget: '110.00',
+    buyCount: 14, holdCount: 10, sellCount: 3,
+    strengths: ['Flash memory/storage teknologji lider', 'Enterprise SSD rritje', '4D NAND innovation', 'AI data storage demand'],
+    weaknesses: ['Konkurrencë e ashpër storage', 'Ciklik me semiconductor', 'Margin pressure'],
+    position: 'Producenti kryesor i memorjes flash me leverage në AI data storage',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  VST: {
+    ticker: 'VST', company: 'Vistra Energy Corp.', sector: 'Energy', industry: 'Power Generation',
+    price: 78.50, change: -0.85, volume: '5.5M', marketCap: '$22B', shares: 280,
+    pe: 15.5, fwdPE: 13.2, peg: 0.5, ps: 1.2, pb: 3.2, evEbitda: 8.5, divYield: '0.00%',
+    grossMargin: '42.5%', opMargin: '22.5%', netMargin: '15.8%', roe: '22.5%', roa: '8.5%',
+    revGrowth: '8.5%', epsGrowth: '15%', revGrowth3Y: '5.5%', epsGrowth3Y: '10.2%',
+    qRevGrowth: '9.2%', qEpsGrowth: '12.5%',
+    currentRatio: 1.85, quickRatio: 1.35, debtEq: 1.85, debtAssets: 0.52,
+    fcf: '1.5B', eps: '5.06', fwdEps: '5.95',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'BUY', targetPrice: '95.00', lowTarget: '60.00', highTarget: '110.00',
+    buyCount: 14, holdCount: 10, sellCount: 3,
+    strengths: ['AI data center power demand', 'Combined cycle efikasitet', 'Texas power market leverage', 'Coal-to-gas transformation'],
+    weaknesses: ['Varësia nga regjullore energjie', 'Debt i lartë', 'Commodity price risk'],
+    position: 'Power generator me leverage masiv në AI data center electricity demand',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  CEG: {
+    ticker: 'CEG', company: 'Constellation Energy', sector: 'Energy', industry: 'Nuclear Power Generation',
+    price: 215.80, change: 1.25, volume: '3.8M', marketCap: '$52B', shares: 241,
+    pe: 28.5, fwdPE: 22.8, peg: 1.5, ps: 3.5, pb: 6.8, evEbitda: 18.5, divYield: '0.55%',
+    grossMargin: '48.5%', opMargin: '28.5%', netMargin: '18.5%', roe: '15.5%', roa: '6.8%',
+    revGrowth: '12%', epsGrowth: '18%', revGrowth3Y: '8.5%', epsGrowth3Y: '12.5%',
+    qRevGrowth: '14%', qEpsGrowth: '22%',
+    currentRatio: 1.35, quickRatio: 0.95, debtEq: 2.85, debtAssets: 0.58,
+    fcf: '2.2B', eps: '7.57', fwdEps: '9.46',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '260.00', lowTarget: '180.00', highTarget: '300.00',
+    buyCount: 18, holdCount: 8, sellCount: 2,
+    strengths: ['Largest US nuclear operator', 'AI data center PPAs', 'Microsoft Three Mile Island deal', 'Zero-carbon premium'],
+    weaknesses: ['Varësia nga rregullore', 'Debt i lartë pas aktrimite', 'Nuclear risk perceptions'],
+    position: 'Operatori më i madh bërthamor në SHBA me leverage unik AI data center clean energy',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
 };
 
 // ═══════════════════════════════════════════════════
@@ -1411,6 +1651,103 @@ export function getStock(ticker: string): StockProfile | undefined {
   return STOCKS[ticker.toUpperCase()];
 }
 
+// Runtime cache for dynamically fetched stocks (not in hardcoded STOCKS)
+const DYNAMIC_STOCKS = new Map<string, StockProfile>();
+
+/**
+ * Get or create a StockProfile for ANY ticker.
+ * First checks hardcoded STOCKS, then runtime cache, then fetches from Yahoo Finance.
+ */
+export async function getOrCreateStock(ticker: string): Promise<StockProfile | undefined> {
+  const upper = ticker.toUpperCase();
+  
+  // 1. Check hardcoded database
+  const staticStock = STOCKS[upper];
+  if (staticStock) return staticStock;
+  
+  // 2. Check runtime cache (30 min TTL)
+  const cached = DYNAMIC_STOCKS.get(upper);
+  if (cached) return cached;
+  
+  // 3. Fetch from Yahoo Finance and build profile
+  try {
+    const { getRealPrice } = await import('./alpha-vantage');
+    const liveData = await getRealPrice(upper);
+
+    // Also try to get company name from Yahoo Finance search
+    let companyName = `${upper} Corp`;
+    try {
+      const searchRes = await fetch(
+        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(upper)}&quotesCount=1&newsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query`,
+        {
+          signal: AbortSignal.timeout(5000),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+        }
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const quotes = searchData?.quotes || [];
+        const exactMatch = quotes.find((q: any) => q.symbol?.toUpperCase() === upper);
+        if (exactMatch) {
+          companyName = exactMatch.longname || exactMatch.shortname || `${upper} Corp`;
+        }
+      }
+    } catch {
+      // Best effort — keep default name
+    }
+    
+    if (liveData && liveData.price > 0) {
+      const dynamicProfile: StockProfile = {
+        ticker: upper,
+        company: companyName,
+        sector: 'Technology',
+        industry: 'General',
+        price: liveData.price,
+        change: liveData.change,
+        volume: liveData.volume > 0 ? `${(liveData.volume / 1000000).toFixed(1)}M` : 'N/A',
+        marketCap: 'N/A',
+        pe: 0, fwdPE: 0, peg: 0, ps: 0, pb: 0, evEbitda: 0,
+        divYield: 'N/A',
+        grossMargin: 'N/A', opMargin: 'N/A', netMargin: 'N/A',
+        roe: 'N/A', roa: 'N/A',
+        revGrowth: 'N/A', epsGrowth: 'N/A', revGrowth3Y: 'N/A', epsGrowth3Y: 'N/A',
+        qRevGrowth: 'N/A', qEpsGrowth: 'N/A',
+        currentRatio: 0, quickRatio: 0, debtEq: 0, debtAssets: 0,
+        fcf: 'N/A', eps: 'N/A', fwdEps: 'N/A',
+        moat: 'NONE',
+        brandStrength: 0,
+        rating: 'HOLD',
+        targetPrice: 'N/A', lowTarget: 'N/A', highTarget: 'N/A',
+        buyCount: 0, holdCount: 0, sellCount: 0,
+        strengths: ['Treg aktiv — çmimi live'],
+        weaknesses: ['Pa analizë e detajuar fundamental'],
+        position: `Aksion i kërkuar nga përdoruesi me çmim live $${liveData.price.toFixed(2)}`,
+        signal: liveData.change >= 1 ? 'BULLISH' : liveData.change <= -1 ? 'BEARISH' : 'NEUTRAL',
+        trend: liveData.change >= 1 ? 'uptrend' : liveData.change <= -1 ? 'downtrend' : 'sideways',
+        shares: 0,
+      };
+      
+      DYNAMIC_STOCKS.set(upper, dynamicProfile);
+      // Auto-evict after 30 minutes
+      setTimeout(() => DYNAMIC_STOCKS.delete(upper), 30 * 60 * 1000);
+      
+      console.log(`[DYNAMIC STOCK] Created profile for ${upper}: $${liveData.price.toFixed(2)}`);
+      return dynamicProfile;
+    }
+  } catch (err) {
+    console.error(`[DYNAMIC STOCK] Failed to fetch ${upper}:`, err);
+  }
+  
+  return undefined;
+}
+
+/**
+ * Synchronous getStock — returns undefined for unknown tickers.
+ * For async dynamic lookup, use getOrCreateStock instead.
+ */
 export function getStockPrice(ticker: string): number {
   const stock = STOCKS[ticker.toUpperCase()];
   return stock ? stock.price : 0;

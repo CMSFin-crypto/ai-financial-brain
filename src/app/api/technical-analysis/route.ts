@@ -6,6 +6,7 @@ import { getRealPrice, injectPricesIntoPrompt, fetchHistoricalData } from '@/lib
 interface TechnicalAnalysisRequest {
   ticker: string;
   company?: string;
+  range?: string;
 }
 
 const SYSTEM_PROMPT = `You are an expert technical analyst. Analyze the given stock using technical analysis principles.
@@ -192,7 +193,9 @@ function generateDemoTechnicalAnalysis(ticker: string, company?: string, livePri
   };
 
   // CRITICAL: Use live price if available, otherwise use market-data price
-  const price = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+  // Guard: prevent $0 price
+  const rawPrice = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+  const price = rawPrice > 0 ? rawPrice : 100;
   const prevClose = +(price * (1 - dr(ticker, 1, 0.005, 0.02))).toFixed(2);
   const priceChange = +((price - prevClose) / prevClose * 100).toFixed(2);
 
@@ -446,7 +449,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: TechnicalAnalysisRequest = await request.json();
-    const { ticker } = body;
+    const { ticker, range: userRange } = body;
+    const range = userRange || '1mo';
 
     if (!ticker || ticker.trim().length < 1) {
       return NextResponse.json({ error: 'Ticker është i nevojshëm' }, { status: 400 });
@@ -457,7 +461,7 @@ export async function POST(request: NextRequest) {
     // ═══ PARALLEL: Fetch real price + real historical chart data ═══
     const [livePrice, realChartData] = await Promise.all([
       getRealPrice(tickerUpper),
-      fetchHistoricalData(tickerUpper),
+      fetchHistoricalData(tickerUpper, range),
     ]);
 
     const realPriceNum = livePrice ? livePrice.price : null;

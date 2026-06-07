@@ -1,8 +1,9 @@
 'use client';
 
 import Image from 'next/image';
-import { Activity, Brain, Sparkles } from 'lucide-react';
+import { Activity, Brain, Sparkles, Sun, Moon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTheme } from 'next-themes';
 
 interface LearningStats {
   totalPredictions: number;
@@ -19,6 +20,7 @@ interface LearningStats {
 export function Header() {
   const [stats, setStats] = useState<LearningStats | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     // Fetch AI learning stats
@@ -174,6 +176,14 @@ export function Header() {
             </div>
           )}
 
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border px-3 py-1.5 rounded-full cursor-pointer hover:bg-muted transition-colors"
+            aria-label="Ndrysho temën"
+          >
+            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            <span>{theme === 'dark' ? 'E ndritshme' : 'E errët'}</span>
+          </button>
           <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full">
             <Activity className="w-3.5 h-3.5 text-emerald-500" />
             <span>Në Kohë Reale</span>

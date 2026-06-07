@@ -38,6 +38,7 @@ const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY || '';
 const YAHOO_ENDPOINTS = [
   'https://query1.finance.yahoo.com',
   'https://query2.finance.yahoo.com',
+  'https://query1.finance.yahoo.com', // Retry first endpoint
 ];
 
 // Common browser headers to avoid being blocked
@@ -272,21 +273,26 @@ export function buildPriceContext(prices: Record<string, LivePrice>): string {
  * Fetch 30-day historical chart data from Yahoo Finance.
  * Returns real OHLCV data for charting.
  */
-export async function fetchHistoricalData(ticker: string): Promise<HistoricalDataPoint[] | null> {
+export async function fetchHistoricalData(ticker: string, range?: string): Promise<HistoricalDataPoint[] | null> {
   const t = ticker.toUpperCase().trim();
+  const r = range || '6mo';
 
-  // Check cache first
-  const cached = chartCache.get(t);
+  // Determine interval based on range
+  const interval = r === '1d' ? '5m' : '1d';
+
+  // Check cache first (include range in cache key)
+  const cacheKey = `${t}_${r}`;
+  const cached = chartCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
     return cached.data;
   }
 
-  // Try Yahoo Finance v8 chart API with 6mo range
+  // Try Yahoo Finance v8 chart API with specified range
   const endpoints = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
 
   for (const base of endpoints) {
     try {
-      const url = `${base}/v8/finance/chart/${t}?range=6mo&interval=1d&includePrePost=false`;
+      const url = `${base}/v8/finance/chart/${t}?range=${r}&interval=${interval}&includePrePost=false`;
       const res = await fetch(url, {
         signal: AbortSignal.timeout(10000),
         headers: BROWSER_HEADERS,
@@ -327,7 +333,7 @@ export async function fetchHistoricalData(ticker: string): Promise<HistoricalDat
 
       if (points.length >= 15) {
         console.log(`[CHART] ${t}: fetched ${points.length} days of real data from ${base}`);
-        chartCache.set(t, { data: points, fetchedAt: Date.now() });
+        chartCache.set(cacheKey, { data: points, fetchedAt: Date.now() });
         return points;
       }
     } catch (err: any) {

@@ -91,3 +91,72 @@ Stage Summary:
 - 4 skedarë u ndryshuan: page.tsx, header.tsx, market-ticker-bar.tsx, daily-picks.tsx
 - Kategorizim vizual me 3 ngjyra (emerald, blue, violet)
 - Lexueshmëria u përmirësua ndjeshëm me font më të mëdha dhe përshkrime më të thjeshta
+---
+Task ID: 1
+Agent: Main Agent
+Task: Add detailed stock ratings (Strong Buy, Buy, Hold, Sell, Strong Sell) with expandable evaluation cards to Sector Scanner
+
+Work Log:
+- Analyzed current sector-scan code: only showed BULLISH/BEARISH/NEUTRAL signals with tiny score bars
+- Updated API system prompt to request comprehensive per-stock ratings (5-level system)
+- Added fields: rating, entryPrice, targetPrice, stopLoss, upside, riskReward, reasoning, keyRisks
+- Updated demo data with realistic calculated values for all new fields
+- Rewrote sector-scanner.tsx with:
+  - StockRatingBadge component (5-level: Strong Buy, Buy, Hold, Sell, Strong Sell)
+  - Expandable stock rows with animated detail panels (AnimatePresence)
+  - Price targets grid (Entry, Target, Stop Loss, Risk/Reward)
+  - Confidence and score bars
+  - Technical + Fundamental analysis sections
+  - Catalyst tracking
+  - Detailed reasoning section ("Përse Strong Buy?")
+  - Key risks section with warning indicators
+  - Rating summary per sector header
+  - Rating legend at top of page
+  - Stocks sorted by score within each sector
+- Build verified successful, pushed to GitHub
+
+Stage Summary:
+- 2 files changed, 479 insertions, 69 deletions
+- Commit: f81d109 pushed to main
+- Vercel deployment will pick up automatically
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add short-term predictions (1-3 days + weekly forecasts) to stock evaluations
+
+Work Log:
+- Added prediction field to sector-scan API system prompt with shortTerm (1-3 days) and weekly forecasts
+- Each prediction includes: direction (UP/DOWN/SIDEWAYS), expectedMove %, confidence, explanatory note
+- Weekly predictions include keyEvents array for upcoming events (earnings, Fed, conferences)
+- Updated DemoStock interface and mapStockToDemo to generate realistic prediction data
+- Added prediction UI section in sector-scanner.tsx with:
+  - Gradient panel (indigo-to-purple) at top of expanded stock detail
+  - Clock icon + "1-3 Ditë" section with short-term direction and move
+  - Calendar icon + "Java e ardhme" section with weekly forecast
+  - Event badges for upcoming key events
+  - Color-coded arrows: green ↑ UP, red ↓ DOWN, amber → SIDEWAYS
+- Build verified, pushed to GitHub
+
+Stage Summary:
+- Commit: 7c05a8d pushed to main
+- 2 files changed, 170 insertions, 3 deletions
+---
+Task ID: 1
+Agent: main
+Task: Add SNDK + make ANY stock searchable and analyzable
+
+Work Log:
+- Verified SNDK already exists in market-data.ts (line 1593) with full profile data
+- Confirmed quant-analyze, technical-analysis, fundamental-analysis APIs already work with ANY ticker (AI analyzes any ticker, demo fallback uses defaults for unknown tickers)
+- Updated Global Search (global-search.tsx): Now ALWAYS shows "ANALIZO {TICKER}" button at bottom of results, regardless of local/external matches. Uses Sparkles icon with emerald styling and Albanian text "Çdo ticker US është i analizueshëm"
+- Updated Stock Search (stock-search.tsx): Added visual hint "Çdo ticker US mund të analizohet — shtyp Enter" below input. Verified Enter key already works for any ticker.
+- Improved getOrCreateStock (market-data.ts): Added Yahoo Finance company name lookup for dynamic stocks. Now shows "Tesla, Inc." instead of "TSLA Corp" for unknown tickers. Uses v1/finance/search API with 5s timeout and exact symbol matching.
+- Build succeeded (Next.js 16, 24 routes)
+- Pushed to GitHub (Vercel will auto-deploy from git)
+
+Stage Summary:
+- SNDK confirmed in database (was already added previously)
+- ANY US ticker can now be analyzed via Global Search (⌘K) or inline search
+- Dynamic stock profiles now get real company names from Yahoo Finance
+- Git commit: 5a77eb0 pushed to main

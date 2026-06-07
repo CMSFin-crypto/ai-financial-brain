@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { StockSearch } from './stock-search';
 import { getStock } from '@/lib/market-data';
+import { toast } from 'sonner';
 
 const STORAGE_KEY = 'ai-brain-watchlist';
 
@@ -105,6 +106,18 @@ export function Watchlist() {
         if (item.alertActive && !item.alertedAt) {
           if (item.alertAbove && newPrice >= item.alertAbove) triggered = true;
           if (item.alertBelow && newPrice <= item.alertBelow) triggered = true;
+        }
+
+        // Fire toast for new alerts
+        if (triggered && !item.alertedAt) {
+          toast.warning(`${item.ticker} alert: $${newPrice.toFixed(2)}`, {
+            description: item.alertAbove && newPrice >= item.alertAbove
+              ? `Ka kaluar $${item.alertAbove}`
+              : item.alertBelow && newPrice <= item.alertBelow
+                ? `Ka ra nën $${item.alertBelow}`
+                : 'Alert i aktivizuar',
+            duration: 6000,
+          });
         }
 
         return {
