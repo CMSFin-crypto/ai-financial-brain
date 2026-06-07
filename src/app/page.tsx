@@ -53,34 +53,6 @@ export default function Home() {
       <GlobalSearch onSelectStock={(ticker) => { setQuantTicker(ticker); setActiveTab('quant'); }} />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
-        {/* Hero Section */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-violet-500/10 border border-emerald-500/20 p-6 sm:p-8"
-        >
-          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-            <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-              <Brain className="w-7 h-7 text-emerald-500" />
-            </div>
-            <div className="text-center sm:text-left space-y-1.5">
-              <div className="flex items-center justify-center sm:justify-start gap-2">
-                <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
-                  AI Financial Brain
-                </h2>
-                <div className="inline-flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-2.5 py-0.5">
-                  <Zap className="w-3 h-3 text-emerald-500" />
-                  <span className="text-[10px] font-semibold text-emerald-600">AI</span>
-                </div>
-              </div>
-              <p className="text-muted-foreground text-sm max-w-xl leading-relaxed">
-                Një platformë që lexon lajmet, gjen sinjale tregu, parashikon aksione, dhe ju ndihmon të mësoni tregtimin — gjithçka në një vend.
-              </p>
-            </div>
-          </div>
-        </motion.section>
-
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {/* Tab category labels + tabs */}
