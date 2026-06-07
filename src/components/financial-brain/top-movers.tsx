@@ -50,12 +50,15 @@ interface MoverStock {
   weaknesses: string[];
   buyCount: number;
   sellCount: number;
+  isLive?: boolean;
 }
 
 interface TopMoversData {
   topGrowth: MoverStock[];
   topRisk: MoverStock[];
   totalAnalyzed: number;
+  liveCount?: number;
+  totalFetched?: number;
   timestamp: string;
   cached?: boolean;
   stale?: boolean;
@@ -109,7 +112,10 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+            <div className="flex items-center gap-1 justify-end">
+              <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+              {stock.isLive && <span className="text-[7px] bg-emerald-500/15 text-emerald-500 px-1 py-0 rounded font-medium">LIVE</span>}
+            </div>
             <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
               {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
               {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
@@ -208,7 +214,10 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+            <div className="flex items-center gap-1 justify-end">
+              <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+              {stock.isLive && <span className="text-[7px] bg-emerald-500/15 text-emerald-500 px-1 py-0 rounded font-medium">LIVE</span>}
+            </div>
             <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
               {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
               {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
@@ -360,6 +369,9 @@ export function TopMovers() {
             <BarChart3 className="w-4 h-4 text-emerald-500" />
             <span className="text-xs text-muted-foreground">
               {data.totalAnalyzed} stoke te analizuar
+              {data.liveCount && data.liveCount > 0 && (
+                <span className="text-emerald-500 font-medium"> — {data.liveCount} cmime live</span>
+              )}
             </span>
           </div>
           {data.cached && (
