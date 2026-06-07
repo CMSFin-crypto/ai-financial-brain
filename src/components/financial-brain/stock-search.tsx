@@ -233,18 +233,14 @@ export function StockSearch({ onSelect, onQueryChange, placeholder = 'Kërko aks
                 ))
               ) : null}
             </div>
-          ) : (
-            <button
-              onClick={() => handleSelect(query.trim())}
-              className="w-full flex items-center justify-center gap-2 px-3 py-3 hover:bg-emerald-500/10 text-left transition-colors border-b-0"
-            >
-              <Search className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs font-medium text-emerald-500">
-                KERKO {query.trim().toUpperCase()}
-              </span>
-            </button>
-          )}
+          ) : null}
         </div>
+      )}
+      {/* Always show analyze hint when there's a query but dropdown is closed */}
+      {!isOpen && query.trim().length > 0 && (
+        <p className="text-[9px] text-emerald-500/60 mt-1 px-0.5">
+          ✨ Çdo ticker US mund të analizohet — shtyp Enter
+        </p>
       )}
     </div>
   );

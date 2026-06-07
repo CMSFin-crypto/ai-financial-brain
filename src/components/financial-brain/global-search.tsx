@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, TrendingUp, TrendingDown, Command, Loader2, Globe } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, Command, Loader2, Globe, Sparkles } from 'lucide-react';
 import { getAllStocks } from '@/lib/market-data';
 import type { StockProfile } from '@/lib/market-data';
 
@@ -151,6 +151,8 @@ export function GlobalSearch({ onSelectStock }: GlobalSearchProps) {
   };
 
   const totalResults = filtered.length + externalResults.length;
+  const showAnalyzeButton = query.trim().length >= 1;
+  const upperQuery = query.trim().toUpperCase();
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -288,22 +290,25 @@ export function GlobalSearch({ onSelectStock }: GlobalSearchProps) {
 
           {/* Empty state */}
           {!isSearchingExternal && filtered.length === 0 && externalResults.length === 0 && query.trim().length > 0 && hasSearchedExternal && (
-            <div className="py-8 text-center">
+            <div className="py-6 text-center">
               <Search className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
               <p className="text-sm text-muted-foreground">Nuk u gjet asnjë aksion për &ldquo;{query}&rdquo;</p>
               <p className="text-[10px] text-muted-foreground/60 mt-1">Provoni një ticker tjetër (p.sh. AAPL, TSLA)</p>
             </div>
           )}
 
-          {/* Show Enter key hint when query matches a non-local ticker */}
-          {!isSearchingExternal && query.trim().length >= 1 && !hasExactMatch && hasSearchedExternal && externalResults.length === 0 && filtered.length === 0 && (
+          {/* ALWAYS show ANALYZO button when user has typed something */}
+          {showAnalyzeButton && (
             <button
-              onClick={() => handleSelect(query.trim().toUpperCase())}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 hover:bg-emerald-500/10 text-left transition-colors border-b-0"
+              onClick={() => handleSelect(upperQuery)}
+              className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-left transition-all border-t border-emerald-500/20 group"
             >
-              <Search className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs font-medium text-emerald-500">
-                ANALIZO {query.trim().toUpperCase()}
+              <Sparkles className="w-4 h-4 text-emerald-500 group-hover:text-emerald-400 transition-colors" />
+              <span className="text-sm font-semibold text-emerald-500 group-hover:text-emerald-400 transition-colors">
+                ANALIZO {upperQuery}
+              </span>
+              <span className="text-[10px] text-emerald-500/60 group-hover:text-emerald-400/70 transition-colors">
+                — Çdo ticker US është i analizueshëm
               </span>
             </button>
           )}

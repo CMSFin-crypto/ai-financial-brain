@@ -1673,11 +1673,36 @@ export async function getOrCreateStock(ticker: string): Promise<StockProfile | u
   try {
     const { getRealPrice } = await import('./alpha-vantage');
     const liveData = await getRealPrice(upper);
+
+    // Also try to get company name from Yahoo Finance search
+    let companyName = `${upper} Corp`;
+    try {
+      const searchRes = await fetch(
+        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(upper)}&quotesCount=1&newsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query`,
+        {
+          signal: AbortSignal.timeout(5000),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+        }
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const quotes = searchData?.quotes || [];
+        const exactMatch = quotes.find((q: any) => q.symbol?.toUpperCase() === upper);
+        if (exactMatch) {
+          companyName = exactMatch.longname || exactMatch.shortname || `${upper} Corp`;
+        }
+      }
+    } catch {
+      // Best effort — keep default name
+    }
     
     if (liveData && liveData.price > 0) {
       const dynamicProfile: StockProfile = {
         ticker: upper,
-        company: `${upper} Corp`,
+        company: companyName,
         sector: 'Technology',
         industry: 'General',
         price: liveData.price,
