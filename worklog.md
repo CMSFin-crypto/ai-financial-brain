@@ -91,3 +91,31 @@ Stage Summary:
 - 4 skedarë u ndryshuan: page.tsx, header.tsx, market-ticker-bar.tsx, daily-picks.tsx
 - Kategorizim vizual me 3 ngjyra (emerald, blue, violet)
 - Lexueshmëria u përmirësua ndjeshëm me font më të mëdha dhe përshkrime më të thjeshta
+---
+Task ID: 1
+Agent: Main Agent
+Task: Add detailed stock ratings (Strong Buy, Buy, Hold, Sell, Strong Sell) with expandable evaluation cards to Sector Scanner
+
+Work Log:
+- Analyzed current sector-scan code: only showed BULLISH/BEARISH/NEUTRAL signals with tiny score bars
+- Updated API system prompt to request comprehensive per-stock ratings (5-level system)
+- Added fields: rating, entryPrice, targetPrice, stopLoss, upside, riskReward, reasoning, keyRisks
+- Updated demo data with realistic calculated values for all new fields
+- Rewrote sector-scanner.tsx with:
+  - StockRatingBadge component (5-level: Strong Buy, Buy, Hold, Sell, Strong Sell)
+  - Expandable stock rows with animated detail panels (AnimatePresence)
+  - Price targets grid (Entry, Target, Stop Loss, Risk/Reward)
+  - Confidence and score bars
+  - Technical + Fundamental analysis sections
+  - Catalyst tracking
+  - Detailed reasoning section ("Përse Strong Buy?")
+  - Key risks section with warning indicators
+  - Rating summary per sector header
+  - Rating legend at top of page
+  - Stocks sorted by score within each sector
+- Build verified successful, pushed to GitHub
+
+Stage Summary:
+- 2 files changed, 479 insertions, 69 deletions
+- Commit: f81d109 pushed to main
+- Vercel deployment will pick up automatically
