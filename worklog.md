@@ -141,3 +141,22 @@ Work Log:
 Stage Summary:
 - Commit: 7c05a8d pushed to main
 - 2 files changed, 170 insertions, 3 deletions
+---
+Task ID: 1
+Agent: main
+Task: Add SNDK + make ANY stock searchable and analyzable
+
+Work Log:
+- Verified SNDK already exists in market-data.ts (line 1593) with full profile data
+- Confirmed quant-analyze, technical-analysis, fundamental-analysis APIs already work with ANY ticker (AI analyzes any ticker, demo fallback uses defaults for unknown tickers)
+- Updated Global Search (global-search.tsx): Now ALWAYS shows "ANALIZO {TICKER}" button at bottom of results, regardless of local/external matches. Uses Sparkles icon with emerald styling and Albanian text "Çdo ticker US është i analizueshëm"
+- Updated Stock Search (stock-search.tsx): Added visual hint "Çdo ticker US mund të analizohet — shtyp Enter" below input. Verified Enter key already works for any ticker.
+- Improved getOrCreateStock (market-data.ts): Added Yahoo Finance company name lookup for dynamic stocks. Now shows "Tesla, Inc." instead of "TSLA Corp" for unknown tickers. Uses v1/finance/search API with 5s timeout and exact symbol matching.
+- Build succeeded (Next.js 16, 24 routes)
+- Pushed to GitHub (Vercel will auto-deploy from git)
+
+Stage Summary:
+- SNDK confirmed in database (was already added previously)
+- ANY US ticker can now be analyzed via Global Search (⌘K) or inline search
+- Dynamic stock profiles now get real company names from Yahoo Finance
+- Git commit: 5a77eb0 pushed to main
