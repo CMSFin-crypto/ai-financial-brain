@@ -32,6 +32,10 @@ import {
   Eye,
   Gauge,
   Crosshair,
+  CalendarClock,
+  CalendarDays,
+  ArrowRight,
+  Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -57,8 +61,23 @@ interface SectorStock {
   catalyst: string;
   reasoning?: string;
   keyRisks?: string[];
+  prediction?: {
+    shortTerm: {
+      direction: string;
+      expectedMove: string;
+      confidence: number;
+      note: string;
+    };
+    weekly: {
+      direction: string;
+      expectedMove: string;
+      confidence: number;
+      keyEvents: string[];
+      note: string;
+    };
+  };
   industry?: string;
-}
+};
 
 interface SectorData {
   name: string;
@@ -261,6 +280,74 @@ function StockRow({ stock, onClickStock }: { stock: SectorStock; onClickStock: (
                   </div>
                 )}
               </div>
+
+              {/* ═══ PREDICTIONS: SHORT-TERM + WEEKLY ═══ */}
+              {stock.prediction && (
+                <div className="bg-gradient-to-r from-indigo-500/[0.07] to-purple-500/[0.07] border border-indigo-500/20 rounded-lg p-2.5 space-y-2.5">
+                  <p className="text-[10px] font-bold text-indigo-300 flex items-center gap-1.5">
+                    <CalendarClock className="w-3.5 h-3.5" /> Parashikimi
+                  </p>
+
+                  {/* Short-Term (1-3 days) */}
+                  <div className="flex items-start gap-2">
+                    <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                      <Clock className="w-3 h-3 text-blue-400" />
+                      <span className="text-[9px] font-semibold text-blue-400">1-3 Ditë</span>
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-bold ${
+                          stock.prediction.shortTerm.direction === 'UP' ? 'text-emerald-400' :
+                          stock.prediction.shortTerm.direction === 'DOWN' ? 'text-red-400' : 'text-amber-400'
+                        }`}>
+                          {stock.prediction.shortTerm.direction === 'UP' ? '↑' : stock.prediction.shortTerm.direction === 'DOWN' ? '↓' : '→'}
+                          {' '}{stock.prediction.shortTerm.expectedMove}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground">
+                          Besueshmëria: {stock.prediction.shortTerm.confidence}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">{stock.prediction.shortTerm.note}</p>
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="border-t border-border/20" />
+
+                  {/* Weekly */}
+                  <div className="flex items-start gap-2">
+                    <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                      <CalendarDays className="w-3 h-3 text-purple-400" />
+                      <span className="text-[9px] font-semibold text-purple-400">Java e ardhme</span>
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-bold ${
+                          stock.prediction.weekly.direction === 'UP' ? 'text-emerald-400' :
+                          stock.prediction.weekly.direction === 'DOWN' ? 'text-red-400' : 'text-amber-400'
+                        }`}>
+                          {stock.prediction.weekly.direction === 'UP' ? '↑' : stock.prediction.weekly.direction === 'DOWN' ? '↓' : '→'}
+                          {' '}{stock.prediction.weekly.expectedMove}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground">
+                          Besueshmëria: {stock.prediction.weekly.confidence}%
+                        </span>
+                      </div>
+                      {/* Key Events */}
+                      {stock.prediction.weekly.keyEvents && stock.prediction.weekly.keyEvents.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {stock.prediction.weekly.keyEvents.map((ev, i) => (
+                            <span key={i} className="text-[8px] bg-purple-500/15 text-purple-300 border border-purple-500/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                              <CalendarDays className="w-2 h-2" /> {ev}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">{stock.prediction.weekly.note}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Confidence + Quick Score */}
               <div className="flex items-center gap-4">

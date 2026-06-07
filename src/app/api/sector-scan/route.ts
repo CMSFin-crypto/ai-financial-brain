@@ -25,6 +25,11 @@ MANDATORY fields per stock:
 - riskReward: risk/reward ratio string like "1:3" or "1:2.5"
 - quickScore: 0-100 overall composite score
 
+SHORT-TERM PREDICTIONS per stock (Albanian language):
+- prediction: object with:
+  - shortTerm: { direction: "UP"|"DOWN"|"SIDEWAYS", expectedMove: "percent like +2.5% or -1.3%", confidence: 0-100, note: "1-2 sentences explaining what to expect in the next 1-3 trading days, what price levels to watch, and why" }
+  - weekly: { direction: "UP"|"DOWN"|"SIDEWAYS", expectedMove: "percent like +5% or -3%", confidence: 0-100, keyEvents: ["event1", "event2"], note: "1-2 sentences about the week ahead, earnings dates, Fed events, sector catalysts" }
+
 DETAILED analysis per stock (Albanian language):
 - technicalNote: 1-2 sentences about technical analysis (RSI, MACD, moving averages, chart patterns)
 - fundamentalNote: 1-2 sentences about fundamentals (P/E, growth, margins, earnings, valuation)
@@ -86,10 +91,25 @@ Return ONLY valid JSON:
           "upside": 20.0,
           "riskReward": "1:3.2",
           "quickScore": 91,
+          "prediction": {
+            "shortTerm": {
+              "direction": "UP",
+              "expectedMove": "+1.8%",
+              "confidence": 78,
+              "note": "RSI në zonë të ngjitjes me MA alignment pozitive. Prisnim testimin e rezistencës $890 brenda 2 ditësh. Vëllimi i lartë mbështet vazhdimin."
+            },
+            "weekly": {
+              "direction": "UP",
+              "expectedMove": "+4.2%",
+              "confidence": 72,
+              "keyEvents": ["Data e fitimeve 15 Qershor", "Keynote AI Conference 18 Qershor"],
+              "note": "Java e ardhme mbështetet nga data i fitimeve dhe ngjarja AI conference. Prisnim rritje të thellë nëse rezultatet tejkalojnë pritjet."
+            }
+          },
           "technicalNote": "Golden Cross confirmed, RSI at 65 me tendencë ngjitëse të fortë, vëllimi 1.5x mesatarja",
           "fundamentalNote": "Rritje e të ardhurave 125% YoY, përdominues në tregun e çipave AI, PEG ratio 1.2",
           "catalyst": "Hyrja në treg e GPU Blackwell të reja, kërkesë eksplozive për data center AI",
-          "reasoning": "NVIDIA tregon moment të jashtëzakonshëm me dominim në tregun e AI dhe rritje eksplozive të të ardhurave. Rrjeti i ekosistemit CUDA krijon moat konkurrues të fuqishëm. Rreziqet përfshijnë vlerësim të lartë dhe varësi nga kërkesa e数据中心.",
+          "reasoning": "NVIDIA tregon moment të jashtëzakonshëm me dominim në tregun e AI dhe rritje eksplozive të të ardhurave. Rrjeti i ekosistemit CUDA krijon moat konkurrues të fuqishëm. Rreziqet përfshijnë vlerësim të lartë dhe varësi nga kërkesa e data center.",
           "keyRisks": ["Vlerësim i lartë (P/E >60)", "Varësi nga kërkesa e data center"]
         }
       ]
@@ -105,7 +125,10 @@ IMPORTANT CALIBRATION RULES:
 - Verify trend direction before assigning ratings
 - Consider sector rotation and macro factors
 - Prefer being correct over being bold
-- ALWAYS include entryPrice, targetPrice, stopLoss, upside, riskReward, reasoning, keyRisks for every stock`;
+- ALWAYS include entryPrice, targetPrice, stopLoss, upside, riskReward, reasoning, keyRisks, prediction for every stock
+- Predictions should be realistic (typically +/- 1-3% for short term, +/- 2-6% for weekly)
+- Include specific upcoming events in weekly predictions (earnings dates, Fed meetings, conferences, etc.)
+- Base predictions on technical patterns AND upcoming catalysts`;
 
 // ═══════════════════════════════════════════
 // DEMO DATA — realistic simulation when AI is unreachable
@@ -131,6 +154,21 @@ interface DemoStock {
   catalyst: string;
   reasoning: string;
   keyRisks: string[];
+  prediction?: {
+    shortTerm: {
+      direction: string;
+      expectedMove: string;
+      confidence: number;
+      note: string;
+    };
+    weekly: {
+      direction: string;
+      expectedMove: string;
+      confidence: number;
+      keyEvents: string[];
+      note: string;
+    };
+  };
   quickScore: number;
   industry?: string;
 }
@@ -197,6 +235,44 @@ function mapStockToDemo(s: { ticker: string; company: string; price: number; sec
       ? ['Mund\u00ebsia e raportimit t\u00eb mir\u00eb t\u00eb fitimeve', 'Shitja e shkurt\u00ebr e tepruar']
       : ['Pasiguria e tregut', 'Mungesa e katalizatorit'];
 
+  // ═══ SHORT-TERM PREDICTIONS ═══
+  const stMove = s.signal === 'BULLISH'
+    ? '+' + (0.5 + Math.random() * 2.5).toFixed(1) + '%'
+    : s.signal === 'BEARISH'
+      ? '-' + (0.3 + Math.random() * 2.0).toFixed(1) + '%'
+      : (Math.random() > 0.5 ? '+' : '-') + (0.1 + Math.random() * 0.8).toFixed(1) + '%';
+  const stDir = stMove.startsWith('+') ? 'UP' : stMove.startsWith('-') ? 'DOWN' : 'SIDEWAYS';
+  const stConf = s.signal === 'BULLISH' ? 65 + Math.floor(Math.random() * 20)
+    : s.signal === 'BEARISH' ? 55 + Math.floor(Math.random() * 20)
+    : 40 + Math.floor(Math.random() * 20);
+  const stNote = s.signal === 'BULLISH'
+    ? 'Indikator\u00ebt teknike tregojn\u00eb vazhdim t\u00eb tendenc\u00ebs ngjit\u00ebse. Prisnim l\u00ebvizje pozitive n\u00eb dit\u00ebt n\u00eb vijim n\u00ebse \u00e7mimi mban mb\xeb SMA 20.'
+    : s.signal === 'BEARISH'
+      ? 'Presioni zbrit\u00ebs vazhdon. Prisnim testim t\u00eb mb\u00ebshtetjes s\u00eb reja n\u00ebn. N\u00ebse thyhet, r\u00ebnia mund t\u00eb thellohet.'
+      : 'Asnj\u00eb sinjal i qart\u00eb. Tregu po l\u00ebviz n\u00eb gam\u00eb t\u00eb ngusht\u00eb. Prisnim thyerje n\u00eb nj\u00eb drejtim brenda dit\u00ebsh.';
+
+  const wkMove = s.signal === 'BULLISH'
+    ? '+' + (1.5 + Math.random() * 4.5).toFixed(1) + '%'
+    : s.signal === 'BEARISH'
+      ? '-' + (1.0 + Math.random() * 4.0).toFixed(1) + '%'
+      : (Math.random() > 0.5 ? '+' : '-') + (0.3 + Math.random() * 1.5).toFixed(1) + '%';
+  const wkDir = wkMove.startsWith('+') ? 'UP' : wkMove.startsWith('-') ? 'DOWN' : 'SIDEWAYS';
+  const wkConf = s.signal === 'BULLISH' ? 60 + Math.floor(Math.random() * 20)
+    : s.signal === 'BEARISH' ? 50 + Math.floor(Math.random() * 20)
+    : 35 + Math.floor(Math.random() * 20);
+
+  const weekEvents = s.signal === 'BULLISH'
+    ? ['Raporti i fitimeve pritet pozitiv', 'Sektori n\u00eb tendenc\u00eb rrit\u00ebse']
+    : s.signal === 'BEARISH'
+      ? ['Rrezik makroekonomik i lart\u00eb', 'Shtypja e tregut nga korrigjimi']
+      : ['Asnj\u00eb ngjarje e r\u00ebnd\u00ebsishme', 'Tregu n\u00eb pritje'];
+
+  const wkNote = s.signal === 'BULLISH'
+    ? 'Java e ardhme tregon potencial pozitiv me katalizator sektorial. Prisnim rritje n\u00ebse tregu i gjer\u00eb mban momentin.'
+    : s.signal === 'BEARISH'
+      ? 'Java e ardhme mbart rrezik zbrit\u00ebse. Kujdes ndaj niveleve t\u00eb mb\u00ebshtetjes.'
+      : 'Java e ardhme pa drejtim t\u00eb qart\u00eb. Prisni sinjal nga tregu para nd\u00ebrmarjes s\u00eb veprimeve.';
+
   return {
     ticker: s.ticker,
     company: s.company,
@@ -214,6 +290,10 @@ function mapStockToDemo(s: { ticker: string; company: string; price: number; sec
     catalyst,
     reasoning,
     keyRisks,
+    prediction: {
+      shortTerm: { direction: stDir, expectedMove: stMove, confidence: stConf, note: stNote },
+      weekly: { direction: wkDir, expectedMove: wkMove, confidence: wkConf, keyEvents: weekEvents, note: wkNote },
+    },
     quickScore,
     industry: s.industry,
   };
