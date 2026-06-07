@@ -150,6 +150,7 @@ function MetricRow({ label, value }: { label: string; value: string | number }) 
 
 export function FundamentalAnalysis() {
   const [ticker, setTicker] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<FundamentalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -202,13 +203,14 @@ export function FundamentalAnalysis() {
       <div className="flex gap-2">
         <StockSearch
           onSelect={(t) => runAnalysisForTicker(t)}
-          placeholder="Kërko ticker-in... MSFT, GOOGL, AMZN"
+          onQueryChange={(q) => setSearchQuery(q)}
+          placeholder="Kërko ticker-in... AAPL, VRT, GLW"
           className="flex-1"
           inputClassName="h-10 text-sm"
         />
         <Button
-          onClick={runAnalysis}
-          disabled={isLoading || !ticker.trim()}
+          onClick={() => runAnalysisForTicker(searchQuery || ticker)}
+          disabled={isLoading || !(searchQuery.trim() || ticker.trim())}
           className="bg-emerald-600 hover:bg-emerald-700 text-white"
         >
           {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4 mr-1.5" />}

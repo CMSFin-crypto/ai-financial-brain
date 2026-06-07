@@ -220,6 +220,7 @@ function AgentCard({ title, icon, signal, confidence, children, whyMayFail }: {
 
 export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
   const [ticker, setTicker] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [universe, setUniverse] = useState('sp500');
   const [timeframe, setTimeframe] = useState('swing');
   const [riskPerTrade, setRiskPerTrade] = useState('1');
@@ -306,7 +307,8 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
           <div className="flex flex-col lg:flex-row gap-3">
             <StockSearch
               onSelect={(t) => runAnalysisForTicker(t)}
-              placeholder="Kërko ticker... AAPL, NVDA, MSFT..."
+              onQueryChange={(q) => setSearchQuery(q)}
+              placeholder="Kërko ticker... AAPL, VRT, GLW..."
               className="flex-1"
               inputClassName="h-10 text-sm"
             />
@@ -341,7 +343,7 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
                   <SelectItem value="2">2% Risk</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={runAnalysis} disabled={isLoading || !ticker.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white h-10">
+              <Button onClick={() => runAnalysisForTicker(searchQuery || ticker)} disabled={isLoading || !(searchQuery.trim() || ticker.trim())} className="bg-emerald-600 hover:bg-emerald-700 text-white h-10">
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4 mr-1.5" />}
                 Quant Analyzo
               </Button>

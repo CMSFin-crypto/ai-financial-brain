@@ -15,12 +15,13 @@ interface StockOption {
 
 interface StockSearchProps {
   onSelect: (ticker: string) => void;
+  onQueryChange?: (query: string) => void;
   placeholder?: string;
   className?: string;
   inputClassName?: string;
 }
 
-export function StockSearch({ onSelect, placeholder = 'Kërko aksion...', className = '', inputClassName = '' }: StockSearchProps) {
+export function StockSearch({ onSelect, onQueryChange, placeholder = 'Kërko aksion...', className = '', inputClassName = '' }: StockSearchProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -44,6 +45,12 @@ export function StockSearch({ onSelect, placeholder = 'Kërko aksion...', classN
     setIsOpen(false);
   }, [onSelect]);
 
+  const handleInputChange = useCallback((val: string) => {
+    setQuery(val);
+    setIsOpen(val.trim().length > 0);
+    onQueryChange?.(val);
+  }, [onQueryChange]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -64,17 +71,18 @@ export function StockSearch({ onSelect, placeholder = 'Kërko aksion...', classN
           value={query}
           onChange={(e) => {
             const val = e.target.value.toUpperCase();
-            setQuery(val);
-            setIsOpen(val.trim().length > 0);
+            handleInputChange(val);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
+              e.preventDefault();
+              e.stopPropagation();
               const val = query.trim().toUpperCase();
               if (val) handleSelect(val);
             }
           }}
           onFocus={() => {
-            if (query.trim() && results.length > 0) setIsOpen(true);
+            if (query.trim()) setIsOpen(true);
           }}
           className={`pl-8 text-xs h-9 ${inputClassName}`}
         />
@@ -87,7 +95,7 @@ export function StockSearch({ onSelect, placeholder = 'Kërko aksion...', classN
               <button
                 key={stock.ticker}
                 onClick={() => handleSelect(stock.ticker)}
-                className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/50 text-left transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 text-left transition-colors"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-xs font-bold shrink-0">{stock.ticker}</span>
@@ -105,11 +113,11 @@ export function StockSearch({ onSelect, placeholder = 'Kërko aksion...', classN
           ) : (
             <button
               onClick={() => handleSelect(query.trim())}
-              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 text-left transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-3 py-3 hover:bg-emerald-500/10 text-left transition-colors border-b-0"
             >
-              <Search className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">
-                Kërko <span className="font-bold text-foreground">{query.trim().toUpperCase()}</span> — shtyp Enter
+              <Search className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs font-medium text-emerald-500">
+                KERKO {query.trim().toUpperCase()}
               </span>
             </button>
           )}

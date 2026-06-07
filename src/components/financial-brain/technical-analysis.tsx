@@ -97,6 +97,7 @@ interface TechnicalAnalysisResult {
 
 export function TechnicalAnalysis() {
   const [ticker, setTicker] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,13 +164,14 @@ export function TechnicalAnalysis() {
       <div className="flex gap-2">
         <StockSearch
           onSelect={(t) => runAnalysisForTicker(t)}
-          placeholder="Kërko ticker-in... AAPL, TSLA, NVDA"
+          onQueryChange={(q) => setSearchQuery(q)}
+          placeholder="Kërko ticker-in... AAPL, VRT, GLW"
           className="flex-1"
           inputClassName="h-10 text-sm"
         />
         <Button
-          onClick={runAnalysis}
-          disabled={isLoading || !ticker.trim()}
+          onClick={() => runAnalysisForTicker(searchQuery || ticker)}
+          disabled={isLoading || !(searchQuery.trim() || ticker.trim())}
           className="bg-emerald-600 hover:bg-emerald-700 text-white"
         >
           {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4 mr-1.5" />}
