@@ -15,6 +15,7 @@ import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar'
 import { TopMovers } from '@/components/financial-brain/top-movers';
 import { Watchlist } from '@/components/financial-brain/watchlist';
 import { AIChat } from '@/components/financial-brain/ai-chat';
+import { GlobalSearch } from '@/components/financial-brain/global-search';
 import {
   Zap,
   Brain,
@@ -28,6 +29,7 @@ import {
   Flame,
   MessageSquare,
   Eye,
+  Search,
 } from 'lucide-react';
 
 export default function Home() {
@@ -38,6 +40,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-background" suppressHydrationWarning>
       <Header />
       <MarketTickerBar />
+      <GlobalSearch onSelectStock={(ticker) => { setQuantTicker(ticker); setActiveTab('quant'); }} />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Hero Section */}

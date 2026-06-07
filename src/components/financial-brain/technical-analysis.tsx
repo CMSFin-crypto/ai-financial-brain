@@ -101,6 +101,17 @@ export function TechnicalAnalysis() {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [timeframe, setTimeframe] = useState('1mo');
+
+  const timeframes = [
+    { value: '1d', label: '1D' },
+    { value: '5d', label: '5D' },
+    { value: '1mo', label: '1Mo' },
+    { value: '3mo', label: '3Mo' },
+    { value: '6mo', label: '6Mo' },
+    { value: '1y', label: '1V' },
+    { value: '5y', label: '5V' },
+  ];
 
   const runAnalysisForTicker = async (tickerSymbol?: string) => {
     const sym = (tickerSymbol || ticker).trim().toUpperCase();
@@ -114,7 +125,7 @@ export function TechnicalAnalysis() {
       const res = await fetch('/api/technical-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: sym }),
+        body: JSON.stringify({ ticker: sym, range: timeframe }),
       });
       const data = await res.json();
 
@@ -160,6 +171,23 @@ export function TechnicalAnalysis() {
 
   return (
     <div className="space-y-4">
+      {/* Timeframe Selector */}
+      <div className="flex items-center gap-1.5">
+        {timeframes.map((tf) => (
+          <button
+            key={tf.value}
+            onClick={() => setTimeframe(tf.value)}
+            className={`text-xs px-2.5 py-1 rounded-md transition-colors font-medium ${
+              timeframe === tf.value
+                ? 'bg-emerald-600 text-white'
+                : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            {tf.label}
+          </button>
+        ))}
+      </div>
+
       {/* Search Bar */}
       <div className="flex gap-2">
         <StockSearch
@@ -264,7 +292,7 @@ export function TechnicalAnalysis() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Activity className="w-4 h-4 text-emerald-500" />
-                  Candlestick Chart (30 ditë) + Volumi
+                  Candlestick Chart ({timeframe}) + Volumi
                   {analysis.isRealChart && (
                     <Badge variant="outline" className="text-[9px] border-emerald-500/30 text-emerald-400">Real Data</Badge>
                   )}

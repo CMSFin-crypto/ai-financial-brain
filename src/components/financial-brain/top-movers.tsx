@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import {
   TrendingUp,
   TrendingDown,
@@ -61,6 +62,37 @@ interface TopMoversData {
   stale?: boolean;
 }
 
+function generateSparklineData(priceChange: number): Array<{ value: number }> {
+  const points = 12;
+  const data: Array<{ value: number }> = [];
+  const magnitude = Math.min(Math.abs(priceChange), 10);
+  for (let i = 0; i < points; i++) {
+    const progress = i / (points - 1);
+    const trend = priceChange >= 0 ? progress * magnitude : -progress * magnitude;
+    const noise = (Math.random() - 0.5) * magnitude * 0.4;
+    data.push({ value: 50 + trend + noise });
+  }
+  return data;
+}
+
+function MiniSparkline({ priceChange, color }: { priceChange: number; color: string }) {
+  const data = generateSparklineData(priceChange);
+  return (
+    <ResponsiveContainer width={80} height={30}>
+      <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+        <Line
+          type="monotone"
+          dataKey="value"
+          stroke={color}
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 function ScoreBar({ score, type }: { score: number; type: 'growth' | 'risk' }) {
   const color = type === 'growth'
     ? score >= 70 ? 'bg-emerald-500' : score >= 50 ? 'bg-emerald-400' : 'bg-emerald-300'
@@ -108,11 +140,14 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
               <p className="text-[10px] text-muted-foreground">{stock.company} — {stock.sector}</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
-            <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-              {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-              {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
+          <div className="text-right flex items-center gap-2">
+            <MiniSparkline priceChange={stock.priceChange} color="#10b981" />
+            <div>
+              <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+              <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
+              </div>
             </div>
           </div>
         </div>
@@ -207,11 +242,14 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
               <p className="text-[10px] text-muted-foreground">{stock.company} — {stock.sector}</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
-            <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-              {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-              {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
+          <div className="text-right flex items-center gap-2">
+            <MiniSparkline priceChange={stock.priceChange} color="#ef4444" />
+            <div>
+              <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+              <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
+              </div>
             </div>
           </div>
         </div>

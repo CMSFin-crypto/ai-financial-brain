@@ -6,6 +6,7 @@ import { getRealPrice, injectPricesIntoPrompt, fetchHistoricalData } from '@/lib
 interface TechnicalAnalysisRequest {
   ticker: string;
   company?: string;
+  range?: string;
 }
 
 const SYSTEM_PROMPT = `You are an expert technical analyst. Analyze the given stock using technical analysis principles.
@@ -446,7 +447,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: TechnicalAnalysisRequest = await request.json();
-    const { ticker } = body;
+    const { ticker, range: userRange } = body;
+    const range = userRange || '1mo';
 
     if (!ticker || ticker.trim().length < 1) {
       return NextResponse.json({ error: 'Ticker është i nevojshëm' }, { status: 400 });
@@ -457,7 +459,7 @@ export async function POST(request: NextRequest) {
     // ═══ PARALLEL: Fetch real price + real historical chart data ═══
     const [livePrice, realChartData] = await Promise.all([
       getRealPrice(tickerUpper),
-      fetchHistoricalData(tickerUpper),
+      fetchHistoricalData(tickerUpper, range),
     ]);
 
     const realPriceNum = livePrice ? livePrice.price : null;
