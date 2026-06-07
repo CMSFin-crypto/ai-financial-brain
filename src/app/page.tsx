@@ -36,7 +36,9 @@ import {
   LayoutDashboard,
   CalendarDays,
   Filter,
+  BarChart3,
 } from 'lucide-react';
+import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -135,6 +137,9 @@ export default function Home() {
                   <TabsTrigger value="chat" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <MessageSquare className="w-3.5 h-3.5 mr-1.5" />AI Chat
                   </TabsTrigger>
+                  <TabsTrigger value="analytics" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Statistikat
+                  </TabsTrigger>
                 </TabsList>
               </div>
             </div>
@@ -176,6 +181,9 @@ export default function Home() {
                 </TabsTrigger>
                 <TabsTrigger value="chat" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <MessageSquare className="w-3.5 h-3.5 mr-1" />AI Chat
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                  <BarChart3 className="w-3.5 h-3.5 mr-1" />Statistikat
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -444,6 +452,29 @@ export default function Home() {
                 </CardContent>
               </Card>
               <AIChat />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Analytics Dashboard */}
+          <TabsContent value="analytics" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-violet-500/20 bg-violet-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <BarChart3 className="w-4 h-4 text-violet-500" />
+                    <h3 className="text-sm font-semibold">Statistikat e Vizitorëve</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Shiko vizitorët e faqes: sa kanë vizituar sot, nga vijnë, çfarë pajisje dhe shfletues përdorin.
+                  </p>
+                </CardContent>
+              </Card>
+              <AnalyticsDashboard />
             </motion.div>
           </TabsContent>
         </Tabs>

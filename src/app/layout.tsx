@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
+import { VisitorTracker } from '@/components/financial-brain/visitor-tracker';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,6 +47,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <VisitorTracker />
           <div suppressHydrationWarning>
             {children}
           </div>
