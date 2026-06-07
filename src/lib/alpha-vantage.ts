@@ -38,6 +38,7 @@ const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY || '';
 const YAHOO_ENDPOINTS = [
   'https://query1.finance.yahoo.com',
   'https://query2.finance.yahoo.com',
+  'https://query1.finance.yahoo.com', // Retry first endpoint
 ];
 
 // Common browser headers to avoid being blocked
