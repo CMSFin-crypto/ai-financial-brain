@@ -120,35 +120,34 @@ export default function Home() {
                 </TabsList>
               </div>
             </div>
-            {/* Mobile/Tablet: scrollable single row */}
+            {/* Mobile/Tablet: grid wrapped rows */}
             <div className="lg:hidden">
-              <TabsList className="flex gap-1 w-full h-auto p-1 overflow-x-auto">
-                <TabsTrigger value="watchlist" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <TabsList className="flex flex-wrap gap-1 w-full h-auto p-1">
+                <TabsTrigger value="watchlist" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Eye className="w-3.5 h-3.5 mr-1" />Watchlist
                 </TabsTrigger>
-                <TabsTrigger value="top-movers" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                <TabsTrigger value="top-movers" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Flame className="w-3.5 h-3.5 mr-1" />Top 5+5
                 </TabsTrigger>
-                <TabsTrigger value="quant" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <Crosshair className="w-3.5 h-3.5 mr-1" />Quant
-                </TabsTrigger>
-                <TabsTrigger value="sector" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                <TabsTrigger value="sector" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Radar className="w-3.5 h-3.5 mr-1" />Sektoret
                 </TabsTrigger>
-                <TabsTrigger value="daily-picks" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                   <Target className="w-3.5 h-3.5 mr-1" />Pikat
                 </TabsTrigger>
-
-                <TabsTrigger value="technical" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <TabsTrigger value="quant" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <Crosshair className="w-3.5 h-3.5 mr-1" />Quant
+                </TabsTrigger>
+                <TabsTrigger value="technical" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                   <LineChart className="w-3.5 h-3.5 mr-1" />Teknike
                 </TabsTrigger>
-                <TabsTrigger value="fundamental" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <TabsTrigger value="fundamental" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                   <Building2 className="w-3.5 h-3.5 mr-1" />Fund.
                 </TabsTrigger>
-                <TabsTrigger value="trading" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                <TabsTrigger value="trading" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <ShoppingCart className="w-3.5 h-3.5 mr-1" />Trading
                 </TabsTrigger>
-                <TabsTrigger value="chat" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                <TabsTrigger value="chat" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <MessageSquare className="w-3.5 h-3.5 mr-1" />AI Chat
                 </TabsTrigger>
               </TabsList>
