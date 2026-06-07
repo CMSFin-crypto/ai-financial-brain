@@ -119,3 +119,25 @@ Stage Summary:
 - 2 files changed, 479 insertions, 69 deletions
 - Commit: f81d109 pushed to main
 - Vercel deployment will pick up automatically
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add short-term predictions (1-3 days + weekly forecasts) to stock evaluations
+
+Work Log:
+- Added prediction field to sector-scan API system prompt with shortTerm (1-3 days) and weekly forecasts
+- Each prediction includes: direction (UP/DOWN/SIDEWAYS), expectedMove %, confidence, explanatory note
+- Weekly predictions include keyEvents array for upcoming events (earnings, Fed, conferences)
+- Updated DemoStock interface and mapStockToDemo to generate realistic prediction data
+- Added prediction UI section in sector-scanner.tsx with:
+  - Gradient panel (indigo-to-purple) at top of expanded stock detail
+  - Clock icon + "1-3 Ditë" section with short-term direction and move
+  - Calendar icon + "Java e ardhme" section with weekly forecast
+  - Event badges for upcoming key events
+  - Color-coded arrows: green ↑ UP, red ↓ DOWN, amber → SIDEWAYS
+- Build verified, pushed to GitHub
+
+Stage Summary:
+- Commit: 7c05a8d pushed to main
+- 2 files changed, 170 insertions, 3 deletions
