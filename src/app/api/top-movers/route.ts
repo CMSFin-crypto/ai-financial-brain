@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getRealPrice, getRealPrices } from '@/lib/alpha-vantage';
+import { getRealPrice, getRealPrices, getRealFundamentalsBatch, type YahooFundamentals } from '@/lib/alpha-vantage';
 import { getAllStocks, StockProfile } from '@/lib/market-data';
 
 export const maxDuration = 60;
 
 // ═══════════════════════════════════════════════════════════════════
 // TOP MOVERS — Top 5 Growth Potential + Top 5 Risk of Decline
-// Multi-factor scoring using real prices + fundamental data
+// Multi-factor scoring using REAL prices + REAL fundamental data
 // ═══════════════════════════════════════════════════════════════════
 
 interface ScoredStock {
@@ -17,9 +17,11 @@ interface ScoredStock {
   currentPrice: number;
   priceChange: number;
   isLive: boolean;
+  hasFundamentals: boolean;
   growthScore: number;
   riskScore: number;
   profile: StockProfile;
+  fund: YahooFundamentals | null;
   growthReasons: string[];
   riskReasons: string[];
 }
@@ -30,21 +32,39 @@ function safeNum(v: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+// Map Yahoo recommendation key to our rating
+function mapRecommendation(key: string): string {
+  const map: Record<string, string> = {
+    'strong_buy': 'STRONG_BUY',
+    'buy': 'BUY',
+    'hold': 'HOLD',
+    'sell': 'SELL',
+    'strong_sell': 'STRONG_SELL',
+  };
+  return map[key] || 'HOLD';
+}
+
 // Growth scoring factors (each contributes 0-100 scaled)
-function calculateGrowthScore(s: StockProfile, priceChange: number): number {
+// Uses REAL fundamental data when available, falls back to profile
+function calculateGrowthScore(s: StockProfile, priceChange: number, fund: YahooFundamentals | null): number {
   let score = 0;
 
+  // Signal & Trend (from profile — these are set manually based on technical analysis)
   if (s.signal === 'BULLISH') score += 20;
   else if (s.signal === 'NEUTRAL') score += 8;
 
   if (s.trend === 'uptrend') score += 15;
   else if (s.trend === 'sideways') score += 5;
 
-  if (s.rating === 'STRONG_BUY') score += 15;
-  else if (s.rating === 'BUY') score += 12;
-  else if (s.rating === 'HOLD') score += 4;
+  // Rating — prefer real analyst recommendation
+  const rating = fund && fund.recommendationKey ? mapRecommendation(fund.recommendationKey) : s.rating;
+  if (rating === 'STRONG_BUY') score += 15;
+  else if (rating === 'BUY') score += 12;
+  else if (rating === 'HOLD') score += 4;
+  else if (rating === 'SELL') score -= 5;
 
-  const revNum = safeNum(s.revGrowth);
+  // Revenue Growth — prefer real data
+  const revNum = fund && fund.revenueGrowth ? fund.revenueGrowth * 100 : safeNum(s.revGrowth);
   if (revNum >= 30) score += 12;
   else if (revNum >= 15) score += 10;
   else if (revNum >= 8) score += 7;
@@ -52,7 +72,8 @@ function calculateGrowthScore(s: StockProfile, priceChange: number): number {
   else if (revNum > 0) score += 2;
   else score -= 3;
 
-  const epsNum = safeNum(s.epsGrowth);
+  // EPS Growth — prefer real data
+  const epsNum = fund && fund.earningsGrowth ? fund.earningsGrowth * 100 : safeNum(s.epsGrowth);
   if (epsNum >= 40) score += 12;
   else if (epsNum >= 20) score += 10;
   else if (epsNum >= 10) score += 7;
@@ -60,15 +81,19 @@ function calculateGrowthScore(s: StockProfile, priceChange: number): number {
   else if (epsNum > 0) score += 2;
   else score -= 3;
 
-  if (s.peg > 0 && s.peg <= 1.0) score += 8;
-  else if (s.peg > 0 && s.peg <= 1.5) score += 6;
-  else if (s.peg > 0 && s.peg <= 2.0) score += 4;
-  else if (s.peg > 0 && s.peg <= 3.0) score += 2;
+  // PEG Ratio — prefer real data
+  const peg = fund && fund.pegRatio > 0 ? fund.pegRatio : s.peg;
+  if (peg > 0 && peg <= 1.0) score += 8;
+  else if (peg > 0 && peg <= 1.5) score += 6;
+  else if (peg > 0 && peg <= 2.0) score += 4;
+  else if (peg > 0 && peg <= 3.0) score += 2;
   else score -= 2;
 
+  // Moat (from profile — structural advantage)
   if (s.moat === 'WIDE') score += 8;
   else if (s.moat === 'NARROW') score += 3;
 
+  // Price momentum
   if (priceChange >= 2) score += 10;
   else if (priceChange >= 1) score += 7;
   else if (priceChange >= 0.3) score += 4;
@@ -76,21 +101,25 @@ function calculateGrowthScore(s: StockProfile, priceChange: number): number {
   else if (priceChange >= -1) score += 0;
   else score -= 3;
 
-  const opMarginNum = safeNum(s.opMargin);
+  // Operating margin — prefer real data
+  const opMarginNum = fund && fund.operatingMargins > 0 ? fund.operatingMargins * 100 : safeNum(s.opMargin);
   if (opMarginNum >= 40) score += 5;
   else if (opMarginNum >= 25) score += 4;
   else if (opMarginNum >= 15) score += 2;
 
-  const qRevNum = safeNum(s.qRevGrowth);
-  const rev3yNum = safeNum(s.revGrowth3Y);
-  if (qRevNum > rev3yNum && qRevNum >= 10) score += 5;
-  else if (qRevNum >= 8) score += 3;
+  // Upside from analyst target — prefer real data
+  if (fund && fund.currentPrice > 0 && fund.targetMeanPrice > 0) {
+    const upside = ((fund.targetMeanPrice - fund.currentPrice) / fund.currentPrice) * 100;
+    if (upside >= 30) score += 5;
+    else if (upside >= 15) score += 3;
+    else if (upside >= 5) score += 1;
+  }
 
   return Math.max(0, Math.min(100, score));
 }
 
 // Risk scoring factors (0-100, higher = more risk of decline)
-function calculateRiskScore(s: StockProfile, priceChange: number): number {
+function calculateRiskScore(s: StockProfile, priceChange: number, fund: YahooFundamentals | null): number {
   let score = 0;
 
   if (s.signal === 'BEARISH') score += 20;
@@ -99,22 +128,27 @@ function calculateRiskScore(s: StockProfile, priceChange: number): number {
   if (s.trend === 'downtrend') score += 15;
   else if (s.trend === 'sideways') score += 5;
 
-  if (s.rating === 'SELL') score += 12;
-  else if (s.rating === 'HOLD') score += 6;
+  const rating = fund && fund.recommendationKey ? mapRecommendation(fund.recommendationKey) : s.rating;
+  if (rating === 'SELL') score += 12;
+  else if (rating === 'HOLD') score += 6;
 
-  const revNum = safeNum(s.revGrowth);
+  // Revenue decline
+  const revNum = fund && fund.revenueGrowth ? fund.revenueGrowth * 100 : safeNum(s.revGrowth);
   if (revNum < -5) score += 12;
   else if (revNum < 0) score += 8;
   else if (revNum < 3) score += 3;
 
-  const epsNum = safeNum(s.epsGrowth);
+  // EPS decline
+  const epsNum = fund && fund.earningsGrowth ? fund.earningsGrowth * 100 : safeNum(s.epsGrowth);
   if (epsNum < -10) score += 10;
   else if (epsNum < 0) score += 6;
   else if (epsNum < 5) score += 2;
 
-  if (s.pe > 80) score += 8;
-  else if (s.pe > 50) score += 5;
-  else if (s.pe > 35) score += 2;
+  // Valuation risk — prefer real PE
+  const pe = fund && fund.trailingPE > 0 ? fund.trailingPE : s.pe;
+  if (pe > 80) score += 8;
+  else if (pe > 50) score += 5;
+  else if (pe > 35) score += 2;
 
   if (s.moat === 'NONE') score += 8;
   else if (s.moat === 'NARROW') score += 4;
@@ -124,78 +158,107 @@ function calculateRiskScore(s: StockProfile, priceChange: number): number {
   else if (priceChange <= -0.3) score += 4;
   else if (priceChange < 0) score += 2;
 
-  if (s.debtEq > 3) score += 8;
-  else if (s.debtEq > 2) score += 5;
-  else if (s.debtEq > 1) score += 2;
+  // Debt — prefer real data
+  const debtEq = fund && fund.debtToEquity > 0 ? fund.debtToEquity : s.debtEq;
+  if (debtEq > 3) score += 8;
+  else if (debtEq > 2) score += 5;
+  else if (debtEq > 1) score += 2;
 
-  const opMarginNum = safeNum(s.opMargin);
+  // Operating margin weakness — prefer real data
+  const opMarginNum = fund && fund.operatingMargins > 0 ? fund.operatingMargins * 100 : safeNum(s.opMargin);
   if (opMarginNum < 5) score += 7;
   else if (opMarginNum < 10) score += 4;
   else if (opMarginNum < 15) score += 2;
 
+  // Negative upside (analysts see decline)
+  if (fund && fund.currentPrice > 0 && fund.targetMeanPrice > 0) {
+    const upside = ((fund.targetMeanPrice - fund.currentPrice) / fund.currentPrice) * 100;
+    if (upside < -15) score += 8;
+    else if (upside < -5) score += 4;
+  }
+
   return Math.max(0, Math.min(100, score));
 }
 
-function generateGrowthReasons(s: StockProfile, priceChange: number): string[] {
+function generateGrowthReasons(s: StockProfile, priceChange: number, fund: YahooFundamentals | null): string[] {
   const reasons: string[] = [];
 
   if (s.signal === 'BULLISH') reasons.push(`Sinjali teknik: BULLISH me trend ${s.trend}`);
-  if (s.rating === 'STRONG_BUY') reasons.push(`${s.buyCount} analiste rekomandojne BLERJE, vetem ${s.sellCount} SHITJE`);
-  else if (s.rating === 'BUY') reasons.push(`${s.buyCount} analiste BLERJE vs ${s.sellCount} SHITJE`);
 
-  const revNum = safeNum(s.revGrowth);
-  const epsNum = safeNum(s.epsGrowth);
-  if (revNum >= 20) reasons.push(`Rritja e te ardhurave: +${s.revGrowth} (eksplozive)`);
-  else if (revNum >= 10) reasons.push(`Rritja e te ardhurave: +${s.revGrowth}`);
-  else if (revNum > 0) reasons.push(`Te ardhurat rriten: +${s.revGrowth}`);
+  const rating = fund && fund.recommendationKey ? mapRecommendation(fund.recommendationKey) : s.rating;
+  if (rating === 'STRONG_BUY') reasons.push(`${fund?.numberOfAnalystOpinions || s.buyCount} analiste rekomandojne BLERJE, vetem ${s.sellCount} SHITJE`);
+  else if (rating === 'BUY') reasons.push(`${fund?.numberOfAnalystOpinions || s.buyCount} analiste BLERJE vs ${s.sellCount} SHITJE`);
 
-  if (epsNum >= 30) reasons.push(`EPS growth: +${s.epsGrowth} (forte)`);
-  else if (epsNum >= 15) reasons.push(`Fitimi per aksion rritet: +${s.epsGrowth}`);
+  // Use real growth data
+  const revNum = fund && fund.revenueGrowth ? fund.revenueGrowth * 100 : safeNum(s.revGrowth);
+  const epsNum = fund && fund.earningsGrowth ? fund.earningsGrowth * 100 : safeNum(s.epsGrowth);
 
-  if (s.peg > 0 && s.peg <= 1.5) reasons.push(`PEG ${s.peg} — vleresim i arsyeshem per rritjen`);
+  if (revNum >= 20) reasons.push(`Rritja e te ardhurave: +${revNum.toFixed(1)}% (eksplozive)`);
+  else if (revNum >= 10) reasons.push(`Rritja e te ardhurave: +${revNum.toFixed(1)}%`);
+  else if (revNum > 0) reasons.push(`Te ardhurat rriten: +${revNum.toFixed(1)}%`);
+
+  if (epsNum >= 30) reasons.push(`EPS growth: +${epsNum.toFixed(1)}% (forte)`);
+  else if (epsNum >= 15) reasons.push(`Fitimi per aksion rritet: +${epsNum.toFixed(1)}%`);
+
+  const peg = fund && fund.pegRatio > 0 ? fund.pegRatio : s.peg;
+  if (peg > 0 && peg <= 1.5) reasons.push(`PEG ${peg.toFixed(2)} — vleresim i arsyeshem per rritjen`);
+
   if (s.moat === 'WIDE') reasons.push(`Avantazhi konkurrues: I GJERE (${s.strengths[0] || ''})`);
   if (priceChange >= 1) reasons.push(`Momentum ditore: +${priceChange.toFixed(2)}%`);
 
-  const fcfNum = safeNum(s.fcf);
-  if (fcfNum > 10) reasons.push(`Free Cash Flow: $${s.fcf}`);
+  // Real upside
+  if (fund && fund.currentPrice > 0 && fund.targetMeanPrice > 0) {
+    const upside = ((fund.targetMeanPrice - fund.currentPrice) / fund.currentPrice) * 100;
+    if (upside > 10) reasons.push(`Upside analistesh: +${upside.toFixed(1)}% (target $${fund.targetMeanPrice.toFixed(2)})`);
+  }
 
-  const qRevNum = safeNum(s.qRevGrowth);
-  if (qRevNum > revNum) reasons.push(`Akselerim: rritja tremujore (+${s.qRevGrowth}) > vjetore`);
+  const qRevNum = fund && fund.revenueQuarterlyGrowth ? fund.revenueQuarterlyGrowth * 100 : safeNum(s.qRevGrowth);
+  if (qRevNum > revNum) reasons.push(`Akselerim: rritja tremujore (+${qRevNum.toFixed(1)}%) > vjetore`);
 
   return reasons.slice(0, 5);
 }
 
-function generateRiskReasons(s: StockProfile, priceChange: number): string[] {
+function generateRiskReasons(s: StockProfile, priceChange: number, fund: YahooFundamentals | null): string[] {
   const reasons: string[] = [];
 
   if (s.signal === 'BEARISH') reasons.push(`Sinjali teknik: BEARISH me trend ${s.trend}`);
-  if (s.rating === 'HOLD' || s.rating === 'SELL') reasons.push(`Rating analistesh: ${s.rating} (${s.sellCount} shitje)`);
 
-  const revNum = safeNum(s.revGrowth);
-  const epsNum = safeNum(s.epsGrowth);
-  if (revNum < 0) reasons.push(`Te ardhura ne renie: ${s.revGrowth}`);
-  if (epsNum < 0) reasons.push(`EPS ne renie: ${s.epsGrowth}`);
+  const rating = fund && fund.recommendationKey ? mapRecommendation(fund.recommendationKey) : s.rating;
+  if (rating === 'HOLD' || rating === 'SELL') reasons.push(`Rating analistesh: ${rating} (${s.sellCount} shitje)`);
 
-  if (s.pe > 50) reasons.push(`P/E ${s.pe}x — vleresim shume i larte`);
+  const revNum = fund && fund.revenueGrowth ? fund.revenueGrowth * 100 : safeNum(s.revGrowth);
+  const epsNum = fund && fund.earningsGrowth ? fund.earningsGrowth * 100 : safeNum(s.epsGrowth);
+  if (revNum < 0) reasons.push(`Te ardhura ne renie: ${revNum.toFixed(1)}%`);
+  if (epsNum < 0) reasons.push(`EPS ne renie: ${epsNum.toFixed(1)}%`);
+
+  const pe = fund && fund.trailingPE > 0 ? fund.trailingPE : s.pe;
+  if (pe > 50) reasons.push(`P/E ${pe.toFixed(1)}x — vleresim shume i larte`);
+
   if (s.moat === 'NONE') reasons.push(`Asnje avantazhi konkurrues (Moat: NONE)`);
   if (priceChange < 0) reasons.push(`Momentum negativ: ${priceChange.toFixed(2)}%`);
-  if (s.debtEq > 2) reasons.push(`Detyrimet e larta: Debt/Equity ${s.debtEq}x`);
+
+  const debtEq = fund && fund.debtToEquity > 0 ? fund.debtToEquity : s.debtEq;
+  if (debtEq > 2) reasons.push(`Detyrimet e larta: Debt/Equity ${debtEq.toFixed(1)}x`);
+
   if (s.weaknesses.length > 0) reasons.push(`Rreziku: ${s.weaknesses[0]}`);
 
-  const opMarginNum = safeNum(s.opMargin);
-  if (opMarginNum < 10) reasons.push(`Marzhe operative te ulta: ${s.opMargin}`);
+  // Negative upside
+  if (fund && fund.currentPrice > 0 && fund.targetMeanPrice > 0) {
+    const upside = ((fund.targetMeanPrice - fund.currentPrice) / fund.currentPrice) * 100;
+    if (upside < 0) reasons.push(`Upside negativ: ${upside.toFixed(1)}% (target $${fund.targetMeanPrice.toFixed(2)} < cmimi $${fund.currentPrice.toFixed(2)})`);
+  }
+
   if (s.trend === 'downtrend') reasons.push(`Trendi afatgjatshem: DOWNTREND`);
 
   return reasons.slice(0, 5);
 }
 
 // Cache for 5 minutes
-let cachedResult: { data: { topGrowth: ScoredStock[]; topRisk: ScoredStock[]; timestamp: string; liveCount: number; totalFetched: number }; fetchedAt: number } | null = null;
+let cachedResult: { data: { topGrowth: ScoredStock[]; topRisk: ScoredStock[]; timestamp: string; liveCount: number; totalFetched: number; fundCount: number }; fetchedAt: number } | null = null;
 const CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * Fetch real prices in small batches to avoid rate limits.
- * Uses individual calls with delays for reliability.
  */
 async function fetchPricesInBatches(tickers: string[]): Promise<Record<string, { price: number; change: number }>> {
   const results: Record<string, { price: number; change: number }> = {};
@@ -209,14 +272,12 @@ async function fetchPricesInBatches(tickers: string[]): Promise<Record<string, {
     console.log('[TOP-MOVERS] Bulk fetch failed, trying individual...');
   }
 
-  // For any missing tickers, try individual fetch with concurrency limit
+  // For any missing tickers, try individual fetch
   const missing = tickers.filter(t => !results[t]);
   if (missing.length > 0) {
-    // Fetch top 20 most important individually (sorted by market cap relevance)
     const priorityTickers = ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'LLY', 'JPM', 'V', 'CRM', 'AMD', 'NFLX', 'PLTR', 'UNH', 'MRVL', 'COIN', 'SMCI', 'SNOW'];
     const toFetch = priorityTickers.filter(t => missing.includes(t)).slice(0, 15);
     
-    // Fetch in parallel with concurrency of 3
     const BATCH_SIZE = 3;
     for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
       const batch = toFetch.slice(i, i + BATCH_SIZE);
@@ -228,16 +289,14 @@ async function fetchPricesInBatches(tickers: string[]): Promise<Record<string, {
               results[ticker] = { price: price.price, change: price.change };
             }
           } catch {
-            // Skip failed individual fetches
+            // Skip
           }
         })
       );
-      // Small delay between batches to avoid rate limits
       if (i + BATCH_SIZE < toFetch.length) {
         await new Promise(r => setTimeout(r, 200));
       }
     }
-    console.log(`[TOP-MOVERS] Individual fetch got ${Object.keys(results).length - tickers.length + missing.length} additional prices`);
   }
 
   return results;
@@ -253,23 +312,44 @@ export async function GET() {
       });
     }
 
-    console.log('[TOP-MOVERS] Fetching real prices and calculating scores...');
+    console.log('[TOP-MOVERS] Fetching real prices AND fundamentals...');
 
     const allStocks = getAllStocks();
     const allTickers = Object.keys(allStocks);
     
-    // Fetch real prices with batched approach
+    // ═══ STEP 1: Fetch real prices ═══
     const realPrices = await fetchPricesInBatches(allTickers);
     const liveCount = Object.keys(realPrices).length;
     console.log(`[TOP-MOVERS] Got ${liveCount}/${allTickers.length} real prices`);
 
-    // Score all stocks
+    // ═══ STEP 2: Fetch real fundamental data for ALL stocks ═══
+    // Batch in groups of 3 with delays
+    const realFundamentals = await getRealFundamentalsBatch(allTickers);
+    const fundCount = Object.keys(realFundamentals).length;
+    console.log(`[TOP-MOVERS] Got ${fundCount}/${allTickers.length} real fundamentals`);
+
+    // ═══ STEP 3: Score all stocks using real data ═══
     const scored: ScoredStock[] = allTickers.map(ticker => {
       const profile = allStocks[ticker];
       const livePrice = realPrices[ticker];
+      const fund = realFundamentals[ticker] || null;
       const isLive = !!livePrice && livePrice.price > 0;
-      const priceChange = isLive ? livePrice.change : profile.change;
-      const currentPrice = isLive ? livePrice.price : profile.price;
+      const hasFundamentals = !!fund && fund.currentPrice > 0;
+
+      // Use live price if available, otherwise use fund price, otherwise profile price
+      let currentPrice = profile.price;
+      let priceChange = profile.change;
+
+      if (isLive) {
+        currentPrice = livePrice.price;
+        priceChange = livePrice.change;
+      } else if (hasFundamentals && fund!.currentPrice > 0) {
+        currentPrice = fund!.currentPrice;
+        const prev = fund!.previousClose;
+        if (prev > 0) {
+          priceChange = ((fund!.currentPrice - prev) / prev) * 100;
+        }
+      }
 
       return {
         ticker,
@@ -279,11 +359,13 @@ export async function GET() {
         currentPrice,
         priceChange,
         isLive,
-        growthScore: calculateGrowthScore(profile, priceChange),
-        riskScore: calculateRiskScore(profile, priceChange),
+        hasFundamentals,
+        growthScore: calculateGrowthScore(profile, priceChange, fund),
+        riskScore: calculateRiskScore(profile, priceChange, fund),
         profile,
-        growthReasons: generateGrowthReasons(profile, priceChange),
-        riskReasons: generateRiskReasons(profile, priceChange),
+        fund,
+        growthReasons: generateGrowthReasons(profile, priceChange, fund),
+        riskReasons: generateRiskReasons(profile, priceChange, fund),
       };
     });
 
@@ -297,11 +379,79 @@ export async function GET() {
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 5);
 
-    // Enrich with target prices and upside/downside
+    // Enrich with REAL data for output
     const enriched = (list: ScoredStock[], type: 'growth' | 'risk') =>
       list.map(stock => {
-        const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
-        const upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
+        const fund = stock.fund;
+
+        // Use real target prices if available
+        let targetPrice = stock.profile.targetPrice;
+        let highTarget = stock.profile.highTarget;
+        let lowTarget = stock.profile.lowTarget;
+        let upside = 0;
+        let rating = stock.profile.rating;
+        let pe = stock.profile.pe;
+        let fwdPE = stock.profile.fwdPE;
+        let peg = stock.profile.peg;
+        let revGrowth = stock.profile.revGrowth;
+        let epsGrowth = stock.profile.epsGrowth;
+        let opMargin = stock.profile.opMargin;
+        let debtEq = stock.profile.debtEq;
+        let buyCount = stock.profile.buyCount;
+        let sellCount = stock.profile.sellCount;
+
+        if (fund) {
+          // Override with real data
+          pe = fund.trailingPE || stock.profile.pe;
+          fwdPE = fund.forwardPE || stock.profile.fwdPE;
+          peg = fund.pegRatio || stock.profile.peg;
+          debtEq = fund.debtToEquity || stock.profile.debtEq;
+
+          // Revenue growth: convert decimal to percentage string
+          if (fund.revenueGrowth) {
+            revGrowth = (fund.revenueGrowth * 100).toFixed(1) + '%';
+          }
+          // EPS growth: convert decimal to percentage string
+          if (fund.earningsGrowth) {
+            epsGrowth = (fund.earningsGrowth * 100).toFixed(1) + '%';
+          }
+          // Operating margin: convert decimal to percentage string
+          if (fund.operatingMargins > 0) {
+            opMargin = (fund.operatingMargins * 100).toFixed(1) + '%';
+          }
+
+          // Real analyst targets
+          if (fund.targetMeanPrice > 0) {
+            targetPrice = '$' + fund.targetMeanPrice.toFixed(2);
+            highTarget = '$' + fund.targetHighPrice.toFixed(2);
+            lowTarget = '$' + fund.targetLowPrice.toFixed(2);
+            upside = ((fund.targetMeanPrice - stock.currentPrice) / stock.currentPrice) * 100;
+          } else {
+            // Fallback: calculate from profile target
+            const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
+            upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
+          }
+
+          // Real recommendation
+          if (fund.recommendationKey) {
+            rating = mapRecommendation(fund.recommendationKey);
+          }
+
+          // Analyst counts
+          if (fund.numberOfAnalystOpinions > 0) {
+            const total = Math.round(fund.numberOfAnalystOpinions);
+            // Estimate buy/sell split from recommendation
+            if (rating === 'STRONG_BUY') { buyCount = Math.round(total * 0.75); sellCount = Math.round(total * 0.05); }
+            else if (rating === 'BUY') { buyCount = Math.round(total * 0.55); sellCount = Math.round(total * 0.15); }
+            else if (rating === 'HOLD') { buyCount = Math.round(total * 0.25); sellCount = Math.round(total * 0.25); }
+            else if (rating === 'SELL') { buyCount = Math.round(total * 0.1); sellCount = Math.round(total * 0.55); }
+          }
+        } else {
+          // No real data — calculate upside from profile target
+          const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
+          upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
+        }
+
         return {
           ticker: stock.ticker,
           company: stock.company,
@@ -310,28 +460,29 @@ export async function GET() {
           currentPrice: stock.currentPrice,
           priceChange: stock.priceChange,
           isLive: stock.isLive,
+          hasFundamentals: stock.hasFundamentals,
           score: type === 'growth' ? stock.growthScore : stock.riskScore,
-          targetPrice: stock.profile.targetPrice,
-          highTarget: stock.profile.highTarget,
-          lowTarget: stock.profile.lowTarget,
+          targetPrice,
+          highTarget,
+          lowTarget,
           upside: parseFloat(upside.toFixed(1)),
-          rating: stock.profile.rating,
+          rating,
           signal: stock.profile.signal,
           trend: stock.profile.trend,
-          pe: stock.profile.pe,
-          fwdPE: stock.profile.fwdPE,
-          peg: stock.profile.peg,
-          revGrowth: stock.profile.revGrowth,
-          epsGrowth: stock.profile.epsGrowth,
-          opMargin: stock.profile.opMargin,
-          debtEq: stock.profile.debtEq,
+          pe,
+          fwdPE,
+          peg,
+          revGrowth,
+          epsGrowth,
+          opMargin,
+          debtEq,
           moat: stock.profile.moat,
           marketCap: stock.profile.marketCap,
           reasons: type === 'growth' ? stock.growthReasons : stock.riskReasons,
           strengths: stock.profile.strengths,
           weaknesses: stock.profile.weaknesses,
-          buyCount: stock.profile.buyCount,
-          sellCount: stock.profile.sellCount,
+          buyCount,
+          sellCount,
         };
       });
 
@@ -341,11 +492,12 @@ export async function GET() {
       totalAnalyzed: allTickers.length,
       liveCount,
       totalFetched: allTickers.length,
+      fundCount,
       timestamp: new Date().toISOString(),
     };
 
     cachedResult = { data: result, fetchedAt: Date.now() };
-    console.log(`[TOP-MOVERS] Growth: ${topGrowth.map(s => s.ticker).join(',')} | Risk: ${topRisk.map(s => s.ticker).join(',')} | Live: ${liveCount}/${allTickers.length}`);
+    console.log(`[TOP-MOVERS] Growth: ${topGrowth.map(s => s.ticker).join(',')} | Risk: ${topRisk.map(s => s.ticker).join(',')} | Live: ${liveCount} | Fund: ${fundCount}`);
 
     return NextResponse.json({ ...result, cached: false });
   } catch (error) {

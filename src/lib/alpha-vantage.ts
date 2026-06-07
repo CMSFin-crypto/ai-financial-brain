@@ -346,6 +346,241 @@ export async function fetchHistoricalData(ticker: string, range?: string): Promi
   return null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// YAHOO FINANCE FUNDAMENTALS — Real financial data
+// Uses quoteSummary endpoint for PE, PEG, Revenue Growth, EPS Growth,
+// analyst targets, margins, etc.
+// ═══════════════════════════════════════════════════════════════
+
+export interface YahooFundamentals {
+  currentPrice: number;
+  previousClose: number;
+  // Valuation
+  trailingPE: number;
+  forwardPE: number;
+  pegRatio: number;
+  priceToBook: number;
+  enterpriseToEbitda: number;
+  // Margins (decimal, e.g. 0.46 = 46%)
+  grossMargins: number;
+  operatingMargins: number;
+  profitMargins: number;
+  // Growth
+  revenueGrowth: number;      // e.g. 0.095 = 9.5%
+  earningsGrowth: number;     // e.g. 0.142 = 14.2%
+  revenueQuarterlyGrowth: number;
+  earningsQuarterlyGrowth: number;
+  // Analyst consensus
+  targetMeanPrice: number;
+  targetHighPrice: number;
+  targetLowPrice: number;
+  recommendationKey: string;   // 'buy', 'hold', 'sell', 'strong_buy'
+  numberOfAnalystOpinions: number;
+  // Other
+  totalRevenue: number;
+  ebitda: number;
+  totalDebt: number;
+  totalCash: number;
+  debtToEquity: number;
+  returnOnEquity: number;
+  freeCashflow: number;
+  epsForward: number;
+  source: string;
+  fetchedAt: string;
+}
+
+// Cache fundamentals for 15 minutes (longer than prices)
+const fundCache = new Map<string, { data: YahooFundamentals; fetchedAt: number }>();
+const FUND_CACHE_TTL_MS = 15 * 60 * 1000;
+
+function extractNum(val: unknown): number {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const n = parseFloat(String(val).replace(/[^0-9.\-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<YahooFundamentals | null> {
+  const base = YAHOO_ENDPOINTS[endpointIndex] || YAHOO_ENDPOINTS[0];
+  const modules = 'financialData,defaultKeyStatistics,earningsTrend,earningsHistory';
+  try {
+    const url = `${base}/v10/finance/quoteSummary/${ticker}?modules=${modules}`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: BROWSER_HEADERS,
+    });
+
+    if (!res.ok) {
+      console.log(`[FUND] ${ticker}: quoteSummary ${base} returned ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+    const body = data?.quoteSummary?.result?.[0];
+    if (!body) {
+      console.log(`[FUND] ${ticker}: No quoteSummary result from ${base}`);
+      return null;
+    }
+
+    const fd = body.financialData || {};
+    const dks = body.defaultKeyStatistics || {};
+    const et = body.earningsTrend || {};
+    const eh = body.earningsHistory || {};
+
+    // Extract earnings trend for forward EPS
+    const trendData = et.trend || [];
+    let epsForward = extractNum(fd.forwardEps);
+    if (!epsForward && trendData.length > 0) {
+      epsForward = extractNum(trendData[0]?.earningsEstimate?.avgForecast);
+    }
+
+    // Extract quarterly growth from earnings history
+    const historyData = eh.history || [];
+    let earningsQuarterlyGrowth = extractNum(fd.earningsQuarterlyGrowth);
+    let revenueQuarterlyGrowth = extractNum(fd.revenueQuarterlyGrowth);
+    if (!earningsQuarterlyGrowth && historyData.length > 0) {
+      const latest = historyData[0];
+      const epsSurprise = extractNum(latest?.epsSurprisePercent);
+      if (epsSurprise) earningsQuarterlyGrowth = epsSurprise;
+    }
+
+    // Revenue growth quarterly
+    if (!revenueQuarterlyGrowth && historyData.length > 0) {
+      const revSurprise = extractNum(historyData[0]?.revenueSurprisePercent);
+      if (revSurprise) revenueQuarterlyGrowth = revSurprise;
+    }
+
+    // Calculate upside from target
+    const currentPrice = extractNum(fd.currentPrice?.raw);
+    const targetMean = extractNum(fd.targetMeanPrice?.raw);
+    const upside = currentPrice > 0 && targetMean > 0
+      ? ((targetMean - currentPrice) / currentPrice) * 100
+      : 0;
+
+    const result: YahooFundamentals = {
+      currentPrice,
+      previousClose: extractNum(fd.previousClose?.raw),
+      trailingPE: extractNum(fd.trailingPE?.raw),
+      forwardPE: extractNum(fd.forwardPE?.raw),
+      pegRatio: extractNum(dks.pegRatio?.raw),
+      priceToBook: extractNum(fd.priceToBook?.raw),
+      enterpriseToEbitda: extractNum(dks.enterpriseToEbitda?.raw),
+      grossMargins: extractNum(fd.grossMargins?.raw),
+      operatingMargins: extractNum(fd.operatingMargins?.raw),
+      profitMargins: extractNum(fd.profitMargins?.raw),
+      revenueGrowth: extractNum(fd.revenueGrowth?.raw),
+      earningsGrowth: extractNum(fd.earningsGrowth?.raw),
+      revenueQuarterlyGrowth,
+      earningsQuarterlyGrowth,
+      targetMeanPrice: targetMean,
+      targetHighPrice: extractNum(fd.targetHighPrice?.raw),
+      targetLowPrice: extractNum(fd.targetLowPrice?.raw),
+      recommendationKey: extractNum(fd.recommendationKey) ? String(fd.recommendationKey) : '',
+      numberOfAnalystOpinions: extractNum(fd.numberOfAnalystOpinions?.raw),
+      totalRevenue: extractNum(fd.totalRevenue?.raw),
+      ebitda: extractNum(fd.ebitda?.raw),
+      totalDebt: extractNum(fd.totalDebt?.raw),
+      totalCash: extractNum(fd.totalCash?.raw),
+      debtToEquity: extractNum(fd.debtToEquity?.raw),
+      returnOnEquity: extractNum(fd.returnOnEquity?.raw),
+      freeCashflow: extractNum(fd.freeCashflow?.raw),
+      epsForward,
+      source: `yahoo_finance (${base})`,
+      fetchedAt: new Date().toISOString(),
+    };
+
+    console.log(`[FUND] ${ticker}: PE=${result.trailingPE} fwdPE=${result.forwardPE} PEG=${result.pegRatio} RevGr=${(result.revenueGrowth*100).toFixed(1)}% EPSGr=${(result.earningsGrowth*100).toFixed(1)}% Target=$${result.targetMeanPrice} Upside=${upside.toFixed(1)}%`);
+    return result;
+  } catch (err: any) {
+    const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+    console.log(`[FUND] ${ticker}: quoteSummary ${base} failed: ${msg}`);
+    return null;
+  }
+}
+
+/**
+ * Fetch real fundamental data for a single ticker from Yahoo Finance.
+ * Returns null if all endpoints fail.
+ */
+export async function getRealFundamentals(ticker: string): Promise<YahooFundamentals | null> {
+  const t = ticker.toUpperCase().trim();
+
+  // Check cache first
+  const cached = fundCache.get(t);
+  if (cached && Date.now() - cached.fetchedAt < FUND_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  // Try endpoint 1
+  const r1 = await fetchQuoteSummary(t, 0);
+  if (r1 && r1.currentPrice > 0) {
+    fundCache.set(t, { data: r1, fetchedAt: Date.now() });
+    return r1;
+  }
+
+  // Try endpoint 2
+  const r2 = await fetchQuoteSummary(t, 1);
+  if (r2 && r2.currentPrice > 0) {
+    fundCache.set(t, { data: r2, fetchedAt: Date.now() });
+    return r2;
+  }
+
+  console.warn(`[FUND] Could not fetch fundamentals for ${ticker}`);
+  return null;
+}
+
+/**
+ * Fetch real fundamental data for multiple tickers (batched).
+ * Returns a map of ticker -> YahooFundamentals (only successfully fetched).
+ */
+export async function getRealFundamentalsBatch(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
+  const results: Record<string, YahooFundamentals> = {};
+  const toFetch: string[] = [];
+
+  for (const ticker of tickers) {
+    const t = ticker.toUpperCase().trim();
+    const cached = fundCache.get(t);
+    if (cached && Date.now() - cached.fetchedAt < FUND_CACHE_TTL_MS) {
+      results[t] = cached.data;
+    } else {
+      toFetch.push(t);
+    }
+  }
+
+  if (toFetch.length === 0) {
+    console.log(`[FUND] All ${tickers.length} fundamentals from cache`);
+    return results;
+  }
+
+  console.log(`[FUND] Cache hits: ${Object.keys(results).length}, fetching: ${toFetch.length} fundamentals...`);
+
+  // Process in batches of 3 with longer delay (quoteSummary is heavier)
+  const BATCH_SIZE = 3;
+  const BATCH_DELAY_MS = 1200;
+  const chunks = chunkArray(toFetch, BATCH_SIZE);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const fetchResults = await Promise.allSettled(
+      chunk.map(t => getRealFundamentals(t))
+    );
+
+    chunk.forEach((ticker, j) => {
+      const result = fetchResults[j];
+      if (result.status === 'fulfilled' && result.value) {
+        results[ticker] = result.value;
+      }
+    });
+
+    if (i < chunks.length - 1) {
+      await delay(BATCH_DELAY_MS);
+    }
+  }
+
+  console.log(`[FUND] Batch complete: ${Object.keys(results).length}/${tickers.length} fundamentals obtained`);
+  return results;
+}
+
 /**
  * Inject real price data into an AI user message prompt.
  * Appends a section with real prices so the AI uses them instead of hallucinating.
