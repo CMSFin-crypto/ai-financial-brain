@@ -9,16 +9,28 @@ interface SectorScanRequest {
   count?: number;
 }
 
-const SYSTEM_PROMPT = `You are a SECTOR SCANNER AI — scan all major sectors and return the TOP 10 stocks per sector with quantitative scoring.
+const SYSTEM_PROMPT = `You are a SECTOR SCANNER AI — scan all major sectors and return the TOP 10 stocks per sector with DETAILED ratings.
 
-For each stock in each sector, provide:
+For EACH stock in each sector, provide a COMPREHENSIVE evaluation:
+
+MANDATORY fields per stock:
 - ticker, company name, sector
-- quick signal: BULLISH/BEARISH/NEUTRAL
-- confidence: 0-100
-- current estimated price
-- quick fundamental note (1 sentence)
-- quick technical note (1 sentence)
-- key catalyst (if any)
+- rating: STRONG_BUY | BUY | HOLD | SELL | STRONG_SELL (choose ONE)
+- confidence: 0-100 (how confident in the rating)
+- price: current estimated price
+- entryPrice: suggested entry price (or null)
+- targetPrice: price target (12-month)
+- stopLoss: stop loss level
+- upside: percentage upside to target (can be negative)
+- riskReward: risk/reward ratio string like "1:3" or "1:2.5"
+- quickScore: 0-100 overall composite score
+
+DETAILED analysis per stock (Albanian language):
+- technicalNote: 1-2 sentences about technical analysis (RSI, MACD, moving averages, chart patterns)
+- fundamentalNote: 1-2 sentences about fundamentals (P/E, growth, margins, earnings, valuation)
+- catalyst: key catalyst or upcoming event driving the rating
+- reasoning: 2-3 sentences explaining WHY this rating was assigned — the bull case AND the bear case
+- keyRisks: 1-2 specific risks that could invalidate the rating
 
 Sectors to scan (78 total stocks across 9 sectors):
 1. TECHNOLOGY (10): AAPL, MSFT, GOOGL, AMZN, META, CRM, NFLX, ADBE, NOW, ORCL
@@ -31,11 +43,18 @@ Sectors to scan (78 total stocks across 9 sectors):
 8. DEFENSE (5): RTX, LMT, NOC, GD, LHX
 9. AI (10): PLTR, AI, SMCI, SNOW, DDOG, ANET, ARM, CRWD, NET, HPE
 
-For each stock, give a QUICK multi-factor score combining:
+For each stock, give a MULTI-FACTOR score combining:
 - Technical momentum (trend, volume, MA alignment)
 - Fundamental valuation (P/E vs sector, growth, margins)
 - Recent news/catalyst impact
 - Overall sector tailwind/headwind
+
+RATING CRITERIA:
+- STRONG_BUY: score 85+, strong technical + fundamental + catalyst alignment
+- BUY: score 70-84, positive bias across multiple factors
+- HOLD: score 50-69, mixed signals, no clear direction
+- SELL: score 30-49, deteriorating technicals + fundamentals
+- STRONG_SELL: score <30, clear breakdown across all factors
 
 Return ONLY valid JSON:
 
@@ -57,13 +76,21 @@ Return ONLY valid JSON:
         {
           "ticker": "NVDA",
           "company": "NVIDIA Corp",
+          "rating": "STRONG_BUY",
           "signal": "BULLISH",
           "confidence": 92,
           "price": 875.50,
-          "technicalNote": "Golden Cross confirmed, RSI at 65 with strong uptrend, volume 1.5x average",
-          "fundamentalNote": "Revenue growth 125% YoY, dominant AI chip market share, PEG ratio 1.2",
-          "catalyst": "Next-gen Blackwell GPU launch, AI data center demand surge",
-          "quickScore": 91
+          "entryPrice": 860.00,
+          "targetPrice": 1050.00,
+          "stopLoss": 790.00,
+          "upside": 20.0,
+          "riskReward": "1:3.2",
+          "quickScore": 91,
+          "technicalNote": "Golden Cross confirmed, RSI at 65 me tendencë ngjitëse të fortë, vëllimi 1.5x mesatarja",
+          "fundamentalNote": "Rritje e të ardhurave 125% YoY, përdominues në tregun e çipave AI, PEG ratio 1.2",
+          "catalyst": "Hyrja në treg e GPU Blackwell të reja, kërkesë eksplozive për data center AI",
+          "reasoning": "NVIDIA tregon moment të jashtëzakonshëm me dominim në tregun e AI dhe rritje eksplozive të të ardhurave. Rrjeti i ekosistemit CUDA krijon moat konkurrues të fuqishëm. Rreziqet përfshijnë vlerësim të lartë dhe varësi nga kërkesa e数据中心.",
+          "keyRisks": ["Vlerësim i lartë (P/E >60)", "Varësi nga kërkesa e data center"]
         }
       ]
     }
@@ -75,24 +102,35 @@ Make all data realistic and current. Return ONLY pure JSON.
 IMPORTANT CALIBRATION RULES:
 - Default confidence should be 55-75% unless there is VERY strong evidence
 - Only give 80%+ confidence for clear catalyst events
-- Verify trend direction before assigning BULLISH/BEARISH
+- Verify trend direction before assigning ratings
 - Consider sector rotation and macro factors
-- Prefer being correct over being bold`;
+- Prefer being correct over being bold
+- ALWAYS include entryPrice, targetPrice, stopLoss, upside, riskReward, reasoning, keyRisks for every stock`;
 
 // ═══════════════════════════════════════════
 // DEMO DATA — realistic simulation when AI is unreachable
 // Stock profiles now imported from centralized market-data module
 // ═══════════════════════════════════════════
 
+type Rating = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+
 interface DemoStock {
   ticker: string;
   company: string;
   signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  rating: Rating;
   confidence: number;
   price: number;
+  entryPrice: number;
+  targetPrice: number;
+  stopLoss: number;
+  upside: number;
+  riskReward: string;
   technicalNote: string;
   fundamentalNote: string;
   catalyst: string;
+  reasoning: string;
+  keyRisks: string[];
   quickScore: number;
   industry?: string;
 }
@@ -105,37 +143,77 @@ interface DemoSector {
   stocks: DemoStock[];
 }
 
+function getRatingFromScore(score: number): Rating {
+  if (score >= 85) return 'STRONG_BUY';
+  if (score >= 70) return 'BUY';
+  if (score >= 50) return 'HOLD';
+  if (score >= 30) return 'SELL';
+  return 'STRONG_SELL';
+}
+
 function mapStockToDemo(s: { ticker: string; company: string; price: number; sector: string; signal: string; rating: string; revGrowth: string; opMargin: string; trend: string; industry?: string }, livePrice?: number) {
   const confidence = s.signal === 'BULLISH' ? 75 + Math.floor(Math.random() * 20)
     : s.signal === 'BEARISH' ? 35 + Math.floor(Math.random() * 15)
     : 50 + Math.floor(Math.random() * 15);
   const quickScore = confidence;
+  const rating = getRatingFromScore(quickScore);
 
   // CRITICAL: Use live price if available
   const price = (livePrice && livePrice > 0) ? livePrice : s.price;
 
-  const technicalNote = s.signal === 'BULLISH'
-    ? 'Tendenc\u00eb ngjit\u00ebse e konfirmuar, \u00e7mimi mbi SMA kryesore, v\u00ebllimi n\u00eb rritje'
-    : s.signal === 'BEARISH'
-      ? 'Tendenc\u00eb ul\u00ebse me \u00e7mimin n\u00ebn SMA kryesore, presion zbrit\u00ebs'
-      : 'L\u00ebvizje an\u00ebsore pa drejtim t\u00eb qart\u00eb, indikator\u00eb neutral\u00eb';
+  const entryPrice = Math.round(price * (s.signal === 'BULLISH' ? 0.97 : s.signal === 'BEARISH' ? 1.03 : 1.0) * 100) / 100;
+  const upside = s.signal === 'BULLISH' ? Math.round((10 + Math.random() * 25) * 10) / 10
+    : s.signal === 'BEARISH' ? -Math.round((5 + Math.random() * 20) * 10) / 10
+    : Math.round((-5 + Math.random() * 10) * 10) / 10;
+  const targetPrice = Math.round(price * (1 + upside / 100) * 100) / 100;
+  const stopLoss = s.signal === 'BULLISH' ? Math.round(price * (1 - 0.06 - Math.random() * 0.04) * 100) / 100
+    : s.signal === 'BEARISH' ? Math.round(price * (1 + 0.05 + Math.random() * 0.05) * 100) / 100
+    : Math.round(price * 0.95 * 100) / 100;
+  const riskRewardVal = Math.abs(upside) > 0 ? (Math.abs(upside) / (Math.abs(price - stopLoss) / price * 100)).toFixed(1) : '1.0';
+  const riskReward = `1:${riskRewardVal}`;
 
-  const fundamentalNote = `Rritje t\u00eb ardhurash ${s.revGrowth}, marzh\u00eb operative ${s.opMargin}, rating ${s.rating}`;
-  const catalyst = s.signal === 'BULLISH'
-    ? `Momentum pozitiv, k\u00ebrkes\u00eb sektoriale n\u00eb rritje, fitime rezultate pozitive`
+  const technicalNote = s.signal === 'BULLISH'
+    ? 'Tendenc\u00eb ngjit\u00ebse e konfirmuar, RSI n\u00eb zon\u00ebn e rritjes, MACD bullish crossover aktive'
     : s.signal === 'BEARISH'
-      ? `Headwinds sektoriale, \u00e7mime n\u00eb r\u00ebnie, uncertainty makroekonomike`
-      : `Asnj\u00eb katalizator i duksh\u00ebm, prisni konfirmim tekniku`;
+      ? 'RSI n\u00ebn 30, MACD bearish, \u00e7mimi n\u00ebn t\u00eb gjith\u00eb SMA kryesore me presion zbrit\u00ebs'
+      : 'RSI pran\u00eb 50, l\u00ebvizje an\u00ebsore, MACD flet\u00eb pa sinjal t\u00eb qart\u00eb';
+
+  const fundamentalNote = `Rritje t\u00eb ardhurash ${s.revGrowth}, marzh\u00eb operative ${s.opMargin}, vler\u00ebsim ${s.rating}`;
+  const catalyst = s.signal === 'BULLISH'
+    ? `Momentum pozitiv, k\u00ebrkes\u00eb sektoriale n\u00eb rritje, fitime rezultate mbi pritjet`
+    : s.signal === 'BEARISH'
+      ? `Headwinds sektoriale, \u00e7mime n\u00eb r\u00ebnie, rrezik makroekonomik n\u00eb rritje`
+      : `Asnj\u00eb katalizator i duksh\u00ebm, prisni konfirmim tekniku para hyrjes`;
+
+  const reasoning = s.signal === 'BULLISH'
+    ? `${s.company} tregon forcim n\u00eb t\u00eb gjith\u00eb faktor\u00ebt. Teknikisht, çmimi ka thyer rezistenc\u00ebn kryesore dhe tregojn\u00eb moment pozitiv. Fundamentet mbështesin me rritje t\u00eb ardhurash ${s.revGrowth}. Megjithat\u00eb, kujdes ndaj rrezikut t\u00eb kthimit t\u00eb shpejt\u00eb n\u00eb rast të lajmeve t\u00eb këqija makroekonomike.`
+    : s.signal === 'BEARISH'
+      ? `${s.company} tregon dob\u00ebsi n\u00eb shum\u00eb faktor\u00eb. Presioni zbrit\u00ebs \u00ebsht\u00eb i qart\u00eb me çmimin posht\u00eb SMA. Fundamentet jan\u00eb n\u00eb p\u00ebrmir\u00ebsim me rritje t\u00eb ngadalshme. Megjithat\u00eb, n\u00eb rast t\u00eb ndryshimi t\u00eb tendenc\u00ebs, mund t\u00eb ofroj\u00eb vler\u00eb.`
+      : `${s.company} tregon sinjale t\u00eb p\u00ebrzier\u00eb. Asnj\u00eb drejtim i qart\u00eb n\u00eb t\u00eb momentit. Prisni konfirmim tekniku ose lajm katalizator para se t\u00eb merrni pozicion.`;
+
+  const keyRisks = s.signal === 'BULLISH'
+    ? ['Rreziku i korrigjimit afatshkurt\u00ebr pas ngjitjes', 'Ndryshimi i politik\u00ebs monetare t\u00eb Fed']
+    : s.signal === 'BEARISH'
+      ? ['Mund\u00ebsia e raportimit t\u00eb mir\u00eb t\u00eb fitimeve', 'Shitja e shkurt\u00ebr e tepruar']
+      : ['Pasiguria e tregut', 'Mungesa e katalizatorit'];
 
   return {
     ticker: s.ticker,
     company: s.company,
     signal: s.signal as 'BULLISH' | 'BEARISH' | 'NEUTRAL',
+    rating,
     confidence,
     price,
+    entryPrice,
+    targetPrice,
+    stopLoss,
+    upside,
+    riskReward,
     technicalNote,
     fundamentalNote,
     catalyst,
+    reasoning,
+    keyRisks,
     quickScore,
     industry: s.industry,
   };
