@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { TrendingUp, Activity, Shield, Brain, Sparkles } from 'lucide-react';
+import { Activity, Brain, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface LearningStats {
@@ -76,7 +76,7 @@ export function Header() {
               AI Financial Brain
             </h1>
             <p className="text-xs text-muted-foreground hidden sm:block">
-              Lajme → Sinjale Tregu → Parashikime Aksionesh
+              Analizë inteligjente e tregut financiar
             </p>
           </div>
         </div>
@@ -174,17 +174,9 @@ export function Header() {
             </div>
           )}
 
-          <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
+          <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full">
             <Activity className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Powers by AI</span>
-          </div>
-          <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
-            <Shield className="w-3.5 h-3.5 text-amber-500" />
-            <span>Analiza Në Kohë Reale</span>
-          </div>
-          <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Parashikime</span>
+            <span>Në Kohë Reale</span>
           </div>
         </div>
       </div>

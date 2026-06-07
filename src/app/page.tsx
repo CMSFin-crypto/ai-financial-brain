@@ -120,66 +120,120 @@ export default function Home() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="text-center space-y-2"
+          className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-violet-500/10 border border-emerald-500/20 p-6 sm:p-8"
         >
-          <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5">
-            <Zap className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs font-medium text-emerald-600">
-              Powered by AI
-            </span>
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+            <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+              <Brain className="w-7 h-7 text-emerald-500" />
+            </div>
+            <div className="text-center sm:text-left space-y-1.5">
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+                  AI Financial Brain
+                </h2>
+                <div className="inline-flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-2.5 py-0.5">
+                  <Zap className="w-3 h-3 text-emerald-500" />
+                  <span className="text-[10px] font-semibold text-emerald-600">AI</span>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-sm max-w-xl leading-relaxed">
+                Një platformë që lexon lajmet, gjen sinjale tregu, parashikon aksione, dhe ju ndihmon të mësoni tregtimin — gjithçka në një vend.
+              </p>
+            </div>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            AI Financial Brain
-          </h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto text-sm">
-            Lajme → Sinjale Tregu → Parashikime Aksionesh → Paper Trading → Analiza Teknike & Fundamentale
-          </p>
         </motion.section>
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-1 w-full h-auto p-1">
-            <TabsTrigger value="watchlist" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Eye className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Watchlist
-            </TabsTrigger>
-            <TabsTrigger value="top-movers" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Flame className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Top 5+5
-            </TabsTrigger>
-            <TabsTrigger value="quant" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Crosshair className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Quant
-            </TabsTrigger>
-            <TabsTrigger value="sector" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Radar className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Sector
-            </TabsTrigger>
-            <TabsTrigger value="daily-picks" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Target className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Daily Picks
-            </TabsTrigger>
-            <TabsTrigger value="analyze" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Brain className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Lajme
-            </TabsTrigger>
-            <TabsTrigger value="technical" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <LineChart className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Teknike
-            </TabsTrigger>
-            <TabsTrigger value="fundamental" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <Building2 className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Fundamentale
-            </TabsTrigger>
-            <TabsTrigger value="trading" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <ShoppingCart className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              Trading
-            </TabsTrigger>
-            <TabsTrigger value="chat" className="text-xs sm:text-sm py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-              <MessageSquare className="w-3.5 h-3.5 mr-1 hidden sm:inline" />
-              AI Chat
-            </TabsTrigger>
-          </TabsList>
+          {/* Tab category labels + tabs */}
+          <div className="space-y-2">
+            {/* Desktop: grouped tabs with category labels */}
+            <div className="hidden lg:flex flex-col gap-2">
+              {/* Category: Tregu */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Tregu</span>
+                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+                  <TabsTrigger value="watchlist" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Eye className="w-3.5 h-3.5 mr-1.5" />Watchlist
+                  </TabsTrigger>
+                  <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Flame className="w-3.5 h-3.5 mr-1.5" />Top 5+5
+                  </TabsTrigger>
+                  <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Category: Analizë */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Analizë</span>
+                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+                  <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Target className="w-3.5 h-3.5 mr-1.5" />Pikat Ditore
+                  </TabsTrigger>
+                  <TabsTrigger value="quant" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Crosshair className="w-3.5 h-3.5 mr-1.5" />Quant
+                  </TabsTrigger>
+                  <TabsTrigger value="technical" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <LineChart className="w-3.5 h-3.5 mr-1.5" />Teknike
+                  </TabsTrigger>
+                  <TabsTrigger value="fundamental" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Building2 className="w-3.5 h-3.5 mr-1.5" />Fundamentale
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Category: AI & Trading */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">AI &</span>
+                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+                  <TabsTrigger value="analyze" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Brain className="w-3.5 h-3.5 mr-1.5" />Lajme AI
+                  </TabsTrigger>
+                  <TabsTrigger value="trading" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <ShoppingCart className="w-3.5 h-3.5 mr-1.5" />Trading
+                  </TabsTrigger>
+                  <TabsTrigger value="chat" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <MessageSquare className="w-3.5 h-3.5 mr-1.5" />AI Chat
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+            </div>
+            {/* Mobile/Tablet: scrollable single row */}
+            <div className="lg:hidden">
+              <TabsList className="flex gap-1 w-full h-auto p-1 overflow-x-auto">
+                <TabsTrigger value="watchlist" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <Eye className="w-3.5 h-3.5 mr-1" />Watchlist
+                </TabsTrigger>
+                <TabsTrigger value="top-movers" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <Flame className="w-3.5 h-3.5 mr-1" />Top 5+5
+                </TabsTrigger>
+                <TabsTrigger value="quant" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <Crosshair className="w-3.5 h-3.5 mr-1" />Quant
+                </TabsTrigger>
+                <TabsTrigger value="sector" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <Radar className="w-3.5 h-3.5 mr-1" />Sektoret
+                </TabsTrigger>
+                <TabsTrigger value="daily-picks" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <Target className="w-3.5 h-3.5 mr-1" />Pikat
+                </TabsTrigger>
+                <TabsTrigger value="analyze" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                  <Brain className="w-3.5 h-3.5 mr-1" />Lajme AI
+                </TabsTrigger>
+                <TabsTrigger value="technical" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <LineChart className="w-3.5 h-3.5 mr-1" />Teknike
+                </TabsTrigger>
+                <TabsTrigger value="fundamental" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <Building2 className="w-3.5 h-3.5 mr-1" />Fund.
+                </TabsTrigger>
+                <TabsTrigger value="trading" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                  <ShoppingCart className="w-3.5 h-3.5 mr-1" />Trading
+                </TabsTrigger>
+                <TabsTrigger value="chat" className="text-xs py-2.5 px-3 whitespace-nowrap data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                  <MessageSquare className="w-3.5 h-3.5 mr-1" />AI Chat
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
 
           {/* Tab: Watchlist */}
           <TabsContent value="watchlist" className="mt-4">
@@ -205,10 +259,10 @@ export default function Home() {
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
                     <Flame className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Top 5 Rritje + Top 5 Rrezik Renie</h3>
+                    <h3 className="text-sm font-semibold">Aksionet me Performancën Më Të Mirë dhe Më të Keqe</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Multi-factor scoring me 10 kriterë: signal teknik, trend, rating analistësh, rritja e të ardhurave, EPS, PEG, moat, momentum, marzhë operative, akselerim tremujor. Çmimet në kohë reale nga Yahoo Finance.
+                  <p className="text-sm text-muted-foreground">
+                    10 aksione me rritje më të lartë dhe 10 me rrezik më të madh, të vlerësuara sipas shumë faktorëve. Çmimet përditësohen në kohë reale.
                   </p>
                 </CardContent>
               </Card>
@@ -224,14 +278,14 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Card className="border-emerald-500/20 bg-emerald-500/5">
+              <Card className="border-blue-500/20 bg-blue-500/5">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <Crosshair className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Multi-Agent Quant Analysis</h3>
+                    <Crosshair className="w-4 h-4 text-blue-500" />
+                    <h3 className="text-sm font-semibold">Analizë e Thellë me AI</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    4 agjentë të specializuar (Teknik 35%, Fundament 25%, Makro 20%, Lajme 20%) + Debate Bull/Bear + Risk Manager + Scoring Engine. Minimum 3 konfirmime për një sinjal. Mundëso 1% risk per trade.
+                  <p className="text-sm text-muted-foreground">
+                    4 ekspertë AI analizojnë çdo aksion: teknika, fundamentet, makroekonomia, dhe lajmet. Merrin sinjal vetëm kur 3+ ekspertë bien dakord.
                   </p>
                 </CardContent>
               </Card>
@@ -247,14 +301,14 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Card className="border-border/50 bg-card/50">
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
                     <Radar className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Sector Scanner — 10 Stoqe per Sektor</h3>
+                    <h3 className="text-sm font-semibold">Skaner Sektorësh — 9 Sektorë, 10 Aksionet Më Të Mira</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Skanim i plotë i 9 sektorëve: Teknologji, Semikonduktorë, Shëndetësi, Financa, Energji, Industri, Retail, Mbrojtje, Inteligjencë Artificiale. 10 aksionet më të mira për sektor me multi-factor scoring.
+                  <p className="text-sm text-muted-foreground">
+                    Shfleto 9 sektorë kryesorë: Teknologji, AI, Shëndetësi, Financa, Energji, dhe të tjera. Gjen 10 aksionet më të forta në çdo sektor.
                   </p>
                 </CardContent>
               </Card>
@@ -293,11 +347,11 @@ export default function Home() {
               className="space-y-6"
             >
               {/* Input Section */}
-              <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <Card className="border-violet-500/20 bg-violet-500/5 backdrop-blur-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <Brain className="w-4 h-4 text-emerald-500" />
-                    Analizë e Lajmeve & Tweets
+                    <Brain className="w-4 h-4 text-violet-500" />
+                    Analizë e Lajmeve me AI
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -465,14 +519,14 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Card className="border-border/50 bg-card/50 mb-4">
+              <Card className="border-blue-500/20 bg-blue-500/5 mb-4">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <LineChart className="w-4 h-4 text-emerald-500" />
+                    <LineChart className="w-4 h-4 text-blue-500" />
                     <h3 className="text-sm font-semibold">Analiza Teknike</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Shkruaj ticker-in e një aksioni për të marrë analizë teknike të plotë: RSI, MACD, Moving Averages, Bollinger Bands, suport/rezistencë, dhe modele grafike.
+                  <p className="text-sm text-muted-foreground">
+                    Shkruaj ticker-in (p.sh. AAPL) për të parë grafikun, RSI, MACD, mesataret, dhe sinjalet blerje/shitje.
                   </p>
                 </CardContent>
               </Card>
@@ -488,14 +542,14 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Card className="border-border/50 bg-card/50 mb-4">
+              <Card className="border-blue-500/20 bg-blue-500/5 mb-4">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <Building2 className="w-4 h-4 text-emerald-500" />
+                    <Building2 className="w-4 h-4 text-blue-500" />
                     <h3 className="text-sm font-semibold">Analiza Fundamentale</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Shkruaj ticker-in për analizë të thellë fundamentale: vlerësimi, fitueshmëria, rritja, shëndeti financiar, EPS, avantazhi konkurrues, dhe konsensusi i analistëve.
+                  <p className="text-sm text-muted-foreground">
+                    Shkruaj ticker-in për të parë sa vlen aksioni, fitueshmërinë, rritjen, dhe cilësitë konkurruese të kompanisë.
                   </p>
                 </CardContent>
               </Card>
@@ -511,14 +565,14 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Card className="border-border/50 bg-card/50 mb-4">
+              <Card className="border-violet-500/20 bg-violet-500/5 mb-4">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <ShoppingCart className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Paper Trading — Tregtim Virtual</h3>
+                    <ShoppingCart className="w-4 h-4 text-violet-500" />
+                    <h3 className="text-sm font-semibold">Tregtim Virtual (Paper Trading)</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Provo tregtim pa rrezik me $100,000 virtuale. Blej dhe shit aksione, ndërto portofolin tënde, dhe mëso pa humbur para të vërteta.
+                  <p className="text-sm text-muted-foreground">
+                    Provo tregtim me $100,000 virtuale — bli, shit, dhe ndërto portofolin tënde pa rrezik. Mëso pa humbur para të vërteta.
                   </p>
                 </CardContent>
               </Card>
@@ -534,14 +588,14 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Card className="border-emerald-500/20 bg-emerald-500/5">
+              <Card className="border-violet-500/20 bg-violet-500/5">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <MessageSquare className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">AI Chat — Bisedë me Financial Brain</h3>
+                    <MessageSquare className="w-4 h-4 text-violet-500" />
+                    <h3 className="text-sm font-semibold">Biseda me AI</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Biseda konversacionale me AI. Pyet për çdo stock, koncept financiar, ose analizë tregu. Vendos ticker-in për kontekst shtesë të të dhënave të aksioneve.
+                  <p className="text-sm text-muted-foreground">
+                    Pyet çdo gjë për aksione, tregjet, ose koncepte financiare. AI-u ju përgjigjet me kontekst të plotë.
                   </p>
                 </CardContent>
               </Card>

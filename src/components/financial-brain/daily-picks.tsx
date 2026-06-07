@@ -166,7 +166,7 @@ export function DailyPicks() {
                     <Badge
                       key={i}
                       variant="outline"
-                      className={`text-[10px] ${
+                      className={`text-xs ${
                         mover.direction === 'UP'
                           ? 'border-emerald-500/30 text-emerald-500'
                           : 'border-red-500/30 text-red-500'
@@ -232,7 +232,7 @@ export function DailyPicks() {
                             <Zap className="w-3 h-3 text-amber-500" />
                             <span className="text-sm font-bold">{pick.confidence}%</span>
                           </div>
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge variant="outline" className="text-xs">
                             {pick.timeframe}
                           </Badge>
                         </div>
@@ -240,17 +240,17 @@ export function DailyPicks() {
 
                       {/* Price Levels */}
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="bg-muted/50 rounded-lg p-2">
-                          <p className="text-[10px] text-muted-foreground">Tani</p>
-                          <p className="text-sm font-bold">${pick.currentPrice}</p>
+                        <div className="bg-muted/50 rounded-lg p-2.5">
+                          <p className="text-xs text-muted-foreground font-medium">Tani</p>
+                          <p className="text-base font-bold">${pick.currentPrice}</p>
                         </div>
                         <div className="bg-emerald-500/10 rounded-lg p-2">
-                          <p className="text-[10px] text-emerald-500">Objektivi</p>
-                          <p className="text-sm font-bold text-emerald-500">${pick.targetPrice}</p>
+                          <p className="text-xs text-emerald-500">Objektivi</p>
+                          <p className="text-base font-bold text-emerald-500">${pick.targetPrice}</p>
                         </div>
                         <div className="bg-red-500/10 rounded-lg p-2">
-                          <p className="text-[10px] text-red-500">Stop Loss</p>
-                          <p className="text-sm font-bold text-red-500">${pick.stopLoss}</p>
+                          <p className="text-xs text-red-500">Stop Loss</p>
+                          <p className="text-base font-bold text-red-500">${pick.stopLoss}</p>
                         </div>
                       </div>
 
@@ -262,13 +262,13 @@ export function DailyPicks() {
                             Potenciali: +{potentialReturn}%
                           </span>
                         </div>
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="text-xs">
                           R/R: {pick.riskReward}
                         </Badge>
                       </div>
 
                       {/* Key Levels */}
-                      <div className="flex gap-2 text-[10px]">
+                      <div className="flex gap-2 text-xs">
                         <span className="bg-muted/50 px-2 py-0.5 rounded">Suport: ${pick.keyLevels?.support || '—'}</span>
                         <span className="bg-muted/50 px-2 py-0.5 rounded">Pivot: ${pick.keyLevels?.pivot || '—'}</span>
                         <span className="bg-muted/50 px-2 py-0.5 rounded">Rezistencë: ${pick.keyLevels?.resistance || '—'}</span>
@@ -277,19 +277,19 @@ export function DailyPicks() {
                       {/* Catalyst */}
                       {pick.catalyst && (
                         <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-2">
-                          <p className="text-[10px] text-amber-500 font-medium flex items-center gap-1">
+                          <p className="text-xs text-amber-500 font-medium flex items-center gap-1">
                             <Zap className="w-3 h-3" /> Katalizatori
                           </p>
-                          <p className="text-[11px] text-muted-foreground leading-relaxed">{pick.catalyst}</p>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{pick.catalyst}</p>
                         </div>
                       )}
 
                       {/* Reasons */}
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
                           <BarChart3 className="w-3 h-3" /> {pick.technicalReason}
                         </p>
-                        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
                           <DollarSign className="w-3 h-3" /> {pick.fundamentalReason}
                         </p>
                       </div>
