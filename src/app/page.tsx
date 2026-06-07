@@ -18,6 +18,7 @@ import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
 import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
 import { EarningsCalendar } from '@/components/financial-brain/earnings-calendar';
+import { EconomicCalendar } from '@/components/financial-brain/economic-calendar';
 import { StockScreener } from '@/components/financial-brain/stock-screener';
 import {
   Zap,
@@ -37,6 +38,7 @@ import {
   CalendarDays,
   Filter,
   BarChart3,
+  Landmark,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 
@@ -375,14 +377,31 @@ export default function Home() {
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
                     <CalendarDays className="w-4 h-4 text-blue-500" />
-                    <h3 className="text-sm font-semibold">Kalendar i Fitimeve</h3>
+                    <h3 className="text-sm font-semibold">Kalendar i Fitimeve & Ekonomik</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Datat e raportimit të ardhurave për kompanitë kryesore. Kliko në ditët me pika për të parë cilat kompani raportojnë.
+                    Datat e raportimit të ardhurave dhe ngjarjet makroekonomike. Zgjidh tab-in për të parë detaje.
                   </p>
                 </CardContent>
               </Card>
-              <EarningsCalendar />
+              <Tabs defaultValue="earnings-sub" className="w-full">
+                <TabsList className="w-full justify-start mb-3">
+                  <TabsTrigger value="earnings-sub" className="text-xs py-2 px-3 gap-1.5 data-[state=active]:bg-blue-500/10 data-[state=active]:border-blue-500/30 data-[state=active]:text-blue-600">
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    Kalendar Fitimesh
+                  </TabsTrigger>
+                  <TabsTrigger value="economic-sub" className="text-xs py-2 px-3 gap-1.5 data-[state=active]:bg-blue-500/10 data-[state=active]:border-blue-500/30 data-[state=active]:text-blue-600">
+                    <Landmark className="w-3.5 h-3.5" />
+                    Kalendar Ekonomik
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="earnings-sub">
+                  <EarningsCalendar />
+                </TabsContent>
+                <TabsContent value="economic-sub">
+                  <EconomicCalendar />
+                </TabsContent>
+              </Tabs>
             </motion.div>
           </TabsContent>
 
