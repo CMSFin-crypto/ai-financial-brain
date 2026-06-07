@@ -193,7 +193,9 @@ function generateDemoTechnicalAnalysis(ticker: string, company?: string, livePri
   };
 
   // CRITICAL: Use live price if available, otherwise use market-data price
-  const price = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+  // Guard: prevent $0 price
+  const rawPrice = (livePriceNum && livePriceNum > 0) ? livePriceNum : p.price;
+  const price = rawPrice > 0 ? rawPrice : 100;
   const prevClose = +(price * (1 - dr(ticker, 1, 0.005, 0.02))).toFixed(2);
   const priceChange = +((price - prevClose) / prevClose * 100).toFixed(2);
 

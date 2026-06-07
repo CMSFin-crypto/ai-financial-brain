@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI } from '@/lib/ai';
-import { getStock } from '@/lib/market-data';
+import { getStock, getOrCreateStock } from '@/lib/market-data';
 import { getRealPrices } from '@/lib/alpha-vantage';
 
 export const maxDuration = 60;
@@ -37,28 +37,31 @@ export async function POST(request: NextRequest) {
     // Build context from stock data if ticker provided
     let stockContext = '';
     if (ticker) {
-      const stock = getStock(ticker.toUpperCase());
+      // First try static database, then dynamically create profile if needed
+      const stock = getStock(ticker.toUpperCase()) || await getOrCreateStock(ticker.toUpperCase());
       if (stock) {
+        const isDynamic = !getStock(ticker.toUpperCase());
         stockContext = `\n\n═══ STOCK DATA for ${stock.ticker}: ${stock.company} ═══\n` +
           `Sector: ${stock.sector} | Industry: ${stock.industry}\n` +
           `Price: $${stock.price} | Change: ${stock.change >= 0 ? '+' : ''}${stock.change}%\n` +
           `Market Cap: ${stock.marketCap} | Volume: ${stock.volume}\n` +
+          (isDynamic ? `⏳ Ky aksion nuk është në bazën tonë të plotë të dhënash. Çmimet janë live nga Yahoo Finance.\n` : '') +
           `P/E: ${stock.pe} | Forward P/E: ${stock.fwdPE} | PEG: ${stock.peg}\n` +
           `Gross Margin: ${stock.grossMargin} | Operating Margin: ${stock.opMargin} | Net Margin: ${stock.netMargin}\n` +
           `ROE: ${stock.roe} | ROA: ${stock.roa}\n` +
           `EPS: ${stock.eps} | Forward EPS: ${stock.fwdEps}\n` +
           `Revenue Growth: ${stock.revGrowth} | EPS Growth: ${stock.epsGrowth}\n` +
-          `Quarterly Rev Growth: ${stock.qRevGrowth} | Quarterly EPS Growth: ${stock.qEpsGrowth}\n` +
           `Dividend Yield: ${stock.divYield}\n` +
-          `Debt/Equity: ${stock.debtEq} | Current Ratio: ${stock.currentRatio}\n` +
           `FCF: ${stock.fcf}\n` +
-          `Moat: ${stock.moat} | Brand Strength: ${stock.brandStrength}/10\n` +
-          `Analyst Rating: ${stock.rating} | Target: ${stock.targetPrice} (Low: ${stock.lowTarget}, High: ${stock.highTarget})\n` +
-          `Analyst Counts - Buy: ${stock.buyCount} | Hold: ${stock.holdCount} | Sell: ${stock.sellCount}\n` +
           `Signal: ${stock.signal} | Trend: ${stock.trend}\n` +
           `Strengths: ${stock.strengths.join(', ')}\n` +
           `Weaknesses: ${stock.weaknesses.join(', ')}\n` +
           `Position: ${stock.position}`;
+      } else {
+        // Even if we can't get any data, tell the AI so it can use its knowledge
+        stockContext = `\n\n═══ STOCK LOOKUP for ${ticker.toUpperCase()} ═══\n` +
+          `Ky aksion nuk u gjet në bazën tonë të dhënash dhe Yahoo Finance nuk u arrit të kontaktohej.\n` +
+          `Përdor njohuritë e tua të përgjithshme për të dhënë një analizë sa më të mirë.`;
       }
     }
 

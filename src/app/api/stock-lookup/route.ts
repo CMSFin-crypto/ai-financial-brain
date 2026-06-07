@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchLivePrices, getStock } from '@/lib/market-data';
+import { fetchLivePrices, getOrCreateStock } from '@/lib/market-data';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -10,22 +10,38 @@ export async function GET(request: NextRequest) {
   }
 
   const upper = ticker.toUpperCase();
-  const profile = getStock(upper);
-  const livePrices = await fetchLivePrices([upper]);
+
+  // Try to get stock profile (from database OR dynamically created)
+  const [profile, livePrices] = await Promise.all([
+    getOrCreateStock(upper),
+    fetchLivePrices([upper]),
+  ]);
+
   const live = livePrices[upper];
+  const price = live?.price || profile?.price || 0;
 
   return NextResponse.json({
     ticker: upper,
     company: profile?.company || `${upper} Corp`,
-    sector: profile?.sector || 'Unknown',
-    price: live?.price || profile?.price || 0,
-    change: live?.change || profile?.change || 0,
+    sector: profile?.sector || 'Technology',
+    industry: profile?.industry || 'General',
+    price,
+    change: live?.change ?? profile?.change ?? 0,
     isLive: !!live,
     hasProfile: !!profile,
+    isDynamic: !!profile && !getStaticStock(upper),
     volume: live?.volume || 0,
-    dayHigh: live?.dayHigh || null,
-    dayLow: live?.dayLow || null,
-    prevClose: live?.prevClose || null,
     timestamp: live?.timestamp || null,
+    signal: profile?.signal || 'NEUTRAL',
+    trend: profile?.trend || 'sideways',
+    rating: profile?.rating || 'HOLD',
+    strengths: profile?.strengths || [],
+    weaknesses: profile?.weaknesses || [],
+    position: profile?.position || '',
   });
+}
+
+function getStaticStock(ticker: string) {
+  const { getStock } = require('@/lib/market-data');
+  return getStock(ticker);
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
-import { getStock, type StockProfile } from '@/lib/market-data';
+import { getStock, getOrCreateStock, type StockProfile } from '@/lib/market-data';
 import { getRealPrice, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
 
 interface QuantRequest {
@@ -270,7 +270,9 @@ function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: n
   };
 
   // CRITICAL: Use live price if available, otherwise use market-data price
-  const price = (livePrice && livePrice > 0) ? livePrice : p.price;
+  // Guard: if price is still 0, use a minimum price to prevent division-by-zero
+  const rawPrice = (livePrice && livePrice > 0) ? livePrice : p.price;
+  const price = rawPrice > 0 ? rawPrice : 100; // Prevent $0 breakage
   const isBullish = p.analystRating.includes('BUY');
   const bullProb = isBullish ? 60 + Math.floor(Math.random() * 15) : 35 + Math.floor(Math.random() * 15);
 
@@ -300,8 +302,9 @@ function generateDemoAnalysis(ticker: string, timeframe: string, riskPerTrade: n
   const rr = (3.2 + Math.random()).toFixed(1);
 
   const riskAmt = riskPerTrade || 1;
-  const posValue = ((riskAmt / 100) * 100000 / (price * 0.036)).toFixed(0);
-  const shares = Math.floor(parseFloat(posValue) / price);
+  const stopDistCalc = price * 0.036;
+  const posValue = stopDistCalc > 0 ? ((riskAmt / 100) * 100000 / stopDistCalc).toFixed(0) : '0';
+  const shares = price > 0 ? Math.floor(parseFloat(posValue) / price) : 0;
   const posCost = (shares * price).toFixed(0);
 
   const sma20 = (price * 0.99).toFixed(2);

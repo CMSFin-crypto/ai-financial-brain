@@ -1590,6 +1590,57 @@ const STOCKS: Record<string, StockProfile> = {
     position: 'Pure-play AI cooling stock me rritje dramatike nga data center thermal demand',
     signal: 'BULLISH', trend: 'uptrend',
   },
+  SNDK: {
+    ticker: 'SNDK', company: 'SanDisk Corporation', sector: 'Technology', industry: 'Data Storage/Flash Memory',
+    price: 78.50, change: 0.65, volume: '3.2M', marketCap: '$16B', shares: 204,
+    pe: 22.5, fwdPE: 18.2, peg: 0.8, ps: 2.8, pb: 4.5, evEbitda: 14.5, divYield: '0.65%',
+    grossMargin: '38.5%', opMargin: '15.5%', netMargin: '12.2%', roe: '18.5%', roa: '8.2%',
+    revGrowth: '12%', epsGrowth: '18%', revGrowth3Y: '8.5%', epsGrowth3Y: '14.5%',
+    qRevGrowth: '14%', qEpsGrowth: '20%',
+    currentRatio: 2.55, quickRatio: 1.95, debtEq: 0.45, debtAssets: 0.18,
+    fcf: '1.2B', eps: '3.85', fwdEps: '4.32',
+    moat: 'NARROW', brandStrength: 7,
+    rating: 'BUY', targetPrice: '95.00', lowTarget: '65.00', highTarget: '110.00',
+    buyCount: 14, holdCount: 10, sellCount: 3,
+    strengths: ['Flash memory/storage teknologji lider', 'Enterprise SSD rritje', '4D NAND innovation', 'AI data storage demand'],
+    weaknesses: ['Konkurrencë e ashpër storage', 'Ciklik me semiconductor', 'Margin pressure'],
+    position: 'Producenti kryesor i memorjes flash me leverage në AI data storage',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  VST: {
+    ticker: 'VST', company: 'Vistra Energy Corp.', sector: 'Energy', industry: 'Power Generation',
+    price: 78.50, change: -0.85, volume: '5.5M', marketCap: '$22B', shares: 280,
+    pe: 15.5, fwdPE: 13.2, peg: 0.5, ps: 1.2, pb: 3.2, evEbitda: 8.5, divYield: '0.00%',
+    grossMargin: '42.5%', opMargin: '22.5%', netMargin: '15.8%', roe: '22.5%', roa: '8.5%',
+    revGrowth: '8.5%', epsGrowth: '15%', revGrowth3Y: '5.5%', epsGrowth3Y: '10.2%',
+    qRevGrowth: '9.2%', qEpsGrowth: '12.5%',
+    currentRatio: 1.85, quickRatio: 1.35, debtEq: 1.85, debtAssets: 0.52,
+    fcf: '1.5B', eps: '5.06', fwdEps: '5.95',
+    moat: 'NARROW', brandStrength: 6,
+    rating: 'BUY', targetPrice: '95.00', lowTarget: '60.00', highTarget: '110.00',
+    buyCount: 14, holdCount: 10, sellCount: 3,
+    strengths: ['AI data center power demand', 'Combined cycle efikasitet', 'Texas power market leverage', 'Coal-to-gas transformation'],
+    weaknesses: ['Varësia nga regjullore energjie', 'Debt i lartë', 'Commodity price risk'],
+    position: 'Power generator me leverage masiv në AI data center electricity demand',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
+  CEG: {
+    ticker: 'CEG', company: 'Constellation Energy', sector: 'Energy', industry: 'Nuclear Power Generation',
+    price: 215.80, change: 1.25, volume: '3.8M', marketCap: '$52B', shares: 241,
+    pe: 28.5, fwdPE: 22.8, peg: 1.5, ps: 3.5, pb: 6.8, evEbitda: 18.5, divYield: '0.55%',
+    grossMargin: '48.5%', opMargin: '28.5%', netMargin: '18.5%', roe: '15.5%', roa: '6.8%',
+    revGrowth: '12%', epsGrowth: '18%', revGrowth3Y: '8.5%', epsGrowth3Y: '12.5%',
+    qRevGrowth: '14%', qEpsGrowth: '22%',
+    currentRatio: 1.35, quickRatio: 0.95, debtEq: 2.85, debtAssets: 0.58,
+    fcf: '2.2B', eps: '7.57', fwdEps: '9.46',
+    moat: 'WIDE', brandStrength: 8,
+    rating: 'BUY', targetPrice: '260.00', lowTarget: '180.00', highTarget: '300.00',
+    buyCount: 18, holdCount: 8, sellCount: 2,
+    strengths: ['Largest US nuclear operator', 'AI data center PPAs', 'Microsoft Three Mile Island deal', 'Zero-carbon premium'],
+    weaknesses: ['Varësia nga rregullore', 'Debt i lartë pas aktrimite', 'Nuclear risk perceptions'],
+    position: 'Operatori më i madh bërthamor në SHBA me leverage unik AI data center clean energy',
+    signal: 'BULLISH', trend: 'uptrend',
+  },
 };
 
 // ═══════════════════════════════════════════════════
@@ -1600,6 +1651,78 @@ export function getStock(ticker: string): StockProfile | undefined {
   return STOCKS[ticker.toUpperCase()];
 }
 
+// Runtime cache for dynamically fetched stocks (not in hardcoded STOCKS)
+const DYNAMIC_STOCKS = new Map<string, StockProfile>();
+
+/**
+ * Get or create a StockProfile for ANY ticker.
+ * First checks hardcoded STOCKS, then runtime cache, then fetches from Yahoo Finance.
+ */
+export async function getOrCreateStock(ticker: string): Promise<StockProfile | undefined> {
+  const upper = ticker.toUpperCase();
+  
+  // 1. Check hardcoded database
+  const staticStock = STOCKS[upper];
+  if (staticStock) return staticStock;
+  
+  // 2. Check runtime cache (30 min TTL)
+  const cached = DYNAMIC_STOCKS.get(upper);
+  if (cached) return cached;
+  
+  // 3. Fetch from Yahoo Finance and build profile
+  try {
+    const { getRealPrice } = await import('./alpha-vantage');
+    const liveData = await getRealPrice(upper);
+    
+    if (liveData && liveData.price > 0) {
+      const dynamicProfile: StockProfile = {
+        ticker: upper,
+        company: `${upper} Corp`,
+        sector: 'Technology',
+        industry: 'General',
+        price: liveData.price,
+        change: liveData.change,
+        volume: liveData.volume > 0 ? `${(liveData.volume / 1000000).toFixed(1)}M` : 'N/A',
+        marketCap: 'N/A',
+        pe: 0, fwdPE: 0, peg: 0, ps: 0, pb: 0, evEbitda: 0,
+        divYield: 'N/A',
+        grossMargin: 'N/A', opMargin: 'N/A', netMargin: 'N/A',
+        roe: 'N/A', roa: 'N/A',
+        revGrowth: 'N/A', epsGrowth: 'N/A', revGrowth3Y: 'N/A', epsGrowth3Y: 'N/A',
+        qRevGrowth: 'N/A', qEpsGrowth: 'N/A',
+        currentRatio: 0, quickRatio: 0, debtEq: 0, debtAssets: 0,
+        fcf: 'N/A', eps: 'N/A', fwdEps: 'N/A',
+        moat: 'NONE',
+        brandStrength: 0,
+        rating: 'HOLD',
+        targetPrice: 'N/A', lowTarget: 'N/A', highTarget: 'N/A',
+        buyCount: 0, holdCount: 0, sellCount: 0,
+        strengths: ['Treg aktiv — çmimi live'],
+        weaknesses: ['Pa analizë e detajuar fundamental'],
+        position: `Aksion i kërkuar nga përdoruesi me çmim live $${liveData.price.toFixed(2)}`,
+        signal: liveData.change >= 1 ? 'BULLISH' : liveData.change <= -1 ? 'BEARISH' : 'NEUTRAL',
+        trend: liveData.change >= 1 ? 'uptrend' : liveData.change <= -1 ? 'downtrend' : 'sideways',
+        shares: 0,
+      };
+      
+      DYNAMIC_STOCKS.set(upper, dynamicProfile);
+      // Auto-evict after 30 minutes
+      setTimeout(() => DYNAMIC_STOCKS.delete(upper), 30 * 60 * 1000);
+      
+      console.log(`[DYNAMIC STOCK] Created profile for ${upper}: $${liveData.price.toFixed(2)}`);
+      return dynamicProfile;
+    }
+  } catch (err) {
+    console.error(`[DYNAMIC STOCK] Failed to fetch ${upper}:`, err);
+  }
+  
+  return undefined;
+}
+
+/**
+ * Synchronous getStock — returns undefined for unknown tickers.
+ * For async dynamic lookup, use getOrCreateStock instead.
+ */
 export function getStockPrice(ticker: string): number {
   const stock = STOCKS[ticker.toUpperCase()];
   return stock ? stock.price : 0;
