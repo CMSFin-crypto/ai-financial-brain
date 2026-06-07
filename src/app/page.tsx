@@ -16,6 +16,9 @@ import { TopMovers } from '@/components/financial-brain/top-movers';
 import { Watchlist } from '@/components/financial-brain/watchlist';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
+import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
+import { EarningsCalendar } from '@/components/financial-brain/earnings-calendar';
+import { StockScreener } from '@/components/financial-brain/stock-screener';
 import {
   Zap,
   Brain,
@@ -30,6 +33,9 @@ import {
   MessageSquare,
   Eye,
   Search,
+  LayoutDashboard,
+  CalendarDays,
+  Filter,
 } from 'lucide-react';
 
 export default function Home() {
@@ -84,6 +90,9 @@ export default function Home() {
                   <TabsTrigger value="watchlist" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Eye className="w-3.5 h-3.5 mr-1.5" />Watchlist
                   </TabsTrigger>
+                  <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
+                  </TabsTrigger>
                   <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Flame className="w-3.5 h-3.5 mr-1.5" />Top 5+5
                   </TabsTrigger>
@@ -108,6 +117,12 @@ export default function Home() {
                   <TabsTrigger value="fundamental" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Building2 className="w-3.5 h-3.5 mr-1.5" />Fundamentale
                   </TabsTrigger>
+                  <TabsTrigger value="earnings" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <CalendarDays className="w-3.5 h-3.5 mr-1.5" />Fitimet
+                  </TabsTrigger>
+                  <TabsTrigger value="screener" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Filter className="w-3.5 h-3.5 mr-1.5" />Screener
+                  </TabsTrigger>
                 </TabsList>
               </div>
               {/* Category: AI & Trading */}
@@ -129,6 +144,9 @@ export default function Home() {
                 <TabsTrigger value="watchlist" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Eye className="w-3.5 h-3.5 mr-1" />Watchlist
                 </TabsTrigger>
+                <TabsTrigger value="dashboard" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <LayoutDashboard className="w-3.5 h-3.5 mr-1" />Tregu
+                </TabsTrigger>
                 <TabsTrigger value="top-movers" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Flame className="w-3.5 h-3.5 mr-1" />Top 5+5
                 </TabsTrigger>
@@ -146,6 +164,12 @@ export default function Home() {
                 </TabsTrigger>
                 <TabsTrigger value="fundamental" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                   <Building2 className="w-3.5 h-3.5 mr-1" />Fund.
+                </TabsTrigger>
+                <TabsTrigger value="earnings" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <CalendarDays className="w-3.5 h-3.5 mr-1" />Fitimet
+                </TabsTrigger>
+                <TabsTrigger value="screener" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <Filter className="w-3.5 h-3.5 mr-1" />Screener
                 </TabsTrigger>
                 <TabsTrigger value="trading" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <ShoppingCart className="w-3.5 h-3.5 mr-1" />Trading
@@ -166,6 +190,29 @@ export default function Home() {
               className="space-y-4"
             >
               <Watchlist />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Market Dashboard */}
+          <TabsContent value="dashboard" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <LayoutDashboard className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">Dashboard Kryesor i Tregut</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Përmbledhje e tregut: indekset kryesore, sektorët, dhe gjendja e përgjithshme. Çmimet përditësohen në kohë reale.
+                  </p>
+                </CardContent>
+              </Card>
+              <MarketDashboard />
             </motion.div>
           </TabsContent>
 
@@ -305,6 +352,52 @@ export default function Home() {
                 </CardContent>
               </Card>
               <FundamentalAnalysis />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Earnings Calendar */}
+          <TabsContent value="earnings" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CalendarDays className="w-4 h-4 text-blue-500" />
+                    <h3 className="text-sm font-semibold">Kalendar i Fitimeve</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Datat e raportimit të ardhurave për kompanitë kryesore. Kliko në ditët me pika për të parë cilat kompani raportojnë.
+                  </p>
+                </CardContent>
+              </Card>
+              <EarningsCalendar />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Stock Screener */}
+          <TabsContent value="screener" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Filter className="w-4 h-4 text-blue-500" />
+                    <h3 className="text-sm font-semibold">Skaner Aksionesh</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Filtron aksione sipas sektorit, kapitalizimit, P/E, ndryshimit, sinjalit. Kliko në një aksion për detaje.
+                  </p>
+                </CardContent>
+              </Card>
+              <StockScreener />
             </motion.div>
           </TabsContent>
 
