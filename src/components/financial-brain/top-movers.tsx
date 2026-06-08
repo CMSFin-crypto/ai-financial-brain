@@ -20,6 +20,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 
 interface MoverStock {
@@ -51,6 +53,8 @@ interface MoverStock {
   weaknesses: string[];
   buyCount: number;
   sellCount: number;
+  isLive?: boolean;
+  hasFundamentals?: boolean;
 }
 
 interface TopMoversData {
@@ -58,6 +62,9 @@ interface TopMoversData {
   topRisk: MoverStock[];
   totalAnalyzed: number;
   timestamp: string;
+  liveCount?: number;
+  fundCount?: number;
+  totalFetched?: number;
   cached?: boolean;
   stale?: boolean;
 }
@@ -132,8 +139,17 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
               {index + 1}
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-sm font-bold">{stock.ticker}</span>
+                {stock.hasFundamentals ? (
+                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
+                    <Wifi className="w-2.5 h-2.5" /> Live
+                  </Badge>
+                ) : (
+                  <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
+                    <WifiOff className="w-2.5 h-2.5" /> Cached
+                  </Badge>
+                )}
                 <RatingBadge rating={stock.rating} />
                 <MoatBadge moat={stock.moat} />
               </div>
@@ -234,8 +250,17 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
               {index + 1}
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-sm font-bold">{stock.ticker}</span>
+                {stock.hasFundamentals ? (
+                  <Badge className="bg-red-500/10 text-red-400 border-red-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
+                    <Wifi className="w-2.5 h-2.5" /> Live
+                  </Badge>
+                ) : (
+                  <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
+                    <WifiOff className="w-2.5 h-2.5" /> Cached
+                  </Badge>
+                )}
                 <RatingBadge rating={stock.rating} />
                 <MoatBadge moat={stock.moat} />
               </div>
@@ -394,12 +419,20 @@ export function TopMovers() {
       {/* Header Bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <BarChart3 className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs text-muted-foreground">
-              {data.totalAnalyzed} stoke te analizuar
-            </span>
-          </div>
+            <div className="flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs text-muted-foreground">
+                {data.totalAnalyzed} stoke te analizuar
+              </span>
+            </div>
+            {data.fundCount !== undefined && (
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${data.fundCount > data.totalAnalyzed / 2 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <span className="text-[10px] text-muted-foreground">
+                  {data.fundCount}/{data.totalFetched || data.totalAnalyzed} me te dhena reale nga Yahoo Finance
+                </span>
+              </div>
+            )}
           {data.cached && (
             <Badge variant="secondary" className="text-[9px] bg-muted/50">
               Cache

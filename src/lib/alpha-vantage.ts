@@ -581,6 +581,119 @@ export async function getRealFundamentalsBatch(tickers: string[]): Promise<Recor
   return results;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// YAHOO FINANCE BATCH QUOTE — Fast fundamentals for many tickers
+// Uses v7/finance/quote endpoint — ONE request for up to 50 symbols
+// Returns: PE, PEG, Revenue Growth, EPS Growth, Analyst Targets, etc.
+// ═══════════════════════════════════════════════════════════════
+
+const batchQuoteCache = new Map<string, { data: Record<string, YahooFundamentals>; fetchedAt: number }>();
+const BATCH_QUOTE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+export async function getBatchQuotesFast(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
+  // Check cache first
+  const cacheKey = tickers.sort().join(',');
+  const cached = batchQuoteCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < BATCH_QUOTE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const results: Record<string, YahooFundamentals> = {};
+
+  // Fetch in chunks of 40 (v7 limit is ~50)
+  const chunks = chunkArray(tickers, 40);
+
+  for (const chunk of chunks) {
+    const symbols = chunk.join(',');
+    const fields = [
+      'regularMarketPrice', 'regularMarketPreviousClose', 'trailingPE', 'forwardPE',
+      'pegRatio', 'revenueGrowth', 'earningsGrowth', 'earningsQuarterlyGrowth',
+      'revenueQuarterlyGrowth', 'targetMeanPrice', 'targetHighPrice', 'targetLowPrice',
+      'recommendationKey', 'numberOfAnalystOpinions', 'operatingMargins', 'profitMargins',
+      'grossMargins', 'debtToEquity', 'returnOnEquity', 'priceToBook', 'enterpriseToEbitda',
+      'forwardEps', 'totalRevenue', 'ebitda', 'totalDebt', 'totalCash', 'freeCashflow',
+      'financialData', 'defaultKeyStatistics'
+    ].join(',');
+
+    for (const base of ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com']) {
+      try {
+        const url = `${base}/v7/finance/quote?symbols=${symbols}&fields=${fields}`;
+        const res = await fetch(url, {
+          signal: AbortSignal.timeout(15000),
+          headers: BROWSER_HEADERS,
+        });
+
+        if (!res.ok) {
+          console.log(`[BATCH-QUOTE] ${base} returned ${res.status}`);
+          continue;
+        }
+
+        const data = await res.json();
+        const quotes = data?.quoteResponse?.result || [];
+
+        for (const q of quotes) {
+          const sym = (q.symbol || '').toUpperCase();
+          const price = extractNum(q.regularMarketPrice);
+          if (price <= 0) continue;
+
+          results[sym] = {
+            currentPrice: price,
+            previousClose: extractNum(q.regularMarketPreviousClose),
+            trailingPE: extractNum(q.trailingPE),
+            forwardPE: extractNum(q.forwardPE),
+            pegRatio: extractNum(q.pegRatio),
+            priceToBook: extractNum(q.priceToBook),
+            enterpriseToEbitda: extractNum(q.enterpriseToEbitda),
+            grossMargins: extractNum(q.grossMargins),
+            operatingMargins: extractNum(q.operatingMargins),
+            profitMargins: extractNum(q.profitMargins),
+            revenueGrowth: extractNum(q.revenueGrowth),
+            earningsGrowth: extractNum(q.earningsGrowth),
+            revenueQuarterlyGrowth: extractNum(q.revenueQuarterlyGrowth),
+            earningsQuarterlyGrowth: extractNum(q.earningsQuarterlyGrowth),
+            targetMeanPrice: extractNum(q.targetMeanPrice),
+            targetHighPrice: extractNum(q.targetHighPrice),
+            targetLowPrice: extractNum(q.targetLowPrice),
+            recommendationKey: q.recommendationKey ? String(q.recommendationKey) : '',
+            numberOfAnalystOpinions: extractNum(q.numberOfAnalystOpinions),
+            totalRevenue: extractNum(q.totalRevenue),
+            ebitda: extractNum(q.ebitda),
+            totalDebt: extractNum(q.totalDebt),
+            totalCash: extractNum(q.totalCash),
+            debtToEquity: extractNum(q.debtToEquity),
+            returnOnEquity: extractNum(q.returnOnEquity),
+            freeCashflow: extractNum(q.freeCashflow),
+            epsForward: extractNum(q.forwardEps),
+            source: `yahoo_batch (${base})`,
+            fetchedAt: new Date().toISOString(),
+          };
+
+          // Also store in individual cache
+          fundCache.set(sym, { data: results[sym], fetchedAt: Date.now() });
+        }
+
+        console.log(`[BATCH-QUOTE] Got ${quotes.length}/${chunk.length} quotes from ${base}`);
+        break; // Don't try second endpoint if first succeeded
+      } catch (err: any) {
+        const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+        console.log(`[BATCH-QUOTE] ${base} failed: ${msg}`);
+        continue;
+      }
+    }
+
+    // Small delay between chunks
+    if (chunks.indexOf(chunk) < chunks.length - 1) {
+      await delay(500);
+    }
+  }
+
+  // Cache the batch result
+  batchQuoteCache.set(cacheKey, { data: results, fetchedAt: Date.now() });
+  console.log(`[BATCH-QUOTE] Total: ${Object.keys(results).length}/${tickers.length} fundamentals obtained (fast batch)`);
+
+  return results;
+}
+
 /**
  * Inject real price data into an AI user message prompt.
  * Appends a section with real prices so the AI uses them instead of hallucinating.

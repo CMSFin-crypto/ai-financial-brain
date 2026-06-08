@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRealPrice, getRealPrices, getRealFundamentalsBatch, type YahooFundamentals } from '@/lib/alpha-vantage';
+import { getRealPrice, getRealPrices, getRealFundamentalsBatch, getBatchQuotesFast, type YahooFundamentals } from '@/lib/alpha-vantage';
 import { getAllStocks, StockProfile } from '@/lib/market-data';
 
 export const maxDuration = 60;
@@ -322,11 +322,26 @@ export async function GET() {
     const liveCount = Object.keys(realPrices).length;
     console.log(`[TOP-MOVERS] Got ${liveCount}/${allTickers.length} real prices`);
 
-    // ═══ STEP 2: Fetch real fundamental data for ALL stocks ═══
-    // Batch in groups of 3 with delays
-    const realFundamentals = await getRealFundamentalsBatch(allTickers);
-    const fundCount = Object.keys(realFundamentals).length;
-    console.log(`[TOP-MOVERS] Got ${fundCount}/${allTickers.length} real fundamentals`);
+    // ═══ STEP 2: Fetch real fundamental data — FAST BATCH FIRST ═══
+    // Use v7/finance/quote batch endpoint (1-2 requests for ALL stocks)
+    let realFundamentals = await getBatchQuotesFast(allTickers);
+    let fundCount = Object.keys(realFundamentals).length;
+    console.log(`[TOP-MOVERS] Fast batch got ${fundCount}/${allTickers.length} fundamentals`);
+
+    // Fallback: use individual quoteSummary for any missing stocks (limited to 15)
+    if (fundCount < allTickers.length) {
+      const missing = allTickers.filter(t => !realFundamentals[t]).slice(0, 15);
+      if (missing.length > 0) {
+        try {
+          const extras = await getRealFundamentalsBatch(missing);
+          Object.assign(realFundamentals, extras);
+          fundCount = Object.keys(realFundamentals).length;
+          console.log(`[TOP-MOVERS] After fallback: ${fundCount}/${allTickers.length} fundamentals`);
+        } catch (e) {
+          console.log(`[TOP-MOVERS] Fallback fundamentals failed:`, e);
+        }
+      }
+    }
 
     // ═══ STEP 3: Score all stocks using real data ═══
     const scored: ScoredStock[] = allTickers.map(ticker => {
