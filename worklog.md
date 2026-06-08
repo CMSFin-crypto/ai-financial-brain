@@ -226,3 +226,23 @@ Stage Summary:
 - Safety net: ALL stocks now have upside capped at ±150%
 - Better logging for debugging data quality issues
 - Deployed to Vercel
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Netflix 1540% Upside and validate all indicators
+
+Work Log:
+- Investigated NFLX hardcoded data: price $115.02, target $135 (reasonable)
+- Identified root cause: Yahoo Finance getBatchQuotesFast() returning pre-split targetMeanPrice for NFLX (e.g., $1900 pre-split target vs $115 post-split price → 1540% upside)
+- Added PRE-SPLIT DETECTION in alpha-vantage.ts getBatchQuotesFast(): if target/price ratio > 3.0 or < 0.25, zero-out target prices and log warning
+- Added same validation in route.ts enriched() function: check target ratio before using live target, fall back to profile target
+- Added profile target validation: also check profile target ratio against live price
+- Lowered sanity cap from 150% to 100% (no legitimate large-cap upside exceeds 100%)
+- Updated UI in top-movers.tsx: show "N/A" for upside when no valid target exists
+- Pushed to GitHub, Vercel auto-deploying
+
+Stage Summary:
+- Netflix 1540% upside fix: Pre-split target detection at source (alpha-vantage.ts) and consumption (route.ts)
+- All stocks now protected: any target > 3x or < 0.25x current price is auto-discarded
+- UI gracefully handles missing targets with "N/A" display
+- Files changed: alpha-vantage.ts, route.ts, top-movers.tsx
