@@ -182,3 +182,24 @@ Stage Summary:
 - Pre-split target prices corrected for NVDA and AVGO
 - UI now shows "Live" badge when data is from Yahoo Finance, "Cached" when from fallback
 - Header shows X/Y stocks with real data coverage
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add metric explanation popups + fix mobile layout in Top 5+5
+
+Work Log:
+- Created MetricInfoPopup component with full-screen modal overlay
+- Added METRIC_INFO dictionary with Albanian explanations for Upside, Rev Gr, EPS Gr, PEG
+- Each explanation includes: title, icon, description, ideal range, good range, bad range, formula
+- Created MetricCell clickable component replacing static metric boxes
+- Fixed mobile layout: sparkline hidden on screens < 640px (hidden sm:block)
+- Reduced sparkline from 80px to 60px for better fit on larger mobile screens
+- Added min-w-0 + truncate for company name to prevent overflow
+- Made header bar responsive with flex-wrap
+- Reduced badge sizes on mobile (text-[7px])
+
+Stage Summary:
+- 4 metric tooltips with Albanian explanations added (Upside, Revenue Growth, EPS Growth, PEG)
+- Mobile layout fixed: price always visible, sparkline only on sm+ screens
+- All changes deployed to Vercel
