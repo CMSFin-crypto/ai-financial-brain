@@ -44,6 +44,21 @@
       "country": "Unknown",
       "device": "Mobile",
       "browser": "Chrome"
+    },
+    {
+      "id": "1780895368624-7808dd",
+      "timestamp": "2026-06-08T05:09:28.624Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome"
     }
   ]
 }
