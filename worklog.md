@@ -160,3 +160,25 @@ Stage Summary:
 - ANY US ticker can now be analyzed via Global Search (⌘K) or inline search
 - Dynamic stock profiles now get real company names from Yahoo Finance
 - Git commit: 5a77eb0 pushed to main
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Top 5+5 section — Upside, Rev Gr, EPS Gr, PEG showing unrealistic data
+
+Work Log:
+- Analyzed the full data pipeline: top-movers.tsx → /api/top-movers/route.ts → alpha-vantage.ts → market-data.ts
+- Found root cause: getRealFundamentalsBatch() was too slow (batches of 3, 1200ms delay) → most stocks fell back to stale hardcoded data
+- Found pre-split target prices: NVDA $1500 (should be ~$165), AVGO $2000 (should be ~$210) → absurd Upside values (500%+)
+- Added getBatchQuotesFast() function to alpha-vantage.ts using Yahoo v7/finance/quote endpoint (1-2 requests for ALL stocks)
+- Updated top-movers API to use fast batch first, individual quoteSummary as fallback for max 15 missing stocks
+- Fixed NVDA target: $1500 → $165, AVGO target: $2000 → $210
+- Added Live/Cached badge on each stock card in the UI
+- Added fundCount indicator showing how many stocks have real Yahoo Finance data
+- Deployed to Vercel
+
+Stage Summary:
+- Key fix: Fast batch quote API replaces slow individual requests (1-2 requests vs 20+)
+- Pre-split target prices corrected for NVDA and AVGO
+- UI now shows "Live" badge when data is from Yahoo Finance, "Cached" when from fallback
+- Header shows X/Y stocks with real data coverage
