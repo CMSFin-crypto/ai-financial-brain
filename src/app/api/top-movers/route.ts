@@ -435,22 +435,42 @@ export async function GET() {
             opMargin = (fund.operatingMargins * 100).toFixed(1) + '%';
           }
 
-          // Real analyst targets
+          // Real analyst targets — with PRE-SPLIT validation
           if (fund.targetMeanPrice > 0) {
-            targetPrice = '$' + fund.targetMeanPrice.toFixed(2);
-            highTarget = '$' + fund.targetHighPrice.toFixed(2);
-            lowTarget = '$' + fund.targetLowPrice.toFixed(2);
-            upside = ((fund.targetMeanPrice - stock.currentPrice) / stock.currentPrice) * 100;
-          } else {
-            // Fallback: calculate from profile target
-            const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
-            upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
+            const targetRatio = fund.targetMeanPrice / stock.currentPrice;
+
+            // PRE-SPLIT DETECTION: If target > 3x price or < 0.25x price,
+            // it's likely a stale pre-split target. Discard it.
+            if (targetRatio > 3.0 || targetRatio < 0.25) {
+              console.warn(`[TOP-MOVERS] ${stock.ticker}: SUSPICIOUS target=$${fund.targetMeanPrice.toFixed(2)} vs price=$${stock.currentPrice.toFixed(2)} (ratio=${targetRatio.toFixed(2)}). Likely pre-split data — DISCARDING target.`);
+              // Fall through to profile target below
+            } else {
+              targetPrice = '$' + fund.targetMeanPrice.toFixed(2);
+              highTarget = '$' + fund.targetHighPrice.toFixed(2);
+              lowTarget = '$' + fund.targetLowPrice.toFixed(2);
+              upside = ((fund.targetMeanPrice - stock.currentPrice) / stock.currentPrice) * 100;
+            }
           }
 
-          // SANITY CHECK: Cap upside at 150% — values above likely indicate split mismatch or bad data
-          if (Math.abs(upside) > 150) {
-            console.warn(`[TOP-MOVERS] ${stock.ticker}: Upside ${upside.toFixed(1)}% capped to ±150% (price=$${stock.currentPrice.toFixed(2)} target=${targetPrice})`);
-            upside = Math.sign(upside) * 150;
+          // If no valid live target, use profile target
+          if (upside === 0) {
+            const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
+            if (targetNum > 0) {
+              const profileRatio = targetNum / stock.currentPrice;
+              // Also validate profile targets against current live price
+              if (profileRatio <= 3.0 && profileRatio >= 0.25) {
+                upside = ((targetNum - stock.currentPrice) / stock.currentPrice * 100);
+              } else {
+                console.warn(`[TOP-MOVERS] ${stock.ticker}: Profile target also suspicious (ratio=${profileRatio.toFixed(2)}). No valid target.`);
+                upside = 0;
+              }
+            }
+          }
+
+          // SANITY CHECK: Hard cap at 100% — no legitimate upside exceeds this for large caps
+          if (Math.abs(upside) > 100) {
+            console.warn(`[TOP-MOVERS] ${stock.ticker}: Upside ${upside.toFixed(1)}% exceeds 100% cap — setting to ±100% (price=$${stock.currentPrice.toFixed(2)} target=${targetPrice})`);
+            upside = Math.sign(upside) * 100;
           }
 
           // Real recommendation
@@ -470,10 +490,18 @@ export async function GET() {
         } else {
           // No real data — calculate upside from profile target
           const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
-          upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
-          // SANITY CHECK
-          if (Math.abs(upside) > 150) {
-            upside = Math.sign(upside) * 150;
+          if (targetNum > 0) {
+            const profileRatio = targetNum / stock.currentPrice;
+            if (profileRatio <= 3.0 && profileRatio >= 0.25) {
+              upside = ((targetNum - stock.currentPrice) / stock.currentPrice * 100);
+            } else {
+              console.warn(`[TOP-MOVERS] ${stock.ticker}: No live data + suspicious profile target ratio=${profileRatio.toFixed(2)}. Setting upside to 0.`);
+              upside = 0;
+            }
+          }
+          // SANITY CHECK: Hard cap at 100%
+          if (Math.abs(upside) > 100) {
+            upside = Math.sign(upside) * 100;
           }
         }
 

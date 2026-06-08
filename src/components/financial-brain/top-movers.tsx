@@ -370,9 +370,9 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
         <div className="grid grid-cols-4 gap-1.5 mb-2">
           <MetricCell
             label="Upside"
-            value={`+${stock.upside}%`}
+            value={stock.upside > 0 ? `+${stock.upside}%` : stock.upside < 0 ? `${stock.upside}%` : 'N/A'}
             metricKey="upside"
-            colorClass="text-emerald-500 font-bold"
+            colorClass={stock.upside > 0 ? 'text-emerald-500 font-bold' : stock.upside < 0 ? 'text-red-500 font-bold' : 'text-muted-foreground'}
           />
           <MetricCell
             label="Rev Gr"
@@ -454,9 +454,9 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
         <div className="grid grid-cols-4 gap-1.5 mb-2">
           <MetricCell
             label="Upside"
-            value={`${stock.upside >= 0 ? '+' : ''}${stock.upside}%`}
+            value={stock.upside > 0 ? `+${stock.upside}%` : stock.upside < 0 ? `${stock.upside}%` : 'N/A'}
             metricKey="upside"
-            colorClass={`font-bold ${stock.upside >= 0 ? 'text-emerald-500' : 'text-red-500'}`}
+            colorClass={`font-bold ${stock.upside > 0 ? 'text-emerald-500' : stock.upside < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
           />
           <MetricCell
             label="Rev Gr"

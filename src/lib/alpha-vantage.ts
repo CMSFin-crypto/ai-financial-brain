@@ -674,10 +674,18 @@ export async function getBatchQuotesFast(tickers: string[]): Promise<Record<stri
             fetchedAt: new Date().toISOString(),
           };
 
-          // Log target availability for debugging
-          if (targetMean > 0) {
-            const upside = ((targetMean - price) / price * 100).toFixed(1);
-            console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} target=$${targetMean.toFixed(2)} upside=${upside}% PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
+          // PRE-SPLIT TARGET DETECTION: Flag and zero-out targets that are way out of range
+          if (targetMean > 0 && price > 0) {
+            const ratio = targetMean / price;
+            if (ratio > 3.0 || ratio < 0.25) {
+              console.warn(`[BATCH-QUOTE] ${sym}: SUSPICIOUS target=$${targetMean.toFixed(2)} vs price=$${price.toFixed(2)} (ratio=${ratio.toFixed(2)}). Likely pre-split or stale — zeroing target.`);
+              results[sym].targetMeanPrice = 0;
+              results[sym].targetHighPrice = 0;
+              results[sym].targetLowPrice = 0;
+            } else {
+              const upside = ((targetMean - price) / price * 100).toFixed(1);
+              console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} target=$${targetMean.toFixed(2)} upside=${upside}% PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
+            }
           } else {
             console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} NO TARGET PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
           }
