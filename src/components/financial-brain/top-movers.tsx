@@ -84,6 +84,12 @@ const METRIC_INFO: Record<string, {
   good: string;
   bad: string;
   formula?: string;
+  // Visual gauge ranges (0-100 scale)
+  gaugeBadEnd: number;
+  gaugeGoodStart: number;
+  gaugeGoodEnd: number;
+  gaugeIdealStart: number;
+  gaugeIdealEnd: number;
 }> = {
   upside: {
     title: 'Upside (Potenciali)',
@@ -94,6 +100,7 @@ const METRIC_INFO: Record<string, {
     good: '+5% deri +60% — Rrethi i pranueshëm',
     bad: 'Mbi +80% ose negativ — Ose joshi e çmuar, ose targetet janë josë besueshme',
     formula: 'Upside = (Target Mesatar - Çmimi Aktual) / Çmimi Aktual × 100',
+    gaugeBadEnd: 20, gaugeGoodStart: 20, gaugeGoodEnd: 70, gaugeIdealStart: 35, gaugeIdealEnd: 55,
   },
   revGrowth: {
     title: 'Revenue Growth (Rritja e të ardhurave)',
@@ -104,6 +111,7 @@ const METRIC_INFO: Record<string, {
     good: '+5% deri +15% — Rritje e shëndetshme',
     bad: 'Fitoi −5% ose me ulët — Kompania po humb treg',
     formula: 'Rev Gr = (Të ardhurat vitore aktuale − Të ardhurat vitore të mëparshme) / Të ardhurat e mëparshme × 100',
+    gaugeBadEnd: 25, gaugeGoodStart: 25, gaugeGoodEnd: 55, gaugeIdealStart: 35, gaugeIdealEnd: 50,
   },
   epsGrowth: {
     title: 'EPS Growth (Rritja e fitimit per aksion)',
@@ -114,6 +122,7 @@ const METRIC_INFO: Record<string, {
     good: '+5% deri +20% — Rritje e shëndetshme',
     bad: 'Fitoi −10% ose me ulët — Fitimi po bie',
     formula: 'EPS Gr = (EPS aktual − EPS i mëparshëm) / EPS i mëparshëm × 100',
+    gaugeBadEnd: 25, gaugeGoodStart: 25, gaugeGoodEnd: 55, gaugeIdealStart: 35, gaugeIdealEnd: 50,
   },
   peg: {
     title: 'PEG Ratio (Çmimi për rritjen)',
@@ -124,6 +133,7 @@ const METRIC_INFO: Record<string, {
     good: '0.3 deri 2.0 — Rrethi i pranueshëm',
     bad: 'Mbi 3.0 ose negativ — Vlerësim shumë i lartë ose rritje negative',
     formula: 'PEG = P/E (Trailing) / EPS Growth (% në numra)',
+    gaugeBadEnd: 15, gaugeGoodStart: 15, gaugeGoodEnd: 55, gaugeIdealStart: 25, gaugeIdealEnd: 50,
   },
 };
 
@@ -201,6 +211,31 @@ function MetricInfoPopup({
           </div>
         </div>
 
+        {/* Visual Gauge Bar — shows ideal/good/bad zones */}
+        <div className="space-y-1.5">
+          <p className="text-[9px] font-medium text-muted-foreground">Shkala e vlerësimit</p>
+          <div className="relative h-4 rounded-full overflow-hidden flex">
+            {/* Bad zone (red) */}
+            <div className="bg-gradient-to-r from-red-500 to-red-400/80" style={{ width: `${info.gaugeBadEnd}%` }} />
+            {/* Good zone (blue) */}
+            <div className="bg-gradient-to-r from-blue-400 to-blue-500" style={{ width: `${info.gaugeGoodEnd - info.gaugeGoodStart}%` }} />
+            {/* Ideal zone (green, highlighted) */}
+            <div className="relative bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: `${info.gaugeIdealEnd - info.gaugeIdealStart}%` }}>
+              <div className="absolute inset-0 border-y-2 border-emerald-300/50" />
+            </div>
+            {/* Remaining good zone */}
+            <div className="bg-gradient-to-r from-blue-500 to-blue-400" style={{ width: `${100 - info.gaugeIdealEnd}%` }} />
+          </div>
+          {/* Zone labels under the bar */}
+          <div className="flex justify-between text-[8px] text-muted-foreground px-0.5">
+            <span className="text-red-400">Rrezik</span>
+            <span className="text-blue-400">I pranueshëm</span>
+            <span className="text-emerald-400 font-semibold">Ideal</span>
+            <span className="text-blue-400">I pranueshëm</span>
+            <span className="text-red-400">Rrezik</span>
+          </div>
+        </div>
+
         {/* Formula */}
         {info.formula && (
           <div className="bg-muted/30 rounded-lg p-2 border border-border/50">
@@ -244,23 +279,35 @@ function MetricCell({
   );
 }
 
-function generateSparklineData(priceChange: number): Array<{ value: number }> {
+// Simple seeded pseudo-random for consistent sparklines
+function seededRandom(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+function generateSparklineData(priceChange: number, ticker: string): Array<{ value: number }> {
   const points = 12;
   const data: Array<{ value: number }> = [];
   const magnitude = Math.min(Math.abs(priceChange), 10);
+  // Create a seed from ticker hash + priceChange for consistency
+  const hash = ticker.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const rand = seededRandom(hash * 1000 + Math.round(priceChange * 100));
   for (let i = 0; i < points; i++) {
     const progress = i / (points - 1);
     const trend = priceChange >= 0 ? progress * magnitude : -progress * magnitude;
-    const noise = (Math.random() - 0.5) * magnitude * 0.4;
+    const noise = (rand() - 0.5) * magnitude * 0.4;
     data.push({ value: 50 + trend + noise });
   }
   return data;
 }
 
-function MiniSparkline({ priceChange, color }: { priceChange: number; color: string }) {
-  const data = generateSparklineData(priceChange);
+function MiniSparkline({ priceChange, color, ticker }: { priceChange: number; color: string; ticker: string }) {
+  const data = generateSparklineData(priceChange, ticker);
   return (
-    <ResponsiveContainer width={60} height={28}>
+    <ResponsiveContainer width="100%" height={28}>
       <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
         <Line
           type="monotone"
@@ -334,8 +381,8 @@ function StockHeader({ stock, index, color }: { stock: MoverStock; index: number
       </div>
       {/* Price — always visible, sparkline hidden on small screens */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        <div className="hidden sm:block">
-          <MiniSparkline priceChange={stock.priceChange} color={sparkColor} />
+        <div className="hidden sm:block w-16">
+          <MiniSparkline priceChange={stock.priceChange} color={sparkColor} ticker={stock.ticker} />
         </div>
         <div className="text-right">
           <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
