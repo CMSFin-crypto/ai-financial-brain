@@ -10,19 +10,29 @@ interface Visit {
   timestamp: string;
   ip: string;
   userAgent: string;
+  fingerprint: string;
   page: string;
   referrer: string;
   screenWidth: number;
   screenHeight: number;
+  colorDepth: number;
+  pixelRatio: number;
   language: string;
   timezone: string;
+  os: string;
+  connectionType: string;
+  isTouchDevice: boolean;
   country: string;
   device: string;
   browser: string;
+  visitorNumber: number;
+  isNewVisitor: boolean;
+  visitCount: number;
 }
 
 interface AnalyticsData {
   visits: Visit[];
+  fingerprintMap: Record<string, { visitorNumber: number; firstSeen: string; lastSeen: string; visitCount: number }>;
 }
 
 function ensureDataDir() {
@@ -36,12 +46,14 @@ function readData(): AnalyticsData {
   try {
     if (existsSync(DATA_FILE)) {
       const raw = readFileSync(DATA_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const data = JSON.parse(raw);
+      if (!data.fingerprintMap) data.fingerprintMap = {};
+      return data;
     }
   } catch {
     // corrupted or unreadable file — start fresh
   }
-  return { visits: [] };
+  return { visits: [], fingerprintMap: {} };
 }
 
 function writeData(data: AnalyticsData) {
@@ -87,20 +99,17 @@ async function lookupCountry(ip: string): Promise<string> {
   return 'Unknown';
 }
 
-// Country code to flag emoji
 function countryToFlag(code: string): string {
-  if (code === 'Local') return '🏠';
-  if (code === 'Unknown') return '🌍';
+  if (code === 'Local') return '\u{1F3E0}';
+  if (code === 'Unknown') return '\u{1F30D}';
   const c = code.toUpperCase();
-  if (c.length !== 2) return '🌍';
-  // Convert country code to flag emoji
+  if (c.length !== 2) return '\u{1F30D}';
   const flag = String.fromCodePoint(
-    ...[c.charCodeAt(0), c.charCodeAt(1)].map((ch) => 0x1f1e6 + ch - 65)
+    ...[c.charCodeAt(0), c.charCodeAt(1)].map((ch) => 0x1F1E6 + ch - 65)
   );
   return flag;
 }
 
-// Mask IP: 1.2.***.4
 function maskIP(ip: string): string {
   const parts = ip.split('.');
   if (parts.length === 4) {
@@ -112,14 +121,12 @@ function maskIP(ip: string): string {
   return ip.replace(/(.{2}).*(.{2})$/, '$1***$2');
 }
 
-// CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// OPTIONS handler
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -128,7 +135,20 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { page, referrer, screenWidth, screenHeight, language, timezone } = body;
+    const {
+      fingerprint,
+      page,
+      referrer,
+      screenWidth,
+      screenHeight,
+      colorDepth,
+      pixelRatio,
+      language,
+      timezone,
+      os,
+      connectionType,
+      isTouchDevice,
+    } = body;
 
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
                request.headers.get('x-real-ip') ||
@@ -139,27 +159,62 @@ export async function POST(request: NextRequest) {
     const browser = parseBrowser(userAgent);
     const country = await lookupCountry(ip);
 
+    const data = readData();
+
+    // Track fingerprint → visitor number mapping
+    const fp = fingerprint || 'fp_unknown';
+    const now = new Date().toISOString();
+    if (!data.fingerprintMap[fp]) {
+      // Assign new visitor number (1-indexed)
+      const maxNum = Object.values(data.fingerprintMap).reduce(
+        (max, v) => Math.max(max, v.visitorNumber), 0
+      );
+      data.fingerprintMap[fp] = {
+        visitorNumber: maxNum + 1,
+        firstSeen: now,
+        lastSeen: now,
+        visitCount: 1,
+      };
+    } else {
+      data.fingerprintMap[fp].lastSeen = now;
+      data.fingerprintMap[fp].visitCount += 1;
+    }
+
+    const visitorInfo = data.fingerprintMap[fp];
+
     const visit: Visit = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      timestamp: new Date().toISOString(),
+      timestamp: now,
       ip,
       userAgent,
+      fingerprint: fp,
       page: page || '/',
       referrer: referrer || '',
       screenWidth: screenWidth || 0,
       screenHeight: screenHeight || 0,
+      colorDepth: colorDepth || 0,
+      pixelRatio: pixelRatio || 1,
       language: language || '',
       timezone: timezone || '',
+      os: os || 'Tjetër',
+      connectionType: connectionType || 'unknown',
+      isTouchDevice: isTouchDevice || false,
       country,
       device,
       browser,
+      visitorNumber: visitorInfo.visitorNumber,
+      isNewVisitor: visitorInfo.visitCount === 1,
+      visitCount: visitorInfo.visitCount,
     };
 
-    const data = readData();
     data.visits.push(visit);
     writeData(data);
 
-    return NextResponse.json({ success: true, id: visit.id }, { headers: corsHeaders });
+    return NextResponse.json({
+      success: true,
+      id: visit.id,
+      visitorNumber: visitorInfo.visitorNumber,
+    }, { headers: corsHeaders });
   } catch {
     return NextResponse.json({ error: 'Failed to record visit' }, { status: 500, headers: corsHeaders });
   }
@@ -172,29 +227,47 @@ export async function GET() {
     const visits = data.visits;
     const now = new Date();
 
-    // Total visits
     const totalVisits = visits.length;
 
-    // Today's visits
     const todayStr = now.toISOString().slice(0, 10);
     const todayVisits = visits.filter((v) => v.timestamp.slice(0, 10) === todayStr).length;
 
-    // Unique visitors (by IP, last 30 days)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const last30Days = visits.filter((v) => new Date(v.timestamp) >= thirtyDaysAgo);
     const uniqueIPs = new Set(last30Days.map((v) => v.ip)).size;
 
-    // Online now (visits in last 5 minutes)
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
     const onlineNow = visits.filter((v) => new Date(v.timestamp) >= fiveMinutesAgo).length;
 
-    // Recent visitors (last 50)
-    const recentVisitors = visits.slice(-50).reverse().map((v) => ({
-      ...v,
-      maskedIP: maskIP(v.ip),
-      flag: countryToFlag(v.country),
-      time: new Date(v.timestamp).toLocaleString('sq-AL', { timeZone: v.timezone || 'Europe/Tirane' }),
-    }));
+    // Total unique fingerprints
+    const totalUniqueVisitors = Object.keys(data.fingerprintMap).length;
+
+    // Recent visitors (last 50) with enriched data
+    const recentVisitors = visits.slice(-50).reverse().map((v) => {
+      const fpInfo = data.fingerprintMap[v.fingerprint];
+      return {
+        id: v.id,
+        time: new Date(v.timestamp).toLocaleString('sq-AL', { timeZone: v.timezone || 'Europe/Tirane' }),
+        maskedIP: maskIP(v.ip),
+        flag: countryToFlag(v.country),
+        country: v.country,
+        device: v.device,
+        browser: v.browser,
+        os: v.os,
+        page: v.page,
+        referrer: v.referrer,
+        fingerprint: v.fingerprint,
+        visitorNumber: v.visitorNumber,
+        visitCount: fpInfo?.visitCount || 1,
+        isNewVisitor: v.isNewVisitor,
+        screenWidth: v.screenWidth,
+        screenHeight: v.screenHeight,
+        pixelRatio: v.pixelRatio,
+        connectionType: v.connectionType,
+        isTouchDevice: v.isTouchDevice,
+        language: v.language,
+      };
+    });
 
     // Visits by country
     const countryMap = new Map<string, number>();
@@ -217,6 +290,14 @@ export async function GET() {
       browserMap.set(v.browser, (browserMap.get(v.browser) || 0) + 1);
     }
     const browsers = Array.from(browserMap.entries())
+      .sort((a, b) => b[1] - a[1]);
+
+    // OS breakdown
+    const osMap = new Map<string, number>();
+    for (const v of last30Days) {
+      osMap.set(v.os, (osMap.get(v.os) || 0) + 1);
+    }
+    const osList = Array.from(osMap.entries())
       .sort((a, b) => b[1] - a[1]);
 
     // Top pages
@@ -244,20 +325,46 @@ export async function GET() {
     const dailyVisits = Array.from(dailyMap.entries()).map(([date, count]) => ({
       date,
       count,
-      shortDate: date.slice(5), // MM-DD
+      shortDate: date.slice(5),
     }));
+
+    // Top visitors (by visit count)
+    const topVisitors = Object.entries(data.fingerprintMap)
+      .map(([fp, info]) => {
+        const lastVisit = visits.filter((v) => v.fingerprint === fp).slice(-1)[0];
+        return {
+          fingerprint: fp,
+          visitorNumber: info.visitorNumber,
+          visitCount: info.visitCount,
+          firstSeen: info.firstSeen,
+          lastSeen: info.lastSeen,
+          country: lastVisit?.country || 'Unknown',
+          os: lastVisit?.os || 'Tjetër',
+          device: lastVisit?.device || 'Desktop',
+          browser: lastVisit?.browser || 'Tjetër',
+        };
+      })
+      .sort((a, b) => b.visitCount - a.visitCount)
+      .slice(0, 20)
+      .map((tv) => ({
+        ...tv,
+        flag: countryToFlag(tv.country),
+      }));
 
     return NextResponse.json({
       totalVisits,
       todayVisits,
       uniqueVisitors: uniqueIPs,
+      totalUniqueVisitors,
       onlineNow,
       recentVisitors,
       visitsByCountry,
       deviceBreakdown: deviceMap,
       browsers,
+      osList,
       topPages,
       dailyVisits,
+      topVisitors,
     }, { headers: corsHeaders });
   } catch {
     return NextResponse.json({ error: 'Failed to fetch analytics' }, { status: 500, headers: corsHeaders });
