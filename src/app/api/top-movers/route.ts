@@ -447,6 +447,12 @@ export async function GET() {
             upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
           }
 
+          // SANITY CHECK: Cap upside at 150% — values above likely indicate split mismatch or bad data
+          if (Math.abs(upside) > 150) {
+            console.warn(`[TOP-MOVERS] ${stock.ticker}: Upside ${upside.toFixed(1)}% capped to ±150% (price=$${stock.currentPrice.toFixed(2)} target=${targetPrice})`);
+            upside = Math.sign(upside) * 150;
+          }
+
           // Real recommendation
           if (fund.recommendationKey) {
             rating = mapRecommendation(fund.recommendationKey);
@@ -465,6 +471,10 @@ export async function GET() {
           // No real data — calculate upside from profile target
           const targetNum = safeNum(String(stock.profile.targetPrice).replace(/[^0-9.]/g, ''));
           upside = targetNum > 0 ? ((targetNum - stock.currentPrice) / stock.currentPrice * 100) : 0;
+          // SANITY CHECK
+          if (Math.abs(upside) > 150) {
+            upside = Math.sign(upside) * 150;
+          }
         }
 
         return {

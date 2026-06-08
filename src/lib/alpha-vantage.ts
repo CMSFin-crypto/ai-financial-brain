@@ -605,19 +605,21 @@ export async function getBatchQuotesFast(tickers: string[]): Promise<Record<stri
 
   for (const chunk of chunks) {
     const symbols = chunk.join(',');
+
+    // Use the standard v7/finance/quote endpoint — returns ALL fields by default
+    // The fields param filters output, not requests extra data
     const fields = [
-      'regularMarketPrice', 'regularMarketPreviousClose', 'trailingPE', 'forwardPE',
+      'symbol', 'regularMarketPrice', 'regularMarketPreviousClose', 'trailingPE', 'forwardPE',
       'pegRatio', 'revenueGrowth', 'earningsGrowth', 'earningsQuarterlyGrowth',
       'revenueQuarterlyGrowth', 'targetMeanPrice', 'targetHighPrice', 'targetLowPrice',
       'recommendationKey', 'numberOfAnalystOpinions', 'operatingMargins', 'profitMargins',
       'grossMargins', 'debtToEquity', 'returnOnEquity', 'priceToBook', 'enterpriseToEbitda',
       'forwardEps', 'totalRevenue', 'ebitda', 'totalDebt', 'totalCash', 'freeCashflow',
-      'financialData', 'defaultKeyStatistics'
     ].join(',');
 
     for (const base of ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com']) {
       try {
-        const url = `${base}/v7/finance/quote?symbols=${symbols}&fields=${fields}`;
+        const url = `${base}/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=${fields}`;
         const res = await fetch(url, {
           signal: AbortSignal.timeout(15000),
           headers: BROWSER_HEADERS,
@@ -636,6 +638,10 @@ export async function getBatchQuotesFast(tickers: string[]): Promise<Record<stri
           const price = extractNum(q.regularMarketPrice);
           if (price <= 0) continue;
 
+          const targetMean = extractNum(q.targetMeanPrice);
+          const targetHigh = extractNum(q.targetHighPrice);
+          const targetLow = extractNum(q.targetLowPrice);
+
           results[sym] = {
             currentPrice: price,
             previousClose: extractNum(q.regularMarketPreviousClose),
@@ -651,9 +657,9 @@ export async function getBatchQuotesFast(tickers: string[]): Promise<Record<stri
             earningsGrowth: extractNum(q.earningsGrowth),
             revenueQuarterlyGrowth: extractNum(q.revenueQuarterlyGrowth),
             earningsQuarterlyGrowth: extractNum(q.earningsQuarterlyGrowth),
-            targetMeanPrice: extractNum(q.targetMeanPrice),
-            targetHighPrice: extractNum(q.targetHighPrice),
-            targetLowPrice: extractNum(q.targetLowPrice),
+            targetMeanPrice: targetMean,
+            targetHighPrice: targetHigh,
+            targetLowPrice: targetLow,
             recommendationKey: q.recommendationKey ? String(q.recommendationKey) : '',
             numberOfAnalystOpinions: extractNum(q.numberOfAnalystOpinions),
             totalRevenue: extractNum(q.totalRevenue),
@@ -667,6 +673,14 @@ export async function getBatchQuotesFast(tickers: string[]): Promise<Record<stri
             source: `yahoo_batch (${base})`,
             fetchedAt: new Date().toISOString(),
           };
+
+          // Log target availability for debugging
+          if (targetMean > 0) {
+            const upside = ((targetMean - price) / price * 100).toFixed(1);
+            console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} target=$${targetMean.toFixed(2)} upside=${upside}% PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
+          } else {
+            console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} NO TARGET PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
+          }
 
           // Also store in individual cache
           fundCache.set(sym, { data: results[sym], fetchedAt: Date.now() });
