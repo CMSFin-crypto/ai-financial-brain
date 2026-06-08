@@ -6,6 +6,9 @@
 // Strategy: Batched fetching with retry, longer timeouts
 // ═══════════════════════════════════════════════════════════════
 
+import fs from 'fs';
+import path from 'path';
+
 export interface LivePrice {
   price: number;
   change: number;     // % change
@@ -532,6 +535,7 @@ export async function getRealFundamentals(ticker: string): Promise<YahooFundamen
 /**
  * Fetch real fundamental data for multiple tickers (batched).
  * Returns a map of ticker -> YahooFundamentals (only successfully fetched).
+ * Falls back to local JSON database when Yahoo v10/quoteSummary returns 401.
  */
 export async function getRealFundamentalsBatch(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
   const results: Record<string, YahooFundamentals> = {};
@@ -554,7 +558,7 @@ export async function getRealFundamentalsBatch(tickers: string[]): Promise<Recor
 
   console.log(`[FUND] Cache hits: ${Object.keys(results).length}, fetching: ${toFetch.length} fundamentals...`);
 
-  // Process in batches of 3 with longer delay (quoteSummary is heavier)
+  // Try Yahoo v10/quoteSummary first (may return 401 now)
   const BATCH_SIZE = 3;
   const BATCH_DELAY_MS = 1200;
   const chunks = chunkArray(toFetch, BATCH_SIZE);
@@ -577,18 +581,107 @@ export async function getRealFundamentalsBatch(tickers: string[]): Promise<Recor
     }
   }
 
+  // Fall back to local JSON for any stocks that failed from Yahoo
+  const missing = toFetch.filter(t => !results[t]);
+  if (missing.length > 0) {
+    console.log(`[FUND] ${missing.length} stocks missing from Yahoo, falling back to local JSON...`);
+    const localData = loadLocalFundamentals();
+    for (const t of missing) {
+      const d = localData[t];
+      if (!d) continue;
+      const fund = localToYahooFundamentals(t, d);
+      if (!fund) continue;
+      results[t] = fund;
+      fundCache.set(t, { data: fund, fetchedAt: Date.now() });
+    }
+  }
+
   console.log(`[FUND] Batch complete: ${Object.keys(results).length}/${tickers.length} fundamentals obtained`);
   return results;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// YAHOO FINANCE BATCH QUOTE — Fast fundamentals for many tickers
-// Uses v7/finance/quote endpoint — ONE request for up to 50 symbols
+// LOCAL FUNDAMENTALS DATABASE — Fast fundamentals from JSON file
+// Replaces Yahoo v7/finance/quote which now returns 401 Unauthorized
 // Returns: PE, PEG, Revenue Growth, EPS Growth, Analyst Targets, etc.
 // ═══════════════════════════════════════════════════════════════
 
 const batchQuoteCache = new Map<string, { data: Record<string, YahooFundamentals>; fetchedAt: number }>();
 const BATCH_QUOTE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+// Helper to parse percentage strings like "85.2%" to decimals like 0.852
+function parsePercent(val: unknown): number {
+  if (val === null || val === undefined || val === '') return 0;
+  const str = String(val).trim();
+  if (str === 'N/A') return 0;
+  const num = parseFloat(str.replace('%', '').replace(',', ''));
+  return isNaN(num) ? 0 : num / 100;
+}
+
+// Helper to parse numeric strings like "$298.42" or "22.42" to numbers
+function parseNum(val: unknown): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/[^0-9.\-]/g, '');
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
+// Load local JSON fundamentals database
+function loadLocalFundamentals(): Record<string, any> {
+  try {
+    const filePath = path.join(process.cwd(), 'src', 'lib', 'stock-fundamentals.json');
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (err: any) {
+    console.error(`[LOCAL-FUND] Failed to load stock-fundamentals.json: ${err?.message}`);
+    return {};
+   }
+}
+
+// Convert local JSON data to YahooFundamentals interface format
+function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFundamentals | null {
+  const price = typeof d.price === 'number' ? d.price : parseFloat(String(d.price));
+  if (!price || price <= 0) return null;
+
+  const targetMean = parseNum(d.targetPrice);
+  const targetHigh = parseNum(d.highTarget);
+  const targetLow = parseNum(d.lowTarget);
+
+  const result: YahooFundamentals = {
+    currentPrice: price,
+    previousClose: price - (typeof d.change === 'number' ? d.change : 0),
+    trailingPE: parseNum(d.pe),
+    forwardPE: parseNum(d.fwdPE),
+    pegRatio: parseNum(d.peg),
+    priceToBook: parseNum(d.pb),
+    enterpriseToEbitda: parseNum(d.evEbitda),
+    grossMargins: parsePercent(d.grossMargin),
+    operatingMargins: parsePercent(d.opMargin),
+    profitMargins: parsePercent(d.netMargin),
+    revenueGrowth: parsePercent(d.revGrowth),
+    earningsGrowth: parsePercent(d.epsGrowth),
+    revenueQuarterlyGrowth: parsePercent(d.qRevGrowth),
+    earningsQuarterlyGrowth: parsePercent(d.qEpsGrowth),
+    targetMeanPrice: targetMean,
+    targetHighPrice: targetHigh,
+    targetLowPrice: targetLow,
+    recommendationKey: d.recommendation ? String(d.recommendation) : '',
+    numberOfAnalystOpinions: parseNum(d.analysts),
+    totalRevenue: 0, // not in local JSON
+    ebitda: 0,     // not in local JSON
+    totalDebt: 0,   // not in local JSON
+    totalCash: 0,   // not in local JSON
+    debtToEquity: parseNum(d.debtEq),
+    returnOnEquity: parsePercent(d.roe),
+    freeCashflow: 0, // not in local JSON
+    epsForward: parseNum(d.fwdEps),
+    source: 'local_json',
+    fetchedAt: new Date().toISOString(),
+  };
+
+  return result;
+}
 
 export async function getBatchQuotesFast(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
   // Check cache first
@@ -599,119 +692,33 @@ export async function getBatchQuotesFast(tickers: string[]): Promise<Record<stri
   }
 
   const results: Record<string, YahooFundamentals> = {};
+  const localData = loadLocalFundamentals();
 
-  // Fetch in chunks of 40 (v7 limit is ~50)
-  const chunks = chunkArray(tickers, 40);
+  for (const ticker of tickers) {
+    const t = ticker.toUpperCase().trim();
+    const d = localData[t];
+    if (!d) continue;
 
-  for (const chunk of chunks) {
-    const symbols = chunk.join(',');
+    const fund = localToYahooFundamentals(t, d);
+    if (!fund) continue;
 
-    // Use the standard v7/finance/quote endpoint — returns ALL fields by default
-    // The fields param filters output, not requests extra data
-    const fields = [
-      'symbol', 'regularMarketPrice', 'regularMarketPreviousClose', 'trailingPE', 'forwardPE',
-      'pegRatio', 'revenueGrowth', 'earningsGrowth', 'earningsQuarterlyGrowth',
-      'revenueQuarterlyGrowth', 'targetMeanPrice', 'targetHighPrice', 'targetLowPrice',
-      'recommendationKey', 'numberOfAnalystOpinions', 'operatingMargins', 'profitMargins',
-      'grossMargins', 'debtToEquity', 'returnOnEquity', 'priceToBook', 'enterpriseToEbitda',
-      'forwardEps', 'totalRevenue', 'ebitda', 'totalDebt', 'totalCash', 'freeCashflow',
-    ].join(',');
+    results[t] = fund;
 
-    for (const base of ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com']) {
-      try {
-        const url = `${base}/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=${fields}`;
-        const res = await fetch(url, {
-          signal: AbortSignal.timeout(15000),
-          headers: BROWSER_HEADERS,
-        });
-
-        if (!res.ok) {
-          console.log(`[BATCH-QUOTE] ${base} returned ${res.status}`);
-          continue;
-        }
-
-        const data = await res.json();
-        const quotes = data?.quoteResponse?.result || [];
-
-        for (const q of quotes) {
-          const sym = (q.symbol || '').toUpperCase();
-          const price = extractNum(q.regularMarketPrice);
-          if (price <= 0) continue;
-
-          const targetMean = extractNum(q.targetMeanPrice);
-          const targetHigh = extractNum(q.targetHighPrice);
-          const targetLow = extractNum(q.targetLowPrice);
-
-          results[sym] = {
-            currentPrice: price,
-            previousClose: extractNum(q.regularMarketPreviousClose),
-            trailingPE: extractNum(q.trailingPE),
-            forwardPE: extractNum(q.forwardPE),
-            pegRatio: extractNum(q.pegRatio),
-            priceToBook: extractNum(q.priceToBook),
-            enterpriseToEbitda: extractNum(q.enterpriseToEbitda),
-            grossMargins: extractNum(q.grossMargins),
-            operatingMargins: extractNum(q.operatingMargins),
-            profitMargins: extractNum(q.profitMargins),
-            revenueGrowth: extractNum(q.revenueGrowth),
-            earningsGrowth: extractNum(q.earningsGrowth),
-            revenueQuarterlyGrowth: extractNum(q.revenueQuarterlyGrowth),
-            earningsQuarterlyGrowth: extractNum(q.earningsQuarterlyGrowth),
-            targetMeanPrice: targetMean,
-            targetHighPrice: targetHigh,
-            targetLowPrice: targetLow,
-            recommendationKey: q.recommendationKey ? String(q.recommendationKey) : '',
-            numberOfAnalystOpinions: extractNum(q.numberOfAnalystOpinions),
-            totalRevenue: extractNum(q.totalRevenue),
-            ebitda: extractNum(q.ebitda),
-            totalDebt: extractNum(q.totalDebt),
-            totalCash: extractNum(q.totalCash),
-            debtToEquity: extractNum(q.debtToEquity),
-            returnOnEquity: extractNum(q.returnOnEquity),
-            freeCashflow: extractNum(q.freeCashflow),
-            epsForward: extractNum(q.forwardEps),
-            source: `yahoo_batch (${base})`,
-            fetchedAt: new Date().toISOString(),
-          };
-
-          // PRE-SPLIT TARGET DETECTION: Flag and zero-out targets that are way out of range
-          if (targetMean > 0 && price > 0) {
-            const ratio = targetMean / price;
-            if (ratio > 3.0 || ratio < 0.25) {
-              console.warn(`[BATCH-QUOTE] ${sym}: SUSPICIOUS target=$${targetMean.toFixed(2)} vs price=$${price.toFixed(2)} (ratio=${ratio.toFixed(2)}). Likely pre-split or stale — zeroing target.`);
-              results[sym].targetMeanPrice = 0;
-              results[sym].targetHighPrice = 0;
-              results[sym].targetLowPrice = 0;
-            } else {
-              const upside = ((targetMean - price) / price * 100).toFixed(1);
-              console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} target=$${targetMean.toFixed(2)} upside=${upside}% PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
-            }
-          } else {
-            console.log(`[BATCH-QUOTE] ${sym}: $${price.toFixed(2)} NO TARGET PE=${results[sym].trailingPE} RevGr=${(results[sym].revenueGrowth * 100).toFixed(1)}%`);
-          }
-
-          // Also store in individual cache
-          fundCache.set(sym, { data: results[sym], fetchedAt: Date.now() });
-        }
-
-        console.log(`[BATCH-QUOTE] Got ${quotes.length}/${chunk.length} quotes from ${base}`);
-        break; // Don't try second endpoint if first succeeded
-      } catch (err: any) {
-        const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
-        console.log(`[BATCH-QUOTE] ${base} failed: ${msg}`);
-        continue;
-      }
+    // Log per-stock info
+    if (fund.targetMeanPrice > 0 && fund.currentPrice > 0) {
+      const upside = ((fund.targetMeanPrice - fund.currentPrice) / fund.currentPrice * 100).toFixed(1);
+      console.log(`[BATCH-QUOTE] ${t}: $${fund.currentPrice.toFixed(2)} target=$${fund.targetMeanPrice.toFixed(2)} upside=${upside}% PE=${fund.trailingPE} RevGr=${(fund.revenueGrowth * 100).toFixed(1)}%`);
+    } else {
+      console.log(`[BATCH-QUOTE] ${t}: $${fund.currentPrice.toFixed(2)} NO TARGET PE=${fund.trailingPE} RevGr=${(fund.revenueGrowth * 100).toFixed(1)}%`);
     }
 
-    // Small delay between chunks
-    if (chunks.indexOf(chunk) < chunks.length - 1) {
-      await delay(500);
-    }
+    // Also store in individual fund cache
+    fundCache.set(t, { data: fund, fetchedAt: Date.now() });
   }
 
   // Cache the batch result
   batchQuoteCache.set(cacheKey, { data: results, fetchedAt: Date.now() });
-  console.log(`[BATCH-QUOTE] Total: ${Object.keys(results).length}/${tickers.length} fundamentals obtained (fast batch)`);
+  console.log(`[BATCH-QUOTE] Total: ${Object.keys(results).length}/${tickers.length} fundamentals obtained (local JSON)`);
 
   return results;
 }

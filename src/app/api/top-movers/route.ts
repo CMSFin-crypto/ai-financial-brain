@@ -33,13 +33,13 @@ function safeNum(v: unknown): number {
 }
 
 // Map Yahoo recommendation key to our rating
-function mapRecommendation(key: string): string {
-  const map: Record<string, string> = {
+function mapRecommendation(key: string): 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' {
+  const map: Record<string, 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL'> = {
     'strong_buy': 'STRONG_BUY',
     'buy': 'BUY',
     'hold': 'HOLD',
     'sell': 'SELL',
-    'strong_sell': 'STRONG_SELL',
+    'strong_sell': 'SELL',
   };
   return map[key] || 'HOLD';
 }
@@ -404,7 +404,7 @@ export async function GET() {
         let highTarget = stock.profile.highTarget;
         let lowTarget = stock.profile.lowTarget;
         let upside = 0;
-        let rating = stock.profile.rating;
+        let rating: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' = stock.profile.rating;
         let pe = stock.profile.pe;
         let fwdPE = stock.profile.fwdPE;
         let peg = stock.profile.peg;
@@ -549,7 +549,7 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     };
 
-    cachedResult = { data: result, fetchedAt: Date.now() };
+    cachedResult = { data: result as unknown as NonNullable<typeof cachedResult>['data'], fetchedAt: Date.now() };
     console.log(`[TOP-MOVERS] Growth: ${topGrowth.map(s => s.ticker).join(',')} | Risk: ${topRisk.map(s => s.ticker).join(',')} | Live: ${liveCount} | Fund: ${fundCount}`);
 
     return NextResponse.json({ ...result, cached: false });
