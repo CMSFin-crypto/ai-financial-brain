@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,6 +22,12 @@ import {
   Loader2,
   Wifi,
   WifiOff,
+  Info,
+  X,
+  TrendingUpIcon,
+  DollarSign,
+  Percent,
+  Scale,
 } from 'lucide-react';
 
 interface MoverStock {
@@ -69,6 +75,175 @@ interface TopMoversData {
   stale?: boolean;
 }
 
+// ═══ Metric Explanations (Albanian) ═══
+const METRIC_INFO: Record<string, {
+  title: string;
+  icon: React.ReactNode;
+  description: string;
+  ideal: string;
+  good: string;
+  bad: string;
+  formula?: string;
+}> = {
+  upside: {
+    title: 'Upside (Potenciali)',
+    icon: <TrendingUpIcon className="w-4 h-4 text-blue-500" />,
+    description:
+      'Upside tregon sa % çmimi aktual është nën objektivin mesatar të analistëve. Llogaritet si: (Target - Çmimi aktual) / Çmimi aktual × 100. Një Upside i lartë do të thotë se analistët mendojnë se aksioni ka hapësirë të madhe rritjeje nga niveli aktual.',
+    ideal: '+15% deri +40% — Rritje e shëndetshme me potencial real',
+    good: '+5% deri +60% — Rrethi i pranueshëm',
+    bad: 'Mbi +80% ose negativ — Ose joshi e çmuar, ose targetet janë josë besueshme',
+    formula: 'Upside = (Target Mesatar - Çmimi Aktual) / Çmimi Aktual × 100',
+  },
+  revGrowth: {
+    title: 'Revenue Growth (Rritja e të ardhurave)',
+    icon: <DollarSign className="w-4 h-4 text-emerald-500" />,
+    description:
+      'Tregon sa % kanë rritur të ardhurat totale të kompanisë gjatë 12 muajve të fundit. Rritja e të ardhurave është një nga indikatorët më të rëndësishëm sepse konfirmon se kompania po fiton treg, po rritet, apo po shtrëngohet. Kompanitë me rritje të ardhurave >20% konsiderohen me rritje të fortë.',
+    ideal: '+15% deri +40% — Rritje e shpejtë por e qëndrueshme',
+    good: '+5% deri +15% — Rritje e shëndetshme',
+    bad: 'Fitoi −5% ose me ulët — Kompania po humb treg',
+    formula: 'Rev Gr = (Të ardhurat vitore aktuale − Të ardhurat vitore të mëparshme) / Të ardhurat e mëparshme × 100',
+  },
+  epsGrowth: {
+    title: 'EPS Growth (Rritja e fitimit per aksion)',
+    icon: <Percent className="w-4 h-4 text-violet-500" />,
+    description:
+      'EPS (Earnings Per Share) tregon sa fitim gjeneron kompania për çdo aksion. Rritja e EPS tregon nëse fitimi po rritet me kalimin e kohës. Kjo është e rëndësishme sepse çmimi i aksionit në afat të gjatë ndjek rritjen e EPS-së. Kompanitë me EPS growth >20% konsiderohen në rritje të fortë.',
+    ideal: '+20% deri +50% — Rritje e fortë fitimesh',
+    good: '+5% deri +20% — Rritje e shëndetshme',
+    bad: 'Fitoi −10% ose me ulët — Fitimi po bie',
+    formula: 'EPS Gr = (EPS aktual − EPS i mëparshëm) / EPS i mëparshëm × 100',
+  },
+  peg: {
+    title: 'PEG Ratio (Çmimi për rritjen)',
+    icon: <Scale className="w-4 h-4 text-amber-500" />,
+    description:
+      'PEG (Price/Earnings to Growth) është P/E i ndarë me rritjen e EPS-së. Një PEG = 1.0 do të thotë se çmimi është i arsyeshëm për rritjen. PEG < 1.0 tregon nënvlerësim (aksioni është i lirë për rritjen që ofron). PEG > 2.0 tregon vlerësim të lartë. PEG është më i mirë se P/E vetëm sepse merr parasysh rritjen.',
+    ideal: '0.5 deri 1.5 — Vlerësim i arsyeshëm për rritjen',
+    good: '0.3 deri 2.0 — Rrethi i pranueshëm',
+    bad: 'Mbi 3.0 ose negativ — Vlerësim shumë i lartë ose rritje negative',
+    formula: 'PEG = P/E (Trailing) / EPS Growth (% në numra)',
+  },
+};
+
+// ═══ Metric Info Popup ═══
+function MetricInfoPopup({
+  metricKey,
+  onClose,
+}: {
+  metricKey: string;
+  onClose: () => void;
+}) {
+  const info = METRIC_INFO[metricKey];
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    setTimeout(() => {
+      document.addEventListener('mousedown', handleClick);
+      document.addEventListener('keydown', handleEsc);
+    }, 10);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [onClose]);
+
+  if (!info) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={popupRef} className="bg-card border border-border rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3 animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {info.icon}
+            <h3 className="text-sm font-bold">{info.title}</h3>
+          </div>
+          <button onClick={onClose} className="w-6 h-6 rounded-full bg-muted/50 hover:bg-muted flex items-center justify-center transition-colors">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+
+        {/* Description */}
+        <p className="text-xs text-muted-foreground leading-relaxed">{info.description}</p>
+
+        {/* Scale indicators */}
+        <div className="space-y-1.5">
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1 flex-shrink-0" />
+            <div>
+              <p className="text-[10px] font-semibold text-emerald-500">Ideal</p>
+              <p className="text-[10px] text-muted-foreground">{info.ideal}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 rounded-full bg-blue-500 mt-1 flex-shrink-0" />
+            <div>
+              <p className="text-[10px] font-semibold text-blue-500">I pranueshëm</p>
+              <p className="text-[10px] text-muted-foreground">{info.good}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 rounded-full bg-red-500 mt-1 flex-shrink-0" />
+            <div>
+              <p className="text-[10px] font-semibold text-red-500">Rrezik</p>
+              <p className="text-[10px] text-muted-foreground">{info.bad}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Formula */}
+        {info.formula && (
+          <div className="bg-muted/30 rounded-lg p-2 border border-border/50">
+            <p className="text-[9px] font-medium text-muted-foreground mb-0.5">Formula</p>
+            <p className="text-[10px] font-mono text-foreground/80">{info.formula}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Clickable metric cell
+function MetricCell({
+  label,
+  value,
+  metricKey,
+  colorClass = '',
+}: {
+  label: string;
+  value: string;
+  metricKey: string;
+  colorClass?: string;
+}) {
+  const [showInfo, setShowInfo] = useState(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setShowInfo(true)}
+        className="bg-muted/30 rounded p-1 text-center hover:bg-muted/60 transition-colors cursor-help group relative"
+      >
+        <div className="flex items-center justify-center gap-0.5">
+          <p className="text-[8px] text-muted-foreground">{label}</p>
+          <Info className="w-2 h-2 text-muted-foreground/40 group-hover:text-muted-foreground/80 transition-colors" />
+        </div>
+        <p className={`text-[11px] font-semibold ${colorClass}`}>{value}</p>
+      </button>
+      {showInfo && <MetricInfoPopup metricKey={metricKey} onClose={() => setShowInfo(false)} />}
+    </>
+  );
+}
+
 function generateSparklineData(priceChange: number): Array<{ value: number }> {
   const points = 12;
   const data: Array<{ value: number }> = [];
@@ -85,7 +260,7 @@ function generateSparklineData(priceChange: number): Array<{ value: number }> {
 function MiniSparkline({ priceChange, color }: { priceChange: number; color: string }) {
   const data = generateSparklineData(priceChange);
   return (
-    <ResponsiveContainer width={80} height={30}>
+    <ResponsiveContainer width={60} height={28}>
       <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
         <Line
           type="monotone"
@@ -126,47 +301,61 @@ function RatingBadge({ rating }: { rating: string }) {
   return <Badge className="bg-gray-500 text-white text-[9px] px-1.5">{rating}</Badge>;
 }
 
+function StockHeader({ stock, index, color }: { stock: MoverStock; index: number; color: 'green' | 'red' }) {
+  const bgColor = color === 'green' ? 'bg-emerald-500/20' : 'bg-red-500/20';
+  const textColor = color === 'green' ? 'text-emerald-500' : 'text-red-500';
+  const liveColor = color === 'green' ? 'text-emerald-500' : 'text-red-400';
+  const liveBg = color === 'green' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30';
+  const sparkColor = color === 'green' ? '#10b981' : '#ef4444';
+
+  return (
+    <div className="flex items-start justify-between mb-2 gap-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className={`w-6 h-6 rounded-full ${bgColor} flex items-center justify-center ${textColor} text-[10px] font-bold flex-shrink-0`}>
+          {index + 1}
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm font-bold">{stock.ticker}</span>
+            {stock.hasFundamentals ? (
+              <Badge className={`${liveBg} ${liveColor} text-[7px] px-1 py-0 flex items-center gap-0.5`}>
+                <Wifi className="w-2 h-2" /> Live
+              </Badge>
+            ) : (
+              <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[7px] px-1 py-0 flex items-center gap-0.5">
+                <WifiOff className="w-2 h-2" />
+              </Badge>
+            )}
+            <RatingBadge rating={stock.rating} />
+            <MoatBadge moat={stock.moat} />
+          </div>
+          <p className="text-[10px] text-muted-foreground truncate">{stock.company} — {stock.sector}</p>
+        </div>
+      </div>
+      {/* Price — always visible, sparkline hidden on small screens */}
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="hidden sm:block">
+          <MiniSparkline priceChange={stock.priceChange} color={sparkColor} />
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+          <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+            {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+            {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <Card className={`border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 hover:from-emerald-500/10 hover:to-teal-500/10 transition-all duration-300 overflow-hidden`}>
       <CardContent className="pt-3.5 pb-3 px-3.5">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 text-[10px] font-bold">
-              {index + 1}
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-sm font-bold">{stock.ticker}</span>
-                {stock.hasFundamentals ? (
-                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
-                    <Wifi className="w-2.5 h-2.5" /> Live
-                  </Badge>
-                ) : (
-                  <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
-                    <WifiOff className="w-2.5 h-2.5" /> Cached
-                  </Badge>
-                )}
-                <RatingBadge rating={stock.rating} />
-                <MoatBadge moat={stock.moat} />
-              </div>
-              <p className="text-[10px] text-muted-foreground">{stock.company} — {stock.sector}</p>
-            </div>
-          </div>
-          <div className="text-right flex items-center gap-2">
-            <MiniSparkline priceChange={stock.priceChange} color="#10b981" />
-            <div>
-              <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
-              <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
-              </div>
-            </div>
-          </div>
-        </div>
+        <StockHeader stock={stock} index={index} color="green" />
 
         {/* Score Bar */}
         <div className="mb-2">
@@ -177,24 +366,31 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
           <ScoreBar score={stock.score} type="growth" />
         </div>
 
-        {/* Key Metrics Grid */}
+        {/* Key Metrics Grid — clickable */}
         <div className="grid grid-cols-4 gap-1.5 mb-2">
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">Upside</p>
-            <p className="text-[11px] font-bold text-emerald-500">+{stock.upside}%</p>
-          </div>
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">Rev Gr</p>
-            <p className="text-[11px] font-semibold">{stock.revGrowth}</p>
-          </div>
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">EPS Gr</p>
-            <p className="text-[11px] font-semibold">{stock.epsGrowth}</p>
-          </div>
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">PEG</p>
-            <p className="text-[11px] font-semibold">{stock.peg}</p>
-          </div>
+          <MetricCell
+            label="Upside"
+            value={`+${stock.upside}%`}
+            metricKey="upside"
+            colorClass="text-emerald-500 font-bold"
+          />
+          <MetricCell
+            label="Rev Gr"
+            value={stock.revGrowth}
+            metricKey="revGrowth"
+            colorClass={parseFloat(stock.revGrowth) < 0 ? 'text-red-500' : ''}
+          />
+          <MetricCell
+            label="EPS Gr"
+            value={stock.epsGrowth}
+            metricKey="epsGrowth"
+            colorClass={parseFloat(stock.epsGrowth) < 0 ? 'text-red-500' : ''}
+          />
+          <MetricCell
+            label="PEG"
+            value={String(stock.peg)}
+            metricKey="peg"
+          />
         </div>
 
         {/* Target */}
@@ -243,41 +439,7 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
   return (
     <Card className="border border-red-500/20 bg-gradient-to-br from-red-500/5 to-rose-500/5 hover:from-red-500/10 hover:to-rose-500/10 transition-all duration-300 overflow-hidden">
       <CardContent className="pt-3.5 pb-3 px-3.5">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 text-[10px] font-bold">
-              {index + 1}
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-sm font-bold">{stock.ticker}</span>
-                {stock.hasFundamentals ? (
-                  <Badge className="bg-red-500/10 text-red-400 border-red-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
-                    <Wifi className="w-2.5 h-2.5" /> Live
-                  </Badge>
-                ) : (
-                  <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[8px] px-1 py-0 flex items-center gap-0.5">
-                    <WifiOff className="w-2.5 h-2.5" /> Cached
-                  </Badge>
-                )}
-                <RatingBadge rating={stock.rating} />
-                <MoatBadge moat={stock.moat} />
-              </div>
-              <p className="text-[10px] text-muted-foreground">{stock.company} — {stock.sector}</p>
-            </div>
-          </div>
-          <div className="text-right flex items-center gap-2">
-            <MiniSparkline priceChange={stock.priceChange} color="#ef4444" />
-            <div>
-              <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
-              <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
-              </div>
-            </div>
-          </div>
-        </div>
+        <StockHeader stock={stock} index={index} color="red" />
 
         {/* Score Bar */}
         <div className="mb-2">
@@ -288,30 +450,31 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
           <ScoreBar score={stock.score} type="risk" />
         </div>
 
-        {/* Key Metrics Grid */}
+        {/* Key Metrics Grid — clickable */}
         <div className="grid grid-cols-4 gap-1.5 mb-2">
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">Upside</p>
-            <p className={`text-[11px] font-bold ${stock.upside >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-              {stock.upside >= 0 ? '+' : ''}{stock.upside}%
-            </p>
-          </div>
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">Rev Gr</p>
-            <p className={`text-[11px] font-semibold ${parseFloat(stock.revGrowth) < 0 ? 'text-red-500' : ''}`}>
-              {stock.revGrowth}
-            </p>
-          </div>
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">EPS Gr</p>
-            <p className={`text-[11px] font-semibold ${parseFloat(stock.epsGrowth) < 0 ? 'text-red-500' : ''}`}>
-              {stock.epsGrowth}
-            </p>
-          </div>
-          <div className="bg-muted/30 rounded p-1 text-center">
-            <p className="text-[8px] text-muted-foreground">P/E</p>
-            <p className="text-[11px] font-semibold">{stock.pe}x</p>
-          </div>
+          <MetricCell
+            label="Upside"
+            value={`${stock.upside >= 0 ? '+' : ''}${stock.upside}%`}
+            metricKey="upside"
+            colorClass={`font-bold ${stock.upside >= 0 ? 'text-emerald-500' : 'text-red-500'}`}
+          />
+          <MetricCell
+            label="Rev Gr"
+            value={stock.revGrowth}
+            metricKey="revGrowth"
+            colorClass={parseFloat(stock.revGrowth) < 0 ? 'text-red-500' : ''}
+          />
+          <MetricCell
+            label="EPS Gr"
+            value={stock.epsGrowth}
+            metricKey="epsGrowth"
+            colorClass={parseFloat(stock.epsGrowth) < 0 ? 'text-red-500' : ''}
+          />
+          <MetricCell
+            label="P/E"
+            value={`${stock.pe}x`}
+            metricKey="peg"
+          />
         </div>
 
         {/* Target Range */}
@@ -417,22 +580,22 @@ export function TopMovers() {
   return (
     <div className="space-y-4">
       {/* Header Bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <BarChart3 className="w-4 h-4 text-emerald-500" />
+            <span className="text-xs text-muted-foreground">
+              {data.totalAnalyzed} stoke te analizuar
+            </span>
+          </div>
+          {data.fundCount !== undefined && (
             <div className="flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs text-muted-foreground">
-                {data.totalAnalyzed} stoke te analizuar
+              <div className={`w-1.5 h-1.5 rounded-full ${data.fundCount > data.totalAnalyzed / 2 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span className="text-[10px] text-muted-foreground">
+                {data.fundCount}/{data.totalFetched || data.totalAnalyzed} me te dhena reale nga Yahoo Finance
               </span>
             </div>
-            {data.fundCount !== undefined && (
-              <div className="flex items-center gap-1.5">
-                <div className={`w-1.5 h-1.5 rounded-full ${data.fundCount > data.totalAnalyzed / 2 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                <span className="text-[10px] text-muted-foreground">
-                  {data.fundCount}/{data.totalFetched || data.totalAnalyzed} me te dhena reale nga Yahoo Finance
-                </span>
-              </div>
-            )}
+          )}
           {data.cached && (
             <Badge variant="secondary" className="text-[9px] bg-muted/50">
               Cache
