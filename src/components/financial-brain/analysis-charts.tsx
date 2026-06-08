@@ -25,12 +25,12 @@ interface AnalysisChartsProps {
 }
 
 const SIGNAL_COLORS: Record<string, string> = {
-  BUY: '#10b981',
+  BUY: '#21c55e',
   HOLD: '#f59e0b',
   SELL: '#ef4444',
 };
 
-const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444'];
+const PIE_COLORS = ['#21c55e', '#f59e0b', '#ef4444'];
 
 export function AnalysisCharts({ predictions }: AnalysisChartsProps) {
   // Signal distribution for pie chart
@@ -59,7 +59,7 @@ export function AnalysisCharts({ predictions }: AnalysisChartsProps) {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Signal Distribution Pie Chart */}
       {pieData.length > 0 && (
-        <div className="border rounded-xl p-4 bg-card/50">
+        <div className="border border-border/50 rounded-xl p-4 bg-card/50">
           <h3 className="text-sm font-medium mb-3 text-center">
             Shpërndarja e Sinjaleve
           </h3>
@@ -72,9 +72,10 @@ export function AnalysisCharts({ predictions }: AnalysisChartsProps) {
                   cy="50%"
                   innerRadius={50}
                   outerRadius={80}
-                  paddingAngle={5}
+                  paddingAngle={3}
                   dataKey="value"
                   stroke="none"
+                  strokeWidth={0}
                 >
                   {pieData.map((entry, index) => (
                     <Cell
@@ -110,14 +111,14 @@ export function AnalysisCharts({ predictions }: AnalysisChartsProps) {
 
       {/* Confidence Bar Chart */}
       {barData.length > 0 && (
-        <div className="border rounded-xl p-4 bg-card/50">
+        <div className="border border-border/50 rounded-xl p-4 bg-card/50">
           <h3 className="text-sm font-medium mb-3 text-center">
             Besueshmëria parashikimit
           </h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={barData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" opacity={0.3} />
                 <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
                 <YAxis
                   type="category"
@@ -134,7 +135,7 @@ export function AnalysisCharts({ predictions }: AnalysisChartsProps) {
                   }}
                   formatter={(value: number) => [`${value}%`, 'Besueshmëria']}
                 />
-                <Bar dataKey="confidence" radius={[0, 4, 4, 0]} barSize={20}>
+                <Bar dataKey="confidence" radius={[0, 6, 6, 0]} barSize={18} opacity={0.85}>
                   {barData.map((entry, index) => (
                     <Cell key={`bar-${index}`} fill={entry.fill} />
                   ))}

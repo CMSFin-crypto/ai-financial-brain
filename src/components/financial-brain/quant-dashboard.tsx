@@ -293,7 +293,7 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
   ] : [];
 
   const scoringBar = analysis ? [
-    { name: 'Teknike (35%)', score: safeNum(analysis.scoring?.technical?.weightedScore), max: 35, color: '#10b981' },
+    { name: 'Teknike (35%)', score: safeNum(analysis.scoring?.technical?.weightedScore), max: 35, color: '#21c55e' },
     { name: 'Fundam. (25%)', score: safeNum(analysis.scoring?.fundamental?.weightedScore), max: 25, color: '#f59e0b' },
     { name: 'Makro (20%)', score: safeNum(analysis.scoring?.macro?.weightedScore), max: 20, color: '#06b6d4' },
     { name: 'Lajme (20%)', score: safeNum(analysis.scoring?.newsGeopolitical?.weightedScore), max: 20, color: '#8b5cf6' },
@@ -507,7 +507,7 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
                         <PolarGrid stroke="hsl(var(--border))" />
                         <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10 }} />
                         <PolarRadiusAxis domain={[0, 50]} tick={{ fontSize: 8 }} />
-                        <Radar name="Score" dataKey="value" stroke="#10b981" fill="#10b981" fillOpacity={0.2} strokeWidth={2} />
+                        <Radar name="Score" dataKey="value" stroke="#21c55e" fill="#21c55e" fillOpacity={0.2} strokeWidth={2} />
                       </RadarChart>
                     </ResponsiveContainer>
                   </div>

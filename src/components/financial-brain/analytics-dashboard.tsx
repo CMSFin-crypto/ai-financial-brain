@@ -56,9 +56,9 @@ interface AnalyticsResponse {
 }
 
 /* ---------- color palette ---------- */
-const PIE_COLORS = ['#10b981', '#8b5cf6', '#f59e0b'];
+const PIE_COLORS = ['#21c55e', '#8b5cf6', '#f59e0b'];
 const BAR_FILL = 'url(#barGradient)';
-const BAR_ACTIVE_FILL = '#10b981';
+const BAR_ACTIVE_FILL = '#21c55e';
 
 /* ---------- device icon helper ---------- */
 function DeviceIcon({ device }: { device: string }) {

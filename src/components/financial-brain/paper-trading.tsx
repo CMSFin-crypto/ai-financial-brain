@@ -51,6 +51,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Cell,
@@ -840,8 +842,18 @@ export function PaperTrading() {
                 </p>
                 <div className="h-[150px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={equityCurve}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+                    <AreaChart data={equityCurve}>
+                      <defs>
+                        <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#21c55e" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#21c55e" stopOpacity={0.02} />
+                        </linearGradient>
+                        <linearGradient id="investedGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#6b7280" stopOpacity={0.1} />
+                          <stop offset="100%" stopColor="#6b7280" stopOpacity={0.01} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                       <XAxis
                         dataKey="date"
                         tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
@@ -863,11 +875,12 @@ export function PaperTrading() {
                         }}
                         formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, '']}
                       />
-                      <Line
+                      <Area
                         type="monotone"
                         dataKey="value"
-                        stroke="#10b981"
+                        stroke="#21c55e"
                         strokeWidth={2}
+                        fill="url(#equityGradient)"
                         dot={false}
                         name="Ekuiteti"
                       />
@@ -880,7 +893,7 @@ export function PaperTrading() {
                         dot={false}
                         name="E Investuar"
                       />
-                    </LineChart>
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>

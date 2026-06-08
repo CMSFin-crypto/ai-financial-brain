@@ -286,8 +286,8 @@ export function FundamentalAnalysis() {
                       <Radar
                         name="Score"
                         dataKey="value"
-                        stroke="#10b981"
-                        fill="#10b981"
+                        stroke="#21c55e"
+                        fill="#21c55e"
                         fillOpacity={0.2}
                         strokeWidth={2}
                       />
