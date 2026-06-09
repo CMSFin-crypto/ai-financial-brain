@@ -74,6 +74,38 @@
       "country": "Unknown",
       "device": "Mobile",
       "browser": "Chrome"
+    },
+    {
+      "id": "1780994027771-crk0xu",
+      "timestamp": "2026-06-09T08:33:47.771Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0",
+      "fingerprint": "fp_mq6duozj",
+      "page": "/",
+      "referrer": "https://preview-chat-2dc6186c-4a22-473e-9cf0-153905f8aa51.space-z.ai/",
+      "screenWidth": 1280,
+      "screenHeight": 720,
+      "colorDepth": 32,
+      "pixelRatio": 1.5,
+      "language": "en",
+      "timezone": "Europe/Budapest",
+      "os": "Windows 10/11",
+      "connectionType": "4g",
+      "isTouchDevice": false,
+      "country": "Unknown",
+      "device": "Desktop",
+      "browser": "Edge",
+      "visitorNumber": 1,
+      "isNewVisitor": true,
+      "visitCount": 1
     }
-  ]
+  ],
+  "fingerprintMap": {
+    "fp_mq6duozj": {
+      "visitorNumber": 1,
+      "firstSeen": "2026-06-09T08:33:47.771Z",
+      "lastSeen": "2026-06-09T08:33:47.771Z",
+      "visitCount": 1
+    }
+  }
 }
