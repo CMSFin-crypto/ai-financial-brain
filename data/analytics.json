@@ -98,6 +98,30 @@
       "visitorNumber": 1,
       "isNewVisitor": true,
       "visitCount": 1
+    },
+    {
+      "id": "1784489764331-y4o82e",
+      "timestamp": "2026-07-19T19:36:04.331Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36",
+      "fingerprint": "fp_mrs74pqj",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "colorDepth": 24,
+      "pixelRatio": 3.1875,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "os": "Android 10",
+      "connectionType": "4g",
+      "isTouchDevice": true,
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome",
+      "visitorNumber": 2,
+      "isNewVisitor": true,
+      "visitCount": 1
     }
   ],
   "fingerprintMap": {
@@ -105,6 +129,12 @@
       "visitorNumber": 1,
       "firstSeen": "2026-06-09T08:33:47.771Z",
       "lastSeen": "2026-06-09T08:33:47.771Z",
+      "visitCount": 1
+    },
+    "fp_mrs74pqj": {
+      "visitorNumber": 2,
+      "firstSeen": "2026-07-19T19:36:04.331Z",
+      "lastSeen": "2026-07-19T19:36:04.331Z",
       "visitCount": 1
     }
   }

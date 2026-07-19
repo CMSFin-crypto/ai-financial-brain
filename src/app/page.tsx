@@ -40,10 +40,12 @@ import {
   BarChart3,
   Landmark,
   Gauge,
+  BrainCircuit,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
+import { StockPredictor } from '@/components/financial-brain/stock-predictor';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -123,6 +125,9 @@ export default function Home() {
                   <TabsTrigger value="advanced" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <Brain className="w-3.5 h-3.5 mr-1.5" />Analiza
                   </TabsTrigger>
+                  <TabsTrigger value="predictor" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BrainCircuit className="w-3.5 h-3.5 mr-1.5" />Predikues
+                  </TabsTrigger>
                 </TabsList>
               </div>
             </div>
@@ -173,6 +178,9 @@ export default function Home() {
                 </TabsTrigger>
                 <TabsTrigger value="advanced" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <Brain className="w-3.5 h-3.5 mr-1" />Analiza
+                </TabsTrigger>
+                <TabsTrigger value="predictor" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                  <BrainCircuit className="w-3.5 h-3.5 mr-1" />Predikues
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -522,6 +530,24 @@ export default function Home() {
                 </CardContent>
               </Card>
               <AdvancedAnalysis />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: AI Stock Predictor */}
+          <TabsContent value="predictor" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+              <Card className="border-violet-500/20 bg-violet-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <BrainCircuit className="w-4 h-4 text-violet-500" />
+                    <h3 className="text-sm font-semibold">Predikues i Stoqeve me 15 Indikatorë Teknikë</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Modeli analizon 15 indikatorë (RSI, MACD, Bollinger, MA, Stochastic, ADX, OBV, etj.) dhe prodhon predikime afatshkurtra dhe afatgjata. Skanon 116 stoqe dhe i rendit sipas potencialit.
+                  </p>
+                </CardContent>
+              </Card>
+              <StockPredictor />
             </motion.div>
           </TabsContent>
         </Tabs>
