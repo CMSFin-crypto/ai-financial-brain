@@ -76,7 +76,7 @@ const WEIGHTS: Record<string, number> = {
   pattern: 0.05,
 };
 
-const MIN_DATA_POINTS = 250;
+const MIN_DATA_POINTS = 60;
 
 // ===================== HELPERS ==============================
 

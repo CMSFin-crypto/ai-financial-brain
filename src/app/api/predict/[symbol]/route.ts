@@ -17,7 +17,7 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const range = searchParams.get('range') || '6mo';
+    const range = searchParams.get('range') || '1y';
 
     const historicalData = await fetchHistoricalData(ticker, range);
 
