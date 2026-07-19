@@ -16,6 +16,7 @@ import {
   Brain, Play, Loader2, TrendingUp, TrendingDown, Minus,
   Shield, AlertTriangle, Zap, BarChart3, ArrowUp, ArrowDown,
   Target, Clock, Search, RefreshCw, ChevronDown, ChevronUp,
+  Sparkles,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -58,6 +59,47 @@ interface ScanResult {
   topShorts: PredictionResult[];
   mostConfident: PredictionResult[];
   allResults: PredictionResult[];
+}
+
+// ─── Hybrid Types ───────────────────────────────────────
+
+interface FundamentalFactor {
+  score: number;
+  name: string;
+  description: string;
+}
+
+interface FundamentalScore {
+  score: number;
+  signal: string;
+  factors: {
+    valuation: FundamentalFactor;
+    growth: FundamentalFactor;
+    profitability: FundamentalFactor;
+    financialHealth: FundamentalFactor;
+    analystConsensus: FundamentalFactor;
+  };
+  timestamp: string;
+}
+
+interface HybridPredictionResult extends PredictionResult {
+  fundamentalScore: FundamentalScore | null;
+  fundamentalAvailable: boolean;
+  aiInsight: string;
+  totalScore: number;
+  hybridConfidence: number;
+}
+
+interface HybridScanResult {
+  scannedAt: string;
+  total: number;
+  successful: number;
+  failed: number;
+  errors: string[];
+  topPicks: HybridPredictionResult[];
+  topShorts: HybridPredictionResult[];
+  mostConfident: HybridPredictionResult[];
+  allResults: HybridPredictionResult[];
 }
 
 // ─── Helper Functions ───────────────────────────────────────
@@ -291,7 +333,7 @@ function ScoreBar({ score }: { score: number }) {
 
 export function StockPredictor() {
   // Mode
-  const [mode, setMode] = useState<'single' | 'scan'>('scan');
+  const [mode, setMode] = useState<'single' | 'scan' | 'ai-hybrid'>('scan');
 
   // Single mode
   const [ticker, setTicker] = useState('');
@@ -305,9 +347,18 @@ export function StockPredictor() {
   const [scanError, setScanError] = useState('');
   const [scanProgress, setScanProgress] = useState('');
   const [viewTab, setViewTab] = useState<'top-picks' | 'top-shorts' | 'most-confident' | 'all'>('top-picks');
-  const [sortField, setSortField] = useState<'score' | 'confidence' | 'symbol'>('score');
+  const [sortField, setSortField] = useState<'score' | 'confidence' | 'symbol' | 'totalScore' | 'hybridConfidence'>('score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
+
+  // AI Hybrid scan mode
+  const [hybridResult, setHybridResult] = useState<HybridScanResult | null>(null);
+  const [hybridLoading, setHybridLoading] = useState(false);
+  const [hybridError, setHybridError] = useState('');
+  const [hybridViewTab, setHybridViewTab] = useState<'top-picks' | 'top-shorts' | 'most-confident' | 'all'>('top-picks');
+  const [hybridSortField, setHybridSortField] = useState<'totalScore' | 'hybridConfidence' | 'symbol'>('totalScore');
+  const [hybridSortDir, setHybridSortDir] = useState<'asc' | 'desc'>('desc');
+  const [hybridExpandedSymbol, setHybridExpandedSymbol] = useState<string | null>(null);
 
   // ─── Handlers ─────────────────────────────────────────────
 
@@ -353,7 +404,7 @@ export function StockPredictor() {
     }
   }, []);
 
-  const handleSort = useCallback((field: 'score' | 'confidence' | 'symbol') => {
+  const handleSort = useCallback((field: 'score' | 'confidence' | 'symbol' | 'totalScore' | 'hybridConfidence') => {
     if (sortField === field) {
       setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
     } else {
@@ -362,7 +413,65 @@ export function StockPredictor() {
     }
   }, [sortField]);
 
+  const handleHybridScan = useCallback(async () => {
+    setHybridLoading(true);
+    setHybridError('');
+    setHybridResult(null);
+    setHybridExpandedSymbol(null);
+    try {
+      const res = await fetch('/api/ai-predict-scan', {
+        signal: AbortSignal.timeout(300000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gabim gjatë skanimit hibrid');
+      setHybridResult(data);
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        setHybridError('Koha i mbaroi. Provoni përsëri.');
+      } else {
+        setHybridError(err instanceof Error ? err.message : 'Gabim i papritur');
+      }
+    } finally {
+      setHybridLoading(false);
+    }
+  }, []);
+
+  const handleHybridSort = useCallback((field: 'totalScore' | 'hybridConfidence' | 'symbol') => {
+    if (hybridSortField === field) {
+      setHybridSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setHybridSortField(field);
+      setHybridSortDir('desc');
+    }
+  }, [hybridSortField]);
+
   // ─── Derived Data ─────────────────────────────────────────
+
+  // Hybrid derived data
+  const currentHybridResults: HybridPredictionResult[] | null = (() => {
+    if (!hybridResult) return null;
+    const src = (() => {
+      switch (hybridViewTab) {
+        case 'top-picks': return hybridResult.topPicks;
+        case 'top-shorts': return hybridResult.topShorts;
+        case 'most-confident': return hybridResult.mostConfident;
+        case 'all': return hybridResult.allResults;
+        default: return null;
+      }
+    })();
+    if (!src) return null;
+    if (hybridViewTab !== 'all') return src;
+    return [...src].sort((a, b) => {
+      if (hybridSortField === 'symbol') {
+        return hybridSortDir === 'asc'
+          ? a.symbol.localeCompare(b.symbol)
+          : b.symbol.localeCompare(a.symbol);
+      }
+      const aVal = a[hybridSortField];
+      const bVal = b[hybridSortField];
+      return hybridSortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    });
+  })();
 
   const currentResults: PredictionResult[] | null = (() => {
     if (!scanResult) return null;
@@ -403,7 +512,7 @@ export function StockPredictor() {
       </div>
 
       {/* ═══════ Mode Toggle ═══════ */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           variant={mode === 'single' ? 'default' : 'outline'}
           size="sm"
@@ -420,7 +529,16 @@ export function StockPredictor() {
           className={mode === 'scan' ? 'bg-violet-600 hover:bg-violet-700' : ''}
         >
           <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
-          Skanim i Plotë (116 stoqe)
+          Skanim Teknik
+        </Button>
+        <Button
+          variant={mode === 'ai-hybrid' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setMode('ai-hybrid')}
+          className={mode === 'ai-hybrid' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+        >
+          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+          AI Hybrid
         </Button>
       </div>
 
@@ -991,6 +1109,313 @@ export function StockPredictor() {
                       {scanResult.errors.map((err, i) => (
                         <li key={i}>{err}</li>
                       ))}
+                    </ul>
+                  </details>
+                )}
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+        {/* ═══════════════════════════════════════════════════ */}
+        {/* AI HYBRID MODE                                   */}
+        {/* ═══════════════════════════════════════════════════ */}
+        {mode === 'ai-hybrid' && (
+          <motion.div
+            key="ai-hybrid"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-4"
+          >
+            <p className="text-xs text-muted-foreground">
+              Predikim hibrid që kombinon analizën teknike (60%) me analizën themelore (40%) për rezultate më të sakta.
+            </p>
+
+            {/* Scan button */}
+            {!hybridResult && !hybridLoading && (
+              <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}>
+                <Button
+                  onClick={handleHybridScan}
+                  size="lg"
+                  className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white font-semibold px-8 h-12 text-sm"
+                >
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Skanim Hibrid AI (116 stoqe)
+                </Button>
+              </motion.div>
+            )}
+
+            {/* Loading state */}
+            {hybridLoading && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4 py-16">
+                <div className="relative">
+                  <motion.div className="w-20 h-20 rounded-full border-2 border-violet-500/30" animate={{ scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
+                  <motion.div className="absolute inset-0 rounded-full border-2 border-fuchsia-400/50" animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Sparkles className="w-8 h-8 text-fuchsia-400" />
+                  </div>
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold text-foreground">Duke skanuar me AI Hybrid...</p>
+                  <p className="text-xs text-muted-foreground">Teknikë + Fundamente — kjo mund të zgjasë 3-5 minuta</p>
+                </div>
+                <div className="w-64 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                  <motion.div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" initial={{ width: '0%' }} animate={{ width: '90%' }} transition={{ duration: 180, ease: 'linear' }} />
+                </div>
+              </motion.div>
+            )}
+
+            {/* Error */}
+            {hybridError && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm text-red-400">
+                <AlertTriangle className="w-4 h-4" />
+                {hybridError}
+                <Button variant="outline" size="sm" onClick={handleHybridScan} className="ml-2">
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Provo përsëri
+                </Button>
+              </motion.div>
+            )}
+
+            {/* Scan Results */}
+            {hybridResult && !hybridLoading && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-4">
+                {/* Stats bar */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
+                    <span className="font-semibold text-foreground">{hybridResult.total}</span> skanuar hibrid
+                  </div>
+                  <div className="text-xs text-muted-foreground">|</div>
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="text-emerald-400 font-semibold">{hybridResult.successful}</span>
+                    <span className="text-muted-foreground">me sukses</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">|</div>
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="text-red-400 font-semibold">{hybridResult.failed}</span>
+                    <span className="text-muted-foreground">dështuan</span>
+                  </div>
+                  {hybridResult.scannedAt && (
+                    <>
+                      <div className="text-xs text-muted-foreground">|</div>
+                      <div className="text-[10px] text-muted-foreground">{new Date(hybridResult.scannedAt).toLocaleString('sq-AL')}</div>
+                    </>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={handleHybridScan} className="ml-auto h-7 text-[10px]">
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Rifresko
+                  </Button>
+                </div>
+
+                {/* Sub-tabs */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {([
+                    { key: 'top-picks' as const, label: '🎯 Top Picks', count: hybridResult.topPicks.length },
+                    { key: 'top-shorts' as const, label: '📉 Top Shorts', count: hybridResult.topShorts.length },
+                    { key: 'most-confident' as const, label: '✅ Më të Sigurtat', count: hybridResult.mostConfident.length },
+                    { key: 'all' as const, label: '📊 Të Gjitha', count: hybridResult.allResults.length },
+                  ]).map((tab) => (
+                    <Button
+                      key={tab.key}
+                      variant={hybridViewTab === tab.key ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => { setHybridViewTab(tab.key); setHybridExpandedSymbol(null); }}
+                      className={`text-[10px] h-7 ${hybridViewTab === tab.key ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
+                    >
+                      {tab.label}
+                      <Badge variant="outline" className="ml-1.5 text-[9px] px-1.5 py-0 h-4">{tab.count}</Badge>
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Hybrid Table */}
+                <div className="max-h-[70vh] overflow-y-auto rounded-md border">
+                  {currentHybridResults && currentHybridResults.length > 0 ? (
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-card z-10">
+                        <TableRow>
+                          <TableHead className="text-[10px] w-8 text-center">#</TableHead>
+                          <TableHead className="text-[10px]">Ticker</TableHead>
+                          <TableHead
+                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+                            onClick={() => handleHybridSort('totalScore')}
+                          >
+                            <div className="flex items-center gap-1">
+                              Total
+                              {hybridSortField === 'totalScore' && (
+                                hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
+                              )}
+                            </div>
+                          </TableHead>
+                          <TableHead className="text-[10px]">Teknik</TableHead>
+                          <TableHead className="text-[10px]">Fundamentet</TableHead>
+                          <TableHead className="text-[10px]">Sinjali</TableHead>
+                          <TableHead
+                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+                            onClick={() => handleHybridSort('hybridConfidence')}
+                          >
+                            <div className="flex items-center gap-1">
+                              Besim H.
+                              {hybridSortField === 'hybridConfidence' && (
+                                hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
+                              )}
+                            </div>
+                          </TableHead>
+                          <TableHead className="text-[10px]">AI Insight</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {currentHybridResults.map((r, idx) => {
+                          const isExpanded = hybridExpandedSymbol === r.symbol;
+                          return (
+                            <motion.tr
+                              key={r.symbol}
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.2, delay: Math.min(idx * 0.02, 0.5) }}
+                              className="group"
+                            >
+                              <TableCell className="text-[10px] text-muted-foreground text-center py-1.5">{idx + 1}</TableCell>
+                              <TableCell className="py-1.5">
+                                <button
+                                  onClick={() => setHybridExpandedSymbol(isExpanded ? null : r.symbol)}
+                                  className="flex items-center gap-1 font-bold text-xs hover:text-violet-400 transition-colors"
+                                >
+                                  {r.symbol}
+                                  {isExpanded
+                                    ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
+                                    : <ChevronDown className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  }
+                                </button>
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                <div className="space-y-0.5">
+                                  <span className={`text-xs font-bold ${scoreColor(r.totalScore)}`}>
+                                    {r.totalScore > 0 ? '+' : ''}{r.totalScore}
+                                  </span>
+                                  <ScoreBar score={r.totalScore} />
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                <span className={`text-[10px] font-semibold ${scoreColor(r.score)}`}>
+                                  {r.score > 0 ? '+' : ''}{r.score}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                {r.fundamentalAvailable && r.fundamentalScore ? (
+                                  <span className={`text-[10px] font-semibold ${scoreColor(r.fundamentalScore.score)}`}>
+                                    {r.fundamentalScore.score > 0 ? '+' : ''}{r.fundamentalScore.score}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                <Badge variant={directionBadgeVariant(r.direction)} className="text-[9px] px-1.5 py-0">
+                                  {directionLabel(r.direction)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-12 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full ${
+                                r.hybridConfidence > 70
+                                  ? 'bg-emerald-500'
+                                  : r.hybridConfidence > 40
+                                    ? 'bg-yellow-500'
+                                    : 'bg-red-500'
+                              }`}
+                                      style={{ width: `${r.hybridConfidence}%` }}
+                                    />
+                                  </div>
+                                  <span className={`text-[10px] font-semibold ${confidenceColor(r.hybridConfidence)}`}>
+                                    {r.hybridConfidence.toFixed(0)}%
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-1.5 max-w-[220px]">
+                                <p className="text-[9px] text-muted-foreground leading-tight line-clamp-2">{r.aiInsight}</p>
+                              </TableCell>
+
+                              {/* Expanded detail */}
+                              {isExpanded && (
+                                <TableCell colSpan={8} className="p-0">
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="border-t border-border/50 bg-muted/20 px-4 py-3"
+                                  >
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                      {/* Technical Key Factors */}
+                                      {r.keyFactors.length > 0 && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">Faktorët Teknikë</p>
+                                          <div className="space-y-1">
+                                            {r.keyFactors.slice(0, 5).map((f, fi) => (
+                                              <div key={fi} className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1">
+                                                <div className="flex-1">
+                                                  <span className="font-medium">{f.name}</span>
+                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+                                                </div>
+                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>{f.score > 0 ? '+' : ''}{f.score}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Fundamental Factors */}
+                                      {r.fundamentalAvailable && r.fundamentalScore && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">Faktorët Themelorë</p>
+                                          <div className="space-y-1">
+                                            {Object.entries(r.fundamentalScore.factors).map(([key, f]) => (
+                                              <div key={key} className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1">
+                                                <div className="flex-1">
+                                                  <span className="font-medium">{f.name}</span>
+                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+                                                </div>
+                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>{f.score > 0 ? '+' : ''}{f.score}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* No fundamentals notice */}
+                                      {!r.fundamentalAvailable && (
+                                        <div className="col-span-2">
+                                          <p className="text-[10px] text-muted-foreground italic">Të dhëna themelore nuk janë të disponueshme për {r.symbol}. Predikimi bazohet vetëm në analizën teknike.</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                </TableCell>
+                              )}
+                            </motion.tr>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                      <Sparkles className="w-8 h-8 mb-2 opacity-40" />
+                      <p className="text-sm">Nuk u gjetën predikime hibride</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Errors */}
+                {hybridResult.errors.length > 0 && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">{hybridResult.errors.length} gabime</summary>
+                    <ul className="mt-1 space-y-0.5 pl-4 text-red-400/80 list-disc">
+                      {hybridResult.errors.map((err, i) => <li key={i}>{err}</li>)}
                     </ul>
                   </details>
                 )}
