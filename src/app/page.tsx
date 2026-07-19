@@ -41,6 +41,7 @@ import {
   Landmark,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
+import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -114,6 +115,9 @@ export default function Home() {
                   <TabsTrigger value="analytics" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Statistikat
                   </TabsTrigger>
+                  <TabsTrigger value="advanced" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Brain className="w-3.5 h-3.5 mr-1.5" />Analiza
+                  </TabsTrigger>
                 </TabsList>
               </div>
             </div>
@@ -158,6 +162,9 @@ export default function Home() {
                 </TabsTrigger>
                 <TabsTrigger value="analytics" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <BarChart3 className="w-3.5 h-3.5 mr-1" />Statistikat
+                </TabsTrigger>
+                <TabsTrigger value="advanced" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                  <Brain className="w-3.5 h-3.5 mr-1" />Analiza
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -466,6 +473,24 @@ export default function Home() {
                 </CardContent>
               </Card>
               <AnalyticsDashboard />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Advanced Analysis */}
+          <TabsContent value="advanced" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+              <Card className="border-violet-500/20 bg-violet-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Brain className="w-4 h-4 text-violet-500" />
+                    <h3 className="text-sm font-semibold">Analiza e Avancuar</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Confidence Score 0-100, Backtesting me 3 strategji, Sentiment AI, dhe Matrica e Korrelacionit.
+                  </p>
+                </CardContent>
+              </Card>
+              <AdvancedAnalysis />
             </motion.div>
           </TabsContent>
         </Tabs>
