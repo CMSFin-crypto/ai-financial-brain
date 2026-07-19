@@ -19,6 +19,7 @@ import {
   StickyNote,
   X,
   Loader2,
+  BellRing,
 } from 'lucide-react';
 import { StockSearch } from './stock-search';
 import { getStock } from '@/lib/market-data';
@@ -76,6 +77,38 @@ export function Watchlist() {
   const [addAlertBelow, setAddAlertBelow] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [deletingTicker, setDeletingTicker] = useState<string | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
+
+  // Check and request notification permission
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotifPermission('unsupported');
+      return;
+    }
+    setNotifPermission(Notification.permission);
+  }, []);
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) return;
+    const permission = await Notification.requestPermission();
+    setNotifPermission(permission);
+  };
+
+  // Send browser notification
+  const sendBrowserNotification = useCallback((title: string, body: string, icon?: string) => {
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      new Notification(title, {
+        body,
+        icon: icon || '/brain-logo.png',
+        badge: '/brain-logo.png',
+        tag: 'ai-brain-alert',
+        renotify: true,
+      });
+    } catch {
+      // Notification failed silently
+    }
+  }, []);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -108,16 +141,22 @@ export function Watchlist() {
           if (item.alertBelow && newPrice <= item.alertBelow) triggered = true;
         }
 
-        // Fire toast for new alerts
+        // Fire toast + browser notification for new alerts
         if (triggered && !item.alertedAt) {
+          const desc = item.alertAbove && newPrice >= item.alertAbove
+            ? `Ka kaluar $${item.alertAbove}`
+            : item.alertBelow && newPrice <= item.alertBelow
+              ? `Ka ra nën $${item.alertBelow}`
+              : 'Alert i aktivizuar';
           toast.warning(`${item.ticker} alert: $${newPrice.toFixed(2)}`, {
-            description: item.alertAbove && newPrice >= item.alertAbove
-              ? `Ka kaluar $${item.alertAbove}`
-              : item.alertBelow && newPrice <= item.alertBelow
-                ? `Ka ra nën $${item.alertBelow}`
-                : 'Alert i aktivizuar',
+            description: desc,
             duration: 6000,
           });
+          // Browser push notification
+          sendBrowserNotification(
+            `${item.ticker} — Alert Çmimi!`,
+            `${item.company}: $${newPrice.toFixed(2)} — ${desc}`
+          );
         }
 
         return {
@@ -243,6 +282,24 @@ export function Watchlist() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {notifPermission !== 'granted' && notifPermission !== 'unsupported' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={requestNotificationPermission}
+                  className="h-8 text-xs border-amber-500/30 text-amber-500 hover:bg-amber-500/10"
+                  title="Aktivizo njoftimet e shfletuesit"
+                >
+                  <BellRing className="w-3.5 h-3.5 mr-1" />
+                  Njoftime
+                </Button>
+              )}
+              {notifPermission === 'granted' && (
+                <div className="hidden sm:flex items-center gap-1 text-[10px] text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-1">
+                  <Bell className="w-3 h-3" />
+                  <span>Njoftime ON</span>
+                </div>
+              )}
               <Button
                 variant="outline"
                 size="sm"

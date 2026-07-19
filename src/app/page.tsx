@@ -39,9 +39,11 @@ import {
   Filter,
   BarChart3,
   Landmark,
+  Gauge,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
+import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -75,6 +77,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
+                  </TabsTrigger>
+                  <TabsTrigger value="fear-greed" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Gauge className="w-3.5 h-3.5 mr-1.5" />Fear & Greed
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -135,6 +140,9 @@ export default function Home() {
                 </TabsTrigger>
                 <TabsTrigger value="sector" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Radar className="w-3.5 h-3.5 mr-1" />Sektoret
+                </TabsTrigger>
+                <TabsTrigger value="fear-greed" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <Gauge className="w-3.5 h-3.5 mr-1" />F&G
                 </TabsTrigger>
                 <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                   <Target className="w-3.5 h-3.5 mr-1" />Pikat
@@ -248,6 +256,29 @@ export default function Home() {
                 </CardContent>
               </Card>
               <QuantDashboard initialTicker={quantTicker} />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Fear & Greed Index */}
+          <TabsContent value="fear-greed" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Gauge className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">Indeksi i Frikës & Grykesisë (Fear & Greed)</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Tregon gjendjen psikologjike të tregut amerikan — nga frika ekstreme deri te grykesia ekstreme. Një treg me frikë është mundësi blerjeje.
+                  </p>
+                </CardContent>
+              </Card>
+              <FearGreedIndex />
             </motion.div>
           </TabsContent>
 
