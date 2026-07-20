@@ -194,6 +194,30 @@
       "visitorNumber": 5,
       "isNewVisitor": true,
       "visitCount": 1
+    },
+    {
+      "id": "1785419873666-q21cyj",
+      "timestamp": "2026-07-30T13:57:53.666Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0",
+      "fingerprint": "fp_ms7kvfj5",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 1280,
+      "screenHeight": 720,
+      "colorDepth": 32,
+      "pixelRatio": 1.5,
+      "language": "en",
+      "timezone": "Europe/Budapest",
+      "os": "Windows 10/11",
+      "connectionType": "4g",
+      "isTouchDevice": false,
+      "country": "Unknown",
+      "device": "Desktop",
+      "browser": "Edge",
+      "visitorNumber": 6,
+      "isNewVisitor": true,
+      "visitCount": 1
     }
   ],
   "fingerprintMap": {
@@ -225,6 +249,12 @@
       "visitorNumber": 5,
       "firstSeen": "2026-07-20T16:30:56.676Z",
       "lastSeen": "2026-07-20T16:30:56.676Z",
+      "visitCount": 1
+    },
+    "fp_ms7kvfj5": {
+      "visitorNumber": 6,
+      "firstSeen": "2026-07-30T13:57:53.666Z",
+      "lastSeen": "2026-07-30T13:57:53.666Z",
       "visitCount": 1
     }
   }
