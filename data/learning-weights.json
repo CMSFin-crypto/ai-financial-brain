@@ -1,0 +1,39 @@
+{
+  "totalPredictions": 0,
+  "checkedPredictions": 0,
+  "shortTermAccuracy": 50,
+  "mediumTermAccuracy": 50,
+  "directionAccuracy": 50,
+  "indicatorAccuracy": {},
+  "fundamentalAccuracy": {},
+  "learningWeights": {
+    "rsi": 0.100,
+    "macdHistogram": 0.080,
+    "bollinger": 0.080,
+    "maTrend": 0.120,
+    "stochastic": 0.060,
+    "adx": 0.060,
+    "atr": 0.030,
+    "roc": 0.080,
+    "obv": 0.070,
+    "volumeConfirm": 0.070,
+    "macdCrossover": 0.050,
+    "priceChannel": 0.050,
+    "divergence": 0.060,
+    "vwap": 0.040,
+    "pattern": 0.050
+  },
+  "fundamentalWeights": {
+    "valuation": 0.150,
+    "growth": 0.250,
+    "profitability": 0.150,
+    "analystSentiment": 0.200,
+    "debtHealth": 0.100,
+    "momentum": 0.150
+  },
+  "lastUpdated": "2026-07-21T00:00:00.000Z",
+  "bestIndicators": [],
+  "worstIndicators": [],
+  "averageAbsoluteError": 0,
+  "recentAccuracy": 50
+}

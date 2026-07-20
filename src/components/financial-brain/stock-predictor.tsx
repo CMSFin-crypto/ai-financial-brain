@@ -16,7 +16,7 @@ import {
   Brain, Play, Loader2, TrendingUp, TrendingDown, Minus,
   Shield, AlertTriangle, Zap, BarChart3, ArrowUp, ArrowDown,
   Target, Clock, Search, RefreshCw, ChevronDown, ChevronUp,
-  Sparkles, GraduationCap, BookOpen, CheckCircle2, XCircle, Activity,
+  Sparkles, GraduationCap, BookOpen, CheckCircle2, XCircle, Activity, Trophy, PieChart,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -35,6 +35,22 @@ interface TermPrediction {
   expectedMove: number;
 }
 
+interface FundamentalData {
+  score: number;
+  summary: string;
+  scores: Record<string, number>;
+}
+
+interface LearningData {
+  totalPredictions: number;
+  directionAccuracy: number;
+  shortTermAccuracy: number;
+  mediumTermAccuracy: number;
+  bestIndicators: string[];
+  worstIndicators: string[];
+  recentAccuracy: number;
+}
+
 interface PredictionResult {
   symbol: string;
   score: number;
@@ -47,6 +63,18 @@ interface PredictionResult {
   keyFactors: KeyFactor[];
   indicatorScores: Record<string, number>;
   timestamp: string;
+  technicalScore?: number;
+  fundamentalData?: FundamentalData | null;
+  learningData?: LearningData | null;
+  combinedScore?: number;
+}
+
+interface ScanLearningInfo {
+  totalPredictions: number;
+  directionAccuracy: number;
+  recentAccuracy: number;
+  bestIndicators: string[];
+  worstIndicators: string[];
 }
 
 interface ScanResult {
@@ -55,6 +83,7 @@ interface ScanResult {
   successful: number;
   failed: number;
   errors: string[];
+  learningStats?: ScanLearningInfo;
   topPicks: PredictionResult[];
   topShorts: PredictionResult[];
   mostConfident: PredictionResult[];
@@ -540,7 +569,7 @@ export function StockPredictor() {
         </div>
         <div>
           <h2 className="text-lg font-bold text-foreground">Predikues i Stoqeve me AI</h2>
-          <p className="text-xs text-muted-foreground">Analizë teknike e avancuar me më shumë se 15 indikatorë</p>
+          <p className="text-xs text-muted-foreground">Analizë teknike + fundamentale me sistem mësues</p>
         </div>
       </div>
 
@@ -732,12 +761,95 @@ export function StockPredictor() {
                       </div>
                     )}
 
+                    {/* Technical vs Fundamental Score Breakdown */}
+                    {singleResult.fundamentalData && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-md border p-3">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Activity className="w-3 h-3 text-violet-400" />
+                            <span className="text-[10px] font-semibold text-muted-foreground">Teknik</span>
+                          </div>
+                          <p className={`text-lg font-bold ${scoreColor(singleResult.technicalScore ?? 0)}`}>
+                            {(singleResult.technicalScore ?? 0) > 0 ? '+' : ''}{singleResult.technicalScore ?? 0}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">15 indikatorë</p>
+                        </div>
+                        <div className="rounded-md border p-3">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <BookOpen className="w-3 h-3 text-amber-400" />
+                            <span className="text-[10px] font-semibold text-muted-foreground">Fondamentale</span>
+                          </div>
+                          <p className={`text-lg font-bold ${scoreColor(singleResult.fundamentalData.score)}`}>
+                            {singleResult.fundamentalData.score > 0 ? '+' : ''}{singleResult.fundamentalData.score}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">6 faktorë</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fundamental Scores Grid */}
+                    {singleResult.fundamentalData && singleResult.fundamentalData.scores && Object.keys(singleResult.fundamentalData.scores).length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <BookOpen className="w-3 h-3" />
+                          Analiza Fondamentale
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {Object.entries(singleResult.fundamentalData.scores).map(([name, score]) => (
+                            <div
+                              key={name}
+                              className={`rounded-md border px-2.5 py-1.5 text-center ${indicatorScoreColor(score)}`}
+                            >
+                              <p className="text-[10px] opacity-70 truncate">{name}</p>
+                              <p className="text-xs font-bold">
+                                {score > 0 ? '+' : ''}{score}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        {singleResult.fundamentalData.summary && (
+                          <p className="text-[10px] text-muted-foreground mt-2 italic">{singleResult.fundamentalData.summary}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Learning Data */}
+                    {singleResult.learningData && singleResult.learningData.totalPredictions > 0 && (
+                      <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <GraduationCap className="w-3 h-3 text-blue-400" />
+                          <span className="text-[10px] font-semibold text-blue-300">Sistemi i Mësuarit</span>
+                          <Badge variant="outline" className="text-[9px] ml-auto">{singleResult.learningData.totalPredictions} predikime</Badge>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-sm font-bold text-blue-300">{singleResult.learningData.directionAccuracy}%</p>
+                            <p className="text-[9px] text-muted-foreground">Saktësia e Drejtimit</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-green-300">{singleResult.learningData.shortTermAccuracy}%</p>
+                            <p className="text-[9px] text-muted-foreground">Afati i Shkurtër</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-amber-300">{singleResult.learningData.recentAccuracy}%</p>
+                            <p className="text-[9px] text-muted-foreground">E Fundit (50)</p>
+                          </div>
+                        </div>
+                        {singleResult.learningData.bestIndicators.length > 0 && (
+                          <p className="text-[9px] text-muted-foreground mt-2">
+                            <Trophy className="w-2.5 h-2.5 inline mr-1" />
+                            Më të mirët: {singleResult.learningData.bestIndicators.slice(0, 3).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* All Indicators Grid */}
                     {Object.keys(singleResult.indicatorScores).length > 0 && (
                       <div>
                         <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
                           <BarChart3 className="w-3 h-3" />
-                          Indikatorët
+                          Indikatorët Teknikë
                         </h4>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                           {Object.entries(singleResult.indicatorScores).map(([name, score]) => (
@@ -774,7 +886,7 @@ export function StockPredictor() {
             className="space-y-4"
           >
             <p className="text-xs text-muted-foreground">
-              Skanoni të gjitha 116 stoqet me një klikim. AI analizon çdo stoqe me indikatorë teknike dhe i rendit sipas pikëve.
+              Skanoni të gjitha 116 stoqet me një klikim. Analizë teknike (15 indikatorë) + fundamentale (P/E, rritja, etj.) + mësuarit nga historia.
             </p>
 
             {/* Scan button */}
@@ -903,6 +1015,38 @@ export function StockPredictor() {
                   </Button>
                 </div>
 
+                {/* Learning stats bar */}
+                {scanResult.learningStats && scanResult.learningStats.totalPredictions > 0 && (
+                  <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-2.5 flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <GraduationCap className="w-3.5 h-3.5 text-blue-400" />
+                      <span className="text-[10px] font-semibold text-blue-300">Mësuarit</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      <span className="text-muted-foreground">Predikime:</span>
+                      <span className="font-semibold text-foreground">{scanResult.learningStats.totalPredictions}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      <span className="text-muted-foreground">Saktësia:</span>
+                      <span className={`font-bold ${scanResult.learningStats.directionAccuracy >= 55 ? 'text-emerald-400' : scanResult.learningStats.directionAccuracy >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {scanResult.learningStats.directionAccuracy}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      <span className="text-muted-foreground">E Fundit:</span>
+                      <span className={`font-bold ${scanResult.learningStats.recentAccuracy >= 55 ? 'text-emerald-400' : scanResult.learningStats.recentAccuracy >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {scanResult.learningStats.recentAccuracy}%
+                      </span>
+                    </div>
+                    {scanResult.learningStats.bestIndicators.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <Trophy className="w-3 h-3 text-amber-400" />
+                        <span>Më të mirët: {scanResult.learningStats.bestIndicators.slice(0, 3).join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Sub-tabs */}
                 <div className="flex gap-1.5 flex-wrap">
                   {([
@@ -965,6 +1109,8 @@ export function StockPredictor() {
                           <TableHead className="text-[10px]">Afatgjatë</TableHead>
                           <TableHead className="text-[10px]">Rreziku</TableHead>
                           <TableHead className="text-[10px]">Volatiliteti</TableHead>
+                          <TableHead className="text-[10px]">Teknik</TableHead>
+                          <TableHead className="text-[10px]">Fond.</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1051,10 +1197,24 @@ export function StockPredictor() {
                               <TableCell className="text-[10px] text-muted-foreground py-1.5">
                                 {volatilityLabel(r.volatility)}
                               </TableCell>
+                              <TableCell className="py-1.5">
+                                <span className={`text-[10px] font-semibold ${scoreColor(r.technicalScore ?? r.score)}`}>
+                                  {(r.technicalScore ?? r.score) > 0 ? '+' : ''}{Math.round(r.technicalScore ?? r.score)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                {r.fundamentalData ? (
+                                  <span className={`text-[10px] font-semibold ${scoreColor(r.fundamentalData.score)}`}>
+                                    {r.fundamentalData.score > 0 ? '+' : ''}{Math.round(r.fundamentalData.score)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
 
                               {/* Expanded detail row */}
                               {isExpanded && (
-                                <TableCell colSpan={9} className="p-0">
+                                <TableCell colSpan={11} className="p-0">
                                   <motion.div
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}

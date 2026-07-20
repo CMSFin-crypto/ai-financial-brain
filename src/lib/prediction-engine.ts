@@ -1,6 +1,7 @@
 // ============================================================
-// Stock Prediction Engine — Multi-Factor Technical Analysis
-// Pure TypeScript, zero external dependencies, server-side only
+// Stock Prediction Engine — Multi-Factor Analysis
+// Technical + Fundamental + Learning Weights
+// Pure TypeScript, server-side only
 // ============================================================
 
 // ======================== TYPES =============================
@@ -34,6 +35,22 @@ export interface TermPrediction {
   expectedMove: number;
 }
 
+export interface FundamentalData {
+  score: number;
+  summary: string;
+  scores: Record<string, number>;
+}
+
+export interface LearningData {
+  totalPredictions: number;
+  directionAccuracy: number;
+  shortTermAccuracy: number;
+  mediumTermAccuracy: number;
+  bestIndicators: string[];
+  worstIndicators: string[];
+  recentAccuracy: number;
+}
+
 export interface PredictionResult {
   symbol: string;
   score: number;
@@ -46,6 +63,11 @@ export interface PredictionResult {
   keyFactors: KeyFactor[];
   indicatorScores: Record<string, number>;
   timestamp: string;
+  // New fields
+  technicalScore: number;
+  fundamentalData: FundamentalData | null;
+  learningData: LearningData | null;
+  combinedScore: number;
 }
 
 interface IndicatorScore {
@@ -58,7 +80,7 @@ interface IndicatorScore {
 
 // ====================== CONSTANTS ===========================
 
-const WEIGHTS: Record<string, number> = {
+const DEFAULT_WEIGHTS: Record<string, number> = {
   rsi: 0.10,
   macdHistogram: 0.08,
   bollinger: 0.08,
@@ -75,6 +97,20 @@ const WEIGHTS: Record<string, number> = {
   vwap: 0.04,
   pattern: 0.05,
 };
+
+/** Get weights — uses learning weights if available, otherwise defaults */
+function getWeights(): Record<string, number> {
+  try {
+    const { loadLearningStats } = require('./prediction-history');
+    const stats = loadLearningStats();
+    if (stats && stats.learningWeights && Object.keys(stats.learningWeights).length > 0) {
+      return stats.learningWeights;
+    }
+  } catch {
+    // prediction-history not available (e.g., in test or missing data dir)
+  }
+  return DEFAULT_WEIGHTS;
+}
 
 const MIN_DATA_POINTS = 60;
 
@@ -493,8 +529,8 @@ function scoreMACDHistogram(histogram: number[]): IndicatorScore {
   }
 
   let score: number;
-  let name: string;
-  let description: string;
+  let name: string = '';
+  let description: string = '';
 
   // Use max absolute value across recent bars as a scale reference
   const maxAbs = Math.max(...recent.map(Math.abs), 0.001);
@@ -1300,6 +1336,10 @@ export function predictStock(symbol: string, data: PricePoint[]): PredictionResu
     ],
     indicatorScores: {},
     timestamp: new Date().toISOString(),
+    technicalScore: 0,
+    fundamentalData: null,
+    learningData: null,
+    combinedScore: 0,
   });
 
   if (!data || data.length < MIN_DATA_POINTS) return emptyResult();
@@ -1346,10 +1386,11 @@ export function predictStock(symbol: string, data: PricePoint[]): PredictionResu
   scores.pattern = scorePattern(opens, highs, lows, closes, volumes);
 
   // ---------- Weighted final score ----------
+  const weights = getWeights();
   let finalScore = 0;
   const indicatorScores: Record<string, number> = {};
 
-  for (const [key, weight] of Object.entries(WEIGHTS)) {
+  for (const [key, weight] of Object.entries(weights)) {
     const s = scores[key]?.score ?? 0;
     finalScore += s * weight;
     indicatorScores[key] = Math.round(s * 100) / 100;
@@ -1442,6 +1483,130 @@ export function predictStock(symbol: string, data: PricePoint[]): PredictionResu
     keyFactors,
     indicatorScores,
     timestamp: new Date().toISOString(),
+    technicalScore: finalScore,
+    fundamentalData: null,
+    learningData: null,
+    combinedScore: finalScore,
+  };
+}
+
+// ============= ENHANCED PREDICTION WITH FUNDAMENTALS + LEARNING =============
+
+interface EnhancedPredictionOptions {
+  fundamentalScore?: number | null;
+  fundamentalSummary?: string;
+  fundamentalScores?: Record<string, number>;
+  learningStats?: {
+    totalPredictions: number;
+    directionAccuracy: number;
+    shortTermAccuracy: number;
+    mediumTermAccuracy: number;
+    bestIndicators: string[];
+    worstIndicators: string[];
+    recentAccuracy: number;
+  } | null;
+  /** Weight for fundamentals (0-1, default 0.25) */
+  fundamentalWeight?: number;
+}
+
+/**
+ * Enhanced prediction that combines technical + fundamental scores.
+ * Uses learning weights if available.
+ */
+export function predictStockEnhanced(
+  baseResult: PredictionResult,
+  options: EnhancedPredictionOptions = {},
+): PredictionResult {
+  const fundWeight = options.fundamentalWeight ?? 0.25;
+  const techWeight = 1 - fundWeight;
+  const techScore = baseResult.technicalScore;
+  const fundScore = options.fundamentalScore ?? 0;
+
+  // Adjust fund weight based on learning data
+  let adjustedFundWeight = fundWeight;
+  if (options.learningStats && options.learningStats.totalPredictions > 10) {
+    // If fundamentals have been more accurate, increase their weight
+    const avgAcc = (options.learningStats.directionAccuracy + options.learningStats.recentAccuracy) / 2;
+    if (avgAcc > 55) {
+      adjustedFundWeight = Math.min(fundWeight * 1.3, 0.40);
+    } else if (avgAcc < 45) {
+      adjustedFundWeight = fundWeight * 0.7;
+    }
+  }
+
+  const adjustedTechWeight = 1 - adjustedFundWeight;
+  const combinedScore = clamp(
+    Math.round((techScore * adjustedTechWeight + fundScore * adjustedFundWeight) * 100) / 100,
+    -100, 100
+  );
+
+  // Recalculate direction based on combined score
+  const direction: Direction =
+    combinedScore > 60 ? 'STRONG_BUY' : combinedScore > 25 ? 'BUY' : combinedScore > -25 ? 'NEUTRAL' : combinedScore > -60 ? 'SELL' : 'STRONG_SELL';
+
+  // Add fundamental key factors if available
+  const keyFactors = [...baseResult.keyFactors];
+  if (options.fundamentalSummary) {
+    // Insert fundamental as first factor if significant
+    if (Math.abs(fundScore) > 15) {
+      keyFactors.unshift({
+        name: 'Analiza Fondamentale',
+        signal: fundScore > 0 ? 'BULLISH' as SignalType : 'BEARISH' as SignalType,
+        impact: Math.abs(fundScore) > 40 ? 'HIGH' as ImpactLevel : 'MEDIUM' as ImpactLevel,
+        score: fundScore,
+        description: options.fundamentalSummary,
+      });
+    }
+  }
+
+  // Trim to top 5
+  const topFactors = keyFactors
+    .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+    .slice(0, 5);
+
+  // Boost confidence if both technical and fundamental agree
+  let confidence = baseResult.confidence;
+  if (techScore > 15 && fundScore > 15) {
+    confidence = clamp(confidence + 8, 0, 100);
+  } else if (techScore < -15 && fundScore < -15) {
+    confidence = clamp(confidence + 8, 0, 100);
+  } else if ((techScore > 15 && fundScore < -15) || (techScore < -15 && fundScore > 15)) {
+    confidence = clamp(confidence - 10, 0, 100);
+  }
+  confidence = Math.round(confidence * 100) / 100;
+
+  // Update short/medium term predictions with fundamental influence
+  const shortTerm = { ...baseResult.shortTerm };
+  const mediumTerm = { ...baseResult.mediumTerm };
+
+  // Fundamental influence on medium term (stronger effect)
+  if (Math.abs(fundScore) > 20) {
+    const fundBias = fundScore > 0 ? 5 : -5;
+    mediumTerm.probability = clamp(mediumTerm.probability + Math.abs(fundBias), 0, 100);
+    if (fundScore > 40 && mediumTerm.prediction === 'SIDEWAYS') {
+      mediumTerm.prediction = 'UP';
+    } else if (fundScore < -40 && mediumTerm.prediction === 'SIDEWAYS') {
+      mediumTerm.prediction = 'DOWN';
+    }
+  }
+
+  return {
+    ...baseResult,
+    score: combinedScore,
+    direction,
+    confidence,
+    keyFactors: topFactors,
+    fundamentalData: options.fundamentalScore !== null && options.fundamentalScore !== undefined
+      ? {
+          score: fundScore,
+          summary: options.fundamentalSummary || '',
+          scores: options.fundamentalScores || {},
+        }
+      : null,
+    learningData: options.learningStats ?? null,
+    combinedScore,
+    shortTerm,
+    mediumTerm,
   };
 }
 
