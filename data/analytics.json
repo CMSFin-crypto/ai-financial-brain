@@ -122,6 +122,54 @@
       "visitorNumber": 2,
       "isNewVisitor": true,
       "visitCount": 1
+    },
+    {
+      "id": "1784526380149-kno1r0",
+      "timestamp": "2026-07-20T05:46:20.149Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36",
+      "fingerprint": "fp_mrssxi8b",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "colorDepth": 24,
+      "pixelRatio": 3.1875,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "os": "Android 10",
+      "connectionType": "4g",
+      "isTouchDevice": true,
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome",
+      "visitorNumber": 3,
+      "isNewVisitor": true,
+      "visitCount": 1
+    },
+    {
+      "id": "1784526817378-p1cv1i",
+      "timestamp": "2026-07-20T05:53:37.378Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36",
+      "fingerprint": "fp_mrst6wda",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "colorDepth": 24,
+      "pixelRatio": 3.1875,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "os": "Android 10",
+      "connectionType": "4g",
+      "isTouchDevice": true,
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome",
+      "visitorNumber": 4,
+      "isNewVisitor": true,
+      "visitCount": 1
     }
   ],
   "fingerprintMap": {
@@ -135,6 +183,18 @@
       "visitorNumber": 2,
       "firstSeen": "2026-07-19T19:36:04.331Z",
       "lastSeen": "2026-07-19T19:36:04.331Z",
+      "visitCount": 1
+    },
+    "fp_mrssxi8b": {
+      "visitorNumber": 3,
+      "firstSeen": "2026-07-20T05:46:20.149Z",
+      "lastSeen": "2026-07-20T05:46:20.149Z",
+      "visitCount": 1
+    },
+    "fp_mrst6wda": {
+      "visitorNumber": 4,
+      "firstSeen": "2026-07-20T05:53:37.378Z",
+      "lastSeen": "2026-07-20T05:53:37.378Z",
       "visitCount": 1
     }
   }
