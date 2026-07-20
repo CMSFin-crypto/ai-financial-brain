@@ -16,7 +16,7 @@ import {
   Brain, Play, Loader2, TrendingUp, TrendingDown, Minus,
   Shield, AlertTriangle, Zap, BarChart3, ArrowUp, ArrowDown,
   Target, Clock, Search, RefreshCw, ChevronDown, ChevronUp,
-  Sparkles,
+  Sparkles, GraduationCap, BookOpen, CheckCircle2, XCircle, Activity,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -88,6 +88,39 @@ interface HybridPredictionResult extends PredictionResult {
   aiInsight: string;
   totalScore: number;
   hybridConfidence: number;
+}
+
+interface LearningStatsData {
+  totalRecorded: number;
+  totalEvaluated: number;
+  totalCorrect: number;
+  overallAccuracy: number;
+  overallAccuracyPercent: number;
+  lessons: Array<{ id: string; category: string; message: string; severity: number; createdAt: string }>;
+  indicatorAccuracies: Record<string, {
+    indicator: string;
+    description: string;
+    accuracy: number;
+    totalPredictions: number;
+    correctPredictions: number;
+    weight: number;
+    type: string;
+  }>;
+  tickerAccuracy: Record<string, { total: number; correct: number; accuracy: number }>;
+  weightMultipliers: Record<string, number>;
+  recentPredictions: Array<{
+    ticker: string;
+    timestamp: string;
+    direction: string;
+    totalScore: number;
+    confidence: number;
+    priceAtPrediction: number;
+    actualPrice?: number;
+    actualChangePercent?: number;
+    wasCorrect?: boolean;
+    evaluated: boolean;
+    topWrongIndicators: string[];
+  }>;
 }
 
 interface HybridScanResult {
@@ -1418,6 +1451,88 @@ export function StockPredictor() {
                       {hybridResult.errors.map((err, i) => <li key={i}>{err}</li>)}
                     </ul>
                   </details>
+                )}
+
+                {/* ─── LEARNING STATS ─────────────────────────── */}
+                {hybridResult.learning && hybridResult.learning.totalRecorded > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    transition={{ duration: 0.4 }}
+                    className="mt-4"
+                  >
+                    <Card className="border-blue-500/20 bg-blue-500/5">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <GraduationCap className="w-4 h-4 text-blue-400" />
+                          <h3 className="text-sm font-bold">Sistemi i Mesimit nga Historia</h3>
+                          <Badge variant="outline" className="text-[10px] ml-auto">
+                            <Brain className="w-3 h-3 mr-1" />
+                            AI Learning
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                          <div className="text-center p-2 rounded-lg bg-muted/30">
+                            <p className="text-[10px] text-muted-foreground">Të Regjistruara</p>
+                            <p className="text-lg font-bold">{hybridResult.learning.totalRecorded}</p>
+                          </div>
+                          <div className="text-center p-2 rounded-lg bg-muted/30">
+                            <p className="text-[10px] text-muted-foreground">Të Vlerësuara</p>
+                            <p className="text-lg font-bold">{hybridResult.learning.totalEvaluated}</p>
+                          </div>
+                          <div className="text-center p-2 rounded-lg bg-muted/30">
+                            <p className="text-[10px] text-muted-foreground">Saktesia</p>
+                            <p className={`text-lg font-bold ${hybridResult.learning.overallAccuracy > 55 ? 'text-emerald-400' : hybridResult.learning.overallAccuracy > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {hybridResult.learning.overallAccuracy}%
+                            </p>
+                          </div>
+                          <div className="text-center p-2 rounded-lg bg-muted/30">
+                            <p className="text-[10px] text-muted-foreground">Mësime</p>
+                            <p className="text-lg font-bold">{hybridResult.learning.lessonsCount}</p>
+                          </div>
+                        </div>
+
+                        {/* Evaluation result from this scan */}
+                        {hybridResult.learning.evaluationResult && hybridResult.learning.evaluationResult.evaluated > 0 && (
+                          <div className="mb-3 p-2.5 rounded-lg border bg-muted/20">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Activity className="w-3.5 h-3.5 text-blue-400" />
+                              <span className="text-xs font-semibold">Vlerësim i fundit nga kjo skanë</span>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Vlerësuan {hybridResult.learning.evaluationResult.evaluated} parashikime të kaluara:{' '}
+                              <span className={hybridResult.learning.evaluationResult.correct > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                {hybridResult.learning.evaluationResult.correct} ({hybridResult.learning.evaluationResult.accuracy}%) ishin
+                              </span>
+                              {hybridResult.learning.evaluationResult.newLessons > 0 && (
+                                <span className="text-yellow-400">• {hybridResult.learning.evaluationResult.newLessons} mësime të reja</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* No data yet message */}
+                        {hybridResult.learning.totalEvaluated < 5 && (
+                          <div className="text-center py-4">
+                            <BookOpen className="w-6 h-6 text-blue-400/40 mx-auto mb-2" />
+                            <p className="text-xs text-muted-foreground">
+                              Sistemi po mëson. Pas {5 - 10} skane, do të fillojë të tregojë saktesinë
+                              per indikatorë dhe të rregullojë peshat automatikisht.
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/60 mt-1">
+                              Çdo skanë regjistron parashikimet dhe i vlerëson më pas me çmimet aktuale.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Recent evaluated predictions */}
+                        {hybridResult.learning.totalEvaluated >= 5 && (
+                          <LearningPreview learning={hybridResult.learning} />
+                        )}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
                 )}
               </motion.div>
             )}

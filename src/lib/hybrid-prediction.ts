@@ -1,12 +1,20 @@
 // ============================================================
-// Hybrid Prediction Engine — Combines Technical + Fundamental
+// Hybrid Prediction Engine — Combines Technical + Fundamental + Learning
 // 60% technical, 40% fundamental (if available)
+// Weights adjusted by learning system based on historical accuracy
 // All AI insights generated in Albanian
 // ============================================================
 
 import { predictStock, type PredictionResult, type PricePoint } from '@/lib/prediction-engine';
 import { analyzeFundamentals, type FundamentalScore } from '@/lib/fundamental-engine';
 import type { YahooFundamentals } from '@/lib/alpha-vantage';
+import {
+  recordFromHybridResult,
+  getAdjustedWeights,
+  getLearningContext,
+  getStats,
+  type LearningSnapshot,
+} from '@/lib/indicator-learning';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -16,6 +24,8 @@ export interface HybridPredictionResult extends PredictionResult {
   aiInsight: string;
   totalScore: number;
   hybridConfidence: number;
+  learningInsight?: string;
+  learningStats?: LearningSnapshot;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -49,45 +59,43 @@ function generateInsight(
   fundScore: FundamentalScore | null,
   totalScore: number,
   hybridConf: number,
+  learningCtx: string,
 ): string {
   const techDirection = directionLabel(techResult.direction);
   const techScore = techResult.score;
 
+  // Start with base insight
+  let insight = '';
+
   if (!fundScore) {
-    // Technical only
-    return `${symbol} tregon sinjale ${techDirection} bazuar në 15 indikatorë teknikë me besim ${techResult.confidence.toFixed(0)}%.`;
+    insight = `${symbol} tregon sinjale ${techDirection} bazuar në 15 indikatorë teknikë me besim ${techResult.confidence.toFixed(0)}%.`;
+  } else {
+    const fundSignal = fundScore.signal;
+    const fundDirection = directionLabelFund(fundSignal);
+    const fundScoreVal = fundScore.score;
+
+    const techBullish = techScore > 0;
+    const fundBullish = fundScoreVal > 0;
+    const agree = techBullish === fundBullish;
+
+    if (agree && techBullish) {
+      const peInfo = fundScore.factors.valuation.description;
+      insight = `${symbol} shfaq sinjale bulliz të forta nga analiza teknike (pikët: ${techScore > 0 ? '+' : ''}${techScore}) dhe konfirmon me fundamente ${fundDirection} (${peInfo.split('.')[0]}). Besimi hibrid: ${hybridConf.toFixed(0)}%.`;
+    } else if (agree && !techBullish) {
+      insight = `${symbol} tregon sinjale negative si nga teknika (pikët: ${techScore}) ashtu edhe nga fundamentet (${fundScoreVal}). Kujdes i lartë i këshilluar.`;
+    } else {
+      const techDominant = Math.abs(techScore) > Math.abs(fundScoreVal);
+      const dominantSide = techDominant ? 'teknika' : 'fundamentet';
+      insight = `${symbol} tregon sinjale të përzier. Teknika tregon ${techDirection} (pikët: ${techScore > 0 ? '+' : ''}${techScore}), por fundamentet janë ${fundDirection} (pikët: ${fundScoreVal > 0 ? '+' : ''}${fundScoreVal}). ${dominantSide} mbizotëron.`;
+    }
   }
 
-  const fundSignal = fundScore.signal;
-  const fundDirection = directionLabelFund(fundSignal);
-  const fundScoreVal = fundScore.score;
-  const earningsGrowth = fundScore.factors.growth.score;
-  const revGrowth = fundScore.factors.growth.score;
-
-  // Check if they agree
-  const techBullish = techScore > 0;
-  const fundBullish = fundScoreVal > 0;
-  const agree = techBullish === fundBullish;
-
-  if (agree && techBullish) {
-    // Both bullish
-    const earningsGr = (techResult as unknown as Record<string, unknown>)._earningsGrowth;
-    const peInfo = fundScore.factors.valuation.description;
-
-    return `${symbol} shfaq sinjale bulliz të forta nga analiza teknike (pikët: ${techScore > 0 ? '+' : ''}${techScore}) dhe konfirmon me fundamente ${fundDirection} (${peInfo.split('.')[0]}). Besimi hibrid: ${hybridConf.toFixed(0)}%.`;
+  // Add learning context if available
+  if (learningCtx) {
+    insight += '\n\n' + learningCtx;
   }
 
-  if (agree && !techBullish) {
-    // Both bearish
-    return `${symbol} tregon sinjale negative si nga teknika (pikët: ${techScore}) ashtu edhe nga fundamentet (${fundScoreVal}). Kujdes i lartë i këshilluar.`;
-  }
-
-  // Mixed signals
-  const techDominant = Math.abs(techScore) > Math.abs(fundScoreVal);
-  const dominantSide = techDominant ? 'teknika' : 'fundamentet';
-  const dominantScore = techDominant ? techScore : fundScoreVal;
-
-  return `${symbol} tregon sinjale të përzier. Teknika tregon ${techDirection} (pikët: ${techScore > 0 ? '+' : ''}${techScore}), por fundamentet janë ${fundDirection} (pikët: ${fundScoreVal > 0 ? '+' : ''}${fundScoreVal}). ${dominantSide} mbizotëron.`;
+  return insight;
 }
 
 // ─── Main Prediction Function ───────────────────────────────
@@ -96,7 +104,13 @@ export function predictHybrid(
   symbol: string,
   priceData: PricePoint[],
   fundamentals?: YahooFundamentals | null,
+  currentPrice?: number,
+  recordForLearning: boolean = true,
 ): HybridPredictionResult {
+  // Get learning context (for AI insight)
+  const learningCtx = getLearningContext();
+  const stats = getStats();
+
   // Run technical analysis
   const techResult = predictStock(symbol, priceData);
 
@@ -109,7 +123,6 @@ export function predictHybrid(
       fundamentalScore = analyzeFundamentals(symbol, fundamentals);
       fundamentalAvailable = true;
     } catch {
-      // If fundamental analysis fails, continue with technical only
       fundamentalScore = null;
       fundamentalAvailable = false;
     }
@@ -129,32 +142,81 @@ export function predictHybrid(
   if (!hasFundamentals) {
     hybridConfidence = techResult.confidence;
   } else {
-    // Check agreement
     const techBullish = techScore > 0;
     const fundBullish = fundScore > 0;
     const agree = techBullish === fundBullish;
 
     if (agree) {
-      // Boost by up to 15%
       hybridConfidence = clamp(techResult.confidence * 1.15, 0, 100);
     } else {
-      // Reduce by 10%
       hybridConfidence = clamp(techResult.confidence * 0.90, 0, 100);
     }
   }
   hybridConfidence = Math.round(hybridConfidence * 10) / 10;
 
-  // Generate AI insight
-  const aiInsight = generateInsight(symbol, techResult, fundamentalScore, totalScore, hybridConfidence);
+  // Generate AI insight (includes learning context)
+  const aiInsight = generateInsight(symbol, techResult, fundamentalScore, totalScore, hybridConfidence, learningCtx);
 
-  return {
+  // Generate learning insight
+  let learningInsight: string | undefined;
+  if (stats.totalEvaluated >= 5) {
+    const parts: string[] = [];
+    parts.push(`Saktesia e përgjithshme: ${(stats.overallAccuracy * 100).toFixed(0)}% (${stats.totalEvaluated} parashikime)`);
+
+    // Best and worst indicators
+    const accs = Object.values(stats.indicatorAccuracies)
+      .filter(a => a.totalPredictions >= 3)
+      .sort((a, b) => b.accuracy - a.accuracy);
+
+    if (accs.length > 0) {
+      const best = accs[0];
+      const worst = accs[accs.length - 1];
+      parts.push(`Indikatori më i saktë: ${best.description} (${(best.accuracy * 100).toFixed(0)}%)`);
+      parts.push(`Indikatori më i paktë i saktë: ${worst.description} (${(worst.accuracy * 100).toFixed(0)}%)`);
+    }
+
+    if (stats.lessons.length > 0) {
+      parts.push(`Mësime të mësuar: ${stats.lessons.length}`);
+    }
+
+    learningInsight = parts.join('. ') + '.';
+  }
+
+  const result: HybridPredictionResult = {
     ...techResult,
     fundamentalScore,
     fundamentalAvailable,
     aiInsight,
     totalScore,
     hybridConfidence,
+    learningInsight,
+    learningStats: stats.totalEvaluated >= 5 ? stats : undefined,
   };
+
+  // Record for learning if requested and we have a price
+  if (recordForLearning && currentPrice && currentPrice > 0) {
+    try {
+      recordFromHybridResult(symbol, {
+        score: techResult.score,
+        direction: techResult.direction,
+        confidence: techResult.confidence,
+        indicatorScores: techResult.indicatorScores,
+        fundamentalScore: fundamentalScore ? {
+          score: fundamentalScore.score,
+          signal: fundamentalScore.signal,
+          factors: fundamentalScore.factors,
+        } : null,
+        fundamentalAvailable,
+        totalScore: result.totalScore,
+        shortTerm: techResult.shortTerm,
+        mediumTerm: techResult.mediumTerm,
+      });
+    } catch (err: any) {
+      console.log(`[HYBRID] Failed to record ${symbol} for learning: ${err.message}`);
+    }
+  }
+
+  return result;
 }
 
 // ─── Ranking Functions ──────────────────────────────────────

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchHistoricalData, getRealFundamentals } from '@/lib/alpha-vantage';
+import { fetchHistoricalData, getRealFundamentals, getRealPrice } from '@/lib/alpha-vantage';
 import { predictHybrid } from '@/lib/hybrid-prediction';
+import { forceSave } from '@/lib/indicator-learning';
 
 export const maxDuration = 60;
 
@@ -22,20 +23,22 @@ export async function GET(
       return NextResponse.json({ error: 'Të dhëna të pamjaftueshme' }, { status: 404 });
     }
 
-    // Fetch fundamentals (with 15s timeout)
-    let fundamentals = null;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      // We use the cached function — it has its own timeout
-      fundamentals = await getRealFundamentals(ticker);
-      clearTimeout(timeoutId);
-    } catch {
-      // Ignore — use technical only
-      console.log(`[AI-PREDICT] ${ticker}: Fundamentals unavailable, using technical only`);
-    }
+    // Fetch current price and fundamentals in parallel
+    const [priceResult, fundamentals] = await Promise.all([
+      getRealPrice(ticker).catch(() => null),
+      getRealFundamentals(ticker).catch(() => null),
+    ]);
 
-    const result = predictHybrid(ticker, historicalData, fundamentals);
+    const currentPrice = priceResult?.price || (historicalData[historicalData.length - 1]?.close ?? 0);
+
+    const result = predictHybrid(ticker, historicalData, fundamentals, currentPrice, true);
+
+    // Save learning data
+    try {
+      forceSave();
+    } catch {
+      // Non-critical
+    }
 
     return NextResponse.json(result);
   } catch (error: unknown) {
