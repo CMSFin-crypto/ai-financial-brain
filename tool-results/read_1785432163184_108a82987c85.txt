@@ -1,0 +1,1538 @@
+    80→
+    81→// ====================== CONSTANTS ===========================
+    82→
+    83→const DEFAULT_WEIGHTS: Record<string, number> = {
+    84→  rsi: 0.10,
+    85→  macdHistogram: 0.08,
+    86→  bollinger: 0.08,
+    87→  maTrend: 0.12,
+    88→  stochastic: 0.06,
+    89→  adx: 0.06,
+    90→  atr: 0.03,
+    91→  roc: 0.08,
+    92→  obv: 0.07,
+    93→  volumeConfirm: 0.07,
+    94→  macdCrossover: 0.05,
+    95→  priceChannel: 0.05,
+    96→  divergence: 0.06,
+    97→  vwap: 0.04,
+    98→  pattern: 0.05,
+    99→};
+   100→
+   101→/** Get weights — uses learning weights if available, otherwise defaults */
+   102→function getWeights(): Record<string, number> {
+   103→  try {
+   104→    const { loadLearningStats } = require('./prediction-history');
+   105→    const stats = loadLearningStats();
+   106→    if (stats && stats.learningWeights && Object.keys(stats.learningWeights).length > 0) {
+   107→      return stats.learningWeights;
+   108→    }
+   109→  } catch {
+   110→    // prediction-history not available (e.g., in test or missing data dir)
+   111→  }
+   112→  return DEFAULT_WEIGHTS;
+   113→}
+   114→
+   115→const MIN_DATA_POINTS = 60;
+   116→
+   117→// ===================== HELPERS ==============================
+   118→
+   119→function clamp(value: number, min: number, max: number): number {
+   120→  return Math.max(min, Math.min(max, value));
+   121→}
+   122→
+   123→function mapRange(
+   124→  value: number,
+   125→  inMin: number,
+   126→  inMax: number,
+   127→  outMin: number,
+   128→  outMax: number,
+   129→): number {
+   130→  if (inMax === inMin) return (outMin + outMax) / 2;
+   131→  const result = outMin + ((value - inMin) / (inMax - inMin)) * (outMax - outMin);
+   132→  return clamp(result, Math.min(outMin, outMax), Math.max(outMin, outMax));
+   133→}
+   134→
+   135→/** Simple Moving Average — full-length array with NaN padding */
+   136→function sma(data: number[], period: number): number[] {
+   137→  const result: number[] = new Array(data.length).fill(NaN);
+   138→  if (data.length < period) return result;
+   139→
+   140→  let sum = 0;
+   141→  for (let i = 0; i < period; i++) sum += data[i];
+   142→  result[period - 1] = sum / period;
+   143→
+   144→  for (let i = period; i < data.length; i++) {
+   145→    sum += data[i] - data[i - period];
+   146→    result[i] = sum / period;
+   147→  }
+   148→  return result;
+   149→}
+   150→
+   151→/** Exponential Moving Average — full-length array with NaN padding */
+   152→function ema(data: number[], period: number): number[] {
+   153→  const result: number[] = new Array(data.length).fill(NaN);
+   154→  if (data.length < period) return result;
+   155→
+   156→  const multiplier = 2 / (period + 1);
+   157→
+   158→  let sum = 0;
+   159→  for (let i = 0; i < period; i++) sum += data[i];
+   160→  result[period - 1] = sum / period;
+   161→
+   162→  for (let i = period; i < data.length; i++) {
+   163→    result[i] = (data[i] - result[i - 1]) * multiplier + result[i - 1];
+   164→  }
+   165→  return result;
+   166→}
+   167→
+   168→/** Rolling standard deviation */
+   169→function rollingStdDev(data: number[], period: number): number[] {
+   170→  const result: number[] = new Array(data.length).fill(NaN);
+   171→  if (data.length < period) return result;
+   172→
+   173→  for (let i = period - 1; i < data.length; i++) {
+   174→    const slice = data.slice(i - period + 1, i + 1);
+   175→    const mean = slice.reduce((a, b) => a + b, 0) / period;
+   176→    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period;
+   177→    result[i] = Math.sqrt(variance);
+   178→  }
+   179→  return result;
+   180→}
+   181→
+   182→/** Simple linear regression → { slope, intercept } */
+   183→function linearRegression(values: number[]): { slope: number; intercept: number } {
+   184→  const n = values.length;
+   185→  if (n < 2) return { slope: 0, intercept: values[0] ?? 0 };
+   186→
+   187→  let sumX = 0;
+   188→  let sumY = 0;
+   189→  let sumXY = 0;
+   190→  let sumX2 = 0;
+   191→  for (let i = 0; i < n; i++) {
+   192→    sumX += i;
+   193→    sumY += values[i];
+   194→    sumXY += i * values[i];
+   195→    sumX2 += i * i;
+   196→  }
+   197→
+   198→  const denom = n * sumX2 - sumX * sumX;
+   199→  if (denom === 0) return { slope: 0, intercept: sumY / n };
+   200→
+   201→  return {
+   202→    slope: (n * sumXY - sumX * sumY) / denom,
+   203→    intercept: (sumY - ((n * sumXY - sumX * sumY) / denom) * sumX) / n,
+   204→  };
+   205→}
+   206→
+   207→/** Percentile of a numeric array (0–100) */
+   208→function percentile(values: number[], p: number): number {
+   209→  const sorted = [...values].filter((v) => !isNaN(v)).sort((a, b) => a - b);
+   210→  if (sorted.length === 0) return 0;
+   211→  const idx = (p / 100) * (sorted.length - 1);
+   212→  const lo = Math.floor(idx);
+   213→  const hi = Math.ceil(idx);
+   214→  if (lo === hi) return sorted[lo];
+   215→  return sorted[lo] + (idx - lo) * (sorted[hi] - sorted[lo]);
+   216→}
+   217→
+   218→/** Last non-NaN numeric value from an array */
+   219→function lastValid(arr: number[]): number | undefined {
+   220→  for (let i = arr.length - 1; i >= 0; i--) {
+   221→    if (!isNaN(arr[i])) return arr[i];
+   222→  }
+   223→  return undefined;
+   224→}
+   225→
+   226→// ============= RAW INDICATOR CALCULATIONS ===================
+   227→
+   228→/** RSI using Wilder's smoothing */
+   229→function calculateRSI(closes: number[], period: number = 14): number[] {
+   230→  const result: number[] = new Array(closes.length).fill(NaN);
+   231→  if (closes.length < period + 1) return result;
+   232→
+   233→  let avgGain = 0;
+   234→  let avgLoss = 0;
+   235→
+   236→  for (let i = 1; i <= period; i++) {
+   237→    const change = closes[i] - closes[i - 1];
+   238→    if (change > 0) avgGain += change;
+   239→    else avgLoss += Math.abs(change);
+   240→  }
+   241→  avgGain /= period;
+   242→  avgLoss /= period;
+   243→
+   244→  result[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+   245→
+   246→  for (let i = period + 1; i < closes.length; i++) {
+   247→    const change = closes[i] - closes[i - 1];
+   248→    const gain = change > 0 ? change : 0;
+   249→    const loss = change < 0 ? Math.abs(change) : 0;
+   250→
+   251→    avgGain = (avgGain * (period - 1) + gain) / period;
+   252→    avgLoss = (avgLoss * (period - 1) + loss) / period;
+   253→
+   254→    const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+   255→    result[i] = clamp(100 - 100 / (1 + rs), 0, 100);
+   256→  }
+   257→  return result;
+   258→}
+   259→
+   260→/** MACD: { macdLine, signalLine, histogram } */
+   261→function calculateMACD(
+   262→  closes: number[],
+   263→): { macdLine: number[]; signalLine: number[]; histogram: number[] } {
+   264→  const ema12 = ema(closes, 12);
+   265→  const ema26 = ema(closes, 26);
+   266→
+   267→  const macdLine: number[] = new Array(closes.length).fill(NaN);
+   268→  for (let i = 0; i < closes.length; i++) {
+   269→    if (!isNaN(ema12[i]) && !isNaN(ema26[i])) {
+   270→      macdLine[i] = ema12[i] - ema26[i];
+   271→    }
+   272→  }
+   273→
+   274→  // Build valid-only MACD array for signal-line EMA
+   275→  const validMacd: number[] = [];
+   276→  for (let i = 0; i < macdLine.length; i++) {
+   277→    if (!isNaN(macdLine[i])) validMacd.push(macdLine[i]);
+   278→  }
+   279→
+   280→  const sigEma = ema(validMacd, 9);
+   281→
+   282→  const signalLine: number[] = new Array(closes.length).fill(NaN);
+   283→  const histogram: number[] = new Array(closes.length).fill(NaN);
+   284→
+   285→  let vi = 0;
+   286→  for (let i = 0; i < closes.length; i++) {
+   287→    if (!isNaN(macdLine[i])) {
+   288→      if (vi < sigEma.length && !isNaN(sigEma[vi])) {
+   289→        signalLine[i] = sigEma[vi];
+   290→        histogram[i] = macdLine[i] - sigEma[vi];
+   291→      }
+   292→      vi++;
+   293→    }
+   294→  }
+   295→
+   296→  return { macdLine, signalLine, histogram };
+   297→}
+   298→
+   299→/** Bollinger Bands: { upper, middle, lower, bandwidth } */
+   300→function calculateBollingerBands(
+   301→  closes: number[],
+   302→  period: number = 20,
+   303→  stdDevMult: number = 2,
+   304→): { upper: number[]; middle: number[]; lower: number[]; bandwidth: number[] } {
+   305→  const middle = sma(closes, period);
+   306→  const sd = rollingStdDev(closes, period);
+   307→
+   308→  const upper: number[] = new Array(closes.length).fill(NaN);
+   309→  const lower: number[] = new Array(closes.length).fill(NaN);
+   310→  const bandwidth: number[] = new Array(closes.length).fill(NaN);
+   311→
+   312→  for (let i = 0; i < closes.length; i++) {
+   313→    if (!isNaN(middle[i]) && !isNaN(sd[i])) {
+   314→      upper[i] = middle[i] + stdDevMult * sd[i];
+   315→      lower[i] = middle[i] - stdDevMult * sd[i];
+   316→      bandwidth[i] = middle[i] === 0 ? 0 : ((upper[i] - lower[i]) / middle[i]) * 100;
+   317→    }
+   318→  }
+   319→
+   320→  return { upper, middle, lower, bandwidth };
+   321→}
+   322→
+   323→/** Stochastic Oscillator: { k, d } */
+   324→function calculateStochastic(
+   325→  highs: number[],
+   326→  lows: number[],
+   327→  closes: number[],
+   328→  kPeriod: number = 14,
+   329→  dPeriod: number = 3,
+   330→): { k: number[]; d: number[] } {
+   331→  const k: number[] = new Array(closes.length).fill(NaN);
+   332→
+   333→  for (let i = kPeriod - 1; i < closes.length; i++) {
+   334→    let lowest = lows[i];
+   335→    let highest = highs[i];
+   336→    for (let j = i - kPeriod + 1; j < i; j++) {
+   337→      if (lows[j] < lowest) lowest = lows[j];
+   338→      if (highs[j] > highest) highest = highs[j];
+   339→    }
+   340→    const range = highest - lowest;
+   341→    k[i] = range === 0 ? 50 : ((closes[i] - lowest) / range) * 100;
+   342→  }
+   343→
+   344→  const d = sma(k, dPeriod);
+   345→  return { k, d };
+   346→}
+   347→
+   348→/** ADX with +DI and -DI */
+   349→function calculateADX(
+   350→  highs: number[],
+   351→  lows: number[],
+   352→  closes: number[],
+   353→  period: number = 14,
+   354→): { adx: number[]; plusDI: number[]; minusDI: number[] } {
+   355→  const adx: number[] = new Array(closes.length).fill(NaN);
+   356→  const plusDI: number[] = new Array(closes.length).fill(NaN);
+   357→  const minusDI: number[] = new Array(closes.length).fill(NaN);
+   358→
+   359→  if (closes.length < period * 2) return { adx, plusDI, minusDI };
+   360→
+   361→  // Compute raw TR, +DM, -DM
+   362→  const trRaw: number[] = new Array(closes.length).fill(0);
+   363→  const plusDMRaw: number[] = new Array(closes.length).fill(0);
+   364→  const minusDMRaw: number[] = new Array(closes.length).fill(0);
+   365→
+   366→  for (let i = 1; i < closes.length; i++) {
+   367→    trRaw[i] = Math.max(
+   368→      highs[i] - lows[i],
+   369→      Math.abs(highs[i] - closes[i - 1]),
+   370→      Math.abs(lows[i] - closes[i - 1]),
+   371→    );
+   372→
+   373→    const upMove = highs[i] - highs[i - 1];
+   374→    const downMove = lows[i - 1] - lows[i];
+   375→
+   376→    plusDMRaw[i] = upMove > downMove && upMove > 0 ? upMove : 0;
+   377→    minusDMRaw[i] = downMove > upMove && downMove > 0 ? downMove : 0;
+   378→  }
+   379→
+   380→  // Wilder's smoothing for first period
+   381→  let smoothTR = 0;
+   382→  let smoothPlusDM = 0;
+   383→  let smoothMinusDM = 0;
+   384→  for (let i = 1; i <= period; i++) {
+   385→    smoothTR += trRaw[i];
+   386→    smoothPlusDM += plusDMRaw[i];
+   387→    smoothMinusDM += minusDMRaw[i];
+   388→  }
+   389→
+   390→  const dxValues: number[] = [];
+   391→
+   392→  const computeDI = (idx: number) => {
+   393→    if (smoothTR === 0) {
+   394→      plusDI[idx] = 0;
+   395→      minusDI[idx] = 0;
+   396→      dxValues.push(0);
+   397→      return;
+   398→    }
+   399→    plusDI[idx] = (100 * smoothPlusDM) / smoothTR;
+   400→    minusDI[idx] = (100 * smoothMinusDM) / smoothTR;
+   401→    const diSum = plusDI[idx] + minusDI[idx];
+   402→    dxValues.push(diSum === 0 ? 0 : (100 * Math.abs(plusDI[idx] - minusDI[idx])) / diSum);
+   403→  };
+   404→
+   405→  computeDI(period);
+   406→
+   407→  for (let i = period + 1; i < closes.length; i++) {
+   408→    smoothTR = smoothTR - smoothTR / period + trRaw[i];
+   409→    smoothPlusDM = smoothPlusDM - smoothPlusDM / period + plusDMRaw[i];
+   410→    smoothMinusDM = smoothMinusDM - smoothMinusDM / period + minusDMRaw[i];
+   411→    computeDI(i);
+   412→  }
+   413→
+   414→  // ADX = Wilder's smoothing of DX
+   415→  if (dxValues.length >= period) {
+   416→    let adxVal =
+   417→      dxValues.slice(0, period).reduce((a, b) => a + b, 0) / period;
+   418→    const adxStartIdx = period - 1; // index in closes where first ADX goes
+   419→    const baseIdx = period; // index in closes where first DX was computed
+   420→    adx[baseIdx + adxStartIdx] = adxVal;
+   421→
+   422→    for (let i = period; i < dxValues.length; i++) {
+   423→      adxVal = (adxVal * (period - 1) + dxValues[i]) / period;
+   424→      adx[baseIdx + i] = adxVal;
+   425→    }
+   426→  }
+   427→
+   428→  return { adx, plusDI, minusDI };
+   429→}
+   430→
+   431→/** Average True Range */
+   432→function calculateATR(
+   433→  highs: number[],
+   434→  lows: number[],
+   435→  closes: number[],
+   436→  period: number = 14,
+   437→): number[] {
+   438→  const result: number[] = new Array(closes.length).fill(NaN);
+   439→  if (closes.length < period + 1) return result;
+   440→
+   441→  const tr: number[] = [highs[0] - lows[0]];
+   442→  for (let i = 1; i < closes.length; i++) {
+   443→    tr.push(
+   444→      Math.max(
+   445→        highs[i] - lows[i],
+   446→        Math.abs(highs[i] - closes[i - 1]),
+   447→        Math.abs(lows[i] - closes[i - 1]),
+   448→      ),
+   449→    );
+   450→  }
+   451→
+   452→  // First ATR = SMA of first `period` TRs (TR starts at index 0, but Wilder uses first `period` starting from index 1)
+   453→  let atr = 0;
+   454→  for (let i = 1; i <= period; i++) atr += tr[i];
+   455→  atr /= period;
+   456→  result[period] = atr;
+   457→
+   458→  for (let i = period + 1; i < closes.length; i++) {
+   459→    atr = (atr * (period - 1) + tr[i]) / period;
+   460→    result[i] = atr;
+   461→  }
+   462→  return result;
+   463→}
+   464→
+   465→/** On-Balance Volume */
+   466→function calculateOBV(closes: number[], volumes: number[]): number[] {
+   467→  const obv: number[] = new Array(closes.length).fill(0);
+   468→  for (let i = 1; i < closes.length; i++) {
+   469→    if (closes[i] > closes[i - 1]) obv[i] = obv[i - 1] + volumes[i];
+   470→    else if (closes[i] < closes[i - 1]) obv[i] = obv[i - 1] - volumes[i];
+   471→    else obv[i] = obv[i - 1];
+   472→  }
+   473→  return obv;
+   474→}
+   475→
+   476→// =============== INDICATOR SCORING FUNCTIONS =================
+   477→// Each returns an IndicatorScore: { score (-100..+100), name, signal, impact, description (Albanian) }
+   478→
+   479→function scoreRSI(rsiValues: number[]): IndicatorScore {
+   480→  const rsiVal = lastValid(rsiValues);
+   481→  if (rsiVal === undefined) return noData('RSI');
+   482→
+   483→  let score: number;
+   484→  let name: string;
+   485→  let description: string;
+   486→
+   487→  if (rsiVal < 20) {
+   488→    score = mapRange(20 - rsiVal, 0, 20, 70, 100);
+   489→    name = 'RSI Mbushje e Shitjes';
+   490→    description = `RSI në ${rsiVal.toFixed(1)} — kushtet e thella të mbushjes së shitjes, sinjal i fortë për blerje`;
+   491→  } else if (rsiVal < 30) {
+   492→    score = mapRange(30 - rsiVal, 0, 10, 50, 70);
+   493→    name = 'RSI Në Zonën e Blerjes';
+   494→    description = `RSI në ${rsiVal.toFixed(1)} — në zonën e blerjes, momentumi po kthehet pozitiv`;
+   495→  } else if (rsiVal < 45) {
+   496→    score = mapRange(45 - rsiVal, 0, 15, 40, 50);
+   497→    name = 'RSI Lehtësisht Bulliz';
+   498→    description = `RSI në ${rsiVal.toFixed(1)} — lehtësisht në favor të blerjes`;
+   499→  } else if (rsiVal <= 55) {
+   500→    score = 50 - (rsiVal - 50);
+   501→    name = 'RSI Neutral';
+   502→    description = `RSI në ${rsiVal.toFixed(1)} — zonë neutrale, asnjë sinjal i qartë`;
+   503→  } else if (rsiVal < 70) {
+   504→    score = mapRange(rsiVal - 55, 0, 15, -10, -40);
+   505→    name = 'RSI Lehtësisht Bearish';
+   506→    description = `RSI në ${rsiVal.toFixed(1)} — duke hyrë në zonën e shitjes`;
+   507→  } else if (rsiVal < 80) {
+   508→    score = mapRange(rsiVal - 70, 0, 10, -50, -70);
+   509→    name = 'RSI Në Zonën e Shitjes';
+   510→    description = `RSI në ${rsiVal.toFixed(1)} — kushtet e mbushjes së blerjes, sinjal i shitjes`;
+   511→  } else {
+   512→    score = mapRange(rsiVal - 80, 0, 20, -70, -100);
+   513→    name = 'RSI Mbushje e Blërjes';
+   514→    description = `RSI në ${rsiVal.toFixed(1)} — kushtet e thella të mbushjes së blerjes, sinjal i fortë për shitje`;
+   515→  }
+   516→
+   517→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 60 ? 'HIGH' : 'MEDIUM', description };
+   518→}
+   519→
+   520→function scoreMACDHistogram(histogram: number[]): IndicatorScore {
+   521→  const n = histogram.length;
+   522→  const h0 = lastValid(histogram);
+   523→  if (h0 === undefined) return noData('MACD Histogram');
+   524→
+   525→  // Get last 3 valid histogram values
+   526→  const recent: number[] = [];
+   527→  for (let i = n - 1; i >= 0 && recent.length < 3; i--) {
+   528→    if (!isNaN(histogram[i])) recent.unshift(histogram[i]);
+   529→  }
+   530→
+   531→  let score: number;
+   532→  let name: string = '';
+   533→  let description: string = '';
+   534→
+   535→  // Use max absolute value across recent bars as a scale reference
+   536→  const maxAbs = Math.max(...recent.map(Math.abs), 0.001);
+   537→
+   538→  if (recent.length < 2) {
+   539→    score = h0 > 0 ? 50 : h0 < 0 ? -50 : 0;
+   540→  } else {
+   541→    const prev = recent[recent.length - 2];
+   542→    const increasing = h0 > prev;
+   543→
+   544→    if (h0 > 0 && increasing) {
+   545→      score = clamp(50 + 50 * (h0 / maxAbs), 50, 100);
+   546→      name = 'MACD Histogram Pozitiv në Rritje';
+   547→      description = 'Histogrami MACD pozitiv dhe në rritje, momentumi i blerjes po forcohet';
+   548→    } else if (h0 > 0) {
+   549→      score = clamp(40 + 20 * (h0 / maxAbs), 40, 60);
+   550→      name = 'MACD Histogram Pozitiv';
+   551→      description = 'Histogrami MACD pozitiv por në ulje, momentumi i blerjes po dobësohet';
+   552→    } else if (h0 < 0 && !increasing) {
+   553→      score = clamp(-50 - 50 * (Math.abs(h0) / maxAbs), -100, -50);
+   554→      name = 'MACD Histogram Negativ në Rritje';
+   555→      description = 'Histogrami MACD negativ dhe në rritje, momentumi i shitjes po forcohet';
+   556→    } else {
+   557→      score = clamp(-40 - 20 * (Math.abs(h0) / maxAbs), -60, -40);
+   558→      name = 'MACD Histogram Negativ';
+   559→      description = 'Histogrami MACD negativ por në ulje, shitjet po dobësohen';
+   560→    }
+   561→  }
+   562→
+   563→  if (!name) {
+   564→    name = 'MACD Histogram Neutral';
+   565→    description = 'Histogrami MACD pranë zero, asnjë sinjal i qartë';
+   566→    score = 0;
+   567→  }
+   568→
+   569→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 60 ? 'HIGH' : 'MEDIUM', description };
+   570→}
+   571→
+   572→function scoreBollinger(
+   573→  closes: number[],
+   574→  bb: { upper: number[]; middle: number[]; lower: number[]; bandwidth: number[] },
+   575→): IndicatorScore {
+   576→  const last = closes.length - 1;
+   577→  const price = closes[last];
+   578→  const upper = bb.upper[last];
+   579→  const lower = bb.lower[last];
+   580→  const bw = bb.bandwidth[last];
+   581→
+   582→  if (isNaN(upper) || isNaN(lower) || isNaN(bw) || upper === lower) {
+   583→    return noData('Bollinger Bands');
+   584→  }
+   585→
+   586→  const position = (price - lower) / (upper - lower); // 0 to 1 (may go outside)
+   587→
+   588→  // Detect squeeze: bandwidth narrowing over last 5 valid values
+   589→  let squeeze = false;
+   590→  const recentBW: number[] = [];
+   591→  for (let i = last; i >= 0 && recentBW.length < 5; i--) {
+   592→    if (!isNaN(bb.bandwidth[i])) recentBW.unshift(bb.bandwidth[i]);
+   593→  }
+   594→  if (recentBW.length >= 4) {
+   595→    squeeze = recentBW[recentBW.length - 1] < recentBW[0] * 0.85;
+   596→  }
+   597→
+   598→  let score: number;
+   599→  let name: string;
+   600→  let description: string;
+   601→
+   602→  if (position < 0.1) {
+   603→    score = mapRange(position, 0, 0.1, 100, 70);
+   604→    name = squeeze ? 'Bollinger Squeeze & Mbushje' : 'Bollinger Nën Band';
+   605→    description = squeeze
+   606→      ? 'Çmimi nën Bollinger Band të ulët me ngushtim, shpërthim i madh pozitiv i pritur'
+   607→      : 'Çmimi nën Bollinger Band të ulët, potencial i lartë për kthim lart';
+   608→  } else if (position < 0.3) {
+   609→    score = mapRange(position, 0.1, 0.3, 70, 50);
+   610→    name = 'Bollinger Pozicion i Ulët';
+   611→    description = 'Çmimi në pjesën e poshtme të Bollinger Bands, lehtësisht bulliz';
+   612→  } else if (position < 0.7) {
+   613→    score = mapRange(position, 0.3, 0.7, 50, -50);
+   614→    name = 'Bollinger Neutral';
+   615→    description = 'Çmimi në mes të Bollinger Bands, asnjë sinjal i qartë';
+   616→  } else if (position < 0.9) {
+   617→    score = mapRange(position, 0.7, 0.9, -50, -70);
+   618→    name = 'Bollinger Pozicion i Lartë';
+   619→    description = 'Çmimi në pjesën e sipërme të Bollinger Bands, lehtësisht bearish';
+   620→  } else {
+   621→    score = mapRange(position, 0.9, 1.2, -70, -100);
+   622→    name = squeeze ? 'Bollinger Squeeze & Mbushje' : 'Bollinger Mbi Band';
+   623→    description = squeeze
+   624→      ? 'Çmimi mbi Bollinger Band të sipërme me ngushtim, shpërthim i madh negativ i pritur'
+   625→      : 'Çmimi mbi Bollinger Band të sipërme, rreziku i kthimit poshtë';
+   626→  }
+   627→
+   628→  // Squeeze amplification
+   629→  if (squeeze) {
+   630→    score = clamp(score * 1.1, -100, 100);
+   631→  }
+   632→
+   633→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 60 ? 'HIGH' : 'MEDIUM', description };
+   634→}
+   635→
+   636→function scoreMATrend(
+   637→  closes: number[],
+   638→  sma20: number[],
+   639→  sma50: number[],
+   640→  sma200: number[],
+   641→): IndicatorScore {
+   642→  const last = closes.length - 1;
+   643→  const price = closes[last];
+   644→  const s20 = sma20[last];
+   645→  const s50 = sma50[last];
+   646→  const s200 = sma200[last];
+   647→
+   648→  if (isNaN(s20) || isNaN(s50)) return noData('MA Trend');
+   649→
+   650→  // Short-term: price vs SMA20
+   651→  const shortTermScore = s20 > 0 ? (price > s20 ? mapRange((price - s20) / s20, 0, 0.05, 50, 100) : mapRange((s20 - price) / s20, 0, 0.05, -50, -100)) : 0;
+   652→
+   653→  // Medium-term: price vs SMA50, SMA20 vs SMA50
+   654→  let medTermScore = 0;
+   655→  if (s50 > 0) {
+   656→    const priceVsS50 = price > s50 ? 50 : -50;
+   657→    const goldenCross = s20 > s50 ? 30 : -30;
+   658→    medTermScore = (priceVsS50 + goldenCross) / 2;
+   659→  }
+   660→
+   661→  // Long-term: price vs SMA200
+   662→  const longTermScore = !isNaN(s200) && s200 > 0 ? (price > s200 ? 50 : -50) : 0;
+   663→
+   664→  const score = clamp(shortTermScore * 0.3 + medTermScore * 0.4 + longTermScore * 0.3, -100, 100);
+   665→
+   666→  let name: string;
+   667→  let description: string;
+   668→
+   669→  if (s20 > s50 && !isNaN(s200) && s50 > s200) {
+   670→    name = 'Prirje e Plotë Pozitive';
+   671→    description = 'Çmimi sipër SMA 20, 50 dhe 200 — radhitja e plotë e mesatareve mobile pozitive';
+   672→  } else if (s20 > s50) {
+   673→    name = 'Kryqëzim i Artë';
+   674→    description = 'SMA 20 sipër SMA 50, sinjal i blerjes në afat mesatar';
+   675→  } else if (s20 < s50 && !isNaN(s200) && s50 < s200) {
+   676→    name = 'Prirje e Plotë Negative';
+   677→    description = 'Çmimi poshtë SMA 20, 50 dhe 200 — radhitja e plotë e mesatareve mobile negative';
+   678→  } else if (s20 < s50) {
+   679→    name = 'Kryqëzim i Vdekjes';
+   680→    description = 'SMA 20 poshtë SMA 50, sinjal i shitjes në afat mesatar';
+   681→  } else {
+   682→    name = 'MA Trend Neutral';
+   683→    description = 'Mesataret mobile pa ndryshim të qartë';
+   684→  }
+   685→
+   686→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: 'HIGH', description };
+   687→}
+   688→
+   689→function scoreStochastic(
+   690→  stochK: number[],
+   691→  stochD: number[],
+   692→): IndicatorScore {
+   693→  const last = stochK.length - 1;
+   694→  const k = stochK[last];
+   695→  const d = stochD[last];
+   696→  const kPrev = stochK[last - 1];
+   697→  const dPrev = stochD[last - 1];
+   698→
+   699→  if (isNaN(k) || isNaN(d) || isNaN(kPrev) || isNaN(dPrev)) return noData('Stochastic');
+   700→
+   701→  let score = 0;
+   702→  let name: string;
+   703→  let description: string;
+   704→
+   705→  // Check for crossover in last bar
+   706→  const bullishCross = kPrev <= dPrev && k > d;
+   707→  const bearishCross = kPrev >= dPrev && k < d;
+   708→
+   709→  if (k < 20 && d < 20) {
+   710→    score = mapRange(k, 0, 20, 90, 60);
+   711→    name = 'Stokastik Në Zonën e Shitjes';
+   712→    description = `%K (${k.toFixed(1)}) dhe %D (${d.toFixed(1)}) nën 20, mbushje e shitjes`;
+   713→  } else if (k > 80 && d > 80) {
+   714→    score = mapRange(k, 80, 100, -60, -90);
+   715→    name = 'Stokastik Në Zonën e Blërjes';
+   716→    description = `%K (${k.toFixed(1)}) dhe %D (${d.toFixed(1)}) mbi 80, mbushje e blerjes`;
+   717→  } else if (bullishCross) {
+   718→    score = mapRange(d, 20, 80, 75, 55);
+   719→    name = 'Stokastik Kryqëzim Bulliz';
+   720→    description = '%K kaloi sipër %D, sinjal i blerjes nga stokastiku';
+   721→  } else if (bearishCross) {
+   722→    score = mapRange(d, 20, 80, -75, -55);
+   723→    name = 'Stokastik Kryqëzim Bearish';
+   724→    description = '%K kaloi poshtë %D, sinjal i shitjes nga stokastiku';
+   725→  } else if (k > d) {
+   726→    score = mapRange(k - d, 0, 30, 10, 45);
+   727→    name = 'Stokastik Pozitiv';
+   728→    description = '%K sipër %D, momentumi i shkurtër pozitiv';
+   729→  } else {
+   730→    score = mapRange(d - k, 0, 30, -10, -45);
+   731→    name = 'Stokastik Negativ';
+   732→    description = '%K poshtë %D, momentumi i shkurtër negativ';
+   733→  }
+   734→
+   735→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 50 ? 'MEDIUM' : 'LOW', description };
+   736→}
+   737→
+   738→function scoreADX(
+   739→  adxValues: number[],
+   740→  plusDI: number[],
+   741→  minusDI: number[],
+   742→): IndicatorScore {
+   743→  const adx = lastValid(adxValues);
+   744→  const pdi = lastValid(plusDI);
+   745→  const mdi = lastValid(minusDI);
+   746→
+   747→  if (adx === undefined || pdi === undefined || mdi === undefined) return noData('ADX');
+   748→
+   749→  let score: number;
+   750→  let name: string;
+   751→  let description: string;
+   752→
+   753→  const bullBias = pdi > mdi;
+   754→  const diSpread = Math.abs(pdi - mdi);
+   755→
+   756→  if (adx > 25) {
+   757→    // Strong trend
+   758→    if (bullBias) {
+   759→      score = mapRange(diSpread, 0, 40, 50, 80);
+   760→      name = 'Prirje e Fortë Pozitive';
+   761→      description = `ADX ${adx.toFixed(1)} tregon trend të fortë, +DI (${pdi.toFixed(1)}) mbi -DI (${mdi.toFixed(1)})`;
+   762→    } else {
+   763→      score = mapRange(diSpread, 0, 40, -50, -80);
+   764→      name = 'Prirje e Fortë Negative';
+   765→      description = `ADX ${adx.toFixed(1)} tregon trend të fortë, -DI (${mdi.toFixed(1)}) mbi +DI (${pdi.toFixed(1)})`;
+   766→    }
+   767→  } else if (adx > 20) {
+   768→    // Developing trend
+   769→    score = bullBias ? mapRange(diSpread, 0, 20, 20, 50) : mapRange(diSpread, 0, 20, -20, -50);
+   770→    name = bullBias ? 'Prirje në Zhvillim Pozitive' : 'Prirje në Zhvillim Negative';
+   771→    description = `ADX ${adx.toFixed(1)} tregon trend në zhvillim, ${bullBias ? '+DI' : '-DI'} mbi ${bullBias ? '-DI' : '+DI'}`;
+   772→  } else {
+   773→    // Weak trend / ranging
+   774→    score = clamp(diSpread * (bullBias ? 1 : -1), -20, 20);
+   775→    name = 'Treg Pa Drejtim';
+   776→    description = `ADX ${adx.toFixed(1)} tregon treg pa drejtim të qartë, rreziku lartë për sinjale të rreme`;
+   777→  }
+   778→
+   779→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: adx > 25 ? 'HIGH' : 'LOW', description };
+   780→}
+   781→
+   782→function scoreATR(
+   783→  atrValues: number[],
+   784→  closes: number[],
+   785→): IndicatorScore {
+   786→  const last = closes.length - 1;
+   787→  const currentATR = lastValid(atrValues);
+   788→  if (currentATR === undefined || currentATR <= 0) return noData('ATR');
+   789→
+   790→  // Compute 60-day ATR history for percentile
+   791→  const atrHistory: number[] = [];
+   792→  for (let i = last; i >= 0 && atrHistory.length < 60; i--) {
+   793→    if (!isNaN(atrValues[i]) && atrValues[i] > 0) atrHistory.unshift(atrValues[i]);
+   794→  }
+   795→
+   796→  if (atrHistory.length < 20) return noData('ATR');
+   797→
+   798→  const p30 = percentile(atrHistory, 30);
+   799→  const p70 = percentile(atrHistory, 70);
+   800→
+   801→  let score: number;
+   802→  let name: string;
+   803→  let description: string;
+   804→
+   805→  if (currentATR < p30) {
+   806→    score = mapRange(currentATR, 0, p30, 65, 55);
+   807→    name = 'Volatilitet i Ulët — Squeeze';
+   808→    description = 'ATR nën 30-inë e përqindjes, volatiliteti i ulët tregon konsolidim potencial';
+   809→  } else if (currentATR > p70) {
+   810→    score = mapRange(currentATR, p70, p70 * 2, 20, -20);
+   811→    name = 'Volatilitet i Lartë';
+   812→    description = 'ATR mbi 70-inë e përqindjes, volatiliteti i lartë rrit rrezikun';
+   813→  } else {
+   814→    score = mapRange(currentATR, p30, p70, 30, -30);
+   815→    name = 'Volatilitet Normal';
+   816→    description = 'ATR në nivel normal, asnjë sinjal ekstrem';
+   817→  }
+   818→
+   819→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: 'LOW', description };
+   820→}
+   821→
+   822→function scoreROC(closes: number[]): IndicatorScore {
+   823→  const last = closes.length - 1;
+   824→  if (last < 20) return noData('ROC');
+   825→
+   826→  const roc5 = ((closes[last] - closes[last - 5]) / closes[last - 5]) * 100;
+   827→  const roc10 = ((closes[last] - closes[last - 10]) / closes[last - 10]) * 100;
+   828→  const roc20 = ((closes[last] - closes[last - 20]) / closes[last - 20]) * 100;
+   829→
+   830→  // Weighted combination
+   831→  let rawScore = roc5 * 0.5 + roc10 * 0.3 + roc20 * 0.2;
+   832→
+   833→  // Extreme positive → mean reversion penalty
+   834→  if (roc5 > 10) {
+   835→    rawScore -= (roc5 - 10) * 2;
+   836→  }
+   837→  // Extreme negative → mean reversion penalty
+   838→  if (roc5 < -10) {
+   839→    rawScore += (-10 - roc5) * 2;
+   840→  }
+   841→
+   842→  const score = clamp(rawScore * 5, -100, 100); // Scale percentage to score
+   843→
+   844→  let name: string;
+   845→  let description: string;
+   846→
+   847→  if (roc5 > 5) {
+   848→    name = 'Momentum i Fortë Pozitiv';
+   849→    description = `ROC 5-ditor ${roc5.toFixed(2)}%, momentumi i shkurtër shumë pozitiv`;
+   850→  } else if (roc5 < -5) {
+   851→    name = 'Momentum i Fortë Negativ';
+   852→    description = `ROC 5-ditor ${roc5.toFixed(2)}%, momentumi i shkurtër shumë negativ`;
+   853→  } else if (rawScore > 1) {
+   854→    name = 'Momentum Pozitiv';
+   855→    description = `ROC i përgjithshëm pozitiv (5d: ${roc5.toFixed(2)}%, 10d: ${roc10.toFixed(2)}%, 20d: ${roc20.toFixed(2)}%)`;
+   856→  } else if (rawScore < -1) {
+   857→    name = 'Momentum Negativ';
+   858→    description = `ROC i përgjithshëm negativ (5d: ${roc5.toFixed(2)}%, 10d: ${roc10.toFixed(2)}%, 20d: ${roc20.toFixed(2)}%)`;
+   859→  } else {
+   860→    name = 'Momentum Neutral';
+   861→    description = 'Shkalla e ndryshimit afatshkurtër afër zero';
+   862→  }
+   863→
+   864→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 40 ? 'MEDIUM' : 'LOW', description };
+   865→}
+   866→
+   867→function scoreOBV(closes: number[], volumes: number[]): IndicatorScore {
+   868→  const obv = calculateOBV(closes, volumes);
+   869→  const last = closes.length - 1;
+   870→  if (last < 10) return noData('OBV');
+   871→
+   872→  const obvSlice = obv.slice(last - 4, last + 1);
+   873→  const priceSlice = closes.slice(last - 4, last + 1);
+   874→
+   875→  const obvReg = linearRegression(obvSlice);
+   876→  const priceReg = linearRegression(priceSlice);
+   877→
+   878→  const obvRising = obvReg.slope > 0;
+   879→  const priceRising = priceReg.slope > 0;
+   880→
+   881→  let score: number;
+   882→  let name: string;
+   883→  let description: string;
+   884→
+   885→  if (obvRising && priceRising) {
+   886→    score = mapRange(obvReg.slope / Math.max(Math.abs(obvSlice[0]), 1), 0, 0.5, 60, 85);
+   887→    name = 'OBV Konfirmon Blerjen';
+   888→    description = 'Volumi në balancë në rritje së bashku me çmimin, konfirmim bulliz';
+   889→  } else if (!obvRising && priceRising) {
+   890→    score = mapRange(-obvReg.slope / Math.max(Math.abs(obvSlice[0]), 1), 0, 0.5, -60, -85);
+   891→    name = 'Divergjencë Bearish OBV';
+   892→    description = 'Çmimi në rritje por volumi në ulje, divergjencë bearish';
+   893→  } else if (obvRising && !priceRising) {
+   894→    score = mapRange(obvReg.slope / Math.max(Math.abs(obvSlice[0]), 1), 0, 0.5, 60, 85);
+   895→    name = 'Divergjencë Bulliz OBV';
+   896→    description = 'Çmimi në ulje por volumi në rritje, divergjencë bulliz';
+   897→  } else {
+   898→    score = mapRange(-obvReg.slope / Math.max(Math.abs(obvSlice[0]), 1), 0, 0.5, -60, -85);
+   899→    name = 'OBV Konfirmon Shitjen';
+   900→    description = 'Volumi në balancë në ulje së bashku me çmimin, konfirmim bearish';
+   901→  }
+   902→
+   903→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: 'MEDIUM', description };
+   904→}
+   905→
+   906→function scoreVolumeConfirmation(
+   907→  closes: number[],
+   908→  volumes: number[],
+   909→): IndicatorScore {
+   910→  const last = closes.length - 1;
+   911→  if (last < 20) return noData('Konfirmimi i Volumit');
+   912→
+   913→  const currentVol = volumes[last];
+   914→  const avgVol = volumes.slice(last - 19, last).reduce((a, b) => a + b, 0) / 20;
+   915→  const priceUp = closes[last] >= closes[last - 1];
+   916→
+   917→  let score: number;
+   918→  let name: string;
+   919→  let description: string;
+   920→
+   921→  if (priceUp && currentVol > avgVol * 1.2) {
+   922→    score = mapRange(currentVol / avgVol, 1.2, 3, 55, 80);
+   923→    name = 'Volum i Lartë Konfirmon Rritjen';
+   924→    description = `Volumi ${(currentVol / avgVol * 100).toFixed(0)}% i mesatares me çmim në rritje, blerje e fortë`;
+   925→  } else if (priceUp) {
+   926→    score = mapRange(currentVol / avgVol, 0.3, 1.2, 20, 45);
+   927→    name = 'Rritje e Dobët';
+   928→    description = 'Çmimi në rritje por me volum nën mesataren, rally e dobët';
+   929→  } else if (!priceUp && currentVol > avgVol * 1.2) {
+   930→    score = mapRange(currentVol / avgVol, 1.2, 3, -55, -80);
+   931→    name = 'Volum i Lartë Konfirmon Uljen';
+   932→    description = `Volumi ${(currentVol / avgVol * 100).toFixed(0)}% i mesatares me çmim në ulje, shitje e fortë`;
+   933→  } else {
+   934→    score = mapRange(currentVol / avgVol, 0.3, 1.2, -20, -45);
+   935→    name = 'Ulje e Dobët';
+   936→    description = 'Çmimi në ulje por me volum nën mesataren, ulje e dobët';
+   937→  }
+   938→
+   939→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 50 ? 'MEDIUM' : 'LOW', description };
+   940→}
+   941→
+   942→function scoreMACDCrossover(
+   943→  macdLine: number[],
+   944→  signalLine: number[],
+   945→): IndicatorScore {
+   946→  const n = macdLine.length;
+   947→  let score = 0;
+   948→  let name = 'Asnjë Kryqëzim MACD';
+   949→  let description = 'Asnjë kryqëzim i fundit midis MACD dhe vijës së sinjalit';
+   950→  let found = false;
+   951→
+   952→  // Check last 5 valid bars for crossover
+   953→  const recentIndices: number[] = [];
+   954→  for (let i = n - 1; i >= 0 && recentIndices.length < 6; i--) {
+   955→    if (!isNaN(macdLine[i]) && !isNaN(signalLine[i])) recentIndices.unshift(i);
+   956→  }
+   957→
+   958→  for (let j = 1; j < recentIndices.length; j++) {
+   959→    const prevIdx = recentIndices[j - 1];
+   960→    const currIdx = recentIndices[j];
+   961→
+   962→    const prevDiff = macdLine[prevIdx] - signalLine[prevIdx];
+   963→    const currDiff = macdLine[currIdx] - signalLine[currIdx];
+   964→
+   965→    if (prevDiff <= 0 && currDiff > 0) {
+   966→      // Bullish crossover
+   967→      const recency = j / recentIndices.length; // 1 = most recent
+   968→      score = mapRange(recency, 0, 1, 65, 90);
+   969→      name = 'Kryqëzim Bulliz MACD';
+   970→      description = 'MACD kaloi sipër vijës së sinjalit, sinjal i blerjes';
+   971→      found = true;
+   972→      break;
+   973→    } else if (prevDiff >= 0 && currDiff < 0) {
+   974→      // Bearish crossover
+   975→      const recency = j / recentIndices.length;
+   976→      score = mapRange(recency, 0, 1, -65, -90);
+   977→      name = 'Kryqëzim Bearish MACD';
+   978→      description = 'MACD kaloi poshtë vijës së sinjalit, sinjal i shitjes';
+   979→      found = true;
+   980→      break;
+   981→    }
+   982→  }
+   983→
+   984→  if (!found) score = 0;
+   985→
+   986→  return { score, name, signal: found ? (score > 0 ? 'BULLISH' : 'BEARISH') : 'NEUTRAL', impact: found ? 'HIGH' : 'LOW', description };
+   987→}
+   988→
+   989→function scorePriceChannel(
+   990→  highs: number[],
+   991→  lows: number[],
+   992→  closes: number[],
+   993→): IndicatorScore {
+   994→  const last = closes.length - 1;
+   995→  if (last < 20) return noData('Price Channel');
+   996→
+   997→  let ch20High = -Infinity;
+   998→  let ch20Low = Infinity;
+   999→  for (let i = last - 19; i < last; i++) {
+  1000→    if (highs[i] > ch20High) ch20High = highs[i];
+  1001→    if (lows[i] < ch20Low) ch20Low = lows[i];
+  1002→  }
+  1003→
+  1004→  const price = closes[last];
+  1005→  const range = ch20High - ch20Low;
+  1006→  if (range <= 0) return noData('Price Channel');
+  1007→
+  1008→  let score: number;
+  1009→  let name: string;
+  1010→  let description: string;
+  1011→
+  1012→  if (price > ch20High) {
+  1013→    // Breakout
+  1014→    score = mapRange((price - ch20High) / range, 0, 0.1, 70, 95);
+  1015→    name = 'Shpërthim mbi Kanalin 20-Ditor';
+  1016→    description = 'Çmimi theu rezistencën e 20 ditëve, shpërthim i potencialit bulliz';
+  1017→  } else if (price < ch20Low) {
+  1018→    // Breakdown
+  1019→    score = mapRange((ch20Low - price) / range, 0, 0.1, -70, -95);
+  1020→    name = 'Thyesje nën Kanalin 20-Ditor';
+  1021→    description = 'Çmimi thehu mbështetjen e 20 ditëve, rrezik i thellë uljeje';
+  1022→  } else {
+  1023→    const position = (price - ch20Low) / range;
+  1024→    if (position > 0.7) {
+  1025→      score = mapRange(position, 0.7, 1, 50, 75);
+  1026→      name = 'Çmimi Pranë Rezistencës';
+  1027→      description = 'Çmimi pranë lartësisë 20-ditore, momentum pozitiv';
+  1028→    } else if (position < 0.3) {
+  1029→      score = mapRange(position, 0, 0.3, -75, -50);
+  1030→      name = 'Çmimi Pranë Mbështetjes';
+  1031→      description = 'Çmimi pranë ulëtësisë 20-ditore, rreziku i uljes';
+  1032→    } else {
+  1033→      score = mapRange(position - 0.5, -0.2, 0.2, -30, 30);
+  1034→      name = 'Price Channel Neutral';
+  1035→      description = 'Çmimi në mes të kanalit 20-ditor';
+  1036→    }
+  1037→  }
+  1038→
+  1039→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: Math.abs(score) > 60 ? 'MEDIUM' : 'LOW', description };
+  1040→}
+  1041→
+  1042→function scoreDivergence(
+  1043→  closes: number[],
+  1044→  rsiValues: number[],
+  1045→): IndicatorScore {
+  1046→  const last = closes.length - 1;
+  1047→  if (last < 30) return noData('Divergjencë');
+  1048→
+  1049→  // Find price lows and RSI lows in last 30 bars
+  1050→  const lookback = Math.min(30, last);
+  1051→  const priceSlice = closes.slice(last - lookback, last + 1);
+  1052→  const rsiSlice = rsiValues.slice(last - lookback, last + 1);
+  1053→
+  1054→  // Find local minima (price lows)
+  1055→  const priceLows: { idx: number; val: number }[] = [];
+  1056→  const rsiAtPriceLows: number[] = [];
+  1057→  for (let i = 1; i < priceSlice.length - 1; i++) {
+  1058→    if (priceSlice[i] < priceSlice[i - 1] && priceSlice[i] < priceSlice[i + 1] && !isNaN(rsiSlice[i])) {
+  1059→      priceLows.push({ idx: i, val: priceSlice[i] });
+  1060→      rsiAtPriceLows.push(rsiSlice[i]);
+  1061→    }
+  1062→  }
+  1063→
+  1064→  // Find local maxima (price highs)
+  1065→  const priceHighs: { idx: number; val: number }[] = [];
+  1066→  const rsiAtPriceHighs: number[] = [];
+  1067→  for (let i = 1; i < priceSlice.length - 1; i++) {
+  1068→    if (priceSlice[i] > priceSlice[i - 1] && priceSlice[i] > priceSlice[i + 1] && !isNaN(rsiSlice[i])) {
+  1069→      priceHighs.push({ idx: i, val: priceSlice[i] });
+  1070→      rsiAtPriceHighs.push(rsiSlice[i]);
+  1071→    }
+  1072→  }
+  1073→
+  1074→  // Bullish divergence: price makes lower low but RSI makes higher low
+  1075→  let bullishDiv = false;
+  1076→  let bearishDiv = false;
+  1077→
+  1078→  if (priceLows.length >= 2) {
+  1079→    const lastTwo = priceLows.slice(-2);
+  1080→    if (lastTwo[1].val < lastTwo[0].val) {
+  1081→      const rsiLastTwo = rsiAtPriceLows.slice(-2);
+  1082→      if (rsiLastTwo.length >= 2 && rsiLastTwo[1] > rsiLastTwo[0]) {
+  1083→        bullishDiv = true;
+  1084→      }
+  1085→    }
+  1086→  }
+  1087→
+  1088→  // Bearish divergence: price makes higher high but RSI makes lower high
+  1089→  if (priceHighs.length >= 2) {
+  1090→    const lastTwo = priceHighs.slice(-2);
+  1091→    if (lastTwo[1].val > lastTwo[0].val) {
+  1092→      const rsiLastTwo = rsiAtPriceHighs.slice(-2);
+  1093→      if (rsiLastTwo.length >= 2 && rsiLastTwo[1] < rsiLastTwo[0]) {
+  1094→        bearishDiv = true;
+  1095→      }
+  1096→    }
+  1097→  }
+  1098→
+  1099→  if (bullishDiv) {
+  1100→    return {
+  1101→      score: 75,
+  1102→      name: 'Divergjencë Bulliz',
+  1103→      signal: 'BULLISH',
+  1104→      impact: 'HIGH',
+  1105→      description: 'Çmimi bën ultë të ulëta por RSI bën ultë më të larta, sinjal i forttë i blerjes',
+  1106→    };
+  1107→  }
+  1108→  if (bearishDiv) {
+  1109→    return {
+  1110→      score: -75,
+  1111→      name: 'Divergjencë Bearish',
+  1112→      signal: 'BEARISH',
+  1113→      impact: 'HIGH',
+  1114→      description: 'Çmimi bën maje më të larta por RSI bën maje më të ulëta, sinjal i fortë i shitjes',
+  1115→    };
+  1116→  }
+  1117→
+  1118→  return {
+  1119→    score: 0,
+  1120→    name: 'Asnjë Divergjencë',
+  1121→    signal: 'NEUTRAL',
+  1122→    impact: 'LOW',
+  1123→    description: 'Asnjë divergjencë e dukshme midis çmimit dhe RSI-së',
+  1124→  };
+  1125→}
+  1126→
+  1127→function scoreVWAP(closes: number[], highs: number[], lows: number[], volumes: number[]): IndicatorScore {
+  1128→  const last = closes.length - 1;
+  1129→  if (last < 20) return noData('VWAP');
+  1130→
+  1131→  // Approximate VWAP over 20 days: cumulative (H+L+C)/3 * volume / cumulative volume
+  1132→  let cumVP = 0;
+  1133→  let cumVol = 0;
+  1134→  for (let i = last - 19; i <= last; i++) {
+  1135→    const tp = (highs[i] + lows[i] + closes[i]) / 3;
+  1136→    cumVP += tp * volumes[i];
+  1137→    cumVol += volumes[i];
+  1138→  }
+  1139→
+  1140→  const vwap = cumVol === 0 ? closes[last] : cumVP / cumVol;
+  1141→  const price = closes[last];
+  1142→  const deviation = ((price - vwap) / vwap) * 100; // percentage deviation
+  1143→
+  1144→  let score: number;
+  1145→  let name: string;
+  1146→  let description: string;
+  1147→
+  1148→  if (price > vwap) {
+  1149→    score = clamp(mapRange(deviation, 0, 5, 50, 65), 50, 65);
+  1150→    name = 'Çmimi Sipër VWAP';
+  1151→    description = `Çmimi ${deviation.toFixed(2)}% mbi VWAP, blerësit në kontroll`;
+  1152→  } else {
+  1153→    score = clamp(mapRange(-deviation, 0, 5, 50, 65), -65, -50);
+  1154→    name = 'Çmimi Poshtë VWAP';
+  1155→    description = `Çmimi ${(-deviation).toFixed(2)}% poshtë VWAP, shitësit në kontroll`;
+  1156→  }
+  1157→
+  1158→  return { score, name, signal: score >= 0 ? 'BULLISH' : 'BEARISH', impact: 'LOW', description };
+  1159→}
+  1160→
+  1161→function scorePattern(
+  1162→  opens: number[],
+  1163→  highs: number[],
+  1164→  lows: number[],
+  1165→  closes: number[],
+  1166→  volumes: number[],
+  1167→): IndicatorScore {
+  1168→  const last = closes.length - 1;
+  1169→  if (last < 10) return noData('Pattern');
+  1170→
+  1171→  const len = Math.min(10, last + 1);
+  1172→  const o = opens.slice(last - len + 1);
+  1173→  const h = highs.slice(last - len + 1);
+  1174→  const l = lows.slice(last - len + 1);
+  1175→  const c = closes.slice(last - len + 1);
+  1176→  const v = volumes.slice(last - len + 1);
+  1177→
+  1178→  let bestScore = 0;
+  1179→  let bestName = 'Asnjë Model';
+  1180→  let bestDescription = 'Nuk u zbuluan modele qirinjësh në 10 ditët e fundit';
+  1181→  let bestSignal: SignalType = 'NEUTRAL';
+  1182→  let bestImpact: ImpactLevel = 'LOW';
+  1183→
+  1184→  const n = o.length;
+  1185→
+  1186→  // 1. Three consecutive green candles with increasing volume
+  1187→  if (n >= 3) {
+  1188→    const g1 = c[n - 3] > o[n - 3];
+  1189→    const g2 = c[n - 2] > o[n - 2];
+  1190→    const g3 = c[n - 1] > o[n - 1];
+  1191→    if (g1 && g2 && g3 && v[n - 1] > v[n - 2] && v[n - 2] > v[n - 3]) {
+  1192→      bestScore = 75;
+  1193→      bestName = 'Tre Qirinj Jeshilë';
+  1194→      bestSignal = 'BULLISH';
+  1195→      bestImpact = 'HIGH';
+  1196→      bestDescription = 'Tre qirinj jeshilë radhazi me volum në rritje, prirje e fortë e blerjes';
+  1197→    }
+  1198→  }
+  1199→
+  1200→  // 2. Three consecutive red candles with increasing volume
+  1201→  if (n >= 3) {
+  1202→    const r1 = c[n - 3] < o[n - 3];
+  1203→    const r2 = c[n - 2] < o[n - 2];
+  1204→    const r3 = c[n - 1] < o[n - 1];
+  1205→    if (r1 && r2 && r3 && v[n - 1] > v[n - 2] && v[n - 2] > v[n - 3]) {
+  1206→      if (Math.abs(-75) > Math.abs(bestScore)) {
+  1207→        bestScore = -75;
+  1208→        bestName = 'Tre Qirinj të Kuq';
+  1209→        bestSignal = 'BEARISH';
+  1210→        bestImpact = 'HIGH';
+  1211→        bestDescription = 'Tre qirinj të kuq radhazi me volum në rritje, prirje e fortë e shitjes';
+  1212→      }
+  1213→    }
+  1214→  }
+  1215→
+  1216→  // 3. Hammer: small body, long lower shadow (at least 2x body), body in upper 1/3
+  1217→  {
+  1218→    const body = Math.abs(c[n - 1] - o[n - 1]);
+  1219→    const totalRange = h[n - 1] - l[n - 1];
+  1220→    const lowerShadow = Math.min(o[n - 1], c[n - 1]) - l[n - 1];
+  1221→    const upperShadow = h[n - 1] - Math.max(o[n - 1], c[n - 1]);
+  1222→
+  1223→    if (totalRange > 0 && body > 0 && lowerShadow >= 2 * body && upperShadow <= body * 0.3) {
+  1224→      // Check if at bottom of trend (price was declining)
+  1225→      const declining = c[n - 2] < o[n - 2] || c[n - 3] < o[n - 3];
+  1226→      if (declining) {
+  1227→        const score = 65;
+  1228→        if (score > Math.abs(bestScore)) {
+  1229→          bestScore = score;
+  1230→          bestName = 'Modeli Çekiç';
+  1231→          bestSignal = 'BULLISH';
+  1232→          bestImpact = 'MEDIUM';
+  1233→          bestDescription = 'Modeli çekiç pas një prirjeje të ulët, sinjal i shmangies pozitive';
+  1234→        }
+  1235→      }
+  1236→    }
+  1237→  }
+  1238→
+  1239→  // 4. Shooting star: small body, long upper shadow (at least 2x body), body in lower 1/3
+  1240→  {
+  1241→    const body = Math.abs(c[n - 1] - o[n - 1]);
+  1242→    const totalRange = h[n - 1] - l[n - 1];
+  1243→    const lowerShadow = Math.min(o[n - 1], c[n - 1]) - l[n - 1];
+  1244→    const upperShadow = h[n - 1] - Math.max(o[n - 1], c[n - 1]);
+  1245→
+  1246→    if (totalRange > 0 && body > 0 && upperShadow >= 2 * body && lowerShadow <= body * 0.3) {
+  1247→      const advancing = c[n - 2] > o[n - 2] || c[n - 3] > o[n - 3];
+  1248→      if (advancing) {
+  1249→        const score = -65;
+  1250→        if (Math.abs(score) > Math.abs(bestScore)) {
+  1251→          bestScore = score;
+  1252→          bestName = 'Yllë e Qitjes';
+  1253→          bestSignal = 'BEARISH';
+  1254→          bestImpact = 'MEDIUM';
+  1255→          bestDescription = 'Yllë e qitjes pas një prirjeje të lartë, sinjal i shmangies negative';
+  1256→        }
+  1257→      }
+  1258→    }
+  1259→  }
+  1260→
+  1261→  // 5. Bullish engulfing: red candle followed by larger green candle
+  1262→  if (n >= 2) {
+  1263→    const prevRed = c[n - 2] < o[n - 2];
+  1264→    const currGreen = c[n - 1] > o[n - 1];
+  1265→    const prevBody = Math.abs(c[n - 2] - o[n - 2]);
+  1266→    const currBody = Math.abs(c[n - 1] - o[n - 1]);
+  1267→    const engulfsBody = c[n - 1] > o[n - 2] && o[n - 1] < c[n - 2];
+  1268→
+  1269→    if (prevRed && currGreen && engulfsBody && currBody > prevBody) {
+  1270→      const score = 70;
+  1271→      if (Math.abs(score) > Math.abs(bestScore)) {
+  1272→        bestScore = score;
+  1273→        bestName = 'Mbështjellje Bulliz';
+  1274→        bestSignal = 'BULLISH';
+  1275→        bestImpact = 'HIGH';
+  1276→        bestDescription = 'Modeli i mbështjelljes bullize, sinjal i fortë për ndryshim të drejtimit';
+  1277→      }
+  1278→    }
+  1279→  }
+  1280→
+  1281→  // 6. Bearish engulfing: green candle followed by larger red candle
+  1282→  if (n >= 2) {
+  1283→    const prevGreen = c[n - 2] > o[n - 2];
+  1284→    const currRed = c[n - 1] < o[n - 1];
+  1285→    const prevBody = Math.abs(c[n - 2] - o[n - 2]);
+  1286→    const currBody = Math.abs(c[n - 1] - o[n - 1]);
+  1287→    const engulfsBody = o[n - 1] > c[n - 2] && c[n - 1] < o[n - 2];
+  1288→
+  1289→    if (prevGreen && currRed && engulfsBody && currBody > prevBody) {
+  1290→      const score = -70;
+  1291→      if (Math.abs(score) > Math.abs(bestScore)) {
+  1292→        bestScore = score;
+  1293→        bestName = 'Mbështjellje Bearish';
+  1294→        bestSignal = 'BEARISH';
+  1295→        bestImpact = 'HIGH';
+  1296→        bestDescription = 'Modeli i mbështjelljes bearish, sinjal i fortë për ndryshim të drejtimit';
+  1297→      }
+  1298→    }
+  1299→  }
+  1300→
+  1301→  return { score: bestScore, name: bestName, signal: bestSignal, impact: bestImpact, description: bestDescription };
+  1302→}
+  1303→
+  1304→// =================== HELPER: NO DATA ========================
+  1305→
+  1306→function noData(indicatorName: string): IndicatorScore {
+  1307→  return {
+  1308→    score: 0,
+  1309→    name: `${indicatorName} — të Dhëna të Pamjaftueshme`,
+  1310→    signal: 'NEUTRAL',
+  1311→    impact: 'LOW',
+  1312→    description: `Të dhëna të pamjaftueshme për të llogaritur ${indicatorName}`,
+  1313→  };
+  1314→}
+  1315→
+  1316→// ============== MAIN PREDICTION FUNCTION =====================
+  1317→
+  1318→export function predictStock(symbol: string, data: PricePoint[]): PredictionResult {
+  1319→  const emptyResult = (): PredictionResult => ({
+  1320→    symbol,
+  1321→    score: 0,
+  1322→    direction: 'NEUTRAL',
+  1323→    confidence: 0,
+  1324→    shortTerm: { prediction: 'SIDEWAYS', probability: 50, expectedMove: 0 },
+  1325→    mediumTerm: { prediction: 'SIDEWAYS', probability: 50, expectedMove: 0 },
+  1326→    riskLevel: 'HIGH',
+  1327→    volatility: 'MEDIUM',
+  1328→    keyFactors: [
+  1329→      {
+  1330→        name: 'Të Dhëna',
+  1331→        signal: 'NEUTRAL' as SignalType,
+  1332→        impact: 'HIGH' as ImpactLevel,
+  1333→        score: 0,
+  1334→        description: 'Të dhëna të pamjaftueshme për analizë teknike',
+  1335→      },
+  1336→    ],
+  1337→    indicatorScores: {},
+  1338→    timestamp: new Date().toISOString(),
+  1339→    technicalScore: 0,
+  1340→    fundamentalData: null,
+  1341→    learningData: null,
+  1342→    combinedScore: 0,
+  1343→  });
+  1344→
+  1345→  if (!data || data.length < MIN_DATA_POINTS) return emptyResult();
+  1346→
+  1347→  // ---------- Extract price arrays ----------
+  1348→  const closes = data.map((d) => d.close);
+  1349→  const highs = data.map((d) => d.high);
+  1350→  const lows = data.map((d) => d.low);
+  1351→  const volumes = data.map((d) => d.volume);
+  1352→  const opens = data.map((d) => d.open);
+  1353→
+  1354→  // Validate
+  1355→  if (closes.some((c) => c <= 0) || volumes.some((v) => v < 0)) return emptyResult();
+  1356→
+  1357→  // ---------- Calculate raw indicators ----------
+  1358→  const rsiValues = calculateRSI(closes, 14);
+  1359→  const macd = calculateMACD(closes);
+  1360→  const bb = calculateBollingerBands(closes, 20, 2);
+  1361→  const sma20 = sma(closes, 20);
+  1362→  const sma50 = sma(closes, 50);
+  1363→  const sma200 = sma(closes, 200);
+  1364→  const stoch = calculateStochastic(highs, lows, closes, 14, 3);
+  1365→  const adxResult = calculateADX(highs, lows, closes, 14);
+  1366→  const atrValues = calculateATR(highs, lows, closes, 14);
+  1367→  const atr20Values = calculateATR(highs, lows, closes, 20);
+  1368→
+  1369→  // ---------- Score each indicator ----------
+  1370→  const scores: Record<string, IndicatorScore> = {};
+  1371→
+  1372→  scores.rsi = scoreRSI(rsiValues);
+  1373→  scores.macdHistogram = scoreMACDHistogram(macd.histogram);
+  1374→  scores.bollinger = scoreBollinger(closes, bb);
+  1375→  scores.maTrend = scoreMATrend(closes, sma20, sma50, sma200);
+  1376→  scores.stochastic = scoreStochastic(stoch.k, stoch.d);
+  1377→  scores.adx = scoreADX(adxResult.adx, adxResult.plusDI, adxResult.minusDI);
+  1378→  scores.atr = scoreATR(atrValues, closes);
+  1379→  scores.roc = scoreROC(closes);
+  1380→  scores.obv = scoreOBV(closes, volumes);
+  1381→  scores.volumeConfirm = scoreVolumeConfirmation(closes, volumes);
+  1382→  scores.macdCrossover = scoreMACDCrossover(macd.macdLine, macd.signalLine);
+  1383→  scores.priceChannel = scorePriceChannel(highs, lows, closes);
+  1384→  scores.divergence = scoreDivergence(closes, rsiValues);
+  1385→  scores.vwap = scoreVWAP(closes, highs, lows, volumes);
+  1386→  scores.pattern = scorePattern(opens, highs, lows, closes, volumes);
+  1387→
+  1388→  // ---------- Weighted final score ----------
+  1389→  const weights = getWeights();
+  1390→  let finalScore = 0;
+  1391→  const indicatorScores: Record<string, number> = {};
+  1392→
+  1393→  for (const [key, weight] of Object.entries(weights)) {
+  1394→    const s = scores[key]?.score ?? 0;
+  1395→    finalScore += s * weight;
+  1396→    indicatorScores[key] = Math.round(s * 100) / 100;
+  1397→  }
+  1398→  finalScore = clamp(Math.round(finalScore * 100) / 100, -100, 100);
+  1399→
+  1400→  // ---------- Confidence ----------
+  1401→  const allIndicatorScores = Object.values(scores).map((s) => s.score);
+  1402→  const mean = allIndicatorScores.reduce((a, b) => a + b, 0) / allIndicatorScores.length;
+  1403→  const variance = allIndicatorScores.reduce((a, b) => a + (b - mean) ** 2, 0) / allIndicatorScores.length;
+  1404→  const stdDev = Math.sqrt(variance);
+  1405→  const confidence = clamp(Math.round((100 - stdDev * 1.5) * 100) / 100, 0, 100);
+  1406→
+  1407→  // ---------- Direction ----------
+  1408→  const direction: Direction =
+  1409→    finalScore > 60 ? 'STRONG_BUY' : finalScore > 25 ? 'BUY' : finalScore > -25 ? 'NEUTRAL' : finalScore > -60 ? 'SELL' : 'STRONG_SELL';
+  1410→
+  1411→  // ---------- Short-term prediction (1-3 days) ----------
+  1412→  const shortTermWeights = { rsi: 0.25, stochastic: 0.20, macdHistogram: 0.25, volumeConfirm: 0.15, pattern: 0.15 };
+  1413→  let shortScore = 0;
+  1414→  for (const [k, w] of Object.entries(shortTermWeights)) {
+  1415→    shortScore += (scores[k]?.score ?? 0) * w;
+  1416→  }
+  1417→  const shortPrediction: TrendPrediction = shortScore > 20 ? 'UP' : shortScore < -20 ? 'DOWN' : 'SIDEWAYS';
+  1418→  const shortProbability = clamp(Math.round(Math.abs(shortScore) * 0.8 + 20), 0, 100);
+  1419→  const currentATR = lastValid(atrValues) ?? 0;
+  1420→  const lastClose = closes[closes.length - 1];
+  1421→  const shortExpectedMove = lastClose > 0 ? Math.round(((currentATR / lastClose) * 100) * 100) / 100 : 0;
+  1422→
+  1423→  // ---------- Medium-term prediction (1-2 weeks) ----------
+  1424→  const medTermWeights = { maTrend: 0.30, macdHistogram: 0.20, bollinger: 0.20, obv: 0.15, roc: 0.15 };
+  1425→  let medScore = 0;
+  1426→  for (const [k, w] of Object.entries(medTermWeights)) {
+  1427→    medScore += (scores[k]?.score ?? 0) * w;
+  1428→  }
+  1429→  const medPrediction: TrendPrediction = medScore > 20 ? 'UP' : medScore < -20 ? 'DOWN' : 'SIDEWAYS';
+  1430→  const medProbability = clamp(Math.round(Math.abs(medScore) * 0.8 + 20), 0, 100);
+  1431→  const currentATR20 = lastValid(atr20Values) ?? currentATR;
+  1432→  const medExpectedMove = lastClose > 0 ? Math.round(((currentATR20 / lastClose) * 100) * 100) / 100 : 0;
+  1433→
+  1434→  // ---------- Risk level & volatility ----------
+  1435→  const atrHistory: number[] = [];
+  1436→  const atrLast = atrValues.length - 1;
+  1437→  for (let i = atrLast; i >= 0 && atrHistory.length < 60; i--) {
+  1438→    if (!isNaN(atrValues[i]) && atrValues[i] > 0) atrHistory.unshift(atrValues[i]);
+  1439→  }
+  1440→
+  1441→  const p30 = atrHistory.length > 5 ? percentile(atrHistory, 30) : 0;
+  1442→  const p70 = atrHistory.length > 5 ? percentile(atrHistory, 70) : Infinity;
+  1443→
+  1444→  const atrHigh = currentATR > p70;
+  1445→  const atrLow = currentATR < p30;
+  1446→
+  1447→  const volatility: RiskOrVolatility = atrHigh ? 'HIGH' : atrLow ? 'LOW' : 'MEDIUM';
+  1448→
+  1449→  const riskLevel: RiskOrVolatility =
+  1450→    atrHigh || confidence < 30 ? 'HIGH' : atrLow && confidence > 70 ? 'LOW' : 'MEDIUM';
+  1451→
+  1452→  // ---------- Top 5 key factors ----------
+  1453→  const sortedFactors = Object.values(scores)
+  1454→    .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+  1455→    .slice(0, 5);
+  1456→
+  1457→  const keyFactors: KeyFactor[] = sortedFactors.map((f) => ({
+  1458→    name: f.name,
+  1459→    signal: f.signal,
+  1460→    impact: f.impact,
+  1461→    score: Math.round(f.score * 100) / 100,
+  1462→    description: f.description,
+  1463→  }));
+  1464→
+  1465→  // ---------- Build result ----------
+  1466→  return {
+  1467→    symbol,
+  1468→    score: finalScore,
+  1469→    direction,
+  1470→    confidence,
+  1471→    shortTerm: {
+  1472→      prediction: shortPrediction,
+  1473→      probability: shortProbability,
+  1474→      expectedMove: shortExpectedMove,
+  1475→    },
+  1476→    mediumTerm: {
+  1477→      prediction: medPrediction,
+  1478→      probability: medProbability,
+  1479→      expectedMove: medExpectedMove,
+  1480→    },
+  1481→    riskLevel,
+  1482→    volatility,
+  1483→    keyFactors,
+  1484→    indicatorScores,
+  1485→    timestamp: new Date().toISOString(),
+  1486→    technicalScore: finalScore,
+  1487→    fundamentalData: null,
+  1488→    learningData: null,
+  1489→    combinedScore: finalScore,
+  1490→  };
+  1491→}
+  1492→
+  1493→// ============= ENHANCED PREDICTION WITH FUNDAMENTALS + LEARNING =============
+  1494→
+  1495→interface EnhancedPredictionOptions {
+  1496→  fundamentalScore?: number | null;
+  1497→  fundamentalSummary?: string;
+  1498→  fundamentalScores?: Record<string, number>;
+  1499→  learningStats?: {
+  1500→    totalPredictions: number;
+  1501→    directionAccuracy: number;
+  1502→    shortTermAccuracy: number;
+  1503→    mediumTermAccuracy: number;
+  1504→    bestIndicators: string[];
+  1505→    worstIndicators: string[];
+  1506→    recentAccuracy: number;
+  1507→  } | null;
+  1508→  /** Weight for fundamentals (0-1, default 0.25) */
+  1509→  fundamentalWeight?: number;
+  1510→}
+  1511→
+  1512→/**
+  1513→ * Enhanced prediction that combines technical + fundamental scores.
+  1514→ * Uses learning weights if available.
+  1515→ */
+  1516→export function predictStockEnhanced(
+  1517→  baseResult: PredictionResult,
+  1518→  options: EnhancedPredictionOptions = {},
+  1519→): PredictionResult {
+  1520→  const fundWeight = options.fundamentalWeight ?? 0.25;
+  1521→  const techWeight = 1 - fundWeight;
+  1522→  const techScore = baseResult.technicalScore;
+  1523→  const fundScore = options.fundamentalScore ?? 0;
+  1524→
+  1525→  // Adjust fund weight based on learning data
+  1526→  let adjustedFundWeight = fundWeight;
+  1527→  if (options.learningStats && options.learningStats.totalPredictions > 10) {
+  1528→    // If fundamentals have been more accurate, increase their weight
+  1529→    const avgAcc = (options.learningStats.directionAccuracy + options.learningStats.recentAccuracy) / 2;
+  1530→    if (avgAcc > 55) {
+  1531→      adjustedFundWeight = Math.min(fundWeight * 1.3, 0.40);
+  1532→    } else if (avgAcc < 45) {
+  1533→      adjustedFundWeight = fundWeight * 0.7;
+  1534→    }
+  1535→  }
+  1536→
+  1537→  const adjustedTechWeight = 1 - adjustedFundWeight;
+  1538→  const combinedScore = clamp(
+  1539→    Math.round((techScore * adjustedTechWeight + fundScore * adjustedFundWeight) * 100) / 100,
+  1540→    -100, 100
+  1541→  );
+  1542→
+  1543→  // Recalculate direction based on combined score
+  1544→  const direction: Direction =
+  1545→    combinedScore > 60 ? 'STRONG_BUY' : combinedScore > 25 ? 'BUY' : combinedScore > -25 ? 'NEUTRAL' : combinedScore > -60 ? 'SELL' : 'STRONG_SELL';
+  1546→
+  1547→  // Add fundamental key factors if available
+  1548→  const keyFactors = [...baseResult.keyFactors];
+  1549→  if (options.fundamentalSummary) {
+  1550→    // Insert fundamental as first factor if significant
+  1551→    if (Math.abs(fundScore) > 15) {
+  1552→      keyFactors.unshift({
+  1553→        name: 'Analiza Fondamentale',
+  1554→        signal: fundScore > 0 ? 'BULLISH' as SignalType : 'BEARISH' as SignalType,
+  1555→        impact: Math.abs(fundScore) > 40 ? 'HIGH' as ImpactLevel : 'MEDIUM' as ImpactLevel,
+  1556→        score: fundScore,
+  1557→        description: options.fundamentalSummary,
+  1558→      });
+  1559→    }
+  1560→  }
+  1561→
+  1562→  // Trim to top 5
+  1563→  const topFactors = keyFactors
+  1564→    .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+  1565→    .slice(0, 5);
+  1566→
+  1567→  // Boost confidence if both technical and fundamental agree
+  1568→  let confidence = baseResult.confidence;
+  1569→  if (techScore > 15 && fundScore > 15) {
+  1570→    confidence = clamp(confidence + 8, 0, 100);
+  1571→  } else if (techScore < -15 && fundScore < -15) {
+  1572→    confidence = clamp(confidence + 8, 0, 100);
+  1573→  } else if ((techScore > 15 && fundScore < -15) || (techScore < -15 && fundScore > 15)) {
+  1574→    confidence = clamp(confidence - 10, 0, 100);
+  1575→  }
+  1576→  confidence = Math.round(confidence * 100) / 100;
+  1577→
+  1578→  // Update short/medium term predictions with fundamental influence
+  1579→  const shortTerm = { ...baseResult.shortTerm };
+  1580→  const mediumTerm = { ...baseResult.mediumTerm };
+  1581→
+  1582→  // Fundamental influence on medium term (stronger effect)
+  1583→  if (Math.abs(fundScore) > 20) {
+  1584→    const fundBias = fundScore > 0 ? 5 : -5;
+  1585→    mediumTerm.probability = clamp(mediumTerm.probability + Math.abs(fundBias), 0, 100);
+  1586→    if (fundScore > 40 && mediumTerm.prediction === 'SIDEWAYS') {
+  1587→      mediumTerm.prediction = 'UP';
+  1588→    } else if (fundScore < -40 && mediumTerm.prediction === 'SIDEWAYS') {
+  1589→      mediumTerm.prediction = 'DOWN';
+  1590→    }
+  1591→  }
+  1592→
+  1593→  return {
+  1594→    ...baseResult,
+  1595→    score: combinedScore,
+  1596→    direction,
+  1597→    confidence,
+  1598→    keyFactors: topFactors,
+  1599→    fundamentalData: options.fundamentalScore !== null && options.fundamentalScore !== undefined
+  1600→      ? {
+  1601→          score: fundScore,
+  1602→          summary: options.fundamentalSummary || '',
+  1603→          scores: options.fundamentalScores || {},
+  1604→        }
+  1605→      : null,
+  1606→    learningData: options.learningStats ?? null,
+  1607→    combinedScore,
+  1608→    shortTerm,
+  1609→    mediumTerm,
+  1610→  };
+  1611→}
+  1612→
+  1613→// ===================== RANK FUNCTION ========================
+  1614→
+  1615→export function rankStocks(results: PredictionResult[]): PredictionResult[] {
+  1616→  return [...results].sort((a, b) => b.score - a.score);
+  1617→}

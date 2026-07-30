@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -64,7 +64,6 @@ model WatchlistItem {
   note        String?
   createdAt   DateTime @default(now())
 
-  // Price alert
   alertAbove  Float?
   alertBelow  Float?
   alertActive Boolean  @default(true)
@@ -73,41 +72,132 @@ model WatchlistItem {
   @@unique([sessionId, ticker])
 }
 
-// ═══════ AI LEARNING SYSTEM ═══════
-// Tracks predictions, evaluates accuracy, extracts lessons
+// ═══════════════════════════════════════════════════════════════
+// PREDICTION SYSTEM — Postgres-backed, factor-level tracking
+// ═══════════════════════════════════════════════════════════════
 
 model Prediction {
-  id          String   @id @default(cuid())
-  source      String   // "analyze" | "daily-picks" | "sector-scan" | "technical"
-  ticker      String
-  company     String
-  sector      String
-  signal      String   // "BUY" | "SELL" | "HOLD" | "BULLISH" | "BEARISH" | "NEUTRAL"
-  confidence  Int      // 0-100
-  predictedAt DateTime @default(now())
-  predictedPrice Float?
-  targetPrice    Float?
-  stopLoss       Float?
-  timeframe      String?  // "short" | "medium" | "long"
-  reasoning      String?  // AI reasoning for this prediction
-  actualPrice    Float?
-  evaluatedAt    DateTime?
-  accuracy       Float?   // percentage accuracy: 0-100
-  wasCorrect     Boolean? // did the prediction play out?
-  lessonExtracted Boolean @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String   @id @default(cuid())
+  ticker           String
+  sector           String   @default("UNKNOWN")
+  source           String   @default("predict-api") // "predict-api" | "scan" | "scheduled"
+  modelVersion     String   @default("2.0")
+
+  // What was predicted
+  signal           String   // "STRONG_BUY" | "BUY" | "NEUTRAL" | "SELL" | "STRONG_SELL"
+  confidence       Int      // 0-100 calibrated
+  combinedScore    Float    // -100 to +100
+  technicalScore   Float
+  fundamentalScore Float    @default(0)
+  regimeScore      Float    @default(0)
+  eventRiskScore   Float    @default(0)
+
+  // Horizon-specific predictions (1D, 5D, 20D)
+  horizonDays      Int      // 1, 5, or 20
+  predictedDir     String   // "UP" | "DOWN" | "SIDEWAYS"
+  predictedMovePct Float    // expected move in %
+  entryPrice       Float
+
+  // Evaluation fields — filled by evaluator
+  dueAt            DateTime
+  actualPrice      Float?
+  evaluatedAt      DateTime?
+  returnPct        Float?   // actual return %
+  benchmarkReturnPct Float? // SPY return % over same period
+  wasCorrect       Boolean?
+  gateStatus       String   @default("TRADE") // "TRADE" | "NO_TRADE" + reason
+  gateReason       String?
+
+  // Metadata
+  noTradeReason    String?
+  lessonExtracted  Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  factors          PredictionFactor[]
+  snapshot         MarketSnapshot?
+
+  @@index([ticker, createdAt])
+  @@index([dueAt, wasCorrect])
+  @@index([horizonDays, wasCorrect])
 }
+
+model PredictionFactor {
+  id           String   @id @default(cuid())
+  predictionId String
+  factorName   String   // "rsi" | "macdHistogram" | "pe_ratio" | "revenue_growth" etc.
+  factorType   String   // "technical" | "fundamental" | "regime" | "event"
+  score        Float    // -100 to +100
+  weight       Float    // weight used at prediction time
+  contribution Float    // score * weight
+  signal       String   @default("NEUTRAL") // "BULLISH" | "BEARISH" | "NEUTRAL"
+  description  String   @default("")
+  createdAt    DateTime @default(now())
+
+  prediction   Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+
+  @@index([predictionId])
+  @@index([factorName, factorType])
+  @@index([factorType])
+}
+
+model ModelWeight {
+  id          String   @id @default(cuid())
+  factorName  String   // "rsi" | "macdHistogram" | "pe_ratio" etc.
+  factorType  String   // "technical" | "fundamental" | "regime"
+  weight      Float    // current weight (sum should = 1.0 per type)
+  sampleSize  Int      @default(0) // how many predictions contributed
+  accuracy    Float    @default(0) // observed accuracy % for this factor
+  streakCorrect Int   @default(0)
+  streakWrong   Int   @default(0)
+  minSample   Int      @default(30) // minimum sample before weight changes
+  updatedAt   DateTime @updatedAt
+
+  @@unique([factorName])
+}
+
+model MarketSnapshot {
+  id            String   @id @default(cuid())
+  predictionId  String   @unique
+  regime        String   @default("UNKNOWN") // "BULL" | "BEAR" | "VOLATILE" | "RANGING"
+  regimeConfidence Float @default(0)
+  spyPrice      Float?
+  spyChange5d   Float?
+  spyChange20d  Float?
+  vixLevel      Float?
+  marketBreadth  Float?   // % of stocks above 200-day MA
+  sectorAvg     Float?   // average prediction score for this sector
+  createdAt     DateTime @default(now())
+
+  prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+}
+
+model EventSnapshot {
+  id            String   @id @default(cuid())
+  ticker        String
+  eventType     String   // "earnings" | "fed" | "geopolitical" | "sector_news" | "none"
+  eventDate     DateTime?
+  daysUntil     Int?
+  severity      String   @default("LOW") // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  description   String   @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([ticker, eventType])
+  @@index([eventDate])
+}
+
+// ═══════ AI LEARNING SYSTEM ═══════
 
 model AILesson {
   id          String   @id @default(cuid())
   category    String   // "overconfidence" | "wrong_direction" | "timing" | "sector_bias" | "volatility" | "macro_miss"
-  ticker      String?  // specific ticker if applicable
+  ticker      String?
   sector      String?
-  mistake     String   // what went wrong
-  lesson      String   // what to do differently
-  severity    Int      // 1-5, how impactful the mistake was
-  timesApplied Int     @default(0) // how many times this lesson was referenced
+  mistake     String
+  lesson      String
+  severity    Int      // 1-5
+  timesApplied Int     @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -122,5 +212,14 @@ model AIStats {
   streakCorrect    Int     @default(0)
   streakWrong      Int     @default(0)
   lessonsLearned   Int     @default(0)
+  updatedAt        DateTime @updatedAt
+
+  // Per-horizon accuracy
+  accuracy1d       Float   @default(0)
+  accuracy5d       Float   @default(0)
+  accuracy20d      Float   @default(0)
+
+  // Calibrated confidence tracking
+  confidenceBuckets Json?   // {"50-60": {total:10, correct:6}, "60-70": {...}}
   updatedAt        DateTime @updatedAt
 }

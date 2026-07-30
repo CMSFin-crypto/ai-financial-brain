@@ -1,0 +1,741 @@
+     1→// ═══════════════════════════════════════════════════════════════
+     2→// REAL STOCK PRICES — Robust multi-source fetching
+     3→// Primary: Yahoo Finance v8 (multiple endpoints)
+     4→// Secondary: Yahoo Finance query2 (fallback host)
+     5→// Tertiary: Alpha Vantage (if API key configured)
+     6→// Strategy: Batched fetching with retry, longer timeouts
+     7→// ═══════════════════════════════════════════════════════════════
+     8→
+     9→import fs from 'fs';
+    10→import path from 'path';
+    11→
+    12→export interface LivePrice {
+    13→  price: number;
+    14→  change: number;     // % change
+    15→  previousClose: number;
+    16→  volume: number;
+    17→  source: 'alpha_vantage' | 'yahoo_finance';
+    18→  timestamp: string;
+    19→}
+    20→
+    21→// In-memory cache to avoid hitting API limits
+    22→const priceCache = new Map<string, { data: LivePrice; fetchedAt: number }>();
+    23→const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes cache
+    24→
+    25→// Historical chart data cache
+    26→const chartCache = new Map<string, { data: HistoricalDataPoint[]; fetchedAt: number }>();
+    27→const CHART_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+    28→
+    29→export interface HistoricalDataPoint {
+    30→  date: string;
+    31→  open: number;
+    32→  high: number;
+    33→  low: number;
+    34→  close: number;
+    35→  volume: number;
+    36→}
+    37→
+    38→const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY || '';
+    39→
+    40→// Yahoo Finance endpoints to try (in order)
+    41→const YAHOO_ENDPOINTS = [
+    42→  'https://query1.finance.yahoo.com',
+    43→  'https://query2.finance.yahoo.com',
+    44→  'https://query1.finance.yahoo.com', // Retry first endpoint
+    45→];
+    46→
+    47→// Common browser headers to avoid being blocked
+    48→const BROWSER_HEADERS = {
+    49→  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    50→  'Accept': 'application/json',
+    51→  'Accept-Language': 'en-US,en;q=0.9',
+    52→  'Accept-Encoding': 'gzip, deflate, br',
+    53→  'Connection': 'keep-alive',
+    54→  'Sec-Fetch-Dest': 'empty',
+    55→  'Sec-Fetch-Mode': 'cors',
+    56→  'Sec-Fetch-Site': 'cross-site',
+    57→};
+    58→
+    59→// ─── Yahoo Finance v8 chart API (PRIMARY — free, no key needed) ─────────────────
+    60→async function fetchFromYahooFinance(ticker: string, endpointIndex = 0): Promise<LivePrice | null> {
+    61→  const base = YAHOO_ENDPOINTS[endpointIndex] || YAHOO_ENDPOINTS[0];
+    62→  try {
+    63→    const url = `${base}/v8/finance/chart/${ticker}?range=1d&interval=1d&includePrePost=false`;
+    64→    const res = await fetch(url, {
+    65→      signal: AbortSignal.timeout(8000), // 8 second timeout
+    66→      headers: BROWSER_HEADERS,
+    67→    });
+    68→
+    69→    if (!res.ok) {
+    70→      console.log(`[PRICE] ${ticker}: Yahoo ${base} returned ${res.status}`);
+    71→      return null;
+    72→    }
+    73→
+    74→    const data = await res.json();
+    75→    const result = data?.chart?.result?.[0];
+    76→    if (!result) {
+    77→      console.log(`[PRICE] ${ticker}: Yahoo ${base} returned no chart data`);
+    78→      return null;
+    79→    }
+    80→
+    81→    const meta = result.meta;
+    82→    const price = meta?.regularMarketPrice;
+    83→    const prevClose = meta?.chartPreviousClose || meta?.previousClose;
+    84→    const volume = meta?.regularMarketVolume || 0;
+    85→
+    86→    if (!price || price <= 0) {
+    87→      console.log(`[PRICE] ${ticker}: Yahoo ${base} returned invalid price: ${price}`);
+    88→      return null;
+    89→    }
+    90→
+    91→    const change = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+    92→
+    93→    console.log(`[PRICE] ${ticker}: $${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%) [Yahoo ${endpointIndex + 1}]`);
+    94→    return {
+    95→      price: parseFloat(price.toFixed(2)),
+    96→      change: parseFloat(change.toFixed(2)),
+    97→      previousClose: prevClose ? parseFloat(prevClose.toFixed(2)) : price,
+    98→      volume,
+    99→      source: 'yahoo_finance',
+   100→      timestamp: new Date().toISOString(),
+   101→    };
+   102→  } catch (err: any) {
+   103→    const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+   104→    console.log(`[PRICE] ${ticker}: Yahoo ${base} failed: ${msg}`);
+   105→    return null;
+   106→  }
+   107→}
+   108→
+   109→// Try Yahoo with retry on different endpoint
+   110→async function fetchFromYahooWithRetry(ticker: string): Promise<LivePrice | null> {
+   111→  // Try endpoint 1 (query1)
+   112→  const result1 = await fetchFromYahooFinance(ticker, 0);
+   113→  if (result1) return result1;
+   114→
+   115→  // Try endpoint 2 (query2) 
+   116→  const result2 = await fetchFromYahooFinance(ticker, 1);
+   117→  if (result2) return result2;
+   118→
+   119→  return null;
+   120→}
+   121→
+   122→// ─── Alpha Vantage GLOBAL_QUOTE (SECONDARY — needs API key) ─────────────────
+   123→async function fetchFromAlphaVantage(ticker: string): Promise<LivePrice | null> {
+   124→  if (!ALPHA_VANTAGE_KEY) return null;
+   125→  try {
+   126→    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${ALPHA_VANTAGE_KEY}`;
+   127→    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+   128→    if (!res.ok) return null;
+   129→
+   130→    const data = await res.json();
+   131→    const quote = data?.['Global Quote'];
+   132→    if (!quote || !quote['05. price']) return null;
+   133→
+   134→    const price = parseFloat(quote['05. price']);
+   135→    const prevClose = parseFloat(quote['08. previous close']) || price;
+   136→    const changePercent = parseFloat(quote['10. change percent']?.replace('%', '')) || 0;
+   137→    const volume = parseInt(quote['06. volume']) || 0;
+   138→
+   139→    if (isNaN(price) || price <= 0) return null;
+   140→
+   141→    console.log(`[PRICE] ${ticker}: $${price.toFixed(2)} (Alpha Vantage)`);
+   142→    return {
+   143→      price,
+   144→      change: changePercent,
+   145→      previousClose: prevClose,
+   146→      volume,
+   147→      source: 'alpha_vantage',
+   148→      timestamp: new Date().toISOString(),
+   149→    };
+   150→  } catch {
+   151→    return null;
+   152→  }
+   153→}
+   154→
+   155→// ─── Batched fetching with delays to avoid rate limiting ─────────────────
+   156→
+   157→function chunkArray<T>(arr: T[], size: number): T[][] {
+   158→  const chunks: T[][] = [];
+   159→  for (let i = 0; i < arr.length; i += size) {
+   160→    chunks.push(arr.slice(i, i + size));
+   161→  }
+   162→  return chunks;
+   163→}
+   164→
+   165→function delay(ms: number): Promise<void> {
+   166→  return new Promise(resolve => setTimeout(resolve, ms));
+   167→}
+   168→
+   169→// ─── Public API ──────────────────────────────────────────────────
+   170→
+   171→/**
+   172→ * Fetch real-time price for a single ticker.
+   173→ * Tries Yahoo Finance (both endpoints), then Alpha Vantage.
+   174→ */
+   175→export async function getRealPrice(ticker: string): Promise<LivePrice | null> {
+   176→  const t = ticker.toUpperCase().trim();
+   177→
+   178→  // Check cache first
+   179→  const cached = priceCache.get(t);
+   180→  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+   181→    return cached.data;
+   182→  }
+   183→
+   184→  // Try Yahoo Finance (with retry on secondary endpoint)
+   185→  const yfPrice = await fetchFromYahooWithRetry(t);
+   186→  if (yfPrice) {
+   187→    priceCache.set(t, { data: yfPrice, fetchedAt: Date.now() });
+   188→    return yfPrice;
+   189→  }
+   190→
+   191→  // Try Alpha Vantage as fallback (if key is configured)
+   192→  const avPrice = await fetchFromAlphaVantage(t);
+   193→  if (avPrice) {
+   194→    priceCache.set(t, { data: avPrice, fetchedAt: Date.now() });
+   195→    return avPrice;
+   196→  }
+   197→
+   198→  console.warn(`[PRICE] Could not fetch real price for ${ticker} from any source`);
+   199→  return null;
+   200→}
+   201→
+   202→/**
+   203→ * Fetch real-time prices for multiple tickers (batched).
+   204→ * Processes in chunks of 6 with 800ms delay between chunks to avoid rate limiting.
+   205→ * Returns a map of ticker -> LivePrice (only successfully fetched).
+   206→ */
+   207→export async function getRealPrices(tickers: string[]): Promise<Record<string, LivePrice>> {
+   208→  const prices: Record<string, LivePrice> = {};
+   209→  const toFetch: string[] = [];
+   210→
+   211→  // First, check which tickers have valid cached data
+   212→  for (const ticker of tickers) {
+   213→    const t = ticker.toUpperCase().trim();
+   214→    const cached = priceCache.get(t);
+   215→    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+   216→      prices[t] = cached.data;
+   217→    } else {
+   218→      toFetch.push(t);
+   219→    }
+   220→  }
+   221→
+   222→  if (toFetch.length === 0) {
+   223→    console.log(`[PRICE] All ${tickers.length} prices from cache`);
+   224→    return prices;
+   225→  }
+   226→
+   227→  console.log(`[PRICE] Cache hits: ${Object.keys(prices).length}, fetching: ${toFetch.length} tickers...`);
+   228→
+   229→  // Process in batches of 6 with delay between batches
+   230→  const BATCH_SIZE = 6;
+   231→  const BATCH_DELAY_MS = 800;
+   232→  const chunks = chunkArray(toFetch, BATCH_SIZE);
+   233→
+   234→  for (let i = 0; i < chunks.length; i++) {
+   235→    const chunk = chunks[i];
+   236→
+   237→    // Fetch all tickers in this chunk in parallel
+   238→    const results = await Promise.allSettled(
+   239→      chunk.map(t => getRealPrice(t))
+   240→    );
+   241→
+   242→    // Collect results
+   243→    chunk.forEach((ticker, j) => {
+   244→      const result = results[j];
+   245→      if (result.status === 'fulfilled' && result.value) {
+   246→        prices[ticker] = result.value;
+   247→      }
+   248→    });
+   249→
+   250→    // Delay between batches (except after last batch)
+   251→    if (i < chunks.length - 1) {
+   252→      await delay(BATCH_DELAY_MS);
+   253→    }
+   254→  }
+   255→
+   256→  const successCount = Object.keys(prices).length;
+   257→  const failCount = toFetch.length - (successCount - tickers.length + toFetch.length);
+   258→  console.log(`[PRICE] Batch complete: ${successCount}/${tickers.length} prices obtained`);
+   259→
+   260→  return prices;
+   261→}
+   262→
+   263→/**
+   264→ * Build a price context string for AI prompts.
+   265→ */
+   266→export function buildPriceContext(prices: Record<string, LivePrice>): string {
+   267→  return Object.entries(prices)
+   268→    .map(([ticker, data]) => {
+   269→      const sign = data.change >= 0 ? '+' : '';
+   270→      return `${ticker}: $${data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${sign}${data.change.toFixed(2)}%)`;
+   271→    })
+   272→    .join('\n');
+   273→}
+   274→
+   275→/**
+   276→ * Fetch 30-day historical chart data from Yahoo Finance.
+   277→ * Returns real OHLCV data for charting.
+   278→ */
+   279→export async function fetchHistoricalData(ticker: string, range?: string): Promise<HistoricalDataPoint[] | null> {
+   280→  const t = ticker.toUpperCase().trim();
+   281→  const r = range || '6mo';
+   282→
+   283→  // Determine interval based on range
+   284→  const interval = r === '1d' ? '5m' : '1d';
+   285→
+   286→  // Check cache first (include range in cache key)
+   287→  const cacheKey = `${t}_${r}`;
+   288→  const cached = chartCache.get(cacheKey);
+   289→  if (cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
+   290→    return cached.data;
+   291→  }
+   292→
+   293→  // Try Yahoo Finance v8 chart API with specified range
+   294→  const endpoints = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
+   295→
+   296→  for (const base of endpoints) {
+   297→    try {
+   298→      const url = `${base}/v8/finance/chart/${t}?range=${r}&interval=${interval}&includePrePost=false`;
+   299→      const res = await fetch(url, {
+   300→        signal: AbortSignal.timeout(10000),
+   301→        headers: BROWSER_HEADERS,
+   302→      });
+   303→
+   304→      if (!res.ok) continue;
+   305→
+   306→      const data = await res.json();
+   307→      const result = data?.chart?.result?.[0];
+   308→      if (!result) continue;
+   309→
+   310→      const timestamps: number[] = result.timestamp || [];
+   311→      const quote = result.indicators?.quote?.[0];
+   312→      if (!quote || !timestamps.length) continue;
+   313→
+   314→      const points: HistoricalDataPoint[] = [];
+   315→      for (let i = 0; i < timestamps.length; i++) {
+   316→        const open = quote.open?.[i];
+   317→        const high = quote.high?.[i];
+   318→        const low = quote.low?.[i];
+   319→        const close = quote.close?.[i];
+   320→        const vol = quote.volume?.[i];
+   321→
+   322→        if (close && close > 0 && open && high && low) {
+   323→          const d = new Date(timestamps[i] * 1000);
+   324→          // Skip weekends
+   325→          if (d.getDay() === 0 || d.getDay() === 6) continue;
+   326→          points.push({
+   327→            date: d.toISOString().split('T')[0],
+   328→            open: +open.toFixed(2),
+   329→            high: +high.toFixed(2),
+   330→            low: +low.toFixed(2),
+   331→            close: +close.toFixed(2),
+   332→            volume: vol || 0,
+   333→          });
+   334→        }
+   335→      }
+   336→
+   337→      if (points.length >= 15) {
+   338→        console.log(`[CHART] ${t}: fetched ${points.length} days of real data from ${base}`);
+   339→        chartCache.set(cacheKey, { data: points, fetchedAt: Date.now() });
+   340→        return points;
+   341→      }
+   342→    } catch (err: any) {
+   343→      const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+   344→      console.log(`[CHART] ${t}: ${base} failed: ${msg}`);
+   345→      continue;
+   346→    }
+   347→  }
+   348→
+   349→  return null;
+   350→}
+   351→
+   352→// ═══════════════════════════════════════════════════════════════
+   353→// YAHOO FINANCE FUNDAMENTALS — Real financial data
+   354→// Uses quoteSummary endpoint for PE, PEG, Revenue Growth, EPS Growth,
+   355→// analyst targets, margins, etc.
+   356→// ═══════════════════════════════════════════════════════════════
+   357→
+   358→export interface YahooFundamentals {
+   359→  currentPrice: number;
+   360→  previousClose: number;
+   361→  // Valuation
+   362→  trailingPE: number;
+   363→  forwardPE: number;
+   364→  pegRatio: number;
+   365→  priceToBook: number;
+   366→  enterpriseToEbitda: number;
+   367→  // Margins (decimal, e.g. 0.46 = 46%)
+   368→  grossMargins: number;
+   369→  operatingMargins: number;
+   370→  profitMargins: number;
+   371→  // Growth
+   372→  revenueGrowth: number;      // e.g. 0.095 = 9.5%
+   373→  earningsGrowth: number;     // e.g. 0.142 = 14.2%
+   374→  revenueQuarterlyGrowth: number;
+   375→  earningsQuarterlyGrowth: number;
+   376→  // Analyst consensus
+   377→  targetMeanPrice: number;
+   378→  targetHighPrice: number;
+   379→  targetLowPrice: number;
+   380→  recommendationKey: string;   // 'buy', 'hold', 'sell', 'strong_buy'
+   381→  numberOfAnalystOpinions: number;
+   382→  // Other
+   383→  totalRevenue: number;
+   384→  ebitda: number;
+   385→  totalDebt: number;
+   386→  totalCash: number;
+   387→  debtToEquity: number;
+   388→  returnOnEquity: number;
+   389→  freeCashflow: number;
+   390→  epsForward: number;
+   391→  source: string;
+   392→  fetchedAt: string;
+   393→}
+   394→
+   395→// Cache fundamentals for 15 minutes (longer than prices)
+   396→const fundCache = new Map<string, { data: YahooFundamentals; fetchedAt: number }>();
+   397→const FUND_CACHE_TTL_MS = 15 * 60 * 1000;
+   398→
+   399→function extractNum(val: unknown): number {
+   400→  if (val === null || val === undefined) return 0;
+   401→  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+   402→  const n = parseFloat(String(val).replace(/[^0-9.\-]/g, ''));
+   403→  return isNaN(n) ? 0 : n;
+   404→}
+   405→
+   406→async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<YahooFundamentals | null> {
+   407→  const base = YAHOO_ENDPOINTS[endpointIndex] || YAHOO_ENDPOINTS[0];
+   408→  const modules = 'financialData,defaultKeyStatistics,earningsTrend,earningsHistory';
+   409→  try {
+   410→    const url = `${base}/v10/finance/quoteSummary/${ticker}?modules=${modules}`;
+   411→    const res = await fetch(url, {
+   412→      signal: AbortSignal.timeout(10000),
+   413→      headers: BROWSER_HEADERS,
+   414→    });
+   415→
+   416→    if (!res.ok) {
+   417→      console.log(`[FUND] ${ticker}: quoteSummary ${base} returned ${res.status}`);
+   418→      return null;
+   419→    }
+   420→
+   421→    const data = await res.json();
+   422→    const body = data?.quoteSummary?.result?.[0];
+   423→    if (!body) {
+   424→      console.log(`[FUND] ${ticker}: No quoteSummary result from ${base}`);
+   425→      return null;
+   426→    }
+   427→
+   428→    const fd = body.financialData || {};
+   429→    const dks = body.defaultKeyStatistics || {};
+   430→    const et = body.earningsTrend || {};
+   431→    const eh = body.earningsHistory || {};
+   432→
+   433→    // Extract earnings trend for forward EPS
+   434→    const trendData = et.trend || [];
+   435→    let epsForward = extractNum(fd.forwardEps);
+   436→    if (!epsForward && trendData.length > 0) {
+   437→      epsForward = extractNum(trendData[0]?.earningsEstimate?.avgForecast);
+   438→    }
+   439→
+   440→    // Extract quarterly growth from earnings history
+   441→    const historyData = eh.history || [];
+   442→    let earningsQuarterlyGrowth = extractNum(fd.earningsQuarterlyGrowth);
+   443→    let revenueQuarterlyGrowth = extractNum(fd.revenueQuarterlyGrowth);
+   444→    if (!earningsQuarterlyGrowth && historyData.length > 0) {
+   445→      const latest = historyData[0];
+   446→      const epsSurprise = extractNum(latest?.epsSurprisePercent);
+   447→      if (epsSurprise) earningsQuarterlyGrowth = epsSurprise;
+   448→    }
+   449→
+   450→    // Revenue growth quarterly
+   451→    if (!revenueQuarterlyGrowth && historyData.length > 0) {
+   452→      const revSurprise = extractNum(historyData[0]?.revenueSurprisePercent);
+   453→      if (revSurprise) revenueQuarterlyGrowth = revSurprise;
+   454→    }
+   455→
+   456→    // Calculate upside from target
+   457→    const currentPrice = extractNum(fd.currentPrice?.raw);
+   458→    const targetMean = extractNum(fd.targetMeanPrice?.raw);
+   459→    const upside = currentPrice > 0 && targetMean > 0
+   460→      ? ((targetMean - currentPrice) / currentPrice) * 100
+   461→      : 0;
+   462→
+   463→    const result: YahooFundamentals = {
+   464→      currentPrice,
+   465→      previousClose: extractNum(fd.previousClose?.raw),
+   466→      trailingPE: extractNum(fd.trailingPE?.raw),
+   467→      forwardPE: extractNum(fd.forwardPE?.raw),
+   468→      pegRatio: extractNum(dks.pegRatio?.raw),
+   469→      priceToBook: extractNum(fd.priceToBook?.raw),
+   470→      enterpriseToEbitda: extractNum(dks.enterpriseToEbitda?.raw),
+   471→      grossMargins: extractNum(fd.grossMargins?.raw),
+   472→      operatingMargins: extractNum(fd.operatingMargins?.raw),
+   473→      profitMargins: extractNum(fd.profitMargins?.raw),
+   474→      revenueGrowth: extractNum(fd.revenueGrowth?.raw),
+   475→      earningsGrowth: extractNum(fd.earningsGrowth?.raw),
+   476→      revenueQuarterlyGrowth,
+   477→      earningsQuarterlyGrowth,
+   478→      targetMeanPrice: targetMean,
+   479→      targetHighPrice: extractNum(fd.targetHighPrice?.raw),
+   480→      targetLowPrice: extractNum(fd.targetLowPrice?.raw),
+   481→      recommendationKey: extractNum(fd.recommendationKey) ? String(fd.recommendationKey) : '',
+   482→      numberOfAnalystOpinions: extractNum(fd.numberOfAnalystOpinions?.raw),
+   483→      totalRevenue: extractNum(fd.totalRevenue?.raw),
+   484→      ebitda: extractNum(fd.ebitda?.raw),
+   485→      totalDebt: extractNum(fd.totalDebt?.raw),
+   486→      totalCash: extractNum(fd.totalCash?.raw),
+   487→      debtToEquity: extractNum(fd.debtToEquity?.raw),
+   488→      returnOnEquity: extractNum(fd.returnOnEquity?.raw),
+   489→      freeCashflow: extractNum(fd.freeCashflow?.raw),
+   490→      epsForward,
+   491→      source: `yahoo_finance (${base})`,
+   492→      fetchedAt: new Date().toISOString(),
+   493→    };
+   494→
+   495→    console.log(`[FUND] ${ticker}: PE=${result.trailingPE} fwdPE=${result.forwardPE} PEG=${result.pegRatio} RevGr=${(result.revenueGrowth*100).toFixed(1)}% EPSGr=${(result.earningsGrowth*100).toFixed(1)}% Target=$${result.targetMeanPrice} Upside=${upside.toFixed(1)}%`);
+   496→    return result;
+   497→  } catch (err: any) {
+   498→    const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+   499→    console.log(`[FUND] ${ticker}: quoteSummary ${base} failed: ${msg}`);
+   500→    return null;
+   501→  }
+   502→}
+   503→
+   504→/**
+   505→ * Fetch real fundamental data for a single ticker from Yahoo Finance.
+   506→ * Returns null if all endpoints fail.
+   507→ */
+   508→export async function getRealFundamentals(ticker: string): Promise<YahooFundamentals | null> {
+   509→  const t = ticker.toUpperCase().trim();
+   510→
+   511→  // Check cache first
+   512→  const cached = fundCache.get(t);
+   513→  if (cached && Date.now() - cached.fetchedAt < FUND_CACHE_TTL_MS) {
+   514→    return cached.data;
+   515→  }
+   516→
+   517→  // Try endpoint 1
+   518→  const r1 = await fetchQuoteSummary(t, 0);
+   519→  if (r1 && r1.currentPrice > 0) {
+   520→    fundCache.set(t, { data: r1, fetchedAt: Date.now() });
+   521→    return r1;
+   522→  }
+   523→
+   524→  // Try endpoint 2
+   525→  const r2 = await fetchQuoteSummary(t, 1);
+   526→  if (r2 && r2.currentPrice > 0) {
+   527→    fundCache.set(t, { data: r2, fetchedAt: Date.now() });
+   528→    return r2;
+   529→  }
+   530→
+   531→  console.warn(`[FUND] Could not fetch fundamentals for ${ticker}`);
+   532→  return null;
+   533→}
+   534→
+   535→/**
+   536→ * Fetch real fundamental data for multiple tickers (batched).
+   537→ * Returns a map of ticker -> YahooFundamentals (only successfully fetched).
+   538→ * Falls back to local JSON database when Yahoo v10/quoteSummary returns 401.
+   539→ */
+   540→export async function getRealFundamentalsBatch(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
+   541→  const results: Record<string, YahooFundamentals> = {};
+   542→  const toFetch: string[] = [];
+   543→
+   544→  for (const ticker of tickers) {
+   545→    const t = ticker.toUpperCase().trim();
+   546→    const cached = fundCache.get(t);
+   547→    if (cached && Date.now() - cached.fetchedAt < FUND_CACHE_TTL_MS) {
+   548→      results[t] = cached.data;
+   549→    } else {
+   550→      toFetch.push(t);
+   551→    }
+   552→  }
+   553→
+   554→  if (toFetch.length === 0) {
+   555→    console.log(`[FUND] All ${tickers.length} fundamentals from cache`);
+   556→    return results;
+   557→  }
+   558→
+   559→  console.log(`[FUND] Cache hits: ${Object.keys(results).length}, fetching: ${toFetch.length} fundamentals...`);
+   560→
+   561→  // Try Yahoo v10/quoteSummary first (may return 401 now)
+   562→  const BATCH_SIZE = 3;
+   563→  const BATCH_DELAY_MS = 1200;
+   564→  const chunks = chunkArray(toFetch, BATCH_SIZE);
+   565→
+   566→  for (let i = 0; i < chunks.length; i++) {
+   567→    const chunk = chunks[i];
+   568→    const fetchResults = await Promise.allSettled(
+   569→      chunk.map(t => getRealFundamentals(t))
+   570→    );
+   571→
+   572→    chunk.forEach((ticker, j) => {
+   573→      const result = fetchResults[j];
+   574→      if (result.status === 'fulfilled' && result.value) {
+   575→        results[ticker] = result.value;
+   576→      }
+   577→    });
+   578→
+   579→    if (i < chunks.length - 1) {
+   580→      await delay(BATCH_DELAY_MS);
+   581→    }
+   582→  }
+   583→
+   584→  // Fall back to local JSON for any stocks that failed from Yahoo
+   585→  const missing = toFetch.filter(t => !results[t]);
+   586→  if (missing.length > 0) {
+   587→    console.log(`[FUND] ${missing.length} stocks missing from Yahoo, falling back to local JSON...`);
+   588→    const localData = loadLocalFundamentals();
+   589→    for (const t of missing) {
+   590→      const d = localData[t];
+   591→      if (!d) continue;
+   592→      const fund = localToYahooFundamentals(t, d);
+   593→      if (!fund) continue;
+   594→      results[t] = fund;
+   595→      fundCache.set(t, { data: fund, fetchedAt: Date.now() });
+   596→    }
+   597→  }
+   598→
+   599→  console.log(`[FUND] Batch complete: ${Object.keys(results).length}/${tickers.length} fundamentals obtained`);
+   600→  return results;
+   601→}
+   602→
+   603→// ═══════════════════════════════════════════════════════════════
+   604→// LOCAL FUNDAMENTALS DATABASE — Fast fundamentals from JSON file
+   605→// Replaces Yahoo v7/finance/quote which now returns 401 Unauthorized
+   606→// Returns: PE, PEG, Revenue Growth, EPS Growth, Analyst Targets, etc.
+   607→// ═══════════════════════════════════════════════════════════════
+   608→
+   609→const batchQuoteCache = new Map<string, { data: Record<string, YahooFundamentals>; fetchedAt: number }>();
+   610→const BATCH_QUOTE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+   611→
+   612→// Helper to parse percentage strings like "85.2%" to decimals like 0.852
+   613→function parsePercent(val: unknown): number {
+   614→  if (val === null || val === undefined || val === '') return 0;
+   615→  const str = String(val).trim();
+   616→  if (str === 'N/A') return 0;
+   617→  const num = parseFloat(str.replace('%', '').replace(',', ''));
+   618→  return isNaN(num) ? 0 : num / 100;
+   619→}
+   620→
+   621→// Helper to parse numeric strings like "$298.42" or "22.42" to numbers
+   622→function parseNum(val: unknown): number {
+   623→  if (val === null || val === undefined || val === '') return 0;
+   624→  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+   625→  const str = String(val).replace(/[^0-9.\-]/g, '');
+   626→  const num = parseFloat(str);
+   627→  return isNaN(num) ? 0 : num;
+   628→}
+   629→
+   630→// Load local JSON fundamentals database
+   631→function loadLocalFundamentals(): Record<string, any> {
+   632→  try {
+   633→    const filePath = path.join(process.cwd(), 'src', 'lib', 'stock-fundamentals.json');
+   634→    const raw = fs.readFileSync(filePath, 'utf-8');
+   635→    return JSON.parse(raw);
+   636→  } catch (err: any) {
+   637→    console.error(`[LOCAL-FUND] Failed to load stock-fundamentals.json: ${err?.message}`);
+   638→    return {};
+   639→   }
+   640→}
+   641→
+   642→// Convert local JSON data to YahooFundamentals interface format
+   643→function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFundamentals | null {
+   644→  const price = typeof d.price === 'number' ? d.price : parseFloat(String(d.price));
+   645→  if (!price || price <= 0) return null;
+   646→
+   647→  const targetMean = parseNum(d.targetPrice);
+   648→  const targetHigh = parseNum(d.highTarget);
+   649→  const targetLow = parseNum(d.lowTarget);
+   650→
+   651→  const result: YahooFundamentals = {
+   652→    currentPrice: price,
+   653→    previousClose: price - (typeof d.change === 'number' ? d.change : 0),
+   654→    trailingPE: parseNum(d.pe),
+   655→    forwardPE: parseNum(d.fwdPE),
+   656→    pegRatio: parseNum(d.peg),
+   657→    priceToBook: parseNum(d.pb),
+   658→    enterpriseToEbitda: parseNum(d.evEbitda),
+   659→    grossMargins: parsePercent(d.grossMargin),
+   660→    operatingMargins: parsePercent(d.opMargin),
+   661→    profitMargins: parsePercent(d.netMargin),
+   662→    revenueGrowth: parsePercent(d.revGrowth),
+   663→    earningsGrowth: parsePercent(d.epsGrowth),
+   664→    revenueQuarterlyGrowth: parsePercent(d.qRevGrowth),
+   665→    earningsQuarterlyGrowth: parsePercent(d.qEpsGrowth),
+   666→    targetMeanPrice: targetMean,
+   667→    targetHighPrice: targetHigh,
+   668→    targetLowPrice: targetLow,
+   669→    recommendationKey: d.recommendation ? String(d.recommendation) : '',
+   670→    numberOfAnalystOpinions: parseNum(d.analysts),
+   671→    totalRevenue: 0, // not in local JSON
+   672→    ebitda: 0,     // not in local JSON
+   673→    totalDebt: 0,   // not in local JSON
+   674→    totalCash: 0,   // not in local JSON
+   675→    debtToEquity: parseNum(d.debtEq),
+   676→    returnOnEquity: parsePercent(d.roe),
+   677→    freeCashflow: 0, // not in local JSON
+   678→    epsForward: parseNum(d.fwdEps),
+   679→    source: 'local_json',
+   680→    fetchedAt: new Date().toISOString(),
+   681→  };
+   682→
+   683→  return result;
+   684→}
+   685→
+   686→export async function getBatchQuotesFast(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
+   687→  // Check cache first
+   688→  const cacheKey = tickers.sort().join(',');
+   689→  const cached = batchQuoteCache.get(cacheKey);
+   690→  if (cached && Date.now() - cached.fetchedAt < BATCH_QUOTE_CACHE_TTL) {
+   691→    return cached.data;
+   692→  }
+   693→
+   694→  const results: Record<string, YahooFundamentals> = {};
+   695→  const localData = loadLocalFundamentals();
+   696→
+   697→  for (const ticker of tickers) {
+   698→    const t = ticker.toUpperCase().trim();
+   699→    const d = localData[t];
+   700→    if (!d) continue;
+   701→
+   702→    const fund = localToYahooFundamentals(t, d);
+   703→    if (!fund) continue;
+   704→
+   705→    results[t] = fund;
+   706→
+   707→    // Log per-stock info
+   708→    if (fund.targetMeanPrice > 0 && fund.currentPrice > 0) {
+   709→      const upside = ((fund.targetMeanPrice - fund.currentPrice) / fund.currentPrice * 100).toFixed(1);
+   710→      console.log(`[BATCH-QUOTE] ${t}: $${fund.currentPrice.toFixed(2)} target=$${fund.targetMeanPrice.toFixed(2)} upside=${upside}% PE=${fund.trailingPE} RevGr=${(fund.revenueGrowth * 100).toFixed(1)}%`);
+   711→    } else {
+   712→      console.log(`[BATCH-QUOTE] ${t}: $${fund.currentPrice.toFixed(2)} NO TARGET PE=${fund.trailingPE} RevGr=${(fund.revenueGrowth * 100).toFixed(1)}%`);
+   713→    }
+   714→
+   715→    // Also store in individual fund cache
+   716→    fundCache.set(t, { data: fund, fetchedAt: Date.now() });
+   717→  }
+   718→
+   719→  // Cache the batch result
+   720→  batchQuoteCache.set(cacheKey, { data: results, fetchedAt: Date.now() });
+   721→  console.log(`[BATCH-QUOTE] Total: ${Object.keys(results).length}/${tickers.length} fundamentals obtained (local JSON)`);
+   722→
+   723→  return results;
+   724→}
+   725→
+   726→/**
+   727→ * Inject real price data into an AI user message prompt.
+   728→ * Appends a section with real prices so the AI uses them instead of hallucinating.
+   729→ */
+   730→export function injectPricesIntoPrompt(userMessage: string, prices: Record<string, LivePrice>): string {
+   731→  if (Object.keys(prices).length === 0) return userMessage;
+   732→
+   733→  const priceSection = `\n\n═══ REAL-TIME STOCK PRICES (verified from live market data) ═══\n` +
+   734→    `CRITICAL RULE: You MUST use these EXACT prices. Do NOT make up, guess, or estimate any price.\n` +
+   735→    `All entry zones, stop losses, take profits, support/resistance levels, and currentPrice MUST be based on these real prices.\n\n` +
+   736→    buildPriceContext(prices) +
+   737→    `\n\nVIOLATION WARNING: If you output any price that contradicts these real prices, your analysis will be considered INVALID.`;
+   738→
+   739→  return userMessage + priceSection;
+   740→}
+   741→
