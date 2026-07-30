@@ -443,12 +443,12 @@ function recalculateIndicatorAccuracies(): void {
   ];
 
   for (const ind of techIndicators) {
-    const relevantRecords = evaluated.filter(r => r.technicalScores[ind] !== undefined && r.perIndicatorCorrect[ind] !== undefined);
+    const relevantRecords = evaluated.filter(r => r.technicalScores[ind] !== undefined && r.perIndicatorCorrect?.[ind] !== undefined);
     if (relevantRecords.length < 3) continue;
 
-    const correctCount = relevantRecords.filter(r => r.perIndicatorCorrect![ind]).length;
-    const correctRecords = relevantRecords.filter(r => r.perIndicatorCorrect![ind]);
-    const wrongRecords = relevantRecords.filter(r => !r.perIndicatorCorrect![ind]);
+    const correctCount = relevantRecords.filter(r => r.perIndicatorCorrect?.[ind]).length;
+    const correctRecords = relevantRecords.filter(r => r.perIndicatorCorrect?.[ind]);
+    const wrongRecords = relevantRecords.filter(r => !r.perIndicatorCorrect?.[ind]);
 
     const avgScoreCorrect = correctRecords.length > 0
       ? correctRecords.reduce((s, r) => s + (r.technicalScores[ind] || 0), 0) / correctRecords.length
@@ -474,12 +474,12 @@ function recalculateIndicatorAccuracies(): void {
   const fundFactors = ['valuation', 'growth', 'profitability', 'financialHealth', 'analystConsensus'];
   for (const factor of fundFactors) {
     const key = `fund_${factor}`;
-    const relevantRecords = evaluated.filter(r => r.fundamentalScores?.[factor] !== undefined && r.perIndicatorCorrect[key] !== undefined);
+    const relevantRecords = evaluated.filter(r => r.fundamentalScores?.[factor] !== undefined && r.perIndicatorCorrect?.[key] !== undefined);
     if (relevantRecords.length < 3) continue;
 
-    const correctCount = relevantRecords.filter(r => r.perIndicatorCorrect![key]).length;
-    const correctRecords = relevantRecords.filter(r => r.perIndicatorCorrect![key]);
-    const wrongRecords = relevantRecords.filter(r => !r.perIndicatorCorrect![key]);
+    const correctCount = relevantRecords.filter(r => r.perIndicatorCorrect?.[key]).length;
+    const correctRecords = relevantRecords.filter(r => r.perIndicatorCorrect?.[key]);
+    const wrongRecords = relevantRecords.filter(r => !r.perIndicatorCorrect?.[key]);
 
     const avgScoreCorrect = correctRecords.length > 0
       ? correctRecords.reduce((s, r) => s + (r.fundamentalScores?.[factor] || 0), 0) / correctRecords.length

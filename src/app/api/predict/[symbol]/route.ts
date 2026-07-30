@@ -267,6 +267,8 @@ export async function GET(
 
     // 14. Build response
     const elapsedMs = Date.now() - startTime;
+    console.log(`[PREDICT] ${ticker}: direction=${direction} confidence=${calibratedConfidence} combinedScore=${combinedScore} gate=${gateResult.status} regime=${regime.regime} techScore=${techScore} fundScore=${fundamentalScore} rsScore=${rsScore} factors=${allFactors.length} time=${elapsedMs}ms`);
+
     const response = {
       ...baseResult,
       score: combinedScore,

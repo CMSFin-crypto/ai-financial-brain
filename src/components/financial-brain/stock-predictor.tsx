@@ -162,6 +162,31 @@ interface HybridScanResult {
   topShorts: HybridPredictionResult[];
   mostConfident: HybridPredictionResult[];
   allResults: HybridPredictionResult[];
+  learning?: {
+    totalPredictions: number;
+    totalRecorded: number;
+    totalEvaluated: number;
+    evaluatedPredictions: number;
+    correctPredictions: number;
+    avgAccuracy: number;
+    overallAccuracy: number;
+    lessonsCount: number;
+    bestSector: string | null;
+    worstSector: string | null;
+    streakCorrect: number;
+    streakWrong: number;
+    lessonsLearned: number;
+    recentAccuracy: number;
+    improvement: number;
+    evaluationResult?: {
+      evaluated: number;
+      correct: number;
+      wrong: number;
+      accuracy: number;
+      newLessons: number;
+      details: Array<{ ticker: string; horizonDays: number; predictedDir: string; actualPrice: number; returnPct: number; wasCorrect: boolean }>;
+    };
+  };
 }
 
 // ─── Helper Functions ───────────────────────────────────────
@@ -1673,7 +1698,7 @@ export function StockPredictor() {
                         )}
 
                         {/* No data yet message */}
-                        {hybridResult.learning.totalEvaluated < 5 && (
+                        {(!hybridResult.learning || hybridResult.learning.totalEvaluated < 5) && (
                           <div className="text-center py-4">
                             <BookOpen className="w-6 h-6 text-blue-400/40 mx-auto mb-2" />
                             <p className="text-xs text-muted-foreground">
@@ -1687,8 +1712,12 @@ export function StockPredictor() {
                         )}
 
                         {/* Recent evaluated predictions */}
-                        {hybridResult.learning.totalEvaluated >= 5 && (
-                          <LearningPreview learning={hybridResult.learning} />
+                        {hybridResult.learning && hybridResult.learning.totalEvaluated >= 5 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Saktesia: {hybridResult.learning.avgAccuracy.toFixed(1)}% ({hybridResult.learning.correctPredictions}/{hybridResult.learning.evaluatedPredictions})
+                            </p>
+                          </div>
                         )}
                       </CardContent>
                     </Card>

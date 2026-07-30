@@ -576,7 +576,7 @@ export function TechnicalAnalysis() {
                     </div>
                   </div>
                   <Badge variant="secondary" className="text-[10px] capitalize">
-                    {analysis.indicators.volume.trend}
+                    {(analysis.indicators.volume as any)?.trend ?? 'N/A'}
                   </Badge>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     {analysis.indicators.volume.interpretation}

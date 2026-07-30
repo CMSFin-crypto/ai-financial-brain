@@ -1333,7 +1333,10 @@ export function predictStock(symbol: string, data: PricePoint[]): PredictionResu
     combinedScore: 0,
   });
 
-  if (!data || data.length < MIN_DATA_POINTS) return emptyResult();
+  if (!data || data.length < MIN_DATA_POINTS) {
+    console.warn(`[PREDICT-ENGINE] ${symbol}: Insufficient data (${data?.length ?? 0} < ${MIN_DATA_POINTS})`);
+    return emptyResult();
+  }
 
   // ---------- Extract price arrays ----------
   const closes = data.map((d) => d.close);
@@ -1343,7 +1346,12 @@ export function predictStock(symbol: string, data: PricePoint[]): PredictionResu
   const opens = data.map((d) => d.open);
 
   // Validate
-  if (closes.some((c) => c <= 0) || volumes.some((v) => v < 0)) return emptyResult();
+  const zeroCloseCount = closes.filter(c => c <= 0).length;
+  const negVolCount = volumes.filter(v => v < 0).length;
+  if (zeroCloseCount > 0 || negVolCount > 0) {
+    console.warn(`[PREDICT-ENGINE] ${symbol}: Invalid data — zeroClose: ${zeroCloseCount}, negVol: ${negVolCount}, totalPoints: ${data.length}`);
+    return emptyResult();
+  }
 
   // ---------- Calculate raw indicators ----------
   const rsiValues = calculateRSI(closes, 14);
@@ -1375,6 +1383,11 @@ export function predictStock(symbol: string, data: PricePoint[]): PredictionResu
   scores.divergence = scoreDivergence(closes, rsiValues);
   scores.vwap = scoreVWAP(closes, highs, lows, volumes);
   scores.pattern = scorePattern(opens, highs, lows, closes, volumes);
+
+  // Log indicator health for debugging
+  const scoreEntries = Object.entries(scores);
+  const nonZeroScores = scoreEntries.filter(([, s]) => s.score !== 0);
+  console.log(`[PREDICT-ENGINE] ${symbol}: ${data.length} points, ${nonZeroScores.length}/${scoreEntries.length} indicators non-zero, lastClose=${closes[closes.length - 1]?.toFixed(2)}`);
 
   // ---------- Weighted final score ----------
   const weights = getWeights();

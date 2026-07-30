@@ -103,8 +103,7 @@ export function Watchlist() {
         icon: icon || '/brain-logo.png',
         badge: '/brain-logo.png',
         tag: 'ai-brain-alert',
-        renotify: true,
-      });
+      } as NotificationOptions);
     } catch {
       // Notification failed silently
     }

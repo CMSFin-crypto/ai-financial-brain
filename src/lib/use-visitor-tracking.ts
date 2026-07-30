@@ -7,7 +7,10 @@ function generateFingerprint(): string {
   try {
     const ua = navigator.userAgent || '';
     const lang = navigator.language || '';
-    const screen = `${screen.width}x${screen.height}x${screen.colorDepth}`;
+    const sw = screen?.width ?? 0;
+    const sh = screen?.height ?? 0;
+    const sd = screen?.colorDepth ?? 0;
+    const screenInfo = `${sw}x${sh}x${sd}`;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
     const platform = navigator.platform || '';
     // Canvas fingerprint
@@ -78,9 +81,9 @@ export function useVisitorTracking() {
       fingerprint,
       page: window.location.pathname + window.location.search || '/',
       referrer: document.referrer || '',
-      screenWidth: screen.width,
-      screenHeight: screen.height,
-      colorDepth: screen.colorDepth,
+      screenWidth: window.screen?.width ?? 0,
+      screenHeight: window.screen?.height ?? 0,
+      colorDepth: window.screen?.colorDepth ?? 0,
       pixelRatio: window.devicePixelRatio || 1,
       language: navigator.language || '',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
