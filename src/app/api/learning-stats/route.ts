@@ -1,22 +1,28 @@
-import { NextResponse } from 'next/server';
-import { getLearningDashboard, checkPredictionOutcomes } from '@/lib/learning-engine';
+import { NextRequest, NextResponse } from 'next/server';
+import { checkPredictionOutcomes, getLearningStats, getRecentPredictions, getRecentLessons } from '@/lib/learning-engine';
 
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000');
-    const check = searchParams?.get('check') === 'true';
+    const { searchParams } = new URL(request.url);
+    const check = searchParams.get('check') === 'true';
 
-    let checkResult: { checked: number; updated: number; errors: string[] } | null = null;
+    let checkResult: { evaluated: number; correct: number; wrong: number; weightsUpdated: number } | null = null;
     if (check) {
       checkResult = await checkPredictionOutcomes();
     }
 
-    const dashboard = getLearningDashboard();
+    const [stats, recentPreds, lessons] = await Promise.all([
+      getLearningStats(),
+      getRecentPredictions(20),
+      getRecentLessons(10),
+    ]);
 
     return NextResponse.json({
-      ...dashboard,
+      ...stats,
+      recentPredictions: recentPreds,
+      recentLessons: lessons,
       checkResult,
     });
   } catch (error: unknown) {

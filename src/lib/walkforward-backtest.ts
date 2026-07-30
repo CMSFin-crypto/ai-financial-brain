@@ -196,16 +196,14 @@ export async function runWalkForwardBacktest(
         noTrade: false,
       });
 
-      if (!wasCorrect) {
-        cumulativeReturn += netReturn;
-        totalCosts += tradeCost;
-        returns.push(netReturn);
+      cumulativeReturn += netReturn;
+      totalCosts += tradeCost;
+      returns.push(netReturn);
 
-        // Drawdown tracking
-        if (cumulativeReturn > peakCumReturn) peakCumReturn = cumulativeReturn;
-        const dd = peakCumReturn - cumulativeReturn;
-        if (dd > maxDD) maxDD = dd;
-      }
+      // Drawdown tracking
+      if (cumulativeReturn > peakCumReturn) peakCumReturn = cumulativeReturn;
+      const dd = peakCumReturn - cumulativeReturn;
+      if (dd > maxDD) maxDD = dd;
 
       startIdx += cfg.stepSize;
     }

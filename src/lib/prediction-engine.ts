@@ -100,15 +100,6 @@ const DEFAULT_WEIGHTS: Record<string, number> = {
 
 /** Get weights — uses learning weights if available, otherwise defaults */
 function getWeights(): Record<string, number> {
-  try {
-    const { loadLearningStats } = require('./prediction-history');
-    const stats = loadLearningStats();
-    if (stats && stats.learningWeights && Object.keys(stats.learningWeights).length > 0) {
-      return stats.learningWeights;
-    }
-  } catch {
-    // prediction-history not available (e.g., in test or missing data dir)
-  }
   return DEFAULT_WEIGHTS;
 }
 

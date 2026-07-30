@@ -1,47 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadHistory } from '@/lib/prediction-history';
+import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get('symbol');
+    const limit = parseInt(searchParams.get('limit') || '50');
 
     if (symbol) {
-      const history = loadHistory();
-      const symbolPreds = history.filter(p => p.symbol === symbol.toUpperCase());
-      const checked = symbolPreds.filter(p => p.checkedAt);
-      const dirCorrect = checked.filter(p => {
-        const actualUp = (p.priceChange5Days ?? p.priceChange1Day ?? 0) > 0;
-        return (p.predictedScore > 0) === actualUp;
-      }).length;
-      return NextResponse.json({
-        total: symbolPreds.length,
-        checked: checked.length,
-        directionAccuracy: checked.length > 0 ? Math.round((dirCorrect / checked.length) * 100) : 0,
-        recentPredictions: symbolPreds.slice(-10),
+      const preds = await prisma.prediction.findMany({
+        where: { ticker: symbol.toUpperCase() },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          ticker: true, signal: true, confidence: true,
+          combinedScore: true, horizonDays: true, predictedDir: true,
+          entryPrice: true, actualPrice: true, returnPct: true,
+          benchmarkReturnPct: true, wasCorrect: true, gateStatus: true,
+          createdAt: true, dueAt: true, evaluatedAt: true,
+        },
       });
+      return NextResponse.json({ total: preds.length, predictions: preds });
     }
 
-    const history = loadHistory();
-    const recent = history.slice(-50).reverse();
-
-    return NextResponse.json({
-      total: history.length,
-      recent: recent.map(p => ({
-        symbol: p.symbol,
-        timestamp: p.timestamp,
-        predictedScore: p.predictedScore,
-        predictedDirection: p.predictedDirection,
-        closePriceAtPrediction: p.closePriceAtPrediction,
-        actualPriceAfter1Day: p.actualPriceAfter1Day,
-        actualPriceAfter5Days: p.actualPriceAfter5Days,
-        shortTermCorrect: p.shortTermCorrect,
-        mediumTermCorrect: p.mediumTermCorrect,
-        priceChange1Day: p.priceChange1Day,
-        priceChange5Days: p.priceChange5Days,
-        checkedAt: p.checkedAt,
-      })),
+    const preds = await prisma.prediction.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        ticker: true, signal: true, confidence: true,
+        combinedScore: true, horizonDays: true, predictedDir: true,
+        entryPrice: true, actualPrice: true, returnPct: true,
+        benchmarkReturnPct: true, wasCorrect: true, gateStatus: true,
+        createdAt: true, dueAt: true, evaluatedAt: true,
+      },
     });
+
+    return NextResponse.json({ total: preds.length, predictions: preds });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
     console.error('[PREDICTION-HISTORY] Error:', message);

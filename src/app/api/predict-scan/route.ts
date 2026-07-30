@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { fetchHistoricalData, getBatchQuotesFast } from '@/lib/alpha-vantage';
-import { predictStock, predictStockEnhanced, rankStocks } from '@/lib/prediction-engine';
+import { predictStock, rankStocks } from '@/lib/prediction-engine';
 import { analyzeFundamentals } from '@/lib/fundamental-analysis';
-import { addPrediction, loadLearningStats } from '@/lib/prediction-history';
+import { loadLearningStats, savePredictionToDB } from '@/lib/prediction-history';
 import type { PredictionResult } from '@/lib/prediction-engine';
 
-export const maxDuration = 300; // 5 minutes for scanning all stocks
+export const maxDuration = 300;
 
-// All 116 tickers from stock-fundamentals.json
 const ALL_TICKERS = [
   'AAPL','MSFT','GOOGL','AMZN','NVDA','META','TSLA','BRK-B','JPM','V',
   'UNH','JNJ','WMT','PG','MA','HD','COST','ABBV','AVGO','PEP',
@@ -24,7 +23,6 @@ const ALL_TICKERS = [
   'TGT','TJX','VRT','VST','WDC','WFC','WFRD',
 ];
 
-// Remove duplicates
 const UNIQUE_TICKERS = [...new Set(ALL_TICKERS)];
 
 export async function GET() {
@@ -34,15 +32,22 @@ export async function GET() {
     let fetched = 0;
     let failed = 0;
 
-    // Load learning stats once
-    const learningStats = loadLearningStats();
+    // Load learning stats once (async)
+    const learningStats = await loadLearningStats().catch(() => ({
+      totalPredictions: 0, checkedPredictions: 0,
+      shortTermAccuracy: 50, mediumTermAccuracy: 50,
+      directionAccuracy: 50, indicatorAccuracy: {},
+      fundamentalAccuracy: {}, learningWeights: {},
+      fundamentalWeights: {}, lastUpdated: new Date().toISOString(),
+      bestIndicators: [], worstIndicators: [],
+      averageAbsoluteError: 0, recentAccuracy: 50,
+    }));
 
-    // Fetch fundamentals in batch first (fast from local JSON)
+    // Fetch fundamentals in batch
     console.log('[SCAN] Fetching fundamentals for all tickers...');
     const allFundamentals = await getBatchQuotesFast(UNIQUE_TICKERS);
     console.log(`[SCAN] Got fundamentals for ${Object.keys(allFundamentals).length}/${UNIQUE_TICKERS.length} tickers`);
 
-    // Process in batches of 5 to avoid rate limiting
     const BATCH_SIZE = 5;
     for (let i = 0; i < UNIQUE_TICKERS.length; i += BATCH_SIZE) {
       const batch = UNIQUE_TICKERS.slice(i, i + BATCH_SIZE);
@@ -54,88 +59,69 @@ export async function GET() {
             throw new Error('Të dhëna të pamjaftueshme');
           }
 
-          // Technical analysis
           const baseResult = predictStock(ticker, data);
+          const lastClose = data[data.length - 1].close;
 
           // Fundamental analysis
           const fund = allFundamentals[ticker];
-          let fundamentalScore: number | null = null;
-          let fundamentalSummary = '';
-          let fundamentalScores: Record<string, number> = {};
+          let fundamentalScore = 0;
 
           if (fund) {
             const fundResult = analyzeFundamentals(ticker, fund);
             fundamentalScore = fundResult.totalScore;
-            fundamentalSummary = fundResult.summary;
-            fundamentalScores = {
-              valuation: fundResult.scores.valuation.score,
-              growth: fundResult.scores.growth.score,
-              profitability: fundResult.scores.profitability.score,
-              analystSentiment: fundResult.scores.analystSentiment.score,
-              debtHealth: fundResult.scores.debtHealth.score,
-              momentum: fundResult.scores.momentum.score,
-            };
           }
 
-          // Enhanced prediction
-          const result = predictStockEnhanced(baseResult, {
-            fundamentalScore,
-            fundamentalSummary,
-            fundamentalScores,
-            learningStats: learningStats.totalPredictions > 0 ? {
-              totalPredictions: learningStats.totalPredictions,
-              directionAccuracy: learningStats.directionAccuracy,
-              shortTermAccuracy: learningStats.shortTermAccuracy,
-              mediumTermAccuracy: learningStats.mediumTermAccuracy,
-              bestIndicators: learningStats.bestIndicators,
-              worstIndicators: learningStats.worstIndicators,
-              recentAccuracy: learningStats.recentAccuracy,
+          // Simple combined score (0.75 tech + 0.25 fund) for scan ranking
+          const combined = baseResult.technicalScore * 0.75 + fundamentalScore * 0.25;
+          const result: PredictionResult = {
+            ...baseResult,
+            score: Math.round(combined * 100) / 100,
+            combinedScore: Math.round(combined * 100) / 100,
+            fundamentalData: fundamentalScore !== 0 ? {
+              score: fundamentalScore,
+              summary: '',
+              scores: {},
             } : null,
-          });
+          };
 
-          // Store for learning
-          try {
-            const lastClose = data[data.length - 1].close;
-            addPrediction({
-              symbol: ticker,
-              timestamp: result.timestamp,
-              predictedDirection: result.direction === 'STRONG_BUY' || result.direction === 'BUY' ? 'UP'
-                : result.direction === 'STRONG_SELL' || result.direction === 'SELL' ? 'DOWN' : 'SIDEWAYS',
-              predictedScore: result.score,
-              predictedShortTerm: result.shortTerm,
-              predictedMediumTerm: result.mediumTerm,
-              technicalScore: result.technicalScore,
-              fundamentalScore: fundamentalScore ?? 0,
-              indicatorScores: result.indicatorScores,
-              fundamentalScores,
-              closePriceAtPrediction: lastClose,
-            });
-          } catch {
-            // Non-critical
-          }
+          // Store for learning (non-blocking, fire and forget)
+          savePredictionToDB({
+            ticker,
+            signal: result.direction,
+            confidence: result.confidence,
+            combinedScore: result.combinedScore,
+            technicalScore: result.technicalScore,
+            fundamentalScore,
+            regimeScore: 0,
+            eventRiskScore: 0,
+            horizonDays: 1,
+            predictedDir: result.shortTerm.prediction,
+            predictedMovePct: result.shortTerm.expectedMove,
+            entryPrice: lastClose,
+            gateStatus: 'TRADE',
+            factors: [],
+          }).catch(() => {});
 
           return result;
         })
       );
 
       for (let j = 0; j < batchResults.length; j++) {
-        const result = batchResults[j];
-        if (result.status === 'fulfilled') {
-          results.push(result.value);
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          results.push(r.value);
           fetched++;
         } else {
-          errors.push(`${batch[j]}: ${result.reason?.message || 'Gabim'}`);
+          errors.push(`${batch[j]}: ${r.reason?.message || 'Gabim'}`);
           failed++;
         }
       }
 
-      // Small delay between batches
       if (i + BATCH_SIZE < UNIQUE_TICKERS.length) {
         await new Promise(r => setTimeout(r, 500));
       }
     }
 
-    // Rank and sort
     const ranked = rankStocks(results);
 
     return NextResponse.json({

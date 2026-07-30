@@ -10,6 +10,7 @@ export interface WeightResult {
   factorType: string;
   weight: number;
   sampleSize: number;
+  minSample: number;
   accuracy: number;
 }
 
