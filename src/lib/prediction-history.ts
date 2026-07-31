@@ -25,12 +25,17 @@ export interface DBPredictionInput {
   gateReason?: string;
   noTradeReason?: string;
   factors: FactorInput[];
+  // Regime Intelligence (orchestrator layer)
+  regimeState?: string;
+  regimeConfidence?: number;
+  regimePolicy?: Record<string, unknown>;
   snapshot?: {
     regime: string;
     regimeConfidence: number;
     spyPrice?: number;
     spyChange5d?: number;
     spyChange20d?: number;
+    vixLevel?: number;
   };
 }
 
@@ -92,6 +97,10 @@ export async function savePredictionToDB(input: DBPredictionInput): Promise<stri
         gateStatus: input.gateStatus,
         gateReason: input.gateReason,
         noTradeReason: input.noTradeReason,
+        // Regime Intelligence — for per-regime Brier calibration
+        regimeState: input.regimeState,
+        regimeConfidence: input.regimeConfidence,
+        regimePolicy: input.regimePolicy ? input.regimePolicy as any : undefined,
       },
     });
 

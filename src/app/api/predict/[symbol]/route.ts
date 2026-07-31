@@ -2,22 +2,49 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchHistoricalData, getRealFundamentals } from '@/lib/alpha-vantage';
 import { predictStock } from '@/lib/prediction-engine';
 import { analyzeFundamentals } from '@/lib/fundamental-analysis';
-import { detectMarketRegime, regimeScore } from '@/lib/market-regime';
 import { calculateRelativeStrength } from '@/lib/relative-strength';
 import { checkEventRisk } from '@/lib/event-risk';
 import { runNoTradeGate } from '@/lib/no-trade-gate';
 import { getModelWeights, seedDefaultWeights } from '@/lib/model-weights';
-import { calibrateConfidence } from '@/lib/confidence-calibration';
 import { savePredictionToDB } from '@/lib/prediction-history';
 import { buildTechnicalFactors, buildFundamentalFactors, type FactorInput } from '@/lib/prediction-factors';
 import { loadLearningStats } from '@/lib/prediction-history';
 import { evaluateDuePredictions } from '@/lib/evaluation-engine';
 import { analyzeGlobalSpillover, type SpilloverAnalysis } from '@/lib/global-spillover';
 import { runV2ShadowPrediction, getActiveModel } from '@/lib/spillover-promotion';
-import { detectRegimeState, getRegimeWithPolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
+import { getRegimeWithPolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
 import { routeByRegime } from '@/lib/regime-router';
+import { getDailyHistory } from '@/lib/global-market-data';
 
 export const maxDuration = 60;
+
+// Map new 7-state regime to legacy 4-state (for no-trade-gate compat)
+function toLegacyRegime(state: MarketRegimeState): 'BULL' | 'BEAR' | 'VOLATILE' | 'RANGING' {
+  if (state === 'PANIC_CAPITULATION') return 'VOLATILE';
+  if (state === 'BULL_LOW_VOL' || state === 'BULL_HIGH_VOL' || state === 'RELIEF_RALLY') return 'BULL';
+  if (state === 'BEAR_LOW_VOL' || state === 'BEAR_HIGH_VOL') return 'BEAR';
+  return 'RANGING';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PIPELINE ORDER (production)
+//
+// Phase 1 — I/O (parallel):
+//   global-market-data → spillover-features → spillover V1
+//   fundamentals → relative-strength → model-weights → learning-stats
+//   regime-intelligence (calls spillover internally, 30-min cache)
+//
+// Phase 2 — Computation (sequential, no I/O):
+//   technical-analysis → fundamental-analysis → event-risk
+//
+// Phase 3 — ORCHESTRATION:
+//   regime-intelligence → weight-override → score-combination
+//   routeByRegime → confidence-calibration → no-trade-gate
+//
+// Phase 4 — Persistence + Response:
+//   save prediction (with regime state + policy for Brier calibration)
+//   return TRADE / NO_TRADE decision
+// ═══════════════════════════════════════════════════════════════
 
 export async function GET(
   request: NextRequest,
@@ -29,65 +56,47 @@ export async function GET(
     const ticker = symbol.toUpperCase().trim();
 
     if (!ticker) {
-      return NextResponse.json({ error: 'Simboli është i nevojshëm' }, { status: 400 });
+      return NextResponse.json({ error: 'Simboli eshte i nevojshem' }, { status: 400 });
     }
 
     const { searchParams } = new URL(request.url);
     const range = searchParams.get('range') || '1y';
     const runEval = searchParams.get('checkLearning') === 'true';
 
-    // 0. Ensure DB is seeded
+    // ── Pre-flight ───────────────────────────────────────────
     await seedDefaultWeights().catch(() => {});
-
-    // 0b. Optionally run evaluation
     if (runEval) {
-      try {
-        await evaluateDuePredictions();
-      } catch (err) {
+      try { await evaluateDuePredictions(); } catch (err) {
         console.error('[PREDICT] Evaluation failed:', err);
       }
     }
 
-    // 1. Fetch historical data for technical analysis
+    // ── PHASE 1: I/O (parallel) ─────────────────────────────
     const historicalData = await fetchHistoricalData(ticker, range);
     if (!historicalData || historicalData.length < 60) {
       return NextResponse.json(
-        { error: 'Të dhëna të pamjaftueshme historike për predikim' },
-        { status: 404 }
+        { error: 'Te dhena te pamjaftueshme historike per predikim' },
+        { status: 404 },
       );
     }
 
-    // 2. Run technical analysis (pure computation, no I/O)
-    const baseResult = predictStock(ticker, historicalData);
-
-    // 3. Run all modules IN PARALLEL (I/O bound)
-    const [regime, relStrength, fundamentals, weightsResult, learningStatsRaw, spilloverRaw] = await Promise.all([
-      detectMarketRegime(),
+    const [relStrength, fundamentals, weightsResult, learningStatsRaw, spilloverRaw, regimePack, spySnap] = await Promise.all([
       calculateRelativeStrength(ticker),
       getRealFundamentals(ticker),
       getModelWeights(1),
       loadLearningStats().catch(() => ({
-        totalPredictions: 0,
-        checkedPredictions: 0,
-        shortTermAccuracy: 50,
-        mediumTermAccuracy: 50,
-        directionAccuracy: 50,
-        indicatorAccuracy: {},
-        fundamentalAccuracy: {},
-        learningWeights: {},
-        fundamentalWeights: {},
+        totalPredictions: 0, checkedPredictions: 0,
+        shortTermAccuracy: 50, mediumTermAccuracy: 50, directionAccuracy: 50,
+        indicatorAccuracy: {}, fundamentalAccuracy: {},
+        learningWeights: {}, fundamentalWeights: {},
         lastUpdated: new Date().toISOString(),
-        bestIndicators: [],
-        worstIndicators: [],
-        averageAbsoluteError: 0,
-        recentAccuracy: 50,
+        bestIndicators: [], worstIndicators: [],
+        averageAbsoluteError: 0, recentAccuracy: 50,
       })),
       analyzeGlobalSpillover(ticker).catch((err) => {
         console.error('[PREDICT] Spillover analysis failed:', err);
         return {
-          setupType: 'NEUTRAL' as const,
-          spilloverScore: 0,
-          confidence: 0,
+          setupType: 'NEUTRAL' as const, spilloverScore: 0, confidence: 0,
           reasons: ['Spillover analysis failed'] as string[],
           drivers: { kospi1d: 0, kospi2d: 0, kospi5d: 0, smh1d: 0, smh2d: 0, vix1d: 0, qqq1d: 0 },
           features: {
@@ -99,18 +108,35 @@ export async function GET(
           modelVersion: 'spillover-v1' as const,
         };
       }),
+      // REGIME INTELLIGENCE — the orchestrator (30-min cache)
+      getRegimeWithPolicy({ targetSymbol: ticker }),
+      // SPY snapshot for DB (cached by global-market-data)
+      getDailyHistory('SPY', 5),
     ]);
 
-    const spillover = spilloverRaw!;
+    const spillover: SpilloverAnalysis = spilloverRaw!;
+    const regimeIntel: RegimeIntelligence = regimePack;
+    const regimePolicy = regimePack.policy;
 
-    // 3b. V2 Shadow Mode: check active model, run V2 shadow for semis/tech
-    const isSemiOrTech = ['NVDA', 'AMD', 'MU', 'MRVL', 'WDC', 'SNDK', 'INTC', 'TSM', 'AVGO', 'QCOM', 'SMH', 'SOXX', 'QQQ'].includes(ticker);
+    console.log(
+      `[PREDICT] ${ticker}: regime=${regimeIntel.regime} ` +
+      `(conf=${(regimeIntel.confidence * 100).toFixed(0)}% floor=${regimePolicy.confidenceFloor})`,
+    );
+
+    // V2 Shadow Mode (fire-and-forget, for semis/tech only)
+    const isSemiOrTech = ['NVDA','AMD','MU','MRVL','INTC','TSM','AVGO','QCOM','SMH','SOXX','QQQ'].includes(ticker);
     const activeModel = await getActiveModel();
     if (isSemiOrTech && spillover.features) {
       runV2ShadowPrediction(ticker, spillover.features).catch(() => {});
     }
 
-    // 4. Fundamental analysis
+    // ── PHASE 2: Computation (no I/O) ───────────────────────
+
+    // 2a. Technical analysis
+    const baseResult = predictStock(ticker, historicalData);
+    const techScore = baseResult.technicalScore;
+
+    // 2b. Fundamental analysis
     let fundamentalScore = 0;
     let fundamentalSummary = '';
     let fundamentalScores: Record<string, number> = {};
@@ -129,175 +155,182 @@ export async function GET(
       };
     }
 
-    // 5. Event risk check
+    // 2c. Event risk (pure computation)
     const eventRisk = checkEventRisk(ticker);
-
-    // 5b. REGIME INTELLIGENCE — the orchestrator layer
-    const regimeResult = await getRegimeWithPolicy({ targetSymbol: ticker });
-    const regimeIntel = regimeResult;
-    const regimePolicy = regimeResult.policy;
-    console.log(`[PREDICT] ${ticker}: regime=${regimeIntel.regime} (conf=${(regimeIntel.confidence * 100).toFixed(0)}%) floor=${regimePolicy.confidenceFloor})`);
-
-    // 6. Compute regime score and relative strength adjustment
-    const rScore = regimeScore(regime.regime);
     const rsScore = relStrength.rsScore;
 
-    // 7. Global spillover factor — weight from REGIME POLICY
-    const spilloverScore = spillover.spilloverScore;
-    const spilloverWeight = isSemiOrTech ? 0.10 : 0.03;
-    const regimeSpilloverWeight = spilloverWeight * regimePolicy.spilloverWeightMultiplier;
+    // ── PHASE 3: ORCHESTRATION ──────────────────────────────
+    // The regime intelligence layer decides HOW to interpret all signals.
 
-    // 8. Build combined score (before regime routing)
+    // 3a. Build raw combined score from engine outputs
     const ratios = weightsResult.horizonRatios;
-    const techScore = baseResult.technicalScore;
-    const preRegimeScore = Math.round(
+    const spilloverScore = spillover.spilloverScore;
+    const spilloverBaseWeight = isSemiOrTech ? 0.10 : 0.03;
+    const spilloverWeight = spilloverBaseWeight * regimePolicy.spilloverWeightMultiplier;
+
+    const rawScore = Math.round(
       (techScore * ratios.technical +
        fundamentalScore * ratios.fundamental +
-       rScore * ratios.event +
+       eventRisk.riskScore * ratios.event * 0.3 +
        rsScore * 0.05 +
-       spilloverScore * regimeSpilloverWeight) * 100
+       spilloverScore * spilloverWeight) * 100,
     ) / 100;
 
-    // 9. REGIME ROUTING — adjust score and confidence per regime
-    const direction = preRegimeScore > 60 ? 'STRONG_BUY' : preRegimeScore > 25 ? 'BUY' :
-      preRegimeScore > -25 ? 'HOLD' : preRegimeScore > -60 ? 'SELL' : 'STRONG_SELL';
+    // 3b. Determine signal direction from raw score
+    const direction = rawScore > 60 ? 'STRONG_BUY' : rawScore > 25 ? 'BUY' :
+      rawScore > -25 ? 'HOLD' : rawScore > -60 ? 'SELL' : 'STRONG_SELL';
 
+    // 3c. REGIME ROUTING — adjust weights, score, confidence per regime
     const routingResult = routeByRegime({
       regime: regimeIntel.regime,
       policy: regimePolicy,
       baseWeights: weightsResult.technical,
-      rawScore: preRegimeScore,
+      rawScore,
       rawConfidence: baseResult.confidence,
       signal: direction as 'BUY' | 'SELL' | 'HOLD',
     });
 
     const combinedScore = routingResult.adjustedScore;
-    const rawConfidence = baseResult.confidence;
     const calibratedConfidence = routingResult.adjustedConfidence;
 
-    // 10. Build predicted direction and expected move for 1D, 5D, 20D horizons
-    const lastClose = historicalData[historicalData.length - 1].close;
-    const expectedMove1d = baseResult.shortTerm.expectedMove;
-    const expectedMove5d = baseResult.mediumTerm.expectedMove;
-    const predictedDir1d = baseResult.shortTerm.prediction; // UP/DOWN/SIDEWAYS
-    const predictedDir5d = baseResult.mediumTerm.prediction;
-    const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
-
-    // 12. NO_TRADE gate — REGIME AWARE
+    // 3d. NO_TRADE gate (regime-aware: uses policy floors + direction blocks)
     const gateResult = routingResult.blockedReason
       ? { status: 'NO_TRADE' as const, reason: routingResult.blockedReason }
       : runNoTradeGate({
           confidence: calibratedConfidence,
           combinedScore,
-          expectedMovePct: expectedMove1d,
+          expectedMovePct: baseResult.shortTerm.expectedMove,
           signal: direction,
-          regime,
+          regime: {
+            regime: toLegacyRegime(regimeIntel.regime),
+            confidence: regimeIntel.confidence,
+            spyPrice: spySnap[0]?.close ?? 0,
+            spyChange5d: regimeIntel.drivers.spy5d,
+            spyChange20d: regimeIntel.drivers.spy20d,
+            detectedAt: new Date().toISOString(),
+          } as any,
           eventRisk,
           spillover,
           regimePolicy,
         });
 
-    // 12. Build factors list for DB storage
+    // 3e. FINAL DECISION — the regime orchestrator's output
+    const finalDecision = gateResult.status === 'NO_TRADE' ? 'NO_TRADE' : 'TRADE';
+
+    // ── PHASE 4: Persistence + Response ─────────────────────
+
+    // 4a. Build factor list for DB
     const allFactors: FactorInput[] = [];
     const techFactors = buildTechnicalFactors(
       baseResult.indicatorScores,
-      (Object.keys(learningStatsRaw.learningWeights).length > 0 ? learningStatsRaw.learningWeights : routingResult.weights)
+      Object.keys(learningStatsRaw.learningWeights).length > 0
+        ? learningStatsRaw.learningWeights
+        : routingResult.weights,
     );
     allFactors.push(...techFactors);
+
     // Fundamental factors (policy-adjusted weights)
-    const fundWeightMultiplier = regimePolicy.fundamentalWeightMultiplier;
     if (fundamentalScores && Object.keys(fundamentalScores).length > 0) {
       const adjustedFundWeights: Record<string, number> = {};
       for (const [k, v] of Object.entries(weightsResult.fundamental)) {
-        adjustedFundWeights[k] = v * fundWeightMultiplier;
+        adjustedFundWeights[k] = v * regimePolicy.fundamentalWeightMultiplier;
       }
       const fundFactors = buildFundamentalFactors(
         fundamentalScores,
-        (Object.keys(learningStatsRaw.fundamentalWeights).length > 0 ? learningStatsRaw.fundamentalWeights : adjustedFundWeights)
+        Object.keys(learningStatsRaw.fundamentalWeights).length > 0
+          ? learningStatsRaw.fundamentalWeights
+          : adjustedFundWeights,
       );
       allFactors.push(...fundFactors);
     }
+
     // Regime Intelligence factor
+    const regimeSignal = regimeIntel.regime === 'BULL_LOW_VOL' || regimeIntel.regime === 'BULL_HIGH_VOL' || regimeIntel.regime === 'RELIEF_RALLY'
+      ? 'BULLISH' : regimeIntel.regime === 'BEAR_HIGH_VOL' || regimeIntel.regime === 'BEAR_LOW_VOL' || regimeIntel.regime === 'PANIC_CAPITULATION'
+      ? 'BEARISH' : 'NEUTRAL';
     allFactors.push({
-      factorName: 'regime_intelligence',
-      factorType: 'regime',
+      factorName: 'regime_intelligence', factorType: 'regime',
       score: regimePolicy.scoreMultiplier > 1 ? 30 : regimePolicy.scoreMultiplier < 1 ? -30 : 0,
-      weight: 0.08,
-      signal: regimeIntel.regime === 'BULL_LOW_VOL' || regimeIntel.regime === 'BULL_HIGH_VOL' || regimeIntel.regime === 'RELIEF_RALLY' ? 'BULLISH'
-        : regimeIntel.regime === 'BEAR_HIGH_VOL' || regimeIntel.regime === 'BEAR_LOW_VOL' || regimeIntel.regime === 'PANIC_CAPITULATION' ? 'BEARISH' : 'NEUTRAL',
+      weight: 0.08, signal: regimeSignal,
       description: `Regjimi: ${regimeIntel.regime} (conf=${(regimeIntel.confidence * 100).toFixed(0)}%, transRisk=${(regimeIntel.transitionRisk * 100).toFixed(0)}%)`,
     });
+
     // Event risk factor
     allFactors.push({
-      factorName: 'event_risk',
-      factorType: 'event',
-      score: eventRisk.riskScore,
-      weight: ratios.event,
+      factorName: 'event_risk', factorType: 'event',
+      score: eventRisk.riskScore, weight: ratios.event,
       signal: eventRisk.riskScore < -20 ? 'BEARISH' : 'NEUTRAL',
       description: eventRisk.description,
     });
+
     // Relative strength factor
     allFactors.push({
-      factorName: 'relative_strength',
-      factorType: 'relative_strength',
-      score: rsScore,
-      weight: 0.05,
+      factorName: 'relative_strength', factorType: 'relative_strength',
+      score: rsScore, weight: 0.05,
       signal: rsScore > 10 ? 'BULLISH' : rsScore < -10 ? 'BEARISH' : 'NEUTRAL',
       description: `RS vs SPY: ${rsScore > 0 ? '+' : ''}${rsScore.toFixed(1)}`,
     });
+
     // Global spillover factor
     allFactors.push({
-      factorName: 'global_spillover',
-      factorType: 'macro_global',
-      score: spilloverScore,
-      weight: spilloverWeight,
+      factorName: 'global_spillover', factorType: 'macro_global',
+      score: spilloverScore, weight: spilloverBaseWeight,
       signal: spilloverScore > 0 ? 'BULLISH' : spilloverScore < 0 ? 'BEARISH' : 'NEUTRAL',
-      description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) — ${(spillover.reasons || []).slice(0, 2).join('; ')}`,
+      description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) - ${(spillover.reasons || []).slice(0, 2).join('; ')}`,
     });
 
-    // 13. Save prediction to DB with REGIME STATE
-    const predictionExtras = {
+    // 4b. Horizons
+    const lastClose = historicalData[historicalData.length - 1].close;
+    const expectedMove1d = baseResult.shortTerm.expectedMove;
+    const expectedMove5d = baseResult.mediumTerm.expectedMove;
+    const predictedDir1d = baseResult.shortTerm.prediction;
+    const predictedDir5d = baseResult.mediumTerm.prediction;
+    const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
+
+    // 4c. Save to DB with REGIME STATE + POLICY (for Brier calibration)
+    const dbBase = {
+      ticker, signal: direction, confidence: calibratedConfidence, combinedScore,
+      technicalScore: techScore, fundamentalScore,
+      regimeScore: regimePolicy.scoreMultiplier > 1 ? 10 : regimePolicy.scoreMultiplier < 1 ? -10 : 0,
+      eventRiskScore: eventRisk.riskScore,
+      gateStatus: gateResult.status, gateReason: gateResult.reason,
+      noTradeReason: gateResult.status === 'NO_TRADE' ? gateResult.reason : undefined,
+      factors: allFactors,
+      // Regime Intelligence — persisted for per-regime Brier score calibration
       regimeState: regimeIntel.regime,
       regimeConfidence: regimeIntel.confidence,
       regimePolicy: regimePolicy as unknown as Record<string, unknown>,
+      snapshot: {
+        regime: regimeIntel.regime,
+        regimeConfidence: regimeIntel.confidence,
+        spyPrice: spySnap[0]?.close,
+        spyChange5d: regimeIntel.drivers.spy5d,
+        spyChange20d: regimeIntel.drivers.spy20d,
+        vixLevel: regimeIntel.drivers.vixLevel,
+      },
     };
-    savePredictionToDB({
-      ticker, signal: direction, confidence: calibratedConfidence, combinedScore,
-      technicalScore: techScore, fundamentalScore, regimeScore: rScore, eventRiskScore: eventRisk.riskScore,
+
+    savePredictionToDB({ ...dbBase,
       horizonDays: 1, predictedDir: predictedDir1d, predictedMovePct: expectedMove1d, entryPrice: lastClose,
-      gateStatus: gateResult.status, gateReason: gateResult.reason,
-      noTradeReason: gateResult.status === 'NO_TRADE' ? gateResult.reason : undefined,
-      factors: allFactors, snapshot: {
-        regime: regime.regime, regimeConfidence: regime.confidence, spyPrice: regime.spyPrice,
-        spyChange5d: regime.spyChange5d, spyChange20d: regime.spyChange20d,
-      }, ...predictionExtras,
-    }).catch(err => console.error('[PREDICT] DB save failed:', err));
+    }).catch(err => console.error('[PREDICT] DB save 1D failed:', err));
 
-    savePredictionToDB({
-      ticker, signal: direction, confidence: calibratedConfidence, combinedScore,
-      technicalScore: techScore, fundamentalScore, regimeScore: rScore, eventRiskScore: eventRisk.riskScore,
+    savePredictionToDB({ ...dbBase,
       horizonDays: 5, predictedDir: predictedDir5d, predictedMovePct: expectedMove5d, entryPrice: lastClose,
-      gateStatus: gateResult.status, gateReason: gateResult.reason, factors: allFactors, snapshot: {
-        regime: regime.regime, regimeConfidence: regime.confidence, spyPrice: regime.spyPrice,
-        spyChange5d: regime.spyChange5d, spyChange20d: regime.spyChange20d,
-      }, ...predictionExtras,
     }).catch(() => {});
 
-    savePredictionToDB({
-      ticker, signal: direction, confidence: calibratedConfidence, combinedScore,
-      technicalScore: techScore, fundamentalScore, regimeScore: rScore, eventRiskScore: eventRisk.riskScore,
+    savePredictionToDB({ ...dbBase,
       horizonDays: 20, predictedDir: predictedDir20d, predictedMovePct: expectedMove5d * 2, entryPrice: lastClose,
-      gateStatus: gateResult.status, gateReason: gateResult.reason, factors: allFactors, snapshot: {
-        regime: regime.regime, regimeConfidence: regime.confidence, spyPrice: regime.spyPrice,
-        spyChange5d: regime.spyChange5d, spyChange20d: regime.spyChange20d,
-      }, ...predictionExtras,
     }).catch(() => {});
 
-    // 14. Build response
+    // 4d. Build response
     const elapsedMs = Date.now() - startTime;
-    console.log(`[PREDICT] ${ticker}: direction=${direction} confidence=${calibratedConfidence} combinedScore=${combinedScore} gate=${gateResult.status} regime=${regime.regime} techScore=${techScore} fundScore=${fundamentalScore} rsScore=${rsScore} factors=${allFactors.length} time=${elapsedMs}ms`);
+    console.log(
+      `[PREDICT] ${ticker}: dir=${direction} conf=${calibratedConfidence} score=${combinedScore} ` +
+      `gate=${gateResult.status} regime=${regimeIntel.regime} decision=${finalDecision} ` +
+      `factors=${allFactors.length} time=${elapsedMs}ms`,
+    );
 
-    const response = {
+    return NextResponse.json({
       ...baseResult,
       score: combinedScore,
       direction,
@@ -305,9 +338,7 @@ export async function GET(
       combinedScore,
       technicalScore: techScore,
       fundamentalData: fundamentalScore !== 0 ? {
-        score: fundamentalScore,
-        summary: fundamentalSummary,
-        scores: fundamentalScores,
+        score: fundamentalScore, summary: fundamentalSummary, scores: fundamentalScores,
       } : null,
       learningData: learningStatsRaw.totalPredictions > 0 ? {
         totalPredictions: learningStatsRaw.totalPredictions,
@@ -318,10 +349,10 @@ export async function GET(
         worstIndicators: learningStatsRaw.worstIndicators,
         recentAccuracy: learningStatsRaw.recentAccuracy,
       } : null,
-      // New fields
-      regime: regime.regime,
-      regimeConfidence: regime.confidence,
-      relativeStrength: relStrength.rsScore,
+      // Regime (new 7-state intelligence)
+      regime: regimeIntel.regime,
+      regimeConfidence: regimeIntel.confidence,
+      relativeStrength: rsScore,
       eventRisk: {
         type: eventRisk.eventType,
         severity: eventRisk.severity,
@@ -343,6 +374,7 @@ export async function GET(
         v2Promotion: 'V2 must win 2/3 metrics (precision, Brier, return) with 50+ OOS samples',
         v2ShadowResultsSavedToDB: isSemiOrTech,
       },
+      // Regime Intelligence — the orchestrator layer
       regimeIntelligence: {
         regime: regimeIntel.regime,
         confidence: regimeIntel.confidence,
@@ -354,9 +386,15 @@ export async function GET(
           allowShorts: regimePolicy.allowShorts,
           noTradeBias: regimePolicy.noTradeBias,
           scoreMultiplier: regimePolicy.scoreMultiplier,
+          spilloverWeightMultiplier: regimePolicy.spilloverWeightMultiplier,
+          technicalWeightMultiplier: regimePolicy.technicalWeightMultiplier,
+          fundamentalWeightMultiplier: regimePolicy.fundamentalWeightMultiplier,
         },
         drivers: regimeIntel.drivers,
       },
+      // Final decision from the orchestrator
+      finalDecision,
+      routingBlockedReason: routingResult.blockedReason ?? null,
       horizons: {
         '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d },
         '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d },
@@ -364,9 +402,7 @@ export async function GET(
       },
       modelVersion: '2.0',
       processingTimeMs: elapsedMs,
-    };
-
-    return NextResponse.json(response);
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
     console.error('[PREDICT] Error:', message);
