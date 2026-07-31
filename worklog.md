@@ -49,3 +49,25 @@ Stage Summary:
 - Predict route upgraded with 3 new layers integrated
 - System upgraded from 'prediction engine with history' to 'probability engine with uncertainty control and cross-market structure'
 - All new code compiles cleanly (no new tsc errors)
+---
+Task ID: 1-9
+Agent: main
+Task: Drift monitor, portfolio allocator, validation lab, override ledger
+
+Work Log:
+- Created src/lib/drift-monitor.ts with PSI calculation, feature drift detection for rawScore/confidence/decision/RSI/etc, regime weight buckets with decay
+- Created /api/model-drift endpoint
+- Created src/lib/portfolio-allocator.ts with sector cap 20%, ticker cap 10%, gross exposure 60%/35%, SPY correlation penalty, intra-sector correlation penalty
+- Created /api/portfolio-allocation POST endpoint
+- Created src/lib/validation-lab.ts with walk-forward validation, deflated Sharpe, overfitting assessment, benchmark comparison
+- Created /api/validation-summary endpoint with DEPLOY/CAUTION/MODEL_NOT_ELIGIBLE
+- Added ManualDecisionOverride model to Prisma schema
+- Created /api/override-stats GET+POST endpoint
+- Fixed Prisma schema: lowercase string -> String, removed invalid index
+- Build passed, 0 new lint errors, pushed to main
+
+Stage Summary:
+- 8 files created, 1379 lines added
+- 4 new API endpoints: /api/model-drift, /api/portfolio-allocation, /api/validation-summary, /api/override-stats
+- 3 new lib modules: drift-monitor.ts, portfolio-allocator.ts, validation-lab.ts
+- 1 new Prisma model: ManualDecisionOverride
