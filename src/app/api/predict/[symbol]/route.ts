@@ -18,6 +18,7 @@ import { getDailyHistory } from '@/lib/global-market-data';
 import { computeConformalPrediction, type ConformalPredictionSet } from '@/lib/conformal-risk';
 import { scoreLeadLag, isLeadLagRelevant } from '@/lib/leadlag-score';
 import { getCalibrationReport, applyBucketCalibration, type CalibrationServiceReport } from '@/lib/calibration-service';
+import { computePositionSize } from '@/lib/position-sizing';
 
 export const maxDuration = 60;
 
@@ -201,6 +202,10 @@ export async function GET(
 
     const modelVersion = 'predict-v3-regime-spillover';
 
+    // Prices and derived values (needed by multiple downstream steps)
+    const lastClose = historicalData[historicalData.length - 1].close;
+    const spyClose = spySnap[0]?.close;
+
     // CALIBRATION LAYER — bucket-calibrate the probability before conformal
     let calibrationReport: CalibrationServiceReport | null = null;
     let rawProbability = calibratedConfidence / 100;
@@ -244,6 +249,31 @@ export async function GET(
         }
       } catch (err) {
         console.warn('[PREDICT] Conformal check failed:', err);
+      }
+    }
+
+    const effectiveGateStatus = conformalOverride ? 'NO_TRADE' : gateResult.status;
+
+    // POSITION SIZING — Fractional Kelly with conservative caps
+    let positionSizing: ReturnType<typeof computePositionSize> | null = null;
+    if (effectiveGateStatus !== 'NO_TRADE' && lastClose > 0) {
+      try {
+        const stopDistancePct = Math.max(2.0, baseResult.shortTerm.expectedMove * 100 * 1.5);
+        const expectedMovePct = baseResult.shortTerm.expectedMove * 100;
+        const rewardToRisk = stopDistancePct > 0 ? expectedMovePct / stopDistancePct : 1.0;
+        positionSizing = computePositionSize({
+          accountEquity: 25000,
+          calibratedProbability: calibratedProbability,
+          rewardToRisk: Math.max(0.5, rewardToRisk),
+          stopDistancePct,
+          entryPrice: lastClose,
+          maxRiskPerTradePct: 0.5,
+          maxPositionPct: 10,
+          conformalUncertainty: conformalResult?.uncertaintyBand ?? 0.2,
+          correlationPenalty: 0.15,
+        });
+      } catch (err) {
+        console.warn('[PREDICT] Position sizing failed:', err);
       }
     }
 
@@ -309,15 +339,12 @@ export async function GET(
       });
     }
 
-    const lastClose = historicalData[historicalData.length - 1].close;
-    const spyClose = spySnap[0]?.close;
     const expectedMove1d = baseResult.shortTerm.expectedMove;
     const expectedMove5d = baseResult.mediumTerm.expectedMove;
     const predictedDir1d = baseResult.shortTerm.prediction;
     const predictedDir5d = baseResult.mediumTerm.prediction;
     const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
 
-    const effectiveGateStatus = conformalOverride ? 'NO_TRADE' : gateResult.status;
     const finalDecision = toFinalDecision(direction, effectiveGateStatus);
 
     const saveFactors = allFactors.map(f => ({
@@ -429,6 +456,22 @@ export async function GET(
         '20D': { predictedDir: predictedDir20d, expectedMovePct: expectedMove5d * 2, predictionId: pred20d?.id },
       },
       predictionId: pred1d?.id, modelVersion, processingTimeMs: elapsedMs,
+      positionSizing: positionSizing ? {
+        kelly: {
+          full: positionSizing.fullKelly,
+          fractional: positionSizing.fractionalKelly,
+          adjusted: positionSizing.adjustedKelly,
+        },
+        shares: positionSizing.recommendedShares,
+        positionValue: positionSizing.recommendedPositionValue,
+        riskDollars: positionSizing.effectiveRiskDollars,
+        riskPctOfEquity: positionSizing.recommendedRiskPctOfEquity,
+        constraints: {
+          sharesByRisk: positionSizing.sharesByRisk,
+          sharesByKelly: positionSizing.sharesByKelly,
+          sharesByMaxPosition: positionSizing.sharesByMaxPosition,
+        },
+      } : null,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
