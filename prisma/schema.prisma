@@ -407,3 +407,25 @@ model AIStats {
   // Calibrated confidence tracking
   confidenceBuckets Json?   // {"50-60": {total:10, correct:6}, "60-70": {...}}
 }
+
+// ═══════ HUMAN OVERRIDE LEDGER ═══════
+
+model ManualDecisionOverride {
+  id             String   @id @default(cuid())
+  predictionId   String?
+  symbol         String
+  originalDecision String  // what the model suggested
+  overrideDecision String  // "ACCEPTED" | "REJECTED" | "MODIFIED"
+  overrideReason String   // news_risk | liquidity | earnings_near | disagree_with_signal | execution_risk | other
+  notes          String?
+  modelScore     Float?
+  modelConfidence Float?
+  regime         String?
+  outcome        String?  // "CORRECT_OVERRIDE" | "WRONG_OVERRIDE" | "PENDING"
+  actualReturn   Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([symbol, createdAt])
+  @@index([predictionId])
+}
