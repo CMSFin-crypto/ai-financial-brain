@@ -129,3 +129,36 @@ Stage Summary:
 - V2: logistic regression + walk-forward validation (no external deps)
 - Decision logic: V1+V2 agreement=trade, V2 probDown>=0.65=block, disagreement=NO_TRADE
 - Production path: V1 live now, V2 trains on accumulated data, only activates when OOS wins
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Add V1 live + V2 shadow operational layer (promotion logic, compare endpoint, predict integration)
+
+Work Log:
+- Verified all V2 architecture already in place from previous session (schema, features, V2 model, 3-mode backtest, routes)
+- Created `src/lib/spillover-promotion.ts`:
+  - `getActiveModel()`: returns 'spillover-v1' or 'spillover-v2-logreg' with 4h in-memory cache
+  - `compareModels()`: V2 must win 2/3 metrics (precision +2pp, Brier -0.01, return +0.05pp) + 50 OOS samples + no catastrophic regression
+  - `runV2ShadowPrediction()`: trains on ~300d data, predicts today, saves to SpilloverModelResult
+  - `runFullComparison()`: computes V1 metrics from DB signals, V2 metrics from walk-forward, returns detailed ComparisonResult
+  - `computeV1MetricsFromDB()`: reads SpilloverSignal + GlobalMarketSnapshot for V1 Brier/precision/return
+  - V1 always kept as fallback
+- Modified `src/app/api/predict/[symbol]/route.ts`:
+  - V2 shadow mode: fire-and-forget `runV2ShadowPrediction()` for semis/tech, saves to DB, does NOT affect scoring
+  - Response includes `spilloverModelConfig`: activeModel, v2Status ('shadow'|'active'), v2Promotion criteria
+  - Fixed fallback spillover object to include features + modelVersion for type safety
+- Created `src/app/api/global-spillover/compare/route.ts`:
+  - GET: full V1 vs V2 OOS comparison
+  - 4-phase status tracking (Phase 1: V1 live/V2 shadow, Phase 2: weekly comparison, Phase 3: V2 promoted, Phase 4: V1 fallback)
+  - `?evaluate=true` runs pending V2 outcome evaluations
+  - `?refresh=true` resets promotion cache
+- Type-check passes: 0 errors in all spillover/predict files
+- Committed and pushed to GitHub
+
+Stage Summary:
+- 2 new files (spillover-promotion.ts, compare/route.ts), 1 modified (predict route)
+- 4-Phase Activation: V1 live → weekly OOS comparison → V2 promotion → V1 fallback
+- V2 promotion criteria: 50+ OOS samples, wins 2/3 (precision, Brier, return), no catastrophic regression
+- V2 shadow predictions saved to SpilloverModelResult daily for semis/tech stocks
+- API: /api/global-spillover/compare for monitoring V1 vs V2 performance
