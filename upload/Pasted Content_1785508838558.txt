@@ -1,0 +1,1189 @@
+ai-financial-brain-next-steps
+AI Financial Brain — patch plan komplet
+Ky plan i bashkon hapat kryesorë që duhen bërë menjëherë në repo që Top 5+5 të lëvizë realisht dhe sistemi të kalojë nga scan/predict te execution i kontrolluar.
+
+1. src/lib/alpha-vantage.ts
+1.1 Ndrysho TTL-të
+Zëvendëso:
+
+ts
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes cache
+const CHART_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+const BATCH_QUOTE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+me:
+
+ts
+const CACHE_TTL_MS = 30 * 1000; // 30 sec
+const CHART_CACHE_TTL_MS = 60 * 1000; // 1 min
+const BATCH_QUOTE_CACHE_TTL = 2 * 60 * 1000; // 2 min
+1.2 Shto options interface
+Shto afër interfaces:
+
+ts
+export interface FetchOptions {
+  forceRefresh?: boolean;
+}
+1.3 Ndrysho getRealPrice
+ts
+export async function getRealPrice(
+  ticker: string,
+  options: FetchOptions = {}
+): Promise<LivePrice | null> {
+  const t = ticker.toUpperCase().trim();
+
+  const cached = priceCache.get(t);
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const yfPrice = await fetchFromYahooWithRetry(t);
+  if (yfPrice) {
+    priceCache.set(t, { data: yfPrice, fetchedAt: Date.now() });
+    return yfPrice;
+  }
+
+  const avPrice = await fetchFromAlphaVantage(t);
+  if (avPrice) {
+    priceCache.set(t, { data: avPrice, fetchedAt: Date.now() });
+    return avPrice;
+  }
+
+  console.warn(`[PRICE] Could not fetch real price for ${ticker} from any source`);
+  return null;
+}
+1.4 Ndrysho getRealPrices
+ts
+export async function getRealPrices(
+  tickers: string[],
+  options: FetchOptions = {}
+): Promise<Record<string, LivePrice>> {
+  const prices: Record<string, LivePrice> = {};
+  const toFetch: string[] = [];
+
+  for (const ticker of tickers) {
+    const t = ticker.toUpperCase().trim();
+    const cached = priceCache.get(t);
+    if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+      prices[t] = cached.data;
+    } else {
+      toFetch.push(t);
+    }
+  }
+
+  if (toFetch.length === 0) {
+    console.log(`[PRICE] All ${tickers.length} prices from cache`);
+    return prices;
+  }
+
+  console.log(`[PRICE] Cache hits: ${Object.keys(prices).length}, fetching: ${toFetch.length} tickers...`);
+
+  const BATCH_SIZE = 6;
+  const BATCH_DELAY_MS = 800;
+  const chunks = chunkArray(toFetch, BATCH_SIZE);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const results = await Promise.allSettled(chunk.map(t => getRealPrice(t, options)));
+
+    chunk.forEach((ticker, j) => {
+      const result = results[j];
+      if (result.status === 'fulfilled' && result.value) {
+        prices[ticker] = result.value;
+      }
+    });
+
+    if (i < chunks.length - 1) {
+      await delay(BATCH_DELAY_MS);
+    }
+  }
+
+  console.log(`[PRICE] Batch complete: ${Object.keys(prices).length}/${tickers.length} prices obtained`);
+  return prices;
+}
+1.5 Ndrysho fetchHistoricalData
+ts
+export async function fetchHistoricalData(
+  ticker: string,
+  range?: string,
+  options: FetchOptions = {}
+): Promise<HistoricalDataPoint[] | null> {
+  const t = ticker.toUpperCase().trim();
+  const r = range || '6mo';
+  const interval = r === '1d' ? '5m' : '1d';
+
+  const cacheKey = `${t}_${r}`;
+  const cached = chartCache.get(cacheKey);
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const endpoints = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
+
+  for (const base of endpoints) {
+    try {
+      const url = `${base}/v8/finance/chart/${t}?range=${r}&interval=${interval}&includePrePost=false`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+        headers: BROWSER_HEADERS,
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const result = data?.chart?.result?.[0];
+      if (!result) continue;
+
+      const timestamps: number[] = result.timestamp || [];
+      const quote = result.indicators?.quote?.[0];
+      if (!quote || !timestamps.length) continue;
+
+      const points: HistoricalDataPoint[] = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        const open = quote.open?.[i];
+        const high = quote.high?.[i];
+        const low = quote.low?.[i];
+        const close = quote.close?.[i];
+        const vol = quote.volume?.[i];
+
+        if (close && close > 0 && open && high && low) {
+          const d = new Date(timestamps[i] * 1000);
+          if (d.getDay() === 0 || d.getDay() === 6) continue;
+          points.push({
+            date: d.toISOString().split('T')[0],
+            open: +open.toFixed(2),
+            high: +high.toFixed(2),
+            low: +low.toFixed(2),
+            close: +close.toFixed(2),
+            volume: vol || 0,
+          });
+        }
+      }
+
+      if (points.length >= 15) {
+        console.log(`[CHART] ${t}: fetched ${points.length} days of real data from ${base}`);
+        chartCache.set(cacheKey, { data: points, fetchedAt: Date.now() });
+        return points;
+      }
+    } catch (err: any) {
+      const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+      console.log(`[CHART] ${t}: ${base} failed: ${msg}`);
+      continue;
+    }
+  }
+
+  return null;
+}
+1.6 Ndrysho getBatchQuotesFast
+ts
+export async function getBatchQuotesFast(
+  tickers: string[],
+  options: FetchOptions = {}
+): Promise<Record<string, YahooFundamentals>> {
+  const cacheKey = [...tickers].sort().join(',');
+  const cached = batchQuoteCache.get(cacheKey);
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < BATCH_QUOTE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const results: Record<string, YahooFundamentals> = {};
+  const localData = loadLocalFundamentals();
+
+  for (const ticker of tickers) {
+    const t = ticker.toUpperCase().trim();
+    const d = localData[t];
+    if (!d) continue;
+
+    const fund = localToYahooFundamentals(t, d);
+    if (!fund) continue;
+
+    results[t] = fund;
+    fundCache.set(t, { data: fund, fetchedAt: Date.now() });
+  }
+
+  batchQuoteCache.set(cacheKey, { data: results, fetchedAt: Date.now() });
+  console.log(`[BATCH-QUOTE] Total: ${Object.keys(results).length}/${tickers.length} fundamentals obtained (local JSON)`);
+  return results;
+}
+2. src/app/api/predict-scan/route.ts
+2.1 Ndrysho import-in
+ts
+import { fetchHistoricalData, getBatchQuotesFast, getRealPrices } from '@/lib/alpha-vantage';
+2.2 Zëvendëso loadPreviousScores()
+ts
+async function loadPreviousScores(): Promise<Record<string, { score: number; predictedAt: Date }>> {
+  try {
+    const cutoff = new Date(Date.now() - 18 * 60 * 60 * 1000);
+
+    const preds = await prisma.prediction.findMany({
+      where: {
+        horizonDays: 1,
+        modelVersion: 'predict-v3-regime-spillover',
+        predictedAt: { lte: cutoff },
+      },
+      orderBy: { predictedAt: 'desc' },
+      select: { symbol: true, rawScore: true, predictedAt: true },
+      take: 1000,
+    });
+
+    const bySymbol = new Map<string, { score: number; predictedAt: Date }>();
+    for (const p of preds) {
+      if (p.rawScore != null && !bySymbol.has(p.symbol)) {
+        bySymbol.set(p.symbol, { score: p.rawScore, predictedAt: p.predictedAt });
+      }
+    }
+
+    console.log(`[SCAN] Loaded previous-day scores for ${bySymbol.size} symbols from DB`);
+    return Object.fromEntries(bySymbol);
+  } catch (err) {
+    console.warn('[SCAN] Failed to load previous scores from DB:', err);
+    return {};
+  }
+}
+2.3 Shto edhe loadPreviousScores3d()
+ts
+async function loadPreviousScores3d(): Promise<Record<string, { score: number; predictedAt: Date }>> {
+  try {
+    const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+    const preds = await prisma.prediction.findMany({
+      where: {
+        horizonDays: 1,
+        modelVersion: 'predict-v3-regime-spillover',
+        predictedAt: { lte: cutoff },
+      },
+      orderBy: { predictedAt: 'desc' },
+      select: { symbol: true, rawScore: true, predictedAt: true },
+      take: 1000,
+    });
+
+    const bySymbol = new Map<string, { score: number; predictedAt: Date }>();
+    for (const p of preds) {
+      if (p.rawScore != null && !bySymbol.has(p.symbol)) {
+        bySymbol.set(p.symbol, { score: p.rawScore, predictedAt: p.predictedAt });
+      }
+    }
+
+    console.log(`[SCAN] Loaded 3d-back scores for ${bySymbol.size} symbols from DB`);
+    return Object.fromEntries(bySymbol);
+  } catch (err) {
+    console.warn('[SCAN] Failed to load 3d scores from DB:', err);
+    return {};
+  }
+}
+2.4 Te GET() ndërroje fillimin
+Nga:
+
+ts
+const learningStats = await loadLearningStats().catch(() => ({ ... }));
+const prevScoresMap = await loadPreviousScores();
+const allFundamentals = await getBatchQuotesFast(UNIQUE_TICKERS);
+në:
+
+ts
+const learningStats = await loadLearningStats().catch(() => ({
+  totalPredictions: 0, checkedPredictions: 0,
+  shortTermAccuracy: 50, mediumTermAccuracy: 50,
+  directionAccuracy: 50, indicatorAccuracy: {},
+  fundamentalAccuracy: {}, learningWeights: {},
+  fundamentalWeights: {}, lastUpdated: new Date().toISOString(),
+  bestIndicators: [], worstIndicators: [],
+  averageAbsoluteError: 0, recentAccuracy: 50,
+}));
+
+const [prevScoresMap, prevScores3dMap, livePrices, allFundamentals] = await Promise.all([
+  loadPreviousScores(),
+  loadPreviousScores3d(),
+  getRealPrices(UNIQUE_TICKERS, { forceRefresh: true }),
+  getBatchQuotesFast(UNIQUE_TICKERS, { forceRefresh: true }),
+]);
+
+console.log(`[SCAN] Got live prices for ${Object.keys(livePrices).length}/${UNIQUE_TICKERS.length} tickers`);
+console.log(`[SCAN] Got fundamentals for ${Object.keys(allFundamentals).length}/${UNIQUE_TICKERS.length} tickers`);
+2.5 Ndrysho fetch të historical data
+Nga:
+
+ts
+const data = await fetchHistoricalData(ticker, '6mo');
+në:
+
+ts
+const data = await fetchHistoricalData(ticker, '6mo', { forceRefresh: true });
+2.6 Ndrysho lastClose dhe dataTimestamp
+Zëvendëso këtë pjesë:
+
+ts
+const lastClose = data[data.length - 1].close;
+...
+const dataTimestamp = new Date(data[data.length - 1].date).getTime();
+me:
+
+ts
+const historicalLastClose = data[data.length - 1].close;
+const live = livePrices[ticker];
+const lastClose = live?.price && live.price > 0 ? live.price : historicalLastClose;
+...
+const dataTimestamp = live?.timestamp
+  ? new Date(live.timestamp).getTime()
+  : new Date(data[data.length - 1].date).getTime();
+2.7 Shto live metadata në return object
+Në object që kthen brenda batch.map(...), shto:
+
+ts
+_liveChangePct: live?.change ?? 0,
+_liveSource: live?.source ?? 'historical_fallback',
+2.8 Ndrysho ndërtimin e candidates
+Zëvendëso bllokun me këtë:
+
+ts
+const candidates: RankedCandidate[] = ranked.map((r) => {
+  const ticker = (r as any)._ticker ?? '';
+  const prev = prevScoresMap[ticker];
+  const prev3d = prevScores3dMap[ticker];
+
+  let scoreDelta1d: number | undefined;
+  if (prev && r.combinedScore != null) {
+    scoreDelta1d = Math.round((r.combinedScore - prev.score) * 100) / 100;
+  }
+
+  let scoreDelta3d: number | undefined;
+  if (prev3d && r.combinedScore != null) {
+    scoreDelta3d = Math.round((r.combinedScore - prev3d.score) * 100) / 100;
+  }
+
+  return {
+    symbol: ticker,
+    sector: SECTOR_MAP[ticker] ?? 'UNKNOWN',
+    score: r.combinedScore ?? r.score ?? 0,
+    scoreDelta1d,
+    scoreDelta3d,
+    volumeDelta: (r as any)._volumeDelta,
+    priceChangePct: (r as any)._liveChangePct ?? (r as any)._priceChangePct,
+    quoteTimestamp: (r as any)._dataTimestamp ?? scanStartMs,
+  };
+}).filter(c => c.symbol);
+3. src/lib/ranking-adjustments.ts
+Ndrysho novelty penalty
+ts
+export function noveltyPenalty(repeatCount: number) {
+  if (repeatCount >= 3) return 35;
+  if (repeatCount === 2) return 22;
+  if (repeatCount === 1) return 12;
+  return 0;
+}
+4. src/lib/top-picks-selector.ts
+Nëse e ke formulën bazë për ranking, përdore këtë variant:
+
+ts
+bullishRank:
+  c.score * 0.42 +
+  (c.scoreDelta1d ?? 0) * 0.22 +
+  (c.scoreDelta3d ?? 0) * 0.12 +
+  ((c.volumeDelta ?? 0) * 100) * 0.10 +
+  (c.priceChangePct ?? 0) * 0.08 -
+  freshnessPenalty(a) -
+  noveltyPenalty(topRepeat),
+
+bearishRank:
+  (-c.score) * 0.42 +
+  (-(c.scoreDelta1d ?? 0)) * 0.22 +
+  (-(c.scoreDelta3d ?? 0)) * 0.12 +
+  ((-(c.volumeDelta ?? 0)) * 100) * 0.10 +
+  (-(c.priceChangePct ?? 0)) * 0.08 -
+  freshnessPenalty(a) -
+  noveltyPenalty(bottomRepeat),
+5. Execution logging në Prisma
+Shto në prisma/schema.prisma:
+
+text
+model ExecutionEvent {
+  id               String   @id @default(cuid())
+  predictionId     String?
+  symbol           String
+  side             String
+  orderType        String
+  quantity         Float
+  intendedPrice    Float?
+  submittedPrice   Float?
+  filledPrice      Float?
+  spreadAtDecision Float?
+  spreadAtFill     Float?
+  submittedAt      DateTime
+  ackAt            DateTime?
+  filledAt         DateTime?
+  status           String
+  rejectReason     String?
+  latencyMs        Int?
+  slippageBps      Float?
+  partialFillPct   Float?
+  stopAttached     Boolean  @default(false)
+  venue            String?
+  createdAt        DateTime @default(now())
+
+  @@index([symbol, createdAt])
+  @@index([status, createdAt])
+  @@index([predictionId])
+}
+Pastaj:
+
+bash
+npx prisma generate
+npx prisma migrate dev --name add_execution_event
+6. Files të rinj që ia vlen t’i shtosh menjëherë
+src/lib/execution-log.ts
+ts
+import prisma from '@/lib/prisma';
+
+export async function logExecutionEvent(input: {
+  predictionId?: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  orderType: string;
+  quantity: number;
+  intendedPrice?: number;
+  submittedPrice?: number;
+  filledPrice?: number;
+  spreadAtDecision?: number;
+  spreadAtFill?: number;
+  submittedAt: Date;
+  ackAt?: Date;
+  filledAt?: Date;
+  status: string;
+  rejectReason?: string;
+  stopAttached?: boolean;
+  venue?: string;
+}) {
+  const latencyMs = input.ackAt
+    ? input.ackAt.getTime() - input.submittedAt.getTime()
+    : null;
+
+  let slippageBps: number | null = null;
+  if (input.intendedPrice && input.filledPrice) {
+    const raw = ((input.filledPrice - input.intendedPrice) / input.intendedPrice) * 10000;
+    slippageBps = input.side === 'BUY' ? raw : -raw;
+  }
+
+  return prisma.executionEvent.create({
+    data: {
+      ...input,
+      latencyMs,
+      slippageBps,
+      partialFillPct: input.filledPrice ? 100 : 0,
+      stopAttached: input.stopAttached ?? false,
+    },
+  });
+}
+src/lib/execution-quality.ts
+ts
+import prisma from '@/lib/prisma';
+
+function mean(values: number[]) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+function percentile(values: number[], p: number) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+
+export async function getExecutionQuality(params?: { symbol?: string; days?: number }) {
+  const since = new Date();
+  since.setDate(since.getDate() - (params?.days ?? 7));
+
+  const rows = await prisma.executionEvent.findMany({
+    where: {
+      ...(params?.symbol ? { symbol: params.symbol } : {}),
+      createdAt: { gte: since },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const total = rows.length;
+  const filled = rows.filter(r => r.status === 'FILLED');
+  const rejected = rows.filter(r => r.status === 'REJECTED');
+  const latencies = rows.flatMap(r => (r.latencyMs != null ? [r.latencyMs] : []));
+  const slippages = rows.flatMap(r => (r.slippageBps != null ? [r.slippageBps] : []));
+
+  return {
+    sampleSize: total,
+    fillRate: total ? filled.length / total : null,
+    rejectRate: total ? rejected.length / total : null,
+    avgLatencyMs: mean(latencies),
+    p95LatencyMs: percentile(latencies, 95),
+    avgSlippageBps: mean(slippages),
+    p95SlippageBps: percentile(slippages, 95),
+    stopAttachedRate: total ? rows.filter(r => r.stopAttached).length / total : null,
+    topRejectReasons: Object.entries(
+      rejected.reduce<Record<string, number>>((acc, row) => {
+        const k = row.rejectReason || 'UNKNOWN';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {})
+    ).sort((a, b) => b[1] - a[1]).slice(0, 5),
+  };
+}
+src/lib/strategy-health.ts
+ts
+export type HealthLevel = 'OK' | 'L1_SOFT_PAUSE' | 'L2_SESSION_HALT' | 'L3_SYSTEM_HOLD' | 'L4_HARD_KILL';
+
+type HealthInput = {
+  fillRate?: number | null;
+  rejectRate?: number | null;
+  avgSlippageBps?: number | null;
+  p95SlippageBps?: number | null;
+  avgLatencyMs?: number | null;
+  maxDrawdownPct?: number | null;
+  consecutiveLosses?: number;
+  stopAttachedRate?: number | null;
+  exposurePct?: number | null;
+  baselineSlippageBps?: number | null;
+  baselineLatencyMs?: number | null;
+};
+
+export function assessStrategyHealth(input: HealthInput) {
+  const issues: string[] = [];
+  let level: HealthLevel = 'OK';
+
+  const setLevel = (next: HealthLevel) => {
+    const order = ['OK', 'L1_SOFT_PAUSE', 'L2_SESSION_HALT', 'L3_SYSTEM_HOLD', 'L4_HARD_KILL'];
+    if (order.indexOf(next) > order.indexOf(level)) level = next;
+  };
+
+  if ((input.fillRate ?? 1) < 0.95) {
+    issues.push('Fill rate too low');
+    setLevel('L1_SOFT_PAUSE');
+  }
+  if ((input.rejectRate ?? 0) > 0.02) {
+    issues.push('Reject rate too high');
+    setLevel('L1_SOFT_PAUSE');
+  }
+  if (input.baselineSlippageBps != null && (input.avgSlippageBps ?? 0) > input.baselineSlippageBps * 1.2) {
+    issues.push('Average slippage above baseline');
+    setLevel('L1_SOFT_PAUSE');
+  }
+  if (input.baselineSlippageBps != null && (input.p95SlippageBps ?? 0) > input.baselineSlippageBps * 2) {
+    issues.push('P95 slippage too high');
+    setLevel('L2_SESSION_HALT');
+  }
+  if (input.baselineLatencyMs != null && (input.avgLatencyMs ?? 0) > input.baselineLatencyMs * 2) {
+    issues.push('Latency degraded');
+    setLevel('L1_SOFT_PAUSE');
+  }
+  if ((input.maxDrawdownPct ?? 0) > 5) {
+    issues.push('Drawdown exceeded');
+    setLevel('L2_SESSION_HALT');
+  }
+  if ((input.consecutiveLosses ?? 0) >= 5) {
+    issues.push('Consecutive losses too high');
+    setLevel('L2_SESSION_HALT');
+  }
+  if ((input.stopAttachedRate ?? 1) < 1) {
+    issues.push('Stops not consistently attached');
+    setLevel('L2_SESSION_HALT');
+  }
+  if ((input.exposurePct ?? 0) > 0.35) {
+    issues.push('Exposure too concentrated');
+    setLevel('L2_SESSION_HALT');
+  }
+  if ((input.rejectRate ?? 0) > 0.1 || (input.maxDrawdownPct ?? 0) > 10) {
+    issues.push('Critical instability');
+    setLevel('L4_HARD_KILL');
+  }
+
+  const action =
+    level === 'OK' ? 'CONTINUE'
+    : level === 'L1_SOFT_PAUSE' ? 'PAUSE_NEW_ENTRIES'
+    : level === 'L2_SESSION_HALT' ? 'HALT_SESSION'
+    : level === 'L3_SYSTEM_HOLD' ? 'HOLD_AUTOMATION'
+    : 'HARD_KILL';
+
+  return { level, action, issues };
+}
+src/app/api/strategy-health/route.ts
+ts
+import { NextResponse } from 'next/server';
+import { getExecutionQuality } from '@/lib/execution-quality';
+import { assessStrategyHealth } from '@/lib/strategy-health';
+
+export async function GET() {
+  const exec = await getExecutionQuality({ days: 7 });
+
+  const health = assessStrategyHealth({
+    fillRate: exec.fillRate,
+    rejectRate: exec.rejectRate,
+    avgSlippageBps: exec.avgSlippageBps,
+    p95SlippageBps: exec.p95SlippageBps,
+    avgLatencyMs: exec.avgLatencyMs,
+    stopAttachedRate: exec.stopAttachedRate,
+    baselineSlippageBps: 5,
+    baselineLatencyMs: 250,
+    maxDrawdownPct: 0,
+    consecutiveLosses: 0,
+    exposurePct: 0,
+  });
+
+  return NextResponse.json({ exec, health });
+}
+7. Pas implementimit
+Ekzekuto këtë rend:
+
+bash
+npm run lint
+npx prisma generate
+npx prisma migrate dev --name add_execution_event
+npm run build
+Pastaj testo:
+
+/api/predict-scan
+
+/api/predict/AAPL
+
+/api/strategy-health
+
+8. Çka të presësh
+Pas këtyre ndryshimeve:
+
+Top 5+5 duhet të lëvizë më shumë,
+
+scoreDelta1d do të krahasohet me dje reale,
+
+fundamentals do të mbeten relativisht statike, por quotes dhe momentum do të jenë më fresh,
+
+sistemi do të ketë bazë për execution analytics dhe auto-pause.
+
+9. Pas kësaj
+Mos shto menjëherë më shumë indikatorë. Hapi pasues duhet të jetë:
+
+logging i eventeve reale nga testnet,
+
+review 15 testeve me evidence,
+
+30 ditë forward paper,
+
+pastaj micro-live me risk minimal.
+
+
+Open ai-financial-brain-next-steps
+AI Financial Brain — patch plan komplet
+Ky plan i bashkon hapat kryesorë që duhen bërë menjëherë në repo që Top 5+5 të lëvizë realisht dhe sistemi të kalojë nga scan/predict te execution i kontrolluar.
+
+1. src/lib/alpha-vantage.ts
+1.1 Ndrysho TTL-të
+Zëvendëso:
+
+ts
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes cache
+const CHART_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+const BATCH_QUOTE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+me:
+
+ts
+const CACHE_TTL_MS = 30 * 1000; // 30 sec
+const CHART_CACHE_TTL_MS = 60 * 1000; // 1 min
+const BATCH_QUOTE_CACHE_TTL = 2 * 60 * 1000; // 2 min
+1.2 Shto options interface
+Shto afër interfaces:
+
+ts
+export interface FetchOptions {
+  forceRefresh?: boolean;
+}
+1.3 Ndrysho getRealPrice
+ts
+export async function getRealPrice(
+  ticker: string,
+  options: FetchOptions = {}
+): Promise<LivePrice | null> {
+  const t = ticker.toUpperCase().trim();
+
+  const cached = priceCache.get(t);
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const yfPrice = await fetchFromYahooWithRetry(t);
+  if (yfPrice) {
+    priceCache.set(t, { data: yfPrice, fetchedAt: Date.now() });
+    return yfPrice;
+  }
+
+  const avPrice = await fetchFromAlphaVantage(t);
+  if (avPrice) {
+    priceCache.set(t, { data: avPrice, fetchedAt: Date.now() });
+    return avPrice;
+  }
+
+  console.warn(`[PRICE] Could not fetch real price for ${ticker} from any source`);
+  return null;
+}
+1.4 Ndrysho getRealPrices
+ts
+export async function getRealPrices(
+  tickers: string[],
+  options: FetchOptions = {}
+): Promise<Record<string, LivePrice>> {
+  const prices: Record<string, LivePrice> = {};
+  const toFetch: string[] = [];
+
+  for (const ticker of tickers) {
+    const t = ticker.toUpperCase().trim();
+    const cached = priceCache.get(t);
+    if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+      prices[t] = cached.data;
+    } else {
+      toFetch.push(t);
+    }
+  }
+
+  if (toFetch.length === 0) {
+    console.log(`[PRICE] All ${tickers.length} prices from cache`);
+    return prices;
+  }
+
+  console.log(`[PRICE] Cache hits: ${Object.keys(prices).length}, fetching: ${toFetch.length} tickers...`);
+
+  const BATCH_SIZE = 6;
+  const BATCH_DELAY_MS = 800;
+  const chunks = chunkArray(toFetch, BATCH_SIZE);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const results = await Promise.allSettled(chunk.map(t => getRealPrice(t, options)));
+
+    chunk.forEach((ticker, j) => {
+      const result = results[j];
+      if (result.status === 'fulfilled' && result.value) {
+        prices[ticker] = result.value;
+      }
+    });
+
+    if (i < chunks.length - 1) {
+      await delay(BATCH_DELAY_MS);
+    }
+  }
+
+  console.log(`[PRICE] Batch complete: ${Object.keys(prices).length}/${tickers.length} prices obtained`);
+  return prices;
+}
+1.5 Ndrysho fetchHistoricalData
+ts
+export async function fetchHistoricalData(
+  ticker: string,
+  range?: string,
+  options: FetchOptions = {}
+): Promise<HistoricalDataPoint[] | null> {
+  const t = ticker.toUpperCase().trim();
+  const r = range || '6mo';
+  const interval = r === '1d' ? '5m' : '1d';
+
+  const cacheKey = `${t}_${r}`;
+  const cached = chartCache.get(cacheKey);
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const endpoints = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
+
+  for (const base of endpoints) {
+    try {
+      const url = `${base}/v8/finance/chart/${t}?range=${r}&interval=${interval}&includePrePost=false`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+        headers: BROWSER_HEADERS,
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const result = data?.chart?.result?.[0];
+      if (!result) continue;
+
+      const timestamps: number[] = result.timestamp || [];
+      const quote = result.indicators?.quote?.[0];
+      if (!quote || !timestamps.length) continue;
+
+      const points: HistoricalDataPoint[] = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        const open = quote.open?.[i];
+        const high = quote.high?.[i];
+        const low = quote.low?.[i];
+        const close = quote.close?.[i];
+        const vol = quote.volume?.[i];
+
+        if (close && close > 0 && open && high && low) {
+          const d = new Date(timestamps[i] * 1000);
+          if (d.getDay() === 0 || d.getDay() === 6) continue;
+          points.push({
+            date: d.toISOString().split('T')[0],
+            open: +open.toFixed(2),
+            high: +high.toFixed(2),
+            low: +low.toFixed(2),
+            close: +close.toFixed(2),
+            volume: vol || 0,
+          });
+        }
+      }
+
+      if (points.length >= 15) {
+        console.log(`[CHART] ${t}: fetched ${points.length} days of real data from ${base}`);
+        chartCache.set(cacheKey, { data: points, fetchedAt: Date.now() });
+        return points;
+      }
+    } catch (err: any) {
+      const msg = err?.name === 'TimeoutError' ? 'timeout' : err?.message || 'unknown';
+      console.log(`[CHART] ${t}: ${base} failed: ${msg}`);
+      continue;
+    }
+  }
+
+  return null;
+}
+1.6 Ndrysho getBatchQuotesFast
+ts
+export async function getBatchQuotesFast(
+  tickers: string[],
+  options: FetchOptions = {}
+): Promise<Record<string, YahooFundamentals>> {
+  const cacheKey = [...tickers].sort().join(',');
+  const cached = batchQuoteCache.get(cacheKey);
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < BATCH_QUOTE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const results: Record<string, YahooFundamentals> = {};
+  const localData = loadLocalFundamentals();
+
+  for (const ticker of tickers) {
+    const t = ticker.toUpperCase().trim();
+    const d = localData[t];
+    if (!d) continue;
+
+    const fund = localToYahooFundamentals(t, d);
+    if (!fund) continue;
+
+    results[t] = fund;
+    fundCache.set(t, { data: fund, fetchedAt: Date.now() });
+  }
+
+  batchQuoteCache.set(cacheKey, { data: results, fetchedAt: Date.now() });
+  console.log(`[BATCH-QUOTE] Total: ${Object.keys(results).length}/${tickers.length} fundamentals obtained (local JSON)`);
+  return results;
+}
+2. src/app/api/predict-scan/route.ts
+2.1 Ndrysho import-in
+ts
+import { fetchHistoricalData, getBatchQuotesFast, getRealPrices } from '@/lib/alpha-vantage';
+2.2 Zëvendëso loadPreviousScores()
+ts
+async function loadPreviousScores(): Promise<Record<string, { score: number; predictedAt: Date }>> {
+  try {
+    const cutoff = new Date(Date.now() - 18 * 60 * 60 * 1000);
+
+    const preds = await prisma.prediction.findMany({
+      where: {
+        horizonDays: 1,
+        modelVersion: 'predict-v3-regime-spillover',
+        predictedAt: { lte: cutoff },
+      },
+      orderBy: { predictedAt: 'desc' },
+      select: { symbol: true, rawScore: true, predictedAt: true },
+      take: 1000,
+    });
+
+    const bySymbol = new Map<string, { score: number; predictedAt: Date }>();
+    for (const p of preds) {
+      if (p.rawScore != null && !bySymbol.has(p.symbol)) {
+        bySymbol.set(p.symbol, { score: p.rawScore, predictedAt: p.predictedAt });
+      }
+    }
+
+    console.log(`[SCAN] Loaded previous-day scores for ${bySymbol.size} symbols from DB`);
+    return Object.fromEntries(bySymbol);
+  } catch (err) {
+    console.warn('[SCAN] Failed to load previous scores from DB:', err);
+    return {};
+  }
+}
+2.3 Shto edhe loadPreviousScores3d()
+ts
+async function loadPreviousScores3d(): Promise<Record<string, { score: number; predictedAt: Date }>> {
+  try {
+    const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+    const preds = await prisma.prediction.findMany({
+      where: {
+        horizonDays: 1,
+        modelVersion: 'predict-v3-regime-spillover',
+        predictedAt: { lte: cutoff },
+      },
+      orderBy: { predictedAt: 'desc' },
+      select: { symbol: true, rawScore: true, predictedAt: true },
+      take: 1000,
+    });
+
+    const bySymbol = new Map<string, { score: number; predictedAt: Date }>();
+    for (const p of preds) {
+      if (p.rawScore != null && !bySymbol.has(p.symbol)) {
+        bySymbol.set(p.symbol, { score: p.rawScore, predictedAt: p.predictedAt });
+      }
+    }
+
+    console.log(`[SCAN] Loaded 3d-back scores for ${bySymbol.size} symbols from DB`);
+    return Object.fromEntries(bySymbol);
+  } catch (err) {
+    console.warn('[SCAN] Failed to load 3d scores from DB:', err);
+    return {};
+  }
+}
+2.4 Te GET() ndërroje fillimin
+Nga:
+
+ts
+const learningStats = await loadLearningStats().catch(() => ({ ... }));
+const prevScoresMap = await loadPreviousScores();
+const allFundamentals = await getBatchQuotesFast(UNIQUE_TICKERS);
+në:
+
+ts
+const learningStats = await loadLearningStats().catch(() => ({
+  totalPredictions: 0, checkedPredictions: 0,
+  shortTermAccuracy: 50, mediumTermAccuracy: 50,
+  directionAccuracy: 50, indicatorAccuracy: {},
+  fundamentalAccuracy: {}, learningWeights: {},
+  fundamentalWeights: {}, lastUpdated: new Date().toISOString(),
+  bestIndicators: [], worstIndicators: [],
+  averageAbsoluteError: 0, recentAccuracy: 50,
+}));
+
+const [prevScoresMap, prevScores3dMap, livePrices, allFundamentals] = await Promise.all([
+  loadPreviousScores(),
+  loadPreviousScores3d(),
+  getRealPrices(UNIQUE_TICKERS, { forceRefresh: true }),
+  getBatchQuotesFast(UNIQUE_TICKERS, { forceRefresh: true }),
+]);
+
+console.log(`[SCAN] Got live prices for ${Object.keys(livePrices).length}/${UNIQUE_TICKERS.length} tickers`);
+console.log(`[SCAN] Got fundamentals for ${Object.keys(allFundamentals).length}/${UNIQUE_TICKERS.length} tickers`);
+2.5 Ndrysho fetch të historical data
+Nga:
+
+ts
+const data = await fetchHistoricalData(ticker, '6mo');
+në:
+
+ts
+const data = await fetchHistoricalData(ticker, '6mo', { forceRefresh: true });
+2.6 Ndrysho lastClose dhe dataTimestamp
+Zëvendëso këtë pjesë:
+
+ts
+const lastClose = data[data.length - 1].close;
+...
+const dataTimestamp = new Date(data[data.length - 1].date).getTime();
+me:
+
+ts
+const historicalLastClose = data[data.length - 1].close;
+const live = livePrices[ticker];
+const lastClose = live?.price && live.price > 0 ? live.price : historicalLastClose;
+...
+const dataTimestamp = live?.timestamp
+  ? new Date(live.timestamp).getTime()
+  : new Date(data[data.length - 1].date).getTime();
+2.7 Shto live metadata në return object
+Në object që kthen brenda batch.map(...), shto:
+
+ts
+_liveChangePct: live?.change ?? 0,
+_liveSource: live?.source ?? 'historical_fallback',
+2.8 Ndrysho ndërtimin e candidates
+Zëvendëso bllokun me këtë:
+
+ts
+const candidates: RankedCandidate[] = ranked.map((r) => {
+  const ticker = (r as any)._ticker ?? '';
+  const prev = prevScoresMap[ticker];
+  const prev3d = prevScores3dMap[ticker];
+
+  let scoreDelta1d: number | undefined;
+  if (prev && r.combinedScore != null) {
+    scoreDelta1d = Math.round((r.combinedScore - prev.score) * 100) / 100;
+  }
+
+  let scoreDelta3d: number | undefined;
+  if (prev3d && r.combinedScore != null) {
+    scoreDelta3d = Math.round((r.combinedScore - prev3d.score) * 100) / 100;
+  }
+
+  return {
+    symbol: ticker,
+    sector: SECTOR_MAP[ticker] ?? 'UNKNOWN',
+    score: r.combinedScore ?? r.score ?? 0,
+    scoreDelta1d,
+    scoreDelta3d,
+    volumeDelta: (r as any)._volumeDelta,
+    priceChangePct: (r as any)._liveChangePct ?? (r as any)._priceChangePct,
+    quoteTimestamp: (r as any)._dataTimestamp ?? scanStartMs,
+  };
+}).filter(c => c.symbol);
+3. src/lib/ranking-adjustments.ts
+Ndrysho novelty penalty
+ts
+export function noveltyPenalty(repeatCount: number) {
+  if (repeatCount >= 3) return 35;
+  if (repeatCount === 2) return 22;
+  if (repeatCount === 1) return 12;
+  return 0;
+}
+4. src/lib/top-picks-selector.ts
+Nëse e ke formulën bazë për ranking, përdore këtë variant:
+
+ts
+bullishRank:
+  c.score * 0.42 +
+  (c.scoreDelta1d ?? 0) * 0.22 +
+  (c.scoreDelta3d ?? 0) * 0.12 +
+  ((c.volumeDelta ?? 0) * 100) * 0.10 +
+  (c.priceChangePct ?? 0) * 0.08 -
+  freshnessPenalty(a) -
+  noveltyPenalty(topRepeat),
+
+bearishRank:
+  (-c.score) * 0.42 +
+  (-(c.scoreDelta1d ?? 0)) * 0.22 +
+  (-(c.scoreDelta3d ?? 0)) * 0.12 +
+  ((-(c.volumeDelta ?? 0)) * 100) * 0.10 +
+  (-(c.priceChangePct ?? 0)) * 0.08 -
+  freshnessPenalty(a) -
+  noveltyPenalty(bottomRepeat),
+5. Execution logging në Prisma
+Shto në prisma/schema.prisma:
+
+text
+model ExecutionEvent {
+  id               String   @id @default(cuid())
+  predictionId     String?
+  symbol           String
+  side             String
+  orderType        String
+  quantity         Float
+  intendedPrice    Float?
+  submittedPrice   Float?
+  filledPrice      Float?
+  spreadAtDecision Float?
+  spreadAtFill     Float?
+  submittedAt      DateTime
+  ackAt            DateTime?
+  filledAt         DateTime?
+  status           String
+  rejectReason     String?
+  latencyMs        Int?
+  slippageBps      Float?
+  partialFillPct   Float?
+  stopAttached     Boolean  @default(false)
+  venue            String?
+  createdAt        DateTime @default(now())
+
+  @@index([symbol, createdAt])
+  @@index([status, createdAt])
+  @@index([predictionId])
+}
+Pastaj:
+
+bash
+npx prisma generate
+npx prisma migrate dev --name add_execution_event
+6. Files të rinj që ia vlen t’i shtosh menjëherë
+src/lib/execution-log.ts
+ts
+import prisma from '@/lib/prisma';
+
+export async function logExecutionEvent(input: {
+  predictionId?: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  orderType: string;
+  quantity: number;
+  intendedPrice?: number;
+  submittedPrice?: number;
+  filledPrice?: number;
+  spreadAtDecision?: number;
+  spreadAtFill?: number;
+  submittedAt: Date;
+  ackAt?: Date;
+  filledAt?: Date;
+  status: string;
+  rejectReason?: string;
+  stopAttached?: boolean;
+  venue?: string;
+}) {
+  const latencyMs = input.ackAt
+    ? input.ackAt.getTime() - input.submittedAt.getTime()
+    : null;
+
+  let slippageBps: number | null = null;
+  if (input.intendedPrice && input.filledPrice) {
+    const raw = ((input.filledPrice - input.intendedPrice) / input.intendedPrice) * 10000;
+    slippageBps = input.side === 'BUY' ? raw : -raw;
+  }
+
+  return prisma.executionEvent.create({
+    data: {
+      ...input,
+      latencyMs,
+      slippageBps,
+      partialFillPct: input.filledPrice ? 100 : 0,
+      stopAttached: input.stopAttached ?? false,
+    },
+  });
+}
+src/lib/execution-quality.ts
+ts
+import prisma from '@/lib/prisma';
+
+function mean(values: number[]) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+function percentile(values: number[], p: number) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+
+export async function getExecutionQuality(params?: { symbol?: string; days?: number }) {
+  const since = new Date();
+  since.setDate(since.getDate() - (params?.days ?? 7));
+
+  const rows = await prisma.executionEvent.findMany({
+    where: {
+      ...(params?.symbol ? { symbol: params.symbol } : {}),
+      createdAt: { gte: since },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const total = rows.length;
+  const filled = rows.filter(r => r.status === 'FILLED');
+  const rejected = rows.filter(r => r.status === 'REJECTED');
+  const latencies = rows.flatMap(r => (r.latencyMs != null ? [r.latencyMs] : []));
+  const slippages = rows.flatMap(r => (r.slippageBps != null ? [r.slippageBps] : []));
+
+  return {
+    sampleSize: total,
+    fillRate: total ? filled.length / total : null,
+    rejectRate: total ? rejected.length / total : null,
+    avgLatencyMs: mean(latencies),
+    p95LatencyMs: percentile(latencies, 95),
+    avgSlippageBps: mean(slippages),
+    p95SlippageBps: percentile(slippages, 95),
+    stopAttachedRate: total ? rows.filter(r => r.stopAttached).length / total : null,
+    topRejectReasons: Object.entries(
+      rejected.reduce<Record<string, number>>((acc, row) => {
+        const k = row.rejectReason || 'UNKNOWN';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {})
+    ).sort((a, b) => b[1] - a[1]

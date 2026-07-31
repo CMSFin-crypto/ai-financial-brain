@@ -244,7 +244,7 @@ export async function GET() {
         scoreDelta1d,
         scoreDelta3d,
         volumeDelta: (r as any)._volumeDelta,
-        priceChangePct: (r as any)._priceChangePct,
+        priceChangePct: (r as any)._liveChangePct ?? (r as any)._priceChangePct,
         quoteTimestamp: (r as any)._dataTimestamp ?? scanStartMs,
       };
     }).filter(c => c.symbol);
