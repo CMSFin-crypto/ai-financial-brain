@@ -25,6 +25,35 @@ Stage Summary:
 - Build passes clean, no new tsc errors
 
 ---
+Task ID: 9
+Agent: main
+Task: Implement 5 structural advantage modules: Event-risk engine, Feature store, Ensemble/model averaging, Trade queue, Scenario planner
+
+Work Log:
+- Created src/lib/event-calendar.ts: centralized event calendar with FOMC dates 2025-2027, recurring macro events (NFP, CPI, PPI, GDP, PMI, retail, housing, jobless claims), earnings season detection, queryable by symbol/date/category/importance
+- Created src/lib/event-risk-engine.ts: converts calendar events into trade restrictions (NO_TRADE 24h before earnings, SIZE_REDUCTION before major macro, NO_NEW_ENTRIES 30-60 min around events), batch assessment, quick canEnterTrade check
+- Created /api/event-risk GET endpoint (single symbol, batch, quick check)
+- Created src/lib/feature-definitions.ts: 30+ centralized feature definitions across 7 sources (technical, fundamental, regime, market, spillover, event, derived), versioned, with range validation, model feature sets, version hash fingerprinting
+- Created src/lib/feature-store.ts: snapshot features at prediction time via PredictionFactor table, retrieve snapshots, training/inference consistency checking via version hash comparison
+- Created /api/features/[symbol] GET+POST endpoint (schema view, snapshot retrieval, consistency check, feature vector validation)
+- Created src/lib/model-ensemble.ts: 5-model ensemble (technical 35%, fundamental 20%, regime-sensitive 25%, mean-reversion 10%, event-risk 10%), weighted average score, confidence band from disagreement, disagreement-based action modifier (NORMAL/REDUCE_SIZE/SKIP), size multiplier
+- Created /api/ensemble-predict/[symbol] GET+POST endpoint
+- Created src/lib/trade-queue.ts: capital efficiency via 5-dimension scoring (EV 30pts, capital efficiency 20pts, correlation bonus 15pts, event risk penalty -20pts, agreement bonus 15pts), priority-sorted queue with capital budgeting (60% max portfolio, 10% max single trade)
+- Created /api/trade-queue POST endpoint
+- Created src/lib/scenario-planner.ts: pre-trade what-if with base/bull/bear cases, invalidation level, key support/resistance, assumptions with sensitivity, thesis changers, R/R calculation, time horizon
+- Created /api/scenario-plan/[symbol] GET+POST endpoint
+- All 11 new files compile clean (0 new tsc errors), 0 new lint errors
+
+Stage Summary:
+- 11 new files created (7 lib modules + 4 API routes)
+- 5 new structural advantage modules that reduce single-model dependency, operational risk, and training/inference inconsistency
+- Event-risk: protects from entering trades at bad times (earnings, FOMC, CPI)
+- Feature store: 30+ versioned feature definitions with hash-based consistency checking
+- Ensemble: weighted 5-model averaging with disagreement-based action modifiers
+- Trade queue: priority scoring with 5 dimensions + capital budgeting
+- Scenario planner: pre-trade base/bull/bear/invalidation framework
+
+---
 Task ID: 1-7
 Agent: main
 Task: Build 3 advanced layers (Calibration Lab, Conformal Risk, Lead-Lag Graph) + Model Promotion governance
