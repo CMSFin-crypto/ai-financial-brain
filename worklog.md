@@ -105,3 +105,27 @@ Stage Summary:
 - Pipeline integration: spillover factor flows through predict → factors → DB → gate
 - Backtest engine: walk-forward with realistic cost model
 - Next step: when DATABASE_URL is configured on Vercel, run migration to create tables
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Upgrade Global Spillover to V1+V2 with 16-feature vector, logistic regression, walk-forward
+
+Work Log:
+- Updated Prisma schema: SpilloverSignal got modelVersion/features/targetSector, GlobalMarketSnapshot got assetType/sma200, new SpilloverModelResult model
+- Rewrote global-market-data.ts: getDailyHistory(days), getGlobalSnapshot(), saveMarketSnapshots(), assetType field, SMA200
+- Created spillover-features.ts: 16 features (kospi1d/2d/5d, nikkei1d, hsi1d, smh1d/2d, qqq1d, vix1d, target1d/2d, targetDistanceFromSma20, targetAtrZ, semisBreadth, asiaDeceleration, oversoldScore), rollingZScore, computeATR, computeOversoldState, featuresToArray
+- Rewrote global-spillover.ts as V1: detectReliefRally/detectContinuation/detectCapitulation separate scoring functions, scoreSpillover combines, modelVersion='spillover-v1'
+- Created spillover-v2.ts: pure JS logistic regression (gradient descent + L2), buildSpilloverDataset (labels: RELIEF_RALLY/CONTINUATION/NEUTRAL), trainSpilloverModel, predictSpilloverV2, walkForwardValidate (12mo train / 1mo test), Brier score, OOS precision/recall, saveModelResult/evaluateModelResults
+- Rewrote spillover-backtest.ts: 3 modes (v1_only/v2_only/v1_plus_v2), v1_plus_v2 agreement logic (both agree=trade, disagree=NO_TRADE, V2 probDown>=0.65=NO_TRADE), walk-forward windows in output, Brier score
+- Created /api/global-spillover/backtest/[symbol]/route.ts with ?mode= param
+- Updated predict route to handle V1 features in response
+- Typecheck passes: 0 errors in spillover files
+- Committed and pushed to GitHub
+
+Stage Summary:
+- 2 new files (spillover-features.ts, spillover-v2.ts), 8 modified files
+- V1: 16-feature heuristic engine with separate detection functions
+- V2: logistic regression + walk-forward validation (no external deps)
+- Decision logic: V1+V2 agreement=trade, V2 probDown>=0.65=block, disagreement=NO_TRADE
+- Production path: V1 live now, V2 trains on accumulated data, only activates when OOS wins
