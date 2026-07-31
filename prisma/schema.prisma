@@ -187,6 +187,51 @@ model EventSnapshot {
   @@index([eventDate])
 }
 
+// ═══════ GLOBAL SPILLOVER ENGINE ═══════
+
+model GlobalMarketSnapshot {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  symbol      String   // "KOSPI" | "^N225" | "^HSI" | "SPY" | "QQQ" | "SMH" | "VIX" | etc.
+  region      String   // "ASIA_PACIFIC" | "US" | "EUROPE"
+  sector      String?  // "SEMICONDUCTOR" | "INDEX" | "VOLATILITY"
+  open        Float
+  high        Float
+  low         Float
+  close       Float
+  volume      Float    @default(0)
+  return1d    Float    @default(0)
+  return2d    Float?
+  return5d    Float?
+  atr14       Float?
+  sma20       Float?
+  sma50       Float?
+  regime      String?  // derived regime for this instrument
+  createdAt   DateTime @default(now())
+
+  @@index([symbol, date])
+  @@index([region, date])
+  @@index([sector, date])
+  @@index([date])
+}
+
+model SpilloverSignal {
+  id             String   @id @default(cuid())
+  date           DateTime @db.Date
+  targetSymbol   String   // e.g. "NVDA", "SMH", "SOXX"
+  sector         String?  // e.g. "SEMICONDUCTOR"
+  setupType      String   // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
+  spilloverScore Float    // -100 to +100
+  confidence     Float    // 0 to 1
+  reasons        Json     // string[] of human-readable reasons
+  drivers        Json     // { kospi1d, kospi2d, kospi5d, smh1d, smh2d, vix1d, qqq1d }
+  createdAt      DateTime @default(now())
+
+  @@index([targetSymbol, date])
+  @@index([setupType, date])
+  @@index([date])
+}
+
 // ═══════ AI LEARNING SYSTEM ═══════
 
 model AILesson {

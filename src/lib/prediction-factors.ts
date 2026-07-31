@@ -6,7 +6,7 @@ import prisma from './prisma';
 
 export interface FactorInput {
   factorName: string;
-  factorType: 'technical' | 'fundamental' | 'regime' | 'event' | 'relative_strength';
+  factorType: 'technical' | 'fundamental' | 'regime' | 'event' | 'relative_strength' | 'macro_global';
   score: number;      // -100 to +100
   weight: number;     // weight applied
   signal: string;     // BULLISH | BEARISH | NEUTRAL

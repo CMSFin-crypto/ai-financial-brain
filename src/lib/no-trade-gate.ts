@@ -6,6 +6,7 @@
 
 import type { MarketRegimeResult } from './market-regime';
 import type { EventRiskResult } from './event-risk';
+import type { SpilloverAnalysis } from './global-spillover';
 
 export interface NoTradeGateInput {
   confidence: number;
@@ -14,6 +15,7 @@ export interface NoTradeGateInput {
   signal: string;
   regime: MarketRegimeResult;
   eventRisk: EventRiskResult;
+  spillover?: SpilloverAnalysis;
 }
 
 export interface NoTradeGateResult {
@@ -26,7 +28,7 @@ const MIN_EDGE_PCT = 0.5;
 const MIN_SCORE_THRESHOLD = 20;
 
 export function runNoTradeGate(input: NoTradeGateInput): NoTradeGateResult {
-  const { confidence, combinedScore, expectedMovePct, signal, regime, eventRisk } = input;
+  const { confidence, combinedScore, expectedMovePct, signal, regime, eventRisk, spillover } = input;
 
   // 1. Confidence too low
   if (confidence < MIN_CONFIDENCE) {
@@ -84,6 +86,31 @@ export function runNoTradeGate(input: NoTradeGateInput): NoTradeGateResult {
       status: 'NO_TRADE',
       reason: `Score ${combinedScore.toFixed(1)} është shumë neutral — asnjë avantazh i qartë`,
     };
+  }
+
+  // 7. Spillover-based gates (for semis and tech)
+  if (spillover) {
+    // NEUTRAL spillover + low confidence → no trade
+    if (spillover.setupType === 'NEUTRAL' && spillover.confidence < 0.5 && Math.abs(combinedScore) < 35) {
+      return {
+        status: 'NO_TRADE',
+        reason: `Spillover i paqartë (NEUTRAL, conf=${(spillover.confidence * 100).toFixed(0)}%) — sinjali global nuk konfirmon drejtimin`,
+      };
+    }
+    // CONTINUATION spillover but signal is BUY → counter-spillover
+    if (spillover.setupType === 'CONTINUATION' && (signal === 'BUY' || signal === 'STRONG_BUY')) {
+      return {
+        status: 'NO_TRADE',
+        reason: `Spillover CONTINUATION (score=${spillover.spilloverScore}) bllokon BLERJEN — rënia globale po vazhdon`,
+      };
+    }
+    // CAPITULATION spillover → extremely risky, require high confidence
+    if (spillover.setupType === 'CAPITULATION' && confidence < 70) {
+      return {
+        status: 'NO_TRADE',
+        reason: `Spillover CAPITULATION — vetëm me konfidencë >70% lejohet trade`,
+      };
+    }
   }
 
   return { status: 'TRADE' };

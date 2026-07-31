@@ -12,6 +12,7 @@ import { savePredictionToDB } from '@/lib/prediction-history';
 import { buildTechnicalFactors, buildFundamentalFactors, type FactorInput } from '@/lib/prediction-factors';
 import { loadLearningStats } from '@/lib/prediction-history';
 import { evaluateDuePredictions } from '@/lib/evaluation-engine';
+import { analyzeGlobalSpillover, type SpilloverAnalysis } from '@/lib/global-spillover';
 
 export const maxDuration = 60;
 
@@ -57,7 +58,7 @@ export async function GET(
     const baseResult = predictStock(ticker, historicalData);
 
     // 3. Run all modules IN PARALLEL (I/O bound)
-    const [regime, relStrength, fundamentals, weightsResult, learningStatsRaw] = await Promise.all([
+    const [regime, relStrength, fundamentals, weightsResult, learningStatsRaw, spilloverRaw] = await Promise.all([
       detectMarketRegime(),
       calculateRelativeStrength(ticker),
       getRealFundamentals(ticker),
@@ -78,8 +79,19 @@ export async function GET(
         averageAbsoluteError: 0,
         recentAccuracy: 50,
       })),
+      analyzeGlobalSpillover(ticker).catch((err) => {
+        console.error('[PREDICT] Spillover analysis failed:', err);
+        return {
+          setupType: 'NEUTRAL' as const,
+          spilloverScore: 0,
+          confidence: 0,
+          reasons: ['Spillover analysis failed'] as string[],
+          drivers: { kospi1d: 0, kospi2d: 0, kospi5d: 0, smh1d: 0, smh2d: 0, vix1d: 0, qqq1d: 0 },
+        };
+      }),
     ]);
 
+    const spillover = spilloverRaw!;
     // 4. Fundamental analysis
     let fundamentalScore = 0;
     let fundamentalSummary = '';
@@ -106,14 +118,20 @@ export async function GET(
     const rScore = regimeScore(regime.regime);
     const rsScore = relStrength.rsScore;
 
-    // 7. Build combined score using horizon weights
+    // 7. Global spillover factor (for semis and tech)
+    const isSemiOrTech = ['NVDA', 'AMD', 'MU', 'MRVL', 'WDC', 'SNDK', 'INTC', 'TSM', 'AVGO', 'QCOM', 'SMH', 'SOXX', 'QQQ'].includes(ticker);
+    const spilloverScore = spillover.spilloverScore;
+    const spilloverWeight = isSemiOrTech ? 0.10 : 0.03;
+
+    // 8. Build combined score using horizon weights
     const ratios = weightsResult.horizonRatios;
     const techScore = baseResult.technicalScore;
     const combinedScore = Math.round(
       (techScore * ratios.technical +
        fundamentalScore * ratios.fundamental +
        rScore * ratios.event +
-       rsScore * 0.05) * 100
+       rsScore * 0.05 +
+       spilloverScore * spilloverWeight) * 100
     ) / 100;
 
     // 8. Calibrate confidence
@@ -133,7 +151,7 @@ export async function GET(
     const predictedDir5d = baseResult.mediumTerm.prediction;
     const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
 
-    // 11. NO_TRADE gate (for 1D horizon — the actionable one)
+    // 12. NO_TRADE gate (for 1D horizon — the actionable one)
     const gateResult = runNoTradeGate({
       confidence: calibratedConfidence,
       combinedScore,
@@ -141,6 +159,7 @@ export async function GET(
       signal: direction,
       regime,
       eventRisk,
+      spillover,
     });
 
     // 12. Build factors list for DB storage
@@ -185,6 +204,15 @@ export async function GET(
       weight: 0.05,
       signal: rsScore > 10 ? 'BULLISH' : rsScore < -10 ? 'BEARISH' : 'NEUTRAL',
       description: `RS vs SPY: ${rsScore > 0 ? '+' : ''}${rsScore.toFixed(1)}`,
+    });
+    // Global spillover factor
+    allFactors.push({
+      factorName: 'global_spillover',
+      factorType: 'macro_global',
+      score: spilloverScore,
+      weight: spilloverWeight,
+      signal: spilloverScore > 0 ? 'BULLISH' : spilloverScore < 0 ? 'BEARISH' : 'NEUTRAL',
+      description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) — ${spillover.reasons.slice(0, 2).join('; ')}`,
     });
 
     // 13. Save prediction to DB (async, don't block response)
@@ -301,6 +329,13 @@ export async function GET(
       },
       gateStatus: gateResult.status,
       gateReason: gateResult.reason,
+      spillover: {
+        setupType: spillover.setupType,
+        spilloverScore: spillover.spilloverScore,
+        confidence: spillover.confidence,
+        reasons: spillover.reasons,
+        drivers: spillover.drivers,
+      },
       horizons: {
         '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d },
         '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d },
