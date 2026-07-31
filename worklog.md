@@ -162,3 +162,30 @@ Stage Summary:
 - V2 promotion criteria: 50+ OOS samples, wins 2/3 (precision, Brier, return), no catastrophic regression
 - V2 shadow predictions saved to SpilloverModelResult daily for semis/tech stocks
 - API: /api/global-spillover/compare for monitoring V1 vs V2 performance
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Build Regime Intelligence Layer — 5-state orchestrator with policy routing
+
+Work Log:
+- Updated Prisma schema: added `RegimeSnapshot` model (daily regime state, features, policy, drivers), added `regimeState`/`regimeConfidence`/`regimePolicy` to Prediction model, added @@index on regimeState+wasCorrect
+- Created `regime-policy.ts`: 5 policies (BULL_LOW_VOL, BEAR_HIGH_VOL, PANIC_CAPITULATION, RELIEF_RALLY, RANGE_NEUTRAL) with confidenceFloor, allowLongs/Shorts, noTradeBias, scoreMultiplier, spillover/tech/fund weight multipliers, maxPositionSize, stopLossTightening, boosted/suppressed factor lists
+- Created `regime-intelligence.ts`: 18-feature classifier (spy1d/5d/20d, qqq1d/5d, vixLevel/1d, smh1d/5d, kospi1d/2d, semisBreadth, atrZScore, adxLevel, eventRiskScore, spilloverScore/Setup), priority-ordered scoring (PANIC > RELIEF > BEAR > BULL > RANGE), confidence from score dominance, transition risk estimator, DB persistence, getRegimeHistory(), getRegimeAccuracyStats()
+- Created `regime-router.ts`: per-regime factor weight modifiers (e.g. PANIC: global_spillover 2x, atr 2x, valuation 0x; RELIEF: rsi 1.5x, stochastic 1.5x, analystSentiment 0.3x; BULL: maTrend 1.5x, growth 1.3x, atr 0.3x), routeWeightsByRegime() applies modifiers + normalizes, adjusts horizon ratios
+- Created `regime-hmm.ts`: HMM skeleton with Gaussian emission types, 5-state definition, trainRegimeHMM/inferCurrentRegime/predictNextRegimeTransition placeholders, gaussianPDF helper
+- Created `/api/regime/current/route.ts`: GET with ?history=30&accuracy=true&modifiers=true&policies=true
+- Created `/api/regime/backtest/route.ts`: per-regime winRate, avgReturn, NO_TRADE count, regime distribution, transition tracking
+- Modified predict route: regime intelligence runs after spillover+eventRisk, weights replaced by regime-routed weights, score multiplier applied, confidence floor enforced, direction check via policy, regimeIntelligence block in response, regimeState saved to every Prediction
+- Modified no-trade-gate.ts: accepts optional RegimePolicy, PANIC_CAPITULATION blocks all trades, confidence below regime floor blocked
+- Regenerated Prisma client, type-check passes (0 errors in our files)
+- Committed and pushed to GitHub
+
+Stage Summary:
+- 6 new files, 3 modified files
+- Pipeline flow: global-market-data → spillover-features → spillover V1/V2 → **regime-intelligence** → regime-router → confidence calibration → no-trade gate → final prediction
+- Key principle: same indicators, different interpretation per regime
+- RELIEF_RALLY: spillover 2x, RSI 1.5x, no shorts, confidence floor 50
+- PANIC_CAPITULATION: all trades blocked, fundamentals 0x, only spillover+atr active
+- BULL_LOW_VOL: fundamentals 1.2x, trend 1.5x, lower confidence floor 35
+- HMM skeleton ready for future implementation (Baum-Welch, Viterbi)
