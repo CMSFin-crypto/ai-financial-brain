@@ -430,6 +430,123 @@ model ManualDecisionOverride {
   @@index([predictionId])
 }
 
+// ═══════ META-MODEL AI (XGBoost-style classifier + calibration) ═══════
+
+model ModelTrainingRun {
+  id                  String   @id @default(cuid())
+  modelVersion        String   // "meta-v1-2026-08-01"
+  algorithm           String   // "lightgbm" | "xgboost" | "ensemble"
+  status              String   @default("PENDING") // "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
+
+  // Training config
+  trainingWindowFrom  DateTime?
+  trainingWindowTo    DateTime?
+  validationWindowFrom DateTime?
+  validationWindowTo  DateTime?
+  testWindowFrom      DateTime?
+  testWindowTo        DateTime?
+
+  // Hyper-parameters
+  hyperParams         Json?    // { nEstimators, maxDepth, learningRate, ... }
+  featureList         Json?    // string[] of feature names used
+  targetHorizonDays   Int      @default(1)
+  targetDefinition    String   @default("trade_success_1d") // how label was computed
+
+  // Results
+  trainSamples        Int      @default(0)
+  valSamples          Int      @default(0)
+  testSamples         Int      @default(0)
+  trainAccuracy       Float?
+  valAccuracy         Float?
+  testAccuracy        Float?
+  trainBrier          Float?
+  valBrier            Float?
+  testBrier           Float?
+  valAuc              Float?
+  testAuc             Float?
+  calibrationEce      Float?   // expected calibration error on val
+  overfittingRatio    Float?   // trainAcc / testAcc (1.0 = perfect, >1.3 = overfit)
+
+  // Serialized model artifact (base64-encoded JSON for V1)
+  modelArtifact       String?  // serialized trees / coefficients
+  calibrationState    Json?    // isotonic calibration mapping
+
+  // Walk-forward specifics
+  wfFoldCount         Int      @default(0)
+  wfAvgAccuracy       Float?
+  wfStdAccuracy       Float?
+  wfAvgBrier          Float?
+
+  error               String?
+  completedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  predictions         ModelPrediction[]
+
+  @@index([modelVersion, createdAt])
+  @@index([status])
+}
+
+model ModelPrediction {
+  id                  String   @id @default(cuid())
+  trainingRunId       String?
+  modelVersion        String
+  symbol              String
+  sector              String?
+  regime              String?
+
+  predictedAt         DateTime @default(now())
+  horizonDays         Int      @default(1)
+
+  // Input features snapshot
+  features            Json     // { featureName: value, ... }
+  featureVersion      String   // links to FeatureSnapshot.version
+
+  // Raw model output
+  rawWinProbability   Float
+  rawLossProbability  Float
+
+  // Calibrated output
+  calibratedWinProb   Float
+  confidenceCalibrated Float   // final confidence after calibration
+
+  // Decision
+  expectedEdge        Float?   // expected value of the trade
+  recommendedAction   String   @default("SKIP") // "TRADE" | "PAPER_ONLY" | "SKIP"
+  actionReason        String?  // human-readable reason
+
+  // Outcome (filled later)
+ actualReturn        Float?
+  wasCorrect         Boolean?
+  evaluationStatus    String   @default("PENDING") // "PENDING" | "EVALUATED"
+  evaluatedAt         DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  trainingRun         ModelTrainingRun? @relation(fields: [trainingRunId], references: [id])
+
+  @@index([symbol, predictedAt])
+  @@index([modelVersion, predictedAt])
+  @@index([evaluationStatus])
+}
+
+model FeatureSnapshot {
+  id                  String   @id @default(cuid())
+  version             String   // "feat-v1" — incremented on schema changes
+  symbol              String
+  date                DateTime
+  snapshot            Json     // { featureName: value, ... }
+  schemaHash          String   // hash of sorted feature names for consistency check
+  featureCount        Int
+  createdAt           DateTime @default(now())
+
+  @@unique([version, symbol, date])
+  @@index([version])
+  @@index([symbol, date])
+}
+
 // ═══════ MODEL RELEASE GOVERNANCE ═══════
 
 model ModelRelease {
