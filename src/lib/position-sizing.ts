@@ -19,6 +19,7 @@ export type PositionSizingInput = {
   maxPositionPct?: number;           // e.g. 10 (max 10% of equity in one position)
   conformalUncertainty?: number;     // 0..1 (uncertaintyBand from conformal)
   correlationPenalty?: number;       // 0..1 (portfolio correlation penalty)
+  regimeMultiplier?: number;         // 0.1..1.2 (from regime-detection, e.g. BULL=1.0, BEAR=0.3)
 };
 
 export type PositionSizingResult = {
@@ -26,6 +27,7 @@ export type PositionSizingResult = {
   fullKelly: number;                 // raw Kelly fraction
   fractionalKelly: number;           // quarter Kelly (fullKelly * 0.25)
   adjustedKelly: number;             // after uncertainty & correlation scaling
+  regimeScale: number;             // regime multiplier applied to Kelly
   // Share calculations by each constraint
   sharesByRisk: number;              // from risk budget
   sharesByKelly: number;              // from Kelly sizing
@@ -62,7 +64,9 @@ export function computePositionSize(input: PositionSizingInput): PositionSizingR
   // Scale down by portfolio correlation (more correlated = smaller size)
   const correlationScale = 1 - clamp(input.correlationPenalty ?? 0, 0, 0.8);
 
-  const adjustedKelly = fractionalKelly * uncertaintyScale * correlationScale;
+  const regimeScale = clamp(input.regimeMultiplier ?? 1, 0.1, 1.2);
+
+  const adjustedKelly = fractionalKelly * uncertaintyScale * correlationScale * regimeScale;
 
   // Caps
   const maxRiskPerTradePct = input.maxRiskPerTradePct ?? 0.5;  // 0.5% default
@@ -96,6 +100,7 @@ export function computePositionSize(input: PositionSizingInput): PositionSizingR
     fullKelly: Math.round(fullKelly * 10000) / 10000,
     fractionalKelly: Math.round(fractionalKelly * 10000) / 10000,
     adjustedKelly: Math.round(adjustedKelly * 10000) / 10000,
+    regimeScale: Math.round(regimeScale * 10000) / 10000,
     sharesByRisk,
     sharesByKelly,
     sharesByMaxPosition,

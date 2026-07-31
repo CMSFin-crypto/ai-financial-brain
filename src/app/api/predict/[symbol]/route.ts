@@ -271,6 +271,7 @@ export async function GET(
           maxPositionPct: 10,
           conformalUncertainty: conformalResult?.uncertaintyBand ?? 0.2,
           correlationPenalty: 0.15,
+          regimeMultiplier: regimePolicy.scoreMultiplier,
         });
       } catch (err) {
         console.warn('[PREDICT] Position sizing failed:', err);
@@ -461,6 +462,7 @@ export async function GET(
           full: positionSizing.fullKelly,
           fractional: positionSizing.fractionalKelly,
           adjusted: positionSizing.adjustedKelly,
+          regimeScale: positionSizing.regimeScale,
         },
         shares: positionSizing.recommendedShares,
         positionValue: positionSizing.recommendedPositionValue,
