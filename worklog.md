@@ -189,3 +189,27 @@ Stage Summary:
 - PANIC_CAPITULATION: all trades blocked, fundamentals 0x, only spillover+atr active
 - BULL_LOW_VOL: fundamentals 1.2x, trend 1.5x, lower confidence floor 35
 - HMM skeleton ready for future implementation (Baum-Welch, Viterbi)
+
+---
+Task ID: 2-b
+Agent: Main Agent
+Task: Add Brier calibration operational layer (schema, save, evaluate, metrics, dashboard)
+
+Work Log:
+- Updated prisma/schema.prisma: added `actualOutcome Int?`, `transitionRisk Float?` to Prediction model, added `ModelMetricSnapshot` model with indexes
+- Created `src/lib/save-prediction.ts`: Brier-ready persistence wrapping existing savePredictionToDB with transitionRisk + batch support
+- Created `src/lib/evaluate-prediction.ts`: single-prediction + batch Brier evaluator that computes actualOutcome (binary 0/1) using real entryPrice
+- Created `src/lib/model-metrics.ts`: Brier score (mean((f-o)^2)), per-regime Brier, per-horizon Brier, precision/recall, max drawdown, snapshot + history
+- Created `src/app/api/model-metrics/route.ts`: GET (current metrics or history timeline), POST (snapshot with validation)
+- Created `src/app/api/evaluator/cron/route.ts`: POST endpoint that runs both legacy + Brier evaluators in parallel, auto-snapshots metrics
+- Modified `src/app/api/predict/[symbol]/route.ts`: replaced savePredictionToDB with new savePrediction (adds transitionRisk, modelVersion v3, predictionId per horizon in response)
+- Created `src/app/model-metrics/page.tsx`: full calibration dashboard with 8 KPI cards, 4 chart tabs (Brier by regime, Brier by horizon, metrics timeline, gate analysis)
+- Type-check: 0 errors in all new/modified files
+
+Stage Summary:
+- Prediction lifecycle: generate → save (regime+transitionRisk) → evaluate (cron at dueAt) → compute Brier → snapshot → recalibrate
+- Brier score computed as mean((f-o)^2) where f=confidence/100, o=actualOutcome (0/1)
+- Dashboard at /model-metrics with recharts: horizontal bar (regime), vertical bar (horizon), line (timeline), pie (gate)
+- Endpoints: GET/POST /api/model-metrics, POST /api/evaluator/cron
+- Each prediction now returns predictionId per horizon for tracking
+- Model version bumped to `predict-v3-regime-spillover`

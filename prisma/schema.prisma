@@ -113,6 +113,10 @@ model Prediction {
   regimeConfidence Float?  // 0-1
   regimePolicy     Json?   // full policy snapshot at prediction time
 
+  // Brier calibration fields
+  actualOutcome     Int?       // binary 0/1 for Brier score: 1 = predicted direction was correct
+  transitionRisk    Float?     // regime transition probability at prediction time
+
   // Metadata
   noTradeReason    String?
   lessonExtracted  Boolean  @default(false)
@@ -127,6 +131,8 @@ model Prediction {
   @@index([dueAt, wasCorrect])
   @@index([horizonDays, wasCorrect])
   @@index([regimeState, wasCorrect])
+  @@index([modelVersion, createdAt])
+  @@index([regimeState, createdAt])
 }
 
 model PredictionFactor {
@@ -288,6 +294,27 @@ model RegimeSnapshot {
   @@unique([date]) // one regime snapshot per day
   @@index([regimeState, date])
   @@index([date])
+}
+
+// ═══════ MODEL METRICS (Brier calibration layer) ═══════
+
+model ModelMetricSnapshot {
+  id              String   @id @default(cuid())
+  modelVersion    String
+  horizonDays     Int
+  sampleSize      Int
+  accuracy        Float?
+  avgReturn       Float?
+  winRate         Float?
+  brierScore      Float?
+  precisionBuy    Float?
+  recallBuy       Float?
+  noTradeRate     Float?
+  maxDrawdown     Float?
+  createdAt       DateTime @default(now())
+
+  @@index([modelVersion, createdAt])
+  @@index([horizonDays, createdAt])
 }
 
 // ═══════ AI LEARNING SYSTEM ═══════

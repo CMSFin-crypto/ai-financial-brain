@@ -6,10 +6,11 @@ import { calculateRelativeStrength } from '@/lib/relative-strength';
 import { checkEventRisk } from '@/lib/event-risk';
 import { runNoTradeGate } from '@/lib/no-trade-gate';
 import { getModelWeights, seedDefaultWeights } from '@/lib/model-weights';
-import { savePredictionToDB } from '@/lib/prediction-history';
+import { savePrediction as savePredictionBrier } from '@/lib/save-prediction';
 import { buildTechnicalFactors, buildFundamentalFactors, type FactorInput } from '@/lib/prediction-factors';
 import { loadLearningStats } from '@/lib/prediction-history';
 import { evaluateDuePredictions } from '@/lib/evaluation-engine';
+import { evaluateDuePredictionsBrier } from '@/lib/evaluate-prediction';
 import { analyzeGlobalSpillover, type SpilloverAnalysis } from '@/lib/global-spillover';
 import { runV2ShadowPrediction, getActiveModel } from '@/lib/spillover-promotion';
 import { getRegimeWithPolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
@@ -66,7 +67,13 @@ export async function GET(
     // ── Pre-flight ───────────────────────────────────────────
     await seedDefaultWeights().catch(() => {});
     if (runEval) {
-      try { await evaluateDuePredictions(); } catch (err) {
+      try {
+        // Run both evaluators: legacy (wasCorrect) + Brier (actualOutcome)
+        await Promise.all([
+          evaluateDuePredictions(),
+          evaluateDuePredictionsBrier(),
+        ]);
+      } catch (err) {
         console.error('[PREDICT] Evaluation failed:', err);
       }
     }
@@ -287,19 +294,24 @@ export async function GET(
     const predictedDir5d = baseResult.mediumTerm.prediction;
     const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
 
-    // 4c. Save to DB with REGIME STATE + POLICY (for Brier calibration)
+    // 4c. Save to DB with REGIME STATE + POLICY + TRANSITION RISK (for Brier calibration)
+    const modelVersion = 'predict-v3-regime-spillover';
     const dbBase = {
-      ticker, signal: direction, confidence: calibratedConfidence, combinedScore,
+      ticker, signal: direction, calibratedConfidence, combinedScore,
       technicalScore: techScore, fundamentalScore,
       regimeScore: regimePolicy.scoreMultiplier > 1 ? 10 : regimePolicy.scoreMultiplier < 1 ? -10 : 0,
       eventRiskScore: eventRisk.riskScore,
       gateStatus: gateResult.status, gateReason: gateResult.reason,
       noTradeReason: gateResult.status === 'NO_TRADE' ? gateResult.reason : undefined,
+      finalDecision: finalDecision as 'TRADE' | 'NO_TRADE',
+      modelVersion,
       factors: allFactors,
       // Regime Intelligence — persisted for per-regime Brier score calibration
-      regimeState: regimeIntel.regime,
+      regime: regimeIntel.regime,
       regimeConfidence: regimeIntel.confidence,
+      transitionRisk: regimeIntel.transitionRisk,
       regimePolicy: regimePolicy as unknown as Record<string, unknown>,
+      rawScore,
       snapshot: {
         regime: regimeIntel.regime,
         regimeConfidence: regimeIntel.confidence,
@@ -310,17 +322,19 @@ export async function GET(
       },
     };
 
-    savePredictionToDB({ ...dbBase,
-      horizonDays: 1, predictedDir: predictedDir1d, predictedMovePct: expectedMove1d, entryPrice: lastClose,
-    }).catch(err => console.error('[PREDICT] DB save 1D failed:', err));
+    const [predId1d, predId5d, predId20d] = await Promise.all([
+      savePredictionBrier({ ...dbBase,
+        horizonDays: 1, predictedDir: predictedDir1d, predictedMovePct: expectedMove1d, entryPrice: lastClose,
+      }),
+      savePredictionBrier({ ...dbBase,
+        horizonDays: 5, predictedDir: predictedDir5d, predictedMovePct: expectedMove5d, entryPrice: lastClose,
+      }),
+      savePredictionBrier({ ...dbBase,
+        horizonDays: 20, predictedDir: predictedDir20d, predictedMovePct: expectedMove5d * 2, entryPrice: lastClose,
+      }),
+    ]);
 
-    savePredictionToDB({ ...dbBase,
-      horizonDays: 5, predictedDir: predictedDir5d, predictedMovePct: expectedMove5d, entryPrice: lastClose,
-    }).catch(() => {});
-
-    savePredictionToDB({ ...dbBase,
-      horizonDays: 20, predictedDir: predictedDir20d, predictedMovePct: expectedMove5d * 2, entryPrice: lastClose,
-    }).catch(() => {});
+    const primaryPredictionId = predId1d;
 
     // 4d. Build response
     const elapsedMs = Date.now() - startTime;
@@ -396,11 +410,12 @@ export async function GET(
       finalDecision,
       routingBlockedReason: routingResult.blockedReason ?? null,
       horizons: {
-        '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d },
-        '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d },
-        '20D': { predictedDir: predictedDir20d, expectedMovePct: expectedMove5d * 2 },
+        '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d, predictionId: predId1d },
+        '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d, predictionId: predId5d },
+        '20D': { predictedDir: predictedDir20d, expectedMovePct: expectedMove5d * 2, predictionId: predId20d },
       },
-      modelVersion: '2.0',
+      predictionId: primaryPredictionId,
+      modelVersion,
       processingTimeMs: elapsedMs,
     });
   } catch (error: unknown) {
