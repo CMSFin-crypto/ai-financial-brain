@@ -1,56 +1,71 @@
 // ============================================================
 // GET  /api/model-calibration
-//   ?regime=<regime> &modelVersion=<v> &horizonDays=<n>
+//   ?modelVersion=<v> &regime=<r> &horizonDays=<n> &bins=<5-20>
 //   &byRegime=true  — per-regime breakdown
 //   &byVersion=true — per-model-version breakdown
 //   &timeseries=true — weekly Brier/ECE over time
 //   &train=true     — train calibrator and return state
 //
-// Returns calibration report with ECE, MCE, Brier, reliability table.
+// All query params validated via Zod.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { parseQuery } from '@/lib/parse-query';
+import { calibrationQuerySchema } from '@/lib/api-schemas';
 import {
-  computeCalibrationReport,
-  computeCalibrationByRegime,
-  computeCalibrationByVersion,
-  getCalibrationTimeSeries,
-} from '@/lib/calibration-metrics';
-import { trainCalibrator, getCalibratorState } from '@/lib/probability-calibrator';
+  getCalibrationReport,
+  getCalibrationByRegime,
+  getCalibrationByVersion,
+  getCalibrationTimeSeriesData,
+  trainCalibrationModel,
+  getCalibratorInfo,
+} from '@/lib/calibration-service';
 
 export const maxDuration = 30;
 
-export async function GET(request: NextRequest) {
+export async function GET(req: NextRequest) {
+  // Validate query params via Zod (throws on invalid)
+  let query;
   try {
-    const { searchParams } = new URL(request.url);
-    const regime = searchParams.get('regime') || undefined;
-    const modelVersion = searchParams.get('modelVersion') || undefined;
-    const horizonDays = searchParams.get('horizonDays') ? parseInt(searchParams.get('horizonDays')!) : undefined;
-    const byRegime = searchParams.get('byRegime') === 'true';
-    const byVersion = searchParams.get('byVersion') === 'true';
-    const timeseries = searchParams.get('timeseries') === 'true';
-    const train = searchParams.get('train') === 'true';
+    query = parseQuery(req, calibrationQuerySchema);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Invalid query parameters';
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
 
-    if (byRegime) {
-      const byRegimeReport = await computeCalibrationByRegime({ modelVersion, horizonDays });
+  try {
+    // Branch 1: byRegime breakdown
+    if (query.byRegime) {
+      const regimes = await getCalibrationByRegime({
+        modelVersion: query.modelVersion,
+        horizonDays: query.horizonDays,
+      });
       return NextResponse.json({
         type: 'calibration_by_regime',
-        regimes: byRegimeReport,
-        regimeCount: Object.keys(byRegimeReport).length,
+        regimes,
+        regimeCount: Object.keys(regimes).length,
       });
     }
 
-    if (byVersion) {
-      const byVersionReport = await computeCalibrationByVersion(horizonDays);
+    // Branch 2: byVersion breakdown
+    if (query.byVersion) {
+      const versions = await getCalibrationByVersion({
+        horizonDays: query.horizonDays,
+      });
       return NextResponse.json({
         type: 'calibration_by_version',
-        versions: byVersionReport,
-        versionCount: Object.keys(byVersionReport).length,
+        versions,
+        versionCount: Object.keys(versions).length,
       });
     }
 
-    if (timeseries) {
-      const series = await getCalibrationTimeSeries({ modelVersion, horizonDays });
+    // Branch 3: time series
+    if (query.timeseries) {
+      const series = await getCalibrationTimeSeriesData({
+        modelVersion: query.modelVersion,
+        horizonDays: query.horizonDays,
+        days: query.days,
+      });
       return NextResponse.json({
         type: 'calibration_timeseries',
         dataPoints: series.length,
@@ -58,48 +73,38 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (train) {
-      const state = await trainCalibrator({ modelVersion, horizonDays, regime });
+    // Branch 4: train calibrator
+    if (query.train) {
+      const state = await trainCalibrationModel({
+        modelVersion: query.modelVersion,
+        regime: query.regime,
+        horizonDays: query.horizonDays,
+        bins: query.bins,
+      });
       return NextResponse.json({
         type: 'calibrator_state',
         ...state,
-        improvement: state.preCalibrationBrier !== null && state.postCalibrationBrier !== null
-          ? {
-              brierDelta: Math.round((state.postCalibrationBrier - state.preCalibrationBrier) * 10000) / 10000,
-              improved: state.postCalibrationBrier < state.preCalibrationBrier,
-            }
-          : null,
       });
     }
 
-    // Default: single calibration report
-    const report = await computeCalibrationReport({ modelVersion, horizonDays, regime });
+    // Branch 5 (default): single calibration report
+    const report = await getCalibrationReport({
+      modelVersion: query.modelVersion,
+      regime: query.regime,
+      horizonDays: query.horizonDays,
+      bins: query.bins,
+    });
 
-    // Also get current calibrator state if available
-    let calibrator: { method: string; trainedAt: string | null; sampleSize: number; preBrier: number | null; postBrier: number | null } | null = null;
-    try {
-      const state = await getCalibratorState({ modelVersion, horizonDays });
-      calibrator = {
-        method: state.method,
-        trainedAt: state.trainedAt,
-        sampleSize: state.sampleSize,
-        preBrier: state.preCalibrationBrier,
-        postBrier: state.postCalibrationBrier,
-      };
-    } catch {
-      // calibrator not available, that's fine
-    }
+    // Also get calibrator info
+    const calibrator = await getCalibratorInfo({
+      modelVersion: query.modelVersion,
+      horizonDays: query.horizonDays,
+    });
 
     return NextResponse.json({
       type: 'calibration_report',
       ...report,
-      calibrator: calibrator ? {
-        method: calibrator.method,
-        trainedAt: calibrator.trainedAt,
-        sampleSize: calibrator.sampleSize,
-        preBrier: calibrator.preBrier,
-        postBrier: calibrator.postBrier,
-      } : null,
+      calibrator,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

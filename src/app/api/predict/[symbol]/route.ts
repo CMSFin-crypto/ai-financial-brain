@@ -17,6 +17,7 @@ import { routeByRegime } from '@/lib/regime-router';
 import { getDailyHistory } from '@/lib/global-market-data';
 import { computeConformalPrediction, type ConformalPredictionSet } from '@/lib/conformal-risk';
 import { scoreLeadLag, isLeadLagRelevant } from '@/lib/leadlag-score';
+import { getCalibrationReport, applyBucketCalibration, type CalibrationServiceReport } from '@/lib/calibration-service';
 
 export const maxDuration = 60;
 
@@ -198,16 +199,39 @@ export async function GET(
           regimePolicy,
         });
 
-    // CONFORMAL RISK GATE
+    const modelVersion = 'predict-v3-regime-spillover';
+
+    // CALIBRATION LAYER — bucket-calibrate the probability before conformal
+    let calibrationReport: CalibrationServiceReport | null = null;
+    let rawProbability = calibratedConfidence / 100;
+    let calibratedProbability = rawProbability;
+    try {
+      calibrationReport = await getCalibrationReport({
+        modelVersion,
+        horizonDays: 1,
+        bins: 10,
+      });
+      if (calibrationReport.sampleSize >= 50 && calibrationReport.bucketCalibrator.length > 0) {
+        calibratedProbability = applyBucketCalibration(rawProbability, calibrationReport.bucketCalibrator);
+        console.log(
+          `[PREDICT] ${ticker}: calibration ${rawProbability.toFixed(4)} → ${calibratedProbability.toFixed(4)} ` +
+          `(diagnosis=${calibrationReport.diagnosis}, ece=${calibrationReport.ece})`,
+        );
+      }
+    } catch (err) {
+      console.warn('[PREDICT] Calibration service failed, using raw probability:', err);
+    }
+
+    // CONFORMAL RISK GATE — uses calibrated probability
     let conformalResult: ConformalPredictionSet | null = null;
     let conformalOverride = false;
     let conformalOverrideReason: string | null = null;
     if (gateResult.status !== 'NO_TRADE') {
       try {
         const probabilityUp = direction === 'STRONG_BUY' || direction === 'BUY'
-          ? calibratedConfidence / 100
+          ? calibratedProbability
           : direction === 'STRONG_SELL' || direction === 'SELL'
-            ? 1 - calibratedConfidence / 100
+            ? 1 - calibratedProbability
             : 0.5;
         const cr = await computeConformalPrediction(probabilityUp, {
           regime: regimeIntel.regime,
@@ -293,7 +317,6 @@ export async function GET(
     const predictedDir5d = baseResult.mediumTerm.prediction;
     const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
 
-    const modelVersion = 'predict-v3-regime-spillover';
     const effectiveGateStatus = conformalOverride ? 'NO_TRADE' : gateResult.status;
     const finalDecision = toFinalDecision(direction, effectiveGateStatus);
 
@@ -353,6 +376,14 @@ export async function GET(
       eventRisk: { type: eventRisk.eventType, severity: eventRisk.severity, description: eventRisk.description },
       gateStatus: effectiveGateStatus,
       gateReason: conformalOverride ? conformalOverrideReason : gateResult.reason,
+      calibration: calibrationReport ? {
+        rawProbability: Math.round(rawProbability * 10000) / 10000,
+        calibratedProbability: Math.round(calibratedProbability * 10000) / 10000,
+        diagnosis: calibrationReport.diagnosis,
+        ece: calibrationReport.ece,
+        brier: calibrationReport.brier,
+        sampleSize: calibrationReport.sampleSize,
+      } : null,
       conformalRisk: conformalResult ? {
         tradeEligible: conformalResult.tradeEligible,
         uncertaintyBand: conformalResult.uncertaintyBand,

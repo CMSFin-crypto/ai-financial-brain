@@ -10,10 +10,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
+  ScatterChart, Scatter, ReferenceLine,
 } from 'recharts';
 import {
   Target, TrendingUp, TrendingDown, Activity, Gauge, Shield,
   BarChart3, RefreshCw, AlertTriangle, CheckCircle2, Clock, Zap,
+  Thermometer, Crosshair,
 } from 'lucide-react';
 
 // --- Types ---
@@ -98,11 +100,40 @@ function StatCard({ title, value, subtitle, icon: Icon, color = 'text-foreground
   );
 }
 
+// --- Calibration Types ---
+
+type ReliabilityBin = {
+  rangeStart: number;
+  rangeEnd: number;
+  avgProbability: number;
+  observedFrequency: number;
+  count: number;
+  calibrationError: number;
+};
+
+type CalibrationData = {
+  sampleSize: number;
+  brier: number | null;
+  ece: number | null;
+  mce: number | null;
+  reliability: ReliabilityBin[];
+  diagnosis: string;
+  calibrator: {
+    method: string;
+    trainedAt: string | null;
+    sampleSize: number;
+    preBrier: number | null;
+    postBrier: number | null;
+  } | null;
+};
+
 // --- Main Page ---
 
 export default function ModelMetricsDashboard() {
   const [metrics, setMetrics] = useState<ModelMetrics | null>(null);
   const [history, setHistory] = useState<MetricSnapshot[]>([]);
+  const [calibration, setCalibration] = useState<CalibrationData | null>(null);
+  const [calLoading, setCalLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [snapshotting, setSnapshotting] = useState(false);
   const [horizonFilter, setHorizonFilter] = useState<string>('all');
@@ -132,7 +163,24 @@ export default function ModelMetricsDashboard() {
     }
   }, [horizonFilter, regimeFilter]);
 
+  const fetchCalibration = useCallback(async () => {
+    setCalLoading(true);
+    try {
+      const params = new URLSearchParams({ modelVersion: 'predict-v3-regime-spillover' });
+      if (horizonFilter !== 'all') params.set('horizonDays', horizonFilter);
+      if (regimeFilter) params.set('regime', regimeFilter);
+      const res = await fetch(`/api/model-calibration?${params}`);
+      const data = await res.json();
+      setCalibration(data);
+    } catch {
+      // calibration fetch failure is non-critical
+    } finally {
+      setCalLoading(false);
+    }
+  }, [horizonFilter, regimeFilter]);
+
   useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
+  useEffect(() => { fetchCalibration(); }, [fetchCalibration]);
 
   const handleSnapshot = async () => {
     setSnapshotting(true);
@@ -291,12 +339,166 @@ export default function ModelMetricsDashboard() {
         </div>
 
         {/* Charts */}
-        <Tabs defaultValue="timeline" className="space-y-4">
+        <Tabs defaultValue="reliability" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="reliability">Model Reliability</TabsTrigger>
             <TabsTrigger value="timeline">Metrics Timeline</TabsTrigger>
             <TabsTrigger value="alpha">Alpha & Returns</TabsTrigger>
             <TabsTrigger value="gates">Gate Analysis</TabsTrigger>
           </TabsList>
+
+          {/* ── RELIABILITY TAB ── */}
+          <TabsContent value="reliability" className="space-y-4">
+            {/* Reliability KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <StatCard
+                title="ECE"
+                value={calibration?.ece != null ? calibration.ece.toFixed(4) : 'N/A'}
+                subtitle={calibration?.ece != null ? (calibration.ece < 0.03 ? 'Well calibrated' : calibration.ece < 0.08 ? 'Acceptable' : 'Needs recalibration') : 'No data'}
+                icon={Thermometer}
+                color={calibration?.ece != null ? (calibration.ece < 0.03 ? 'text-emerald-500' : calibration.ece < 0.08 ? 'text-amber-500' : 'text-red-500') : ''}
+              />
+              <StatCard
+                title="Brier Score"
+                value={calibration?.brier != null ? calibration.brier.toFixed(4) : 'N/A'}
+                subtitle={calibration?.calibrator ? `Calibrator: ${calibration.calibrator.method}` : 'No calibrator'}
+                icon={Gauge}
+                color={calibration?.brier != null ? (calibration.brier < 0.15 ? 'text-emerald-500' : calibration.brier < 0.25 ? 'text-amber-500' : 'text-red-500') : ''}
+              />
+              <StatCard
+                title="MCE"
+                value={calibration?.mce != null ? calibration.mce.toFixed(4) : 'N/A'}
+                subtitle="Worst bucket error"
+                icon={AlertTriangle}
+                color={calibration?.mce != null && calibration.mce > 0.20 ? 'text-red-500' : ''}
+              />
+              <StatCard
+                title="Diagnosis"
+                value={calibration?.diagnosis ? calibration.diagnosis.replace(/_/g, ' ') : 'N/A'}
+                subtitle={calibration ? `${calibration.sampleSize} samples` : 'No data'}
+                icon={Crosshair}
+                color={calibration?.diagnosis === 'WELL_CALIBRATED' ? 'text-emerald-500' : calibration?.diagnosis === 'OVERCONFIDENT' ? 'text-amber-500' : calibration?.diagnosis === 'UNDERCONFIDENT' ? 'text-blue-500' : ''}
+              />
+              <StatCard
+                title="Calibrator"
+                value={calibration?.calibrator?.method?.toUpperCase() ?? 'NONE'}
+                subtitle={calibration?.calibrator ? `Trained: ${calibration.calibrator.trainedAt ? new Date(calibration.calibrator.trainedAt).toLocaleDateString() : 'never'}` : 'Run ?train=true'}
+                icon={Zap}
+              />
+            </div>
+
+            {/* Reliability Diagram + Table */}
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Reliability Diagram */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Reliability Diagram</CardTitle>
+                  <CardDescription>X = predicted probability, Y = observed frequency. Below diagonal = overconfident. Above = underconfident.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {calLoading ? (
+                    <Skeleton className="h-72" />
+                  ) : !calibration?.reliability?.filter(b => b.count > 0).length ? (
+                    <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">
+                      <Clock className="h-4 w-4 mr-2" /> Need evaluated predictions
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <ScatterChart>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis
+                          type="number"
+                          dataKey="avgProbability"
+                          name="Predicted"
+                          domain={[0, 1]}
+                          tickFormatter={(v: number) => v.toFixed(1)}
+                          tick={{ fontSize: 11 }}
+                          label={{ value: 'Predicted Probability', position: 'insideBottom', offset: -5, fontSize: 11 }}
+                        />
+                        <YAxis
+                          type="number"
+                          dataKey="observedFrequency"
+                          name="Observed"
+                          domain={[0, 1]}
+                          tickFormatter={(v: number) => v.toFixed(1)}
+                          tick={{ fontSize: 11 }}
+                          label={{ value: 'Observed Frequency', angle: -90, position: 'insideLeft', offset: 5, fontSize: 11 }}
+                        />
+                        <Tooltip
+                          contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }}
+                          formatter={(value: number, name: string) => [value.toFixed(3), name]}
+                          labelFormatter={(_, payload) => {
+                            const d = payload?.[0]?.payload as ReliabilityBin | undefined;
+                            return d ? `Bucket [${d.rangeStart.toFixed(1)}, ${d.rangeEnd.toFixed(1)}] — n=${d.count}` : '';
+                          }}
+                        />
+                        <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="hsl(var(--muted-foreground))" strokeDasharray="5 5" />
+                        <Scatter
+                          data={calibration.reliability.filter(b => b.count > 0)}
+                          fill={calibration.diagnosis === 'WELL_CALIBRATED' ? '#22c55e' : calibration.diagnosis === 'OVERCONFIDENT' ? '#f97316' : '#3b82f6'}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Reliability Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Reliability Table</CardTitle>
+                  <CardDescription>Per-bucket calibration detail. |Pred - Obs| = calibration error.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {calLoading ? (
+                    <Skeleton className="h-72" />
+                  ) : !calibration?.reliability?.length ? (
+                    <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">
+                      <Clock className="h-4 w-4 mr-2" /> No data
+                    </div>
+                  ) : (
+                    <div className="overflow-auto max-h-[300px]">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-muted/80">
+                          <tr className="text-left">
+                            <th className="pb-2 pr-3 font-medium">Bucket</th>
+                            <th className="pb-2 pr-3 font-medium text-right">Predicted</th>
+                            <th className="pb-2 pr-3 font-medium text-right">Observed</th>
+                            <th className="pb-2 pr-3 font-medium text-right">Error</th>
+                            <th className="pb-2 font-medium text-right">n</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/30">
+                          {calibration.reliability.map((b, i) => (
+                            <tr key={i} className={b.count === 0 ? 'opacity-30' : ''}>
+                              <td className="py-1.5 pr-3 font-mono">[{b.rangeStart.toFixed(1)}, {b.rangeEnd.toFixed(1)})</td>
+                              <td className={`py-1.5 pr-3 text-right font-mono ${b.count > 0 ? '' : 'text-muted-foreground'}`}>{b.count > 0 ? b.avgProbability.toFixed(3) : '-'}</td>
+                              <td className={`py-1.5 pr-3 text-right font-mono ${b.count > 0 ? '' : 'text-muted-foreground'}`}>{b.count > 0 ? b.observedFrequency.toFixed(3) : '-'}</td>
+                              <td className={`py-1.5 pr-3 text-right font-mono ${b.count > 0 ? (b.calibrationError > 0.10 ? 'text-red-500' : b.calibrationError > 0.05 ? 'text-amber-500' : 'text-emerald-500') : ''}`}>{b.count > 0 ? b.calibrationError.toFixed(3) : '-'}</td>
+                              <td className="py-1.5 text-right font-mono tabular-nums">{b.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Calibrator Info */}
+            {calibration?.calibrator && (
+              <Card className="bg-muted/30">
+                <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
+                  <p><strong>Calibrator</strong>: {calibration.calibrator.method.toUpperCase()} trained on {calibration.calibrator.sampleSize} samples at {calibration.calibrator.trainedAt ? new Date(calibration.calibrator.trainedAt).toLocaleString() : 'N/A'}.</p>
+                  {calibration.calibrator.preBrier != null && calibration.calibrator.postBrier != null && (
+                    <p><strong>Brier improvement</strong>: {calibration.calibrator.preBrier.toFixed(4)} → {calibration.calibrator.postBrier.toFixed(4)} (delta = {(calibration.calibrator.postBrier - calibration.calibrator.preBrier > 0 ? '+' : '')}{(calibration.calibrator.postBrier - calibration.calibrator.preBrier).toFixed(4)})</p>
+                  )}
+                  <p><strong>Endpoints</strong>: <code className="bg-muted px-1 rounded">GET /api/model-calibration</code> | <code className="bg-muted px-1 rounded">GET /api/model-calibration?train=true</code> | <code className="bg-muted px-1 rounded">GET /api/conformal/[symbol]?probability=0.7</code></p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
 
           <TabsContent value="timeline">
             <Card>

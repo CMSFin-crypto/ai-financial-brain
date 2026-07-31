@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/evaluate-predictions",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/rebuild-calibration",
+      "schedule": "0 6 * * 1"
     }
   ]
 }

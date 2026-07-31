@@ -1,4 +1,30 @@
 ---
+Task ID: 8
+Agent: main
+Task: Architectural refactoring — Zod validation, service layer, calibration integration, reliability dashboard
+
+Work Log:
+- Created src/lib/api-schemas.ts: Zod schemas for calibration, conformal, model-metrics query params
+- Created src/lib/parse-query.ts: Generic Zod-powered query parser for Next.js routes
+- Created src/lib/calibration-service.ts: Service layer decoupling routes from calibration-metrics internals. Includes getCalibrationReport, applyBucketCalibration, getCalibrationByRegime, getCalibrationByVersion, trainCalibrationModel, getCalibratorInfo
+- Created src/lib/conformal-service.ts: Service layer decoupling routes from conformal-risk internals. Includes getConformalDecision, fitConformalThreshold, buildConformalDecision, getFullConformalPrediction
+- Rewrote /api/model-calibration route: 5 branches (report, byRegime, byVersion, timeseries, train) all validated via Zod parseQuery
+- Rewrote /api/conformal/[symbol] route: Zod validation, profile + single-prediction modes
+- Integrated calibration service into predict route: bucket-calibration applied before conformal gate, calibration metadata returned in response
+- Extended /model-metrics dashboard: added "Model Reliability" tab as first tab with ECE/Brier/MCE/Diagnosis/Calibrator KPIs, reliability diagram (scatter plot with diagonal reference), reliability table with color-coded errors, calibrator info footer
+- Created /api/cron/rebuild-calibration route: weekly job that invalidates caches, retrains calibrator, warms conformal cache
+- Updated vercel.json: added Monday 06:00 UTC cron for rebuild-calibration
+
+Stage Summary:
+- 6 new files, 4 modified files
+- Clean layered architecture: api-schemas → parse-query → service → route → UI
+- Zod validation protects all calibration/conformal endpoints from bad query params
+- Predict route now applies bucket calibration BEFORE conformal gate (raw → calibrated → conformal)
+- Dashboard shows reliability diagram (predicted vs observed with diagonal) + per-bucket table
+- Weekly cron auto-retrains calibrator and warms caches
+- Build passes clean, no new tsc errors
+
+---
 Task ID: 1-7
 Agent: main
 Task: Build 3 advanced layers (Calibration Lab, Conformal Risk, Lead-Lag Graph) + Model Promotion governance
