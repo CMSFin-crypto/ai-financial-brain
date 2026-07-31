@@ -1,154 +1,120 @@
 // ============================================================
 // Regime Policy — Per-regime trading parameters
-// Defines confidence floors, allowed directions, weight multipliers,
-// and NO_TRADE behavior for each market regime state.
+// Defines confidence floors, allowed directions, weight multipliers.
 // ============================================================
 
-import type { IntelligentRegimeState } from './regime-intelligence';
+import type { MarketRegimeState } from './regime-intelligence';
 
 // ─── Types ────────────────────────────────────────────────────
 
-export interface RegimePolicy {
-  regime: IntelligentRegimeState;
-  confidenceFloor: number;     // minimum confidence to trade (0-100)
+export type RegimePolicy = {
+  confidenceFloor: number;
   allowLongs: boolean;
   allowShorts: boolean;
-  noTradeBias: boolean;         // if true, lean toward NO_TRADE
-  scoreMultiplier: number;      // multiplier for combined score
-  spilloverWeightMultiplier: number; // boost/reduce spillover influence
+  noTradeBias: boolean;
+  scoreMultiplier: number;
+  spilloverWeightMultiplier: number;
   technicalWeightMultiplier: number;
   fundamentalWeightMultiplier: number;
-  maxPositionSize: number;      // 0-1, fraction of normal position
-  stopLossTightening: number;   // multiplier <1 = tighter stops
-  // Weight overrides: which factor types get boosted/suppressed
-  boostedFactors: string[];     // factor names to boost
-  suppressedFactors: string[];  // factor names to suppress
-}
+};
 
 // ─── Policy Definitions ───────────────────────────────────────
 
-const POLICIES: Record<IntelligentRegimeState, RegimePolicy> = {
+const POLICIES: Record<MarketRegimeState, RegimePolicy> = {
   BULL_LOW_VOL: {
-    regime: 'BULL_LOW_VOL',
-    confidenceFloor: 35,          // lower floor — trend is your friend
+    confidenceFloor: 55,
     allowLongs: true,
-    allowShorts: true,             // shorts allowed but with lower conviction
+    allowShorts: false,
     noTradeBias: false,
-    scoreMultiplier: 1.05,         // slight boost
-    spilloverWeightMultiplier: 0.6,  // less spillover influence
-    technicalWeightMultiplier: 1.1,
-    fundamentalWeightMultiplier: 1.2, // fundamentals matter more in calm trends
-    maxPositionSize: 1.0,
-    stopLossTightening: 1.0,       // normal stops
-    boostedFactors: ['revenue_growth', 'profitability', 'valuation', 'maTrend', 'macdHistogram'],
-    suppressedFactors: ['atr', 'vix1d'],
+    scoreMultiplier: 1.05,
+    spilloverWeightMultiplier: 0.60,
+    technicalWeightMultiplier: 1.10,
+    fundamentalWeightMultiplier: 1.20,
   },
-
   BEAR_HIGH_VOL: {
-    regime: 'BEAR_HIGH_VOL',
-    confidenceFloor: 55,          // higher floor — dangerous environment
-    allowLongs: true,              // allowed but risky
+    confidenceFloor: 65,
+    allowLongs: true,
     allowShorts: true,
-    noTradeBias: true,             // lean toward NO_TRADE
-    scoreMultiplier: 0.85,         // reduce conviction
-    spilloverWeightMultiplier: 1.3,  // spillover more important
-    technicalWeightMultiplier: 0.9,
-    fundamentalWeightMultiplier: 0.7, // fundamentals less reliable in panic
-    maxPositionSize: 0.6,
-    stopLossTightening: 0.7,       // tighter stops
-    boostedFactors: ['atr', 'vix1d', 'global_spillover', 'market_regime'],
-    suppressedFactors: ['valuation', 'analystSentiment'],
+    noTradeBias: true,
+    scoreMultiplier: 0.85,
+    spilloverWeightMultiplier: 1.30,
+    technicalWeightMultiplier: 0.90,
+    fundamentalWeightMultiplier: 0.70,
   },
-
   PANIC_CAPITULATION: {
-    regime: 'PANIC_CAPITULATION',
-    confidenceFloor: 75,          // very high floor
-    allowLongs: false,             // NO longs during capitulation
-    allowShorts: false,            // NO shorts either — too risky
-    noTradeBias: true,             // default to NO_TRADE
-    scoreMultiplier: 0.5,          // heavy reduction
-    spilloverWeightMultiplier: 1.8,  // spillover dominates
-    technicalWeightMultiplier: 0.4,
-    fundamentalWeightMultiplier: 0.2, // fundamentals meaningless in panic
-    maxPositionSize: 0.0,          // no new positions
-    stopLossTightening: 0.5,       // very tight if forced
-    boostedFactors: ['global_spillover', 'atr', 'vix1d'],
-    suppressedFactors: ['valuation', 'growth', 'profitability', 'analystSentiment', 'momentum'],
+    confidenceFloor: 75,
+    allowLongs: false,
+    allowShorts: false,
+    noTradeBias: true,
+    scoreMultiplier: 0.70,
+    spilloverWeightMultiplier: 1.80,
+    technicalWeightMultiplier: 0.40,
+    fundamentalWeightMultiplier: 0.20,
   },
-
   RELIEF_RALLY: {
-    regime: 'RELIEF_RALLY',
-    confidenceFloor: 50,          // moderate floor
-    allowLongs: true,              // longs OK — that's the play
-    allowShorts: false,            // no shorts during relief
+    confidenceFloor: 62,
+    allowLongs: true,
+    allowShorts: false,
     noTradeBias: false,
-    scoreMultiplier: 1.15,         // boost conviction for longs
-    spilloverWeightMultiplier: 1.6,  // spillover is KEY signal
-    technicalWeightMultiplier: 1.0,
-    fundamentalWeightMultiplier: 0.6, // fundamentals lag in relief
-    maxPositionSize: 0.8,          // moderate size
-    stopLossTightening: 0.8,       // slightly tighter
-    boostedFactors: ['global_spillover', 'rsi', 'stochastic', 'oversoldScore', 'asiaDeceleration'],
-    suppressedFactors: ['analystSentiment', 'valuation'],
+    scoreMultiplier: 1.10,
+    spilloverWeightMultiplier: 1.35,
+    technicalWeightMultiplier: 0.95,
+    fundamentalWeightMultiplier: 0.80,
   },
-
-  RANGE_NEUTRAL: {
-    regime: 'RANGE_NEUTRAL',
-    confidenceFloor: 50,          // moderate floor — no edge
+  BULL_HIGH_VOL: {
+    confidenceFloor: 60,
     allowLongs: true,
     allowShorts: true,
     noTradeBias: false,
-    scoreMultiplier: 0.90,         // slight reduction
-    spilloverWeightMultiplier: 0.8,
-    technicalWeightMultiplier: 1.0,
-    fundamentalWeightMultiplier: 1.0,
-    maxPositionSize: 0.7,          // smaller positions
-    stopLossTightening: 0.9,
-    boostedFactors: ['rsi', 'bollinger', 'stochastic'], // mean-reversion factors
-    suppressedFactors: ['maTrend', 'macdHistogram'], // trend-following less useful
+    scoreMultiplier: 1.0,
+    spilloverWeightMultiplier: 0.80,
+    technicalWeightMultiplier: 1.05,
+    fundamentalWeightMultiplier: 0.90,
+  },
+  BEAR_LOW_VOL: {
+    confidenceFloor: 55,
+    allowLongs: false,
+    allowShorts: true,
+    noTradeBias: false,
+    scoreMultiplier: 0.95,
+    spilloverWeightMultiplier: 1.00,
+    technicalWeightMultiplier: 0.90,
+    fundamentalWeightMultiplier: 0.80,
+  },
+  RANGE_NEUTRAL: {
+    confidenceFloor: 60,
+    allowLongs: true,
+    allowShorts: true,
+    noTradeBias: false,
+    scoreMultiplier: 0.90,
+    spilloverWeightMultiplier: 0.80,
+    technicalWeightMultiplier: 1.00,
+    fundamentalWeightMultiplier: 1.00,
   },
 };
 
 // ─── Public API ────────────────────────────────────────────────
 
-/** Get the policy for a given regime state */
-export function getRegimePolicy(regime: IntelligentRegimeState): RegimePolicy {
+export function getRegimePolicy(regime: MarketRegimeState): RegimePolicy {
   return POLICIES[regime];
 }
 
-/** Get all policies (for API display) */
-export function getAllRegimePolicies(): Record<IntelligentRegimeState, Omit<RegimePolicy, 'regime'>> {
-  const result = {} as Record<IntelligentRegimeState, Omit<RegimePolicy, 'regime'>>;
-  for (const [key, policy] of Object.entries(POLICIES)) {
-    const { regime: _r, ...rest } = policy;
-    result[key as IntelligentRegimeState] = rest;
-  }
-  return result;
+export function getAllPolicies(): Record<MarketRegimeState, RegimePolicy> {
+  return { ...POLICIES };
 }
 
-/** Apply policy to a confidence value — returns adjusted confidence */
-export function applyConfidenceFloor(raw: number, policy: RegimePolicy): number {
-  return Math.max(raw, policy.noTradeBias ? policy.confidenceFloor + 10 : policy.confidenceFloor);
-}
-
-/** Check if a signal direction is allowed under the current policy */
+/** Check if a signal direction is allowed under the policy */
 export function isDirectionAllowed(
   signal: string,
-  policy: RegimePolicy
+  policy: RegimePolicy,
 ): { allowed: boolean; reason?: string } {
   const isBuy = signal === 'BUY' || signal === 'STRONG_BUY';
   const isSell = signal === 'SELL' || signal === 'STRONG_SELL';
-
   if (isBuy && !policy.allowLongs) {
-    return { allowed: false, reason: `Regimi ${policy.regime} nuk lejon BLERJET` };
+    return { allowed: false, reason: `Regimi ${policy.regime ?? ''} nuk lejon BLERJET` };
   }
   if (isSell && !policy.allowShorts) {
-    return { allowed: false, reason: `Regimi ${policy.regime} nuk lejon SHITJET` };
+    return { allowed: false, reason: `Regimi ${policy.regime ?? ''} nuk lejon SHITJET` };
   }
   return { allowed: true };
-}
-
-/** Apply score multiplier from policy */
-export function applyScoreMultiplier(score: number, policy: RegimePolicy): number {
-  return Math.round(score * policy.scoreMultiplier * 100) / 100;
 }
