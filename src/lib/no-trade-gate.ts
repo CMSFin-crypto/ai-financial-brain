@@ -7,6 +7,7 @@
 import type { MarketRegimeResult } from './market-regime';
 import type { EventRiskResult } from './event-risk';
 import type { SpilloverAnalysis } from './global-spillover';
+import type { RegimePolicy } from './regime-policy';
 
 export interface NoTradeGateInput {
   confidence: number;
@@ -16,6 +17,7 @@ export interface NoTradeGateInput {
   regime: MarketRegimeResult;
   eventRisk: EventRiskResult;
   spillover?: SpilloverAnalysis;
+  regimePolicy?: RegimePolicy;
 }
 
 export interface NoTradeGateResult {
@@ -28,7 +30,25 @@ const MIN_EDGE_PCT = 0.5;
 const MIN_SCORE_THRESHOLD = 20;
 
 export function runNoTradeGate(input: NoTradeGateInput): NoTradeGateResult {
-  const { confidence, combinedScore, expectedMovePct, signal, regime, eventRisk, spillover } = input;
+  const { confidence, combinedScore, expectedMovePct, signal, regime, eventRisk, spillover, regimePolicy } = input;
+
+  // 0. REGIME AWARE OVERRIDES — policy takes precedence
+  if (regimePolicy) {
+    // PANIC_CAPITULATION: block everything
+    if (regimePolicy.noTradeBias && !regimePolicy.allowLongs && !regimePolicy.allowShorts) {
+      return {
+        status: 'NO_TRADE',
+        reason: `PANIC_CAPITULATION — asnjë trade i lejuar (maxPositionSize=0)`,
+      };
+    }
+    // Confidence below regime floor
+    if (confidence < regimePolicy.confidenceFloor) {
+      return {
+        status: 'NO_TRADE',
+        reason: `Konfidencë ${confidence.toFixed(0)}% nën regime floor ${regimePolicy.confidenceFloor}% (${regimePolicy.regime})`,
+      };
+    }
+  }
 
   // 1. Confidence too low
   if (confidence < MIN_CONFIDENCE) {

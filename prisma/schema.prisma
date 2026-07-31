@@ -108,6 +108,11 @@ model Prediction {
   gateStatus       String   @default("TRADE") // "TRADE" | "NO_TRADE" + reason
   gateReason       String?
 
+  // Regime Intelligence
+  regimeState      String?  // "BULL_LOW_VOL" | "BEAR_HIGH_VOL" | "PANIC_CAPITULATION" | "RELIEF_RALLY" | "RANGE_NEUTRAL"
+  regimeConfidence Float?  // 0-1
+  regimePolicy     Json?   // full policy snapshot at prediction time
+
   // Metadata
   noTradeReason    String?
   lessonExtracted  Boolean  @default(false)
@@ -121,6 +126,7 @@ model Prediction {
   @@index([ticker, createdAt])
   @@index([dueAt, wasCorrect])
   @@index([horizonDays, wasCorrect])
+  @@index([regimeState, wasCorrect])
 }
 
 model PredictionFactor {
@@ -250,6 +256,37 @@ model SpilloverModelResult {
 
   @@index([targetSymbol, date])
   @@index([modelVersion, date])
+  @@index([date])
+}
+
+// ═══════ REGIME INTELLIGENCE ═══════
+
+model RegimeSnapshot {
+  id               String   @id @default(cuid())
+  date             DateTime @db.Date
+  regimeState      String   // "BULL_LOW_VOL" | "BEAR_HIGH_VOL" | "PANIC_CAPITULATION" | "RELIEF_RALLY" | "RANGE_NEUTRAL"
+  confidence       Float    // 0 to 1
+  transitionRisk   Float    @default(0) // 0-1, probability of regime change within 5 days
+  // Raw features at detection time
+  spyReturn1d      Float?
+  spyReturn5d      Float?
+  spyReturn20d     Float?
+  spyVsSma200      Float?  // % above/below SMA200
+  vixLevel         Float?
+  vixReturn1d      Float?
+  atrZScore        Float?
+  breadthPct       Float?  // % of stocks above SMA50
+  adxLevel         Float?
+  spilloverScore   Float?
+  spilloverSetup   String?
+  eventRiskScore   Float?
+  // Policy snapshot
+  policy           Json?    // full RegimePolicy at detection time
+  drivers          Json?    // string[] of human-readable reasons
+  createdAt        DateTime @default(now())
+
+  @@unique([date]) // one regime snapshot per day
+  @@index([regimeState, date])
   @@index([date])
 }
 
