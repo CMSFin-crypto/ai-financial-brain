@@ -15,10 +15,11 @@ import { runV2ShadowPrediction, getActiveModel } from '@/lib/spillover-promotion
 import { getRegimeWithPolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
 import { routeByRegime } from '@/lib/regime-router';
 import { getDailyHistory } from '@/lib/global-market-data';
+import { computeConformalPrediction, type ConformalPredictionSet } from '@/lib/conformal-risk';
+import { scoreLeadLag, isLeadLagRelevant } from '@/lib/leadlag-score';
 
 export const maxDuration = 60;
 
-// Map new 7-state regime to legacy 4-state (for no-trade-gate compat)
 function toLegacyRegime(state: MarketRegimeState): 'BULL' | 'BEAR' | 'VOLATILE' | 'RANGING' {
   if (state === 'PANIC_CAPITULATION') return 'VOLATILE';
   if (state === 'BULL_LOW_VOL' || state === 'BULL_HIGH_VOL' || state === 'RELIEF_RALLY') return 'BULL';
@@ -26,36 +27,12 @@ function toLegacyRegime(state: MarketRegimeState): 'BULL' | 'BEAR' | 'VOLATILE' 
   return 'RANGING';
 }
 
-// Map old signal/gate to new finalDecision
-function toFinalDecision(
-  direction: string,
-  gateStatus: string,
-): 'BUY' | 'SELL' | 'HOLD' | 'NO_TRADE' {
+function toFinalDecision(direction: string, gateStatus: string): 'BUY' | 'SELL' | 'HOLD' | 'NO_TRADE' {
   if (gateStatus === 'NO_TRADE') return 'NO_TRADE';
   if (direction === 'STRONG_BUY' || direction === 'BUY') return 'BUY';
   if (direction === 'STRONG_SELL' || direction === 'SELL') return 'SELL';
   return 'HOLD';
 }
-
-// ═══════════════════════════════════════════════════════════════
-// PIPELINE ORDER (production)
-//
-// Phase 1 — I/O (parallel):
-//   global-market-data → spillover-features → spillover V1
-//   fundamentals → relative-strength → model-weights → learning-stats
-//   regime-intelligence (calls spillover internally, 30-min cache)
-//
-// Phase 2 — Computation (sequential, no I/O):
-//   technical-analysis → fundamental-analysis → event-risk
-//
-// Phase 3 — ORCHESTRATION:
-//   regime-intelligence → weight-override → score-combination
-//   routeByRegime → confidence-calibration → no-trade-gate
-//
-// Phase 4 — Persistence + Response:
-//   save prediction (new lifecycle: entry context + factors + snapshot)
-//   return TRADE / NO_TRADE decision
-// ═══════════════════════════════════════════════════════════════
 
 export async function GET(
   request: NextRequest,
@@ -74,7 +51,6 @@ export async function GET(
     const range = searchParams.get('range') || '1y';
     const runEval = searchParams.get('checkLearning') === 'true';
 
-    // ── Pre-flight ───────────────────────────────────────────
     await seedDefaultWeights().catch(() => {});
     if (runEval) {
       try { await evaluateDuePredictions(); } catch (err) {
@@ -82,7 +58,7 @@ export async function GET(
       }
     }
 
-    // ── PHASE 1: I/O (parallel) ─────────────────────────────
+    // Phase 1: I/O (parallel)
     const historicalData = await fetchHistoricalData(ticker, range);
     if (!historicalData || historicalData.length < 60) {
       return NextResponse.json(
@@ -91,7 +67,12 @@ export async function GET(
       );
     }
 
-    const [relStrength, fundamentals, weightsResult, learningStatsRaw, spilloverRaw, regimePack, spySnap] = await Promise.all([
+    const isSemiOrTech = ['NVDA','AMD','MU','MRVL','INTC','TSM','AVGO','QCOM','SMH','SOXX','QQQ'].includes(ticker);
+    const leadLagPromise = isLeadLagRelevant(ticker)
+      ? scoreLeadLag(ticker).catch(() => null)
+      : Promise.resolve(null);
+
+    const [relStrength, fundamentals, weightsResult, learningStatsRaw, spilloverRaw, regimePack, spySnap, leadLagResult] = await Promise.all([
       calculateRelativeStrength(ticker),
       getRealFundamentals(ticker),
       getModelWeights(1),
@@ -121,6 +102,7 @@ export async function GET(
       }),
       getRegimeWithPolicy({ targetSymbol: ticker }),
       getDailyHistory('SPY', 5),
+      leadLagPromise,
     ]);
 
     const spillover: SpilloverAnalysis = spilloverRaw!;
@@ -132,14 +114,12 @@ export async function GET(
       `(conf=${(regimeIntel.confidence * 100).toFixed(0)}% floor=${regimePolicy.confidenceFloor})`,
     );
 
-    // V2 Shadow Mode (fire-and-forget, for semis/tech only)
-    const isSemiOrTech = ['NVDA','AMD','MU','MRVL','INTC','TSM','AVGO','QCOM','SMH','SOXX','QQQ'].includes(ticker);
     const activeModel = await getActiveModel();
     if (isSemiOrTech && spillover.features) {
       runV2ShadowPrediction(ticker, spillover.features).catch(() => {});
     }
 
-    // ── PHASE 2: Computation (no I/O) ───────────────────────
+    // Phase 2: Computation (no I/O)
     const baseResult = predictStock(ticker, historicalData);
     const techScore = baseResult.technicalScore;
 
@@ -164,18 +144,23 @@ export async function GET(
     const eventRisk = checkEventRisk(ticker);
     const rsScore = relStrength.rsScore;
 
-    // ── PHASE 3: ORCHESTRATION ──────────────────────────────
+    // Phase 3: ORCHESTRATION
     const ratios = weightsResult.horizonRatios;
     const spilloverScore = spillover.spilloverScore;
     const spilloverBaseWeight = isSemiOrTech ? 0.10 : 0.03;
     const spilloverWeight = spilloverBaseWeight * regimePolicy.spilloverWeightMultiplier;
+
+    // Lead-lag score integration
+    const leadLagScore = leadLagResult?.score ?? 0;
+    const leadLagWeight = leadLagResult?.weight ?? 0;
 
     const rawScore = Math.round(
       (techScore * ratios.technical +
        fundamentalScore * ratios.fundamental +
        eventRisk.riskScore * ratios.event * 0.3 +
        rsScore * 0.05 +
-       spilloverScore * spilloverWeight) * 100,
+       spilloverScore * spilloverWeight +
+       leadLagScore * leadLagWeight) * 100,
     ) / 100;
 
     const direction = rawScore > 60 ? 'STRONG_BUY' : rawScore > 25 ? 'BUY' :
@@ -213,9 +198,32 @@ export async function GET(
           regimePolicy,
         });
 
-    // ── PHASE 4: Persistence + Response ─────────────────────
+    // CONFORMAL RISK GATE
+    let conformalResult: ConformalPredictionSet | null = null;
+    let conformalOverride = false;
+    let conformalOverrideReason: string | null = null;
+    if (gateResult.status !== 'NO_TRADE') {
+      try {
+        const probabilityUp = direction === 'STRONG_BUY' || direction === 'BUY'
+          ? calibratedConfidence / 100
+          : direction === 'STRONG_SELL' || direction === 'SELL'
+            ? 1 - calibratedConfidence / 100
+            : 0.5;
+        const cr = await computeConformalPrediction(probabilityUp, {
+          regime: regimeIntel.regime,
+        });
+        conformalResult = cr;
+        if (!cr.tradeEligible) {
+          conformalOverride = true;
+          conformalOverrideReason = cr.tradeEligibilityReason;
+          console.log(`[PREDICT] ${ticker}: CONFORMAL NO_TRADE - ${conformalOverrideReason}`);
+        }
+      } catch (err) {
+        console.warn('[PREDICT] Conformal check failed:', err);
+      }
+    }
 
-    // Build factor list
+    // Phase 4: Persistence + Response
     const allFactors: FactorInput[] = [];
     const techFactors = buildTechnicalFactors(
       baseResult.indicatorScores,
@@ -267,7 +275,16 @@ export async function GET(
       description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) - ${(spillover.reasons || []).slice(0, 2).join('; ')}`,
     });
 
-    // Horizons
+    // Lead-lag factor
+    if (leadLagResult) {
+      allFactors.push({
+        factorName: 'lead_lag_structure', factorType: 'macro_global' as const,
+        score: leadLagResult.score, weight: leadLagResult.weight,
+        signal: leadLagResult.signal,
+        description: leadLagResult.description,
+      });
+    }
+
     const lastClose = historicalData[historicalData.length - 1].close;
     const spyClose = spySnap[0]?.close;
     const expectedMove1d = baseResult.shortTerm.expectedMove;
@@ -277,60 +294,48 @@ export async function GET(
     const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
 
     const modelVersion = 'predict-v3-regime-spillover';
-    const finalDecision = toFinalDecision(direction, gateResult.status);
+    const effectiveGateStatus = conformalOverride ? 'NO_TRADE' : gateResult.status;
+    const finalDecision = toFinalDecision(direction, effectiveGateStatus);
 
-    // Convert FactorInput[] to save-prediction FactorInput[] (compatible types)
     const saveFactors = allFactors.map(f => ({
-      factorName: f.factorName,
-      factorType: f.factorType as string,
-      score: f.score,
-      weight: f.weight,
-      signal: f.signal,
-      description: f.description,
+      factorName: f.factorName, factorType: f.factorType as string,
+      score: f.score, weight: f.weight, signal: f.signal, description: f.description,
     }));
 
-    // Save 3 horizons using new lifecycle save
     const [pred1d, pred5d, pred20d] = await Promise.all([
       savePrediction({
         symbol: ticker, horizonDays: 1, modelVersion,
         entryPrice: lastClose, benchmarkEntryPrice: spyClose,
         regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
         transitionRisk: regimeIntel.transitionRisk,
-        rawScore, calibratedConfidence, finalDecision,
-        factors: saveFactors,
+        rawScore, calibratedConfidence, finalDecision, factors: saveFactors,
       }),
       savePrediction({
         symbol: ticker, horizonDays: 5, modelVersion,
         entryPrice: lastClose, benchmarkEntryPrice: spyClose,
         regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
         transitionRisk: regimeIntel.transitionRisk,
-        rawScore, calibratedConfidence, finalDecision,
-        factors: saveFactors,
+        rawScore, calibratedConfidence, finalDecision, factors: saveFactors,
       }),
       savePrediction({
         symbol: ticker, horizonDays: 20, modelVersion,
         entryPrice: lastClose, benchmarkEntryPrice: spyClose,
         regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
         transitionRisk: regimeIntel.transitionRisk,
-        rawScore, calibratedConfidence, finalDecision,
-        factors: saveFactors,
+        rawScore, calibratedConfidence, finalDecision, factors: saveFactors,
       }).catch(() => null),
     ]);
 
     const elapsedMs = Date.now() - startTime;
     console.log(
       `[PREDICT] ${ticker}: dir=${direction} conf=${calibratedConfidence} score=${combinedScore} ` +
-      `gate=${gateResult.status} regime=${regimeIntel.regime} decision=${finalDecision} ` +
+      `gate=${effectiveGateStatus} regime=${regimeIntel.regime} decision=${finalDecision} ` +
       `factors=${allFactors.length} time=${elapsedMs}ms`,
     );
 
     return NextResponse.json({
-      ...baseResult,
-      score: combinedScore,
-      direction,
-      confidence: calibratedConfidence,
-      combinedScore,
-      technicalScore: techScore,
+      ...baseResult, score: combinedScore, direction, confidence: calibratedConfidence,
+      combinedScore, technicalScore: techScore,
       fundamentalData: fundamentalScore !== 0 ? {
         score: fundamentalScore, summary: fundamentalSummary, scores: fundamentalScores,
       } : null,
@@ -343,23 +348,28 @@ export async function GET(
         worstIndicators: learningStatsRaw.worstIndicators,
         recentAccuracy: learningStatsRaw.recentAccuracy,
       } : null,
-      regime: regimeIntel.regime,
-      regimeConfidence: regimeIntel.confidence,
+      regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
       relativeStrength: rsScore,
-      eventRisk: {
-        type: eventRisk.eventType,
-        severity: eventRisk.severity,
-        description: eventRisk.description,
-      },
-      gateStatus: gateResult.status,
-      gateReason: gateResult.reason,
+      eventRisk: { type: eventRisk.eventType, severity: eventRisk.severity, description: eventRisk.description },
+      gateStatus: effectiveGateStatus,
+      gateReason: conformalOverride ? conformalOverrideReason : gateResult.reason,
+      conformalRisk: conformalResult ? {
+        tradeEligible: conformalResult.tradeEligible,
+        uncertaintyBand: conformalResult.uncertaintyBand,
+        confidenceSet: conformalResult.confidenceSet,
+        recommendation: conformalResult.recommendation,
+        overridden: conformalOverride,
+      } : null,
+      leadLag: leadLagResult ? {
+        score: leadLagResult.score, weight: leadLagResult.weight,
+        signal: leadLagResult.signal, nodeRole: leadLagResult.features.nodeRole,
+        strongestLeader: leadLagResult.features.strongestLeader,
+        shockPropagationRisk: leadLagResult.features.shockPropagationRisk,
+      } : null,
       spillover: {
-        setupType: spillover.setupType,
-        spilloverScore: spillover.spilloverScore,
-        confidence: spillover.confidence,
-        reasons: spillover.reasons,
-        drivers: spillover.drivers,
-        modelVersion: spillover.modelVersion,
+        setupType: spillover.setupType, spilloverScore: spillover.spilloverScore,
+        confidence: spillover.confidence, reasons: spillover.reasons,
+        drivers: spillover.drivers, modelVersion: spillover.modelVersion,
       },
       spilloverModelConfig: {
         activeModel,
@@ -368,15 +378,11 @@ export async function GET(
         v2ShadowResultsSavedToDB: isSemiOrTech,
       },
       regimeIntelligence: {
-        regime: regimeIntel.regime,
-        confidence: regimeIntel.confidence,
-        transitionRisk: regimeIntel.transitionRisk,
-        reasons: regimeIntel.reasons,
+        regime: regimeIntel.regime, confidence: regimeIntel.confidence,
+        transitionRisk: regimeIntel.transitionRisk, reasons: regimeIntel.reasons,
         policy: {
-          confidenceFloor: regimePolicy.confidenceFloor,
-          allowLongs: regimePolicy.allowLongs,
-          allowShorts: regimePolicy.allowShorts,
-          noTradeBias: regimePolicy.noTradeBias,
+          confidenceFloor: regimePolicy.confidenceFloor, allowLongs: regimePolicy.allowLongs,
+          allowShorts: regimePolicy.allowShorts, noTradeBias: regimePolicy.noTradeBias,
           scoreMultiplier: regimePolicy.scoreMultiplier,
           spilloverWeightMultiplier: regimePolicy.spilloverWeightMultiplier,
           technicalWeightMultiplier: regimePolicy.technicalWeightMultiplier,
@@ -391,9 +397,7 @@ export async function GET(
         '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d, predictionId: pred5d?.id },
         '20D': { predictedDir: predictedDir20d, expectedMovePct: expectedMove5d * 2, predictionId: pred20d?.id },
       },
-      predictionId: pred1d?.id,
-      modelVersion,
-      processingTimeMs: elapsedMs,
+      predictionId: pred1d?.id, modelVersion, processingTimeMs: elapsedMs,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';

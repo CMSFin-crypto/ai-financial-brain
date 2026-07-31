@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calculateModelMetrics, snapshotModelMetrics, getMetricsHistory } from "@/lib/model-metrics";
+import { computeCalibrationReport } from "@/lib/calibration-metrics";
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,8 +18,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ snapshots });
     }
 
-    const metrics = await calculateModelMetrics({ modelVersion, horizonDays, regime });
-    return NextResponse.json(metrics);
+    const [metrics, calibration] = await Promise.all([
+      calculateModelMetrics({ modelVersion, horizonDays, regime }),
+      computeCalibrationReport({ modelVersion, horizonDays, regime }),
+    ]);
+    return NextResponse.json({
+      ...metrics,
+      ece: calibration.ece,
+      mce: calibration.mce,
+      calibrationDiagnosis: calibration.diagnosis.overallLabel,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[MODEL-METRICS] GET failed:", message);
