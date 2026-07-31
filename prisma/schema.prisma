@@ -356,6 +356,37 @@ model DailyPick {
   @@index([scanDate])
 }
 
+// ═══════ EXECUTION QUALITY MONITOR ═══════
+
+model ExecutionEvent {
+  id               String   @id @default(cuid())
+  predictionId     String?
+  symbol           String
+  side             String   // "BUY" | "SELL"
+  orderType        String   // "LIMIT" | "MARKET" | "STOP" etc.
+  quantity         Float
+  intendedPrice    Float?
+  submittedPrice   Float?
+  filledPrice      Float?
+  spreadAtDecision Float?
+  spreadAtFill     Float?
+  submittedAt      DateTime
+  ackAt            DateTime?
+  filledAt         DateTime?
+  status           String   // "SUBMITTED" | "ACKED" | "FILLED" | "PARTIAL" | "REJECTED" | "CANCELLED"
+  rejectReason     String?
+  latencyMs        Int?
+  slippageBps      Float?
+  partialFillPct   Float?
+  stopAttached     Boolean  @default(false)
+  venue            String?
+  createdAt        DateTime @default(now())
+
+  @@index([symbol, createdAt])
+  @@index([status, createdAt])
+  @@index([predictionId])
+}
+
 model AIStats {
   id              String   @id @default(cuid())
   totalPredictions Int     @default(0)
