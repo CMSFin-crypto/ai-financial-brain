@@ -1,127 +1,54 @@
-// ============================================================
-// Model Metrics — Brier score + full calibration metrics
-// Brier = mean((f - o)^2) where f=predicted probability, o=actual outcome (0/1)
-// Lower Brier = better calibrated probabilities.
-// ============================================================
+import { prisma } from "@/lib/prisma";
 
-import prisma from './prisma';
-
-function mean(values: number[]): number | null {
+function mean(values: number[]) {
   if (!values.length) return null;
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-/**
- * Compute Brier score from evaluated predictions.
- * calibratedConfidence is stored as 0-100 int, actualOutcome is 0/1.
- * Brier = mean((f/100 - o)^2)
- */
 function computeBrierScore(
-  rows: { confidence: number; actualOutcome: number | null }[],
-): number | null {
+  rows: { calibratedConfidence: number; actualOutcome: number | null }[]
+) {
   const valid = rows.filter((r) => r.actualOutcome !== null);
   if (!valid.length) return null;
 
-  const errors = valid.map((r) => {
-    const f = r.confidence / 100;
-    const o = r.actualOutcome as number;
-    return Math.pow(f - o, 2);
-  });
-
-  return mean(errors);
+  return mean(
+    valid.map((r) => {
+      const f = r.calibratedConfidence / 100;
+      const o = r.actualOutcome as number;
+      return (f - o) ** 2;
+    })
+  );
 }
 
-/**
- * Compute Brier score by regime state.
- * Returns per-regime Brier for regime-specific calibration analysis.
- */
-function computeBrierByRegime(
-  rows: { confidence: number; actualOutcome: number | null; regimeState: string | null }[],
-): Record<string, { brierScore: number | null; sampleSize: number }> {
-  const byRegime: Record<string, { fs: number[]; os: number[] }> = {};
+function computeMaxDrawdown(returns: number[]) {
+  let equity = 1;
+  let peak = 1;
+  let maxDd = 0;
 
-  for (const r of rows) {
-    if (r.actualOutcome === null) continue;
-    const regime = r.regimeState || 'UNKNOWN';
-    if (!byRegime[regime]) byRegime[regime] = { fs: [], os: [] };
-    byRegime[regime].fs.push(r.confidence / 100);
-    byRegime[regime].os.push(r.actualOutcome);
+  for (const r of returns) {
+    equity *= 1 + r / 100;
+    peak = Math.max(peak, equity);
+    const dd = (equity - peak) / peak;
+    maxDd = Math.min(maxDd, dd);
   }
 
-  const result: Record<string, { brierScore: number | null; sampleSize: number }> = {};
-  for (const [regime, data] of Object.entries(byRegime)) {
-    if (data.fs.length === 0) {
-      result[regime] = { brierScore: null, sampleSize: 0 };
-      continue;
-    }
-    const errors = data.fs.map((f, i) => Math.pow(f - data.os[i], 2));
-    result[regime] = {
-      brierScore: mean(errors),
-      sampleSize: data.fs.length,
-    };
-  }
-  return result;
+  return Math.abs(maxDd) * 100;
 }
 
-/**
- * Compute Brier score by horizon.
- */
-function computeBrierByHorizon(
-  rows: { confidence: number; actualOutcome: number | null; horizonDays: number }[],
-): Record<number, { brierScore: number | null; sampleSize: number }> {
-  const byHorizon: Record<number, { fs: number[]; os: number[] }> = {};
-
-  for (const r of rows) {
-    if (r.actualOutcome === null) continue;
-    if (!byHorizon[r.horizonDays]) byHorizon[r.horizonDays] = { fs: [], os: [] };
-    byHorizon[r.horizonDays].fs.push(r.confidence / 100);
-    byHorizon[r.horizonDays].os.push(r.actualOutcome);
-  }
-
-  const result: Record<number, { brierScore: number | null; sampleSize: number }> = {};
-  for (const [h, data] of Object.entries(byHorizon)) {
-    if (data.fs.length === 0) {
-      result[Number(h)] = { brierScore: null, sampleSize: 0 };
-      continue;
-    }
-    const errors = data.fs.map((f, i) => Math.pow(f - data.os[i], 2));
-    result[Number(h)] = {
-      brierScore: mean(errors),
-      sampleSize: data.fs.length,
-    };
-  }
-  return result;
-}
-
-export type ModelMetricsResult = {
-  sampleSize: number;
-  accuracy: number | null;
-  avgReturn: number | null;
-  winRate: number | null;
-  brierScore: number | null;
-  brierByRegime: Record<string, { brierScore: number | null; sampleSize: number }>;
-  brierByHorizon: Record<number, { brierScore: number | null; sampleSize: number }>;
-  precisionBuy: number | null;
-  recallBuy: number | null;
-  noTradeRate: number | null;
-  maxDrawdown: number | null;
-};
-
-/**
- * Calculate comprehensive model metrics including Brier score.
- */
 export async function calculateModelMetrics(params?: {
   modelVersion?: string;
   horizonDays?: number;
-}): Promise<ModelMetricsResult> {
+  regime?: string;
+}) {
   const rows = await prisma.prediction.findMany({
     where: {
       ...(params?.modelVersion ? { modelVersion: params.modelVersion } : {}),
       ...(params?.horizonDays ? { horizonDays: params.horizonDays } : {}),
-      wasCorrect: { not: null },
+      ...(params?.regime ? { regime: params.regime } : {}),
+      evaluationStatus: "EVALUATED",
+      actualOutcome: { not: null },
     },
-    orderBy: { createdAt: 'desc' },
-    take: 2000,
+    orderBy: { predictedAt: "asc" },
   });
 
   const sampleSize = rows.length;
@@ -130,10 +57,10 @@ export async function calculateModelMetrics(params?: {
       sampleSize: 0,
       accuracy: null,
       avgReturn: null,
+      benchmarkReturn: null,
+      alpha: null,
       winRate: null,
       brierScore: null,
-      brierByRegime: {},
-      brierByHorizon: {},
       precisionBuy: null,
       recallBuy: null,
       noTradeRate: null,
@@ -141,54 +68,36 @@ export async function calculateModelMetrics(params?: {
     };
   }
 
-  const correct = rows.filter((r) => r.wasCorrect === true).length;
-  const buys = rows.filter(
-    (r) => r.predictedDir === 'UP' && r.gateStatus === 'TRADE',
-  );
-  const buyTruePositives = buys.filter((r) => r.actualOutcome === 1).length;
-  const allActualPositives = rows.filter((r) => r.actualOutcome === 1).length;
-  const noTrades = rows.filter((r) => r.gateStatus === 'NO_TRADE').length;
-
-  const accuracy = correct / sampleSize;
-  const returns = rows
-    .map((r) => r.returnPct)
-    .filter((r): r is number => r !== null && r !== undefined);
-  const avgReturn = mean(returns);
-  const winRate = returns.filter((r) => r > 0).length / sampleSize;
-  const brierScore = computeBrierScore(rows);
-  const brierByRegime = computeBrierByRegime(rows);
-  const brierByHorizon = computeBrierByHorizon(rows);
-  const precisionBuy =
-    buys.length > 0 ? buyTruePositives / buys.length : null;
-  const recallBuy =
-    allActualPositives > 0
-      ? buyTruePositives / allActualPositives
+  const accuracy = rows.filter((r) => r.wasCorrect).length / sampleSize;
+  const avgReturn = mean(rows.map((r) => r.actualReturn ?? 0));
+  const benchmarkReturn = mean(rows.map((r) => r.benchmarkReturn ?? 0));
+  const alpha =
+    avgReturn !== null && benchmarkReturn !== null
+      ? avgReturn - benchmarkReturn
       : null;
-  const noTradeRate = noTrades / sampleSize;
+  const winRate =
+    rows.filter((r) => (r.actualReturn ?? 0) > 0).length / sampleSize;
+  const brierScore = computeBrierScore(rows);
 
-  // Max drawdown from cumulative returns
-  let maxDrawdown: number | null = null;
-  if (returns.length > 1) {
-    let cumulative = 0;
-    let peak = 0;
-    let maxDd = 0;
-    for (const ret of returns) {
-      cumulative += ret / 100;
-      if (cumulative > peak) peak = cumulative;
-      const dd = peak - cumulative;
-      if (dd > maxDd) maxDd = dd;
-    }
-    maxDrawdown = maxDd * 100;
-  }
+  const buys = rows.filter((r) => r.finalDecision === "BUY");
+  const buyTp = buys.filter((r) => r.actualOutcome === 1).length;
+  const actualPositives = rows.filter((r) => r.actualOutcome === 1).length;
+  const precisionBuy = buys.length ? buyTp / buys.length : null;
+  const recallBuy = actualPositives ? buyTp / actualPositives : null;
+  const noTradeRate =
+    rows.filter((r) => r.finalDecision === "NO_TRADE").length / sampleSize;
+  const maxDrawdown = computeMaxDrawdown(
+    rows.map((r) => r.actualReturn ?? 0)
+  );
 
   return {
     sampleSize,
     accuracy,
     avgReturn,
+    benchmarkReturn,
+    alpha,
     winRate,
     brierScore,
-    brierByRegime,
-    brierByHorizon,
     precisionBuy,
     recallBuy,
     noTradeRate,
@@ -196,26 +105,21 @@ export async function calculateModelMetrics(params?: {
   };
 }
 
-/**
- * Snapshot current metrics to ModelMetricSnapshot table.
- * Called after each evaluation batch or on demand.
- */
 export async function snapshotModelMetrics(params: {
   modelVersion: string;
-  horizonDays?: number;
+  horizonDays: number;
 }) {
-  const metrics = await calculateModelMetrics({
-    modelVersion: params.modelVersion,
-    horizonDays: params.horizonDays,
-  });
+  const metrics = await calculateModelMetrics(params);
 
   return prisma.modelMetricSnapshot.create({
     data: {
       modelVersion: params.modelVersion,
-      horizonDays: params.horizonDays ?? 1,
+      horizonDays: params.horizonDays,
       sampleSize: metrics.sampleSize,
       accuracy: metrics.accuracy,
       avgReturn: metrics.avgReturn,
+      benchmarkReturn: metrics.benchmarkReturn,
+      alpha: metrics.alpha,
       winRate: metrics.winRate,
       brierScore: metrics.brierScore,
       precisionBuy: metrics.precisionBuy,
@@ -226,9 +130,6 @@ export async function snapshotModelMetrics(params: {
   });
 }
 
-/**
- * Get metrics snapshot history for time-series charts.
- */
 export async function getMetricsHistory(params?: {
   modelVersion?: string;
   horizonDays?: number;
@@ -248,6 +149,6 @@ export async function getMetricsHistory(params?: {
         : {}),
       createdAt: { gte: since },
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
   });
 }

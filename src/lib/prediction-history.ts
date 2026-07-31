@@ -1,43 +1,9 @@
 // ============================================================
-// Prediction History — DB-backed (Prisma Postgres)
-// Fallback to empty if DB unavailable
+// Prediction History — Learning stats from DB (adapted for new schema)
+// savePredictionToDB is deprecated — use save-prediction.ts instead.
 // ============================================================
 
 import prisma from './prisma';
-import type { FactorInput } from './prediction-factors';
-import { savePredictionFactors } from './prediction-factors';
-
-export interface DBPredictionInput {
-  ticker: string;
-  sector?: string;
-  signal: string;
-  confidence: number;
-  combinedScore: number;
-  technicalScore: number;
-  fundamentalScore: number;
-  regimeScore: number;
-  eventRiskScore: number;
-  horizonDays: number;
-  predictedDir: string;
-  predictedMovePct: number;
-  entryPrice: number;
-  gateStatus: string;
-  gateReason?: string;
-  noTradeReason?: string;
-  factors: FactorInput[];
-  // Regime Intelligence (orchestrator layer)
-  regimeState?: string;
-  regimeConfidence?: number;
-  regimePolicy?: Record<string, unknown>;
-  snapshot?: {
-    regime: string;
-    regimeConfidence: number;
-    spyPrice?: number;
-    spyChange5d?: number;
-    spyChange20d?: number;
-    vixLevel?: number;
-  };
-}
 
 export interface LearningStats {
   totalPredictions: number;
@@ -69,68 +35,6 @@ const DEFAULT_FUNDAMENTAL_WEIGHTS: Record<string, number> = {
 };
 
 /**
- * Store a prediction in the DB with all its factors and snapshot.
- */
-export async function savePredictionToDB(input: DBPredictionInput): Promise<string | null> {
-  try {
-    const dueAt = new Date();
-    dueAt.setDate(dueAt.getDate() + input.horizonDays);
-
-    const prediction = await prisma.prediction.create({
-      data: {
-        ticker: input.ticker,
-        sector: input.sector || 'UNKNOWN',
-        source: 'predict-api',
-        modelVersion: '2.0',
-        signal: input.signal,
-        confidence: Math.round(input.confidence),
-        combinedScore: input.combinedScore,
-        technicalScore: input.technicalScore,
-        fundamentalScore: input.fundamentalScore,
-        regimeScore: input.regimeScore,
-        eventRiskScore: input.eventRiskScore,
-        horizonDays: input.horizonDays,
-        predictedDir: input.predictedDir,
-        predictedMovePct: input.predictedMovePct,
-        entryPrice: input.entryPrice,
-        dueAt,
-        gateStatus: input.gateStatus,
-        gateReason: input.gateReason,
-        noTradeReason: input.noTradeReason,
-        // Regime Intelligence — for per-regime Brier calibration
-        regimeState: input.regimeState,
-        regimeConfidence: input.regimeConfidence,
-        regimePolicy: input.regimePolicy ? input.regimePolicy as any : undefined,
-      },
-    });
-
-    // Save factors
-    if (input.factors.length > 0) {
-      await savePredictionFactors(prediction.id, input.factors);
-    }
-
-    // Save market snapshot
-    if (input.snapshot) {
-      await prisma.marketSnapshot.create({
-        data: {
-          predictionId: prediction.id,
-          regime: input.snapshot.regime,
-          regimeConfidence: input.snapshot.regimeConfidence,
-          spyPrice: input.snapshot.spyPrice,
-          spyChange5d: input.snapshot.spyChange5d,
-          spyChange20d: input.snapshot.spyChange20d,
-        },
-      });
-    }
-
-    return prediction.id;
-  } catch (err) {
-    console.error('[PRED-HISTORY-DB] savePredictionToDB failed:', err);
-    return null;
-  }
-}
-
-/**
  * Load learning stats aggregated from DB.
  * Falls back to defaults if DB is empty.
  */
@@ -138,7 +42,7 @@ export async function loadLearningStats(): Promise<LearningStats> {
   try {
     const allPreds = await prisma.prediction.findMany({
       where: { wasCorrect: { not: null } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { predictedAt: 'desc' },
       take: 500,
       include: { factors: true },
     });
@@ -156,7 +60,7 @@ export async function loadLearningStats(): Promise<LearningStats> {
     const fundTracker: Record<string, { sameSide: number; total: number }> = {};
 
     for (const pred of allPreds) {
-      const retPct = pred.returnPct ?? 0;
+      const retPct = pred.actualReturn ?? 0;
       const actualUp = retPct > 0.1;
       totalError += Math.abs(retPct);
 
@@ -171,27 +75,22 @@ export async function loadLearningStats(): Promise<LearningStats> {
       }
     }
 
-    // Build indicator accuracy
     const indicatorAccuracy: Record<string, { correct: number; total: number; accuracy: number }> = {};
     for (const [k, v] of Object.entries(indTracker)) {
       if (v.total >= 3) indicatorAccuracy[k] = { correct: v.sameSide, total: v.total, accuracy: Math.round((v.sameSide / v.total) * 100) };
     }
 
-    // Build fundamental accuracy
     const fundamentalAccuracy: Record<string, { correct: number; total: number; accuracy: number }> = {};
     for (const [k, v] of Object.entries(fundTracker)) {
       if (v.total >= 3) fundamentalAccuracy[k] = { correct: v.sameSide, total: v.total, accuracy: Math.round((v.sameSide / v.total) * 100) };
     }
 
-    // Adaptive weights
     const learningWeights = adaptWeights(DEFAULT_TECHNICAL_WEIGHTS, indicatorAccuracy);
     const fundamentalWeights = adaptWeights(DEFAULT_FUNDAMENTAL_WEIGHTS, fundamentalAccuracy);
 
-    // Recent accuracy (last 50)
     const recent = allPreds.slice(0, 50);
     const recentCorrect = recent.filter(p => p.wasCorrect === true).length;
 
-    // Best/worst
     const sortedInds = Object.entries(indicatorAccuracy)
       .filter(([, v]) => v.total >= 5)
       .sort((a, b) => b[1].accuracy - a[1].accuracy);
@@ -199,7 +98,7 @@ export async function loadLearningStats(): Promise<LearningStats> {
     return {
       totalPredictions: total,
       checkedPredictions: total,
-      shortTermAccuracy: 50, // Will be refined with horizon data
+      shortTermAccuracy: 50,
       mediumTermAccuracy: 50,
       directionAccuracy: Math.round((correct / total) * 100),
       indicatorAccuracy,
@@ -213,7 +112,7 @@ export async function loadLearningStats(): Promise<LearningStats> {
       recentAccuracy: recent.length > 0 ? Math.round((recentCorrect / recent.length) * 100) : 50,
     };
   } catch (err) {
-    console.error('[PRED-HISTORY-DB] loadLearningStats failed:', err);
+    console.error('[PRED-HISTORY] loadLearningStats failed:', err);
     return defaultStats(0);
   }
 }
@@ -264,11 +163,4 @@ function defaultStats(totalPredictions: number): LearningStats {
     averageAbsoluteError: 0,
     recentAccuracy: 50,
   };
-}
-
-// Keep backward-compatible exports for prediction-engine.ts
-export function addPrediction(_data: Record<string, unknown>): void {
-  // No-op — predictions now go through savePredictionToDB
-  // This is kept so the import in route.ts doesn't break
-  console.warn('[PRED-HISTORY] addPrediction() is deprecated — use savePredictionToDB()');
 }

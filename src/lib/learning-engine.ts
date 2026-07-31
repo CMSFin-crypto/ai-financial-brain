@@ -88,14 +88,15 @@ export async function getRecentLessons(limit: number = 20) {
 export async function getRecentPredictions(limit: number = 30) {
   try {
     return await prisma.prediction.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: { predictedAt: 'desc' },
       take: limit,
       select: {
-        ticker: true, signal: true, confidence: true,
-        combinedScore: true, horizonDays: true, predictedDir: true,
-        entryPrice: true, actualPrice: true, returnPct: true,
-        benchmarkReturnPct: true, wasCorrect: true, gateStatus: true,
-        noTradeReason: true, createdAt: true, dueAt: true, evaluatedAt: true,
+        symbol: true, finalDecision: true, calibratedConfidence: true,
+        rawScore: true, horizonDays: true,
+        entryPrice: true, actualPrice: true, actualReturn: true,
+        benchmarkReturn: true, excessReturn: true, wasCorrect: true,
+        evaluationStatus: true, regime: true, regimeConfidence: true,
+        predictedAt: true, dueAt: true, evaluatedAt: true,
       },
     });
   } catch (err) {

@@ -73,85 +73,91 @@ model WatchlistItem {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PREDICTION SYSTEM — Postgres-backed, factor-level tracking
+// PREDICTION LIFECYCLE — Production-oriented, Brier-calibrated
 // ═══════════════════════════════════════════════════════════════
 
 model Prediction {
-  id               String   @id @default(cuid())
-  ticker           String
-  sector           String   @default("UNKNOWN")
-  source           String   @default("predict-api") // "predict-api" | "scan" | "scheduled"
-  modelVersion     String   @default("2.0")
+  id                    String   @id @default(cuid())
+  symbol                String
+  sector                String?
+  horizonDays           Int      @default(1)
 
-  // What was predicted
-  signal           String   // "STRONG_BUY" | "BUY" | "NEUTRAL" | "SELL" | "STRONG_SELL"
-  confidence       Int      // 0-100 calibrated
-  combinedScore    Float    // -100 to +100
-  technicalScore   Float
-  fundamentalScore Float    @default(0)
-  regimeScore      Float    @default(0)
-  eventRiskScore   Float    @default(0)
+  predictedAt           DateTime @default(now())
+  dueAt                 DateTime
 
-  // Horizon-specific predictions (1D, 5D, 20D)
-  horizonDays      Int      // 1, 5, or 20
-  predictedDir     String   // "UP" | "DOWN" | "SIDEWAYS"
-  predictedMovePct Float    // expected move in %
-  entryPrice       Float
+  modelVersion          String
 
-  // Evaluation fields — filled by evaluator
-  dueAt            DateTime
-  actualPrice      Float?
-  evaluatedAt      DateTime?
-  returnPct        Float?   // actual return %
-  benchmarkReturnPct Float? // SPY return % over same period
-  wasCorrect       Boolean?
-  gateStatus       String   @default("TRADE") // "TRADE" | "NO_TRADE" + reason
-  gateReason       String?
+  entryPrice            Float
+  benchmarkSymbol       String?  @default("SPY")
+  benchmarkEntryPrice   Float?
+  actualPrice           Float?
+  benchmarkActualPrice  Float?
 
-  // Regime Intelligence
-  regimeState      String?  // "BULL_LOW_VOL" | "BEAR_HIGH_VOL" | "PANIC_CAPITULATION" | "RELIEF_RALLY" | "RANGE_NEUTRAL"
-  regimeConfidence Float?  // 0-1
-  regimePolicy     Json?   // full policy snapshot at prediction time
+  regime                String?
+  regimeConfidence      Float?
+  transitionRisk        Float?
 
-  // Brier calibration fields
-  actualOutcome     Int?       // binary 0/1 for Brier score: 1 = predicted direction was correct
-  transitionRisk    Float?     // regime transition probability at prediction time
+  rawScore              Float
+  calibratedConfidence  Float
+  finalDecision         String   // "BUY" | "SELL" | "HOLD" | "NO_TRADE"
 
-  // Metadata
-  noTradeReason    String?
-  lessonExtracted  Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  actualReturn          Float?
+  benchmarkReturn       Float?
+  excessReturn         Float?
+  actualOutcome         Int?
+  wasCorrect            Boolean?
 
-  // Relations
-  factors          PredictionFactor[]
-  snapshot         MarketSnapshot?
+  evaluationStatus      String   @default("PENDING")
+  evaluatedAt           DateTime?
 
-  @@index([ticker, createdAt])
-  @@index([dueAt, wasCorrect])
-  @@index([horizonDays, wasCorrect])
-  @@index([regimeState, wasCorrect])
-  @@index([modelVersion, createdAt])
-  @@index([regimeState, createdAt])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  factors               PredictionFactor[]
+  snapshots             PredictionSnapshot[]
+  marketSnapshots       MarketSnapshot[]
+
+  @@index([symbol, predictedAt])
+  @@index([symbol, dueAt])
+  @@index([evaluationStatus, dueAt])
+  @@index([modelVersion, predictedAt])
+  @@index([regime, predictedAt])
 }
 
 model PredictionFactor {
-  id           String   @id @default(cuid())
-  predictionId String
-  factorName   String   // "rsi" | "macdHistogram" | "pe_ratio" | "revenue_growth" etc.
-  factorType   String   // "technical" | "fundamental" | "regime" | "event"
-  score        Float    // -100 to +100
-  weight       Float    // weight used at prediction time
-  contribution Float    // score * weight
-  signal       String   @default("NEUTRAL") // "BULLISH" | "BEARISH" | "NEUTRAL"
-  description  String   @default("")
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  predictionId  String
+  factorName    String
+  factorType    String
+  score         Float
+  weight        Float
+  signal        String?
+  description   String?
+  createdAt     DateTime @default(now())
 
-  prediction   Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
 
   @@index([predictionId])
-  @@index([factorName, factorType])
-  @@index([factorType])
+  @@index([factorName, createdAt])
+}
+
+model PredictionSnapshot {
+  id               String   @id @default(cuid())
+  predictionId     String
+  snapshotType     String   // "CREATED" | "EVALUATED" | "SNAPSHOT"
+  timestamp        DateTime @default(now())
+
+  price            Float?
+  benchmarkPrice   Float?
+  regime           String?
+  regimeConfidence Float?
+  transitionRisk   Float?
+  note             String?
+
+  prediction       Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+
+  @@index([predictionId, timestamp])
+  @@index([snapshotType, timestamp])
 }
 
 model ModelWeight {
@@ -299,19 +305,21 @@ model RegimeSnapshot {
 // ═══════ MODEL METRICS (Brier calibration layer) ═══════
 
 model ModelMetricSnapshot {
-  id              String   @id @default(cuid())
-  modelVersion    String
-  horizonDays     Int
-  sampleSize      Int
-  accuracy        Float?
-  avgReturn       Float?
-  winRate         Float?
-  brierScore      Float?
-  precisionBuy    Float?
-  recallBuy       Float?
-  noTradeRate     Float?
-  maxDrawdown     Float?
-  createdAt       DateTime @default(now())
+  id                String   @id @default(cuid())
+  modelVersion      String
+  horizonDays       Int
+  sampleSize        Int
+  accuracy          Float?
+  avgReturn         Float?
+  benchmarkReturn   Float?
+  alpha             Float?
+  winRate           Float?
+  brierScore        Float?
+  precisionBuy      Float?
+  recallBuy         Float?
+  noTradeRate       Float?
+  maxDrawdown       Float?
+  createdAt         DateTime @default(now())
 
   @@index([modelVersion, createdAt])
   @@index([horizonDays, createdAt])

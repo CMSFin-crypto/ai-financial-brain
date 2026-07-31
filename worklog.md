@@ -210,6 +210,36 @@ Stage Summary:
 - Prediction lifecycle: generate → save (regime+transitionRisk) → evaluate (cron at dueAt) → compute Brier → snapshot → recalibrate
 - Brier score computed as mean((f-o)^2) where f=confidence/100, o=actualOutcome (0/1)
 - Dashboard at /model-metrics with recharts: horizontal bar (regime), vertical bar (horizon), line (timeline), pie (gate)
-- Endpoints: GET/POST /api/model-metrics, POST /api/evaluator/cron
 - Each prediction now returns predictionId per horizon for tracking
-- Model version bumped to `predict-v3-regime-spillover`
+- Model version: `predict-v3-regime-spillover`
+
+---
+Task ID: 2-c
+Agent: Main Agent
+Task: Complete reorganization to production-oriented prediction lifecycle
+
+Work Log:
+- Replaced Prediction model: symbol (not ticker), predictedAt, evaluationStatus (PENDING/EVALUATED), calibratedConfidence (Float), rawScore, finalDecision (BUY/SELL/HOLD/NO_TRADE), benchmarkSymbol/EntryPrice/ActualPrice, excessReturn, actualOutcome (Int for Brier)
+- Replaced PredictionFactor model: removed `contribution` field, signal/description now optional
+- Added PredictionSnapshot model: CREATED/EVALUATED/SNAPSHOT types, stores price+benchmark+regime state at each lifecycle event
+- Updated ModelMetricSnapshot: added benchmarkReturn, alpha fields
+- Wrote save-prediction.ts: nested createMany for factors + auto-creates PredictionSnapshot(CREATED)
+- Wrote evaluate-prediction.ts: PriceProvider injection, transactional update, computes excessReturn = actualReturn - benchmarkReturn
+- Created evaluate-due-predictions.ts: finds evaluationStatus=PENDING && dueAt<=now, evaluates in sequence
+- Rewrote model-metrics.ts: Brier = mean((f-o)^2), alpha = avgReturn - benchmarkReturn, maxDrawdown, per-regime filter, getMetricsHistory
+- Created /api/cron/evaluate-predictions (CRON_SECRET auth, uses real fetchHistoricalData, auto-snapshots)
+- Created vercel.json with daily cron at 05:00 UTC
+- Removed old /api/evaluator/cron
+- Updated predict route: uses new savePrediction with benchmarkEntryPrice, returns predictionId per horizon
+- Updated evaluation-engine.ts: delegates to new evaluator, runs postEvaluationUpdate (AIStats + lessons + weights)
+- Fixed 8 dependent files: prediction-history, prediction-factors, predict-scan, prediction-history route, ai-learning, confidence-calibration, learning-engine, model-weights, regime-intelligence
+- Updated dashboard: alpha card, benchmark return, regime filter dropdown, alpha bar chart
+- prisma.ts: both named + default export for compat
+- Type-check: 0 errors in project files
+
+Stage Summary:
+- Prediction lifecycle: generate → save (entry + benchmark + regime + factors + snapshot) → evaluate (cron at dueAt with real prices) → compute Brier + alpha → snapshot → recalibrate
+- Benchmark-aware: SPY entry/actual price tracked, excessReturn = actual - benchmark
+- evaluationStatus: PENDING → EVALUATED (single source of truth)
+- Cron: GET /api/cron/evaluate-predictions with CRON_SECRET, Vercel cron at 05:00 UTC daily
+- Deploy steps: set DATABASE_URL + CRON_SECRET, prisma db push, vercel deploy --prod

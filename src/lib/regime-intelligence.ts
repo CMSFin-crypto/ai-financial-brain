@@ -368,19 +368,19 @@ export async function getRegimeAccuracyStats(): Promise<Record<string, {
   try {
     const { prisma } = await import('./prisma');
     const preds = await prisma.prediction.findMany({
-      where: { regimeState: { not: null }, wasCorrect: { not: null } },
-      orderBy: { createdAt: 'desc' },
+      where: { regime: { not: null }, wasCorrect: { not: null } },
+      orderBy: { predictedAt: 'desc' },
       take: 1000,
     });
     const stats: Record<string, { total: number; correct: number; winRate: number; avgReturn: number; noTradeCount: number }> = {};
     for (const p of preds) {
-      const rs = p.regimeState || 'UNKNOWN';
+      const rs = p.regime || 'UNKNOWN';
       if (!stats[rs]) stats[rs] = { total: 0, correct: 0, winRate: 0, avgReturn: 0, noTradeCount: 0 };
       const s = stats[rs];
       s.total++;
       if (p.wasCorrect) s.correct++;
-      if (p.gateStatus === 'NO_TRADE') s.noTradeCount++;
-      if (p.returnPct != null) s.avgReturn += p.returnPct;
+      if (p.finalDecision === 'NO_TRADE') s.noTradeCount++;
+      if (p.actualReturn != null) s.avgReturn += p.actualReturn;
     }
     for (const s of Object.values(stats)) {
       s.winRate = s.total > 0 ? Math.round((s.correct / s.total) * 1000) / 10 : 0;

@@ -66,18 +66,15 @@ export async function recordPrediction(data: PredictionRecord): Promise<string> 
 
     const prediction = await prisma.prediction.create({
       data: {
-        source: data.source,
-        ticker: data.ticker,
+        symbol: data.ticker,
         sector: data.sector,
-        signal: data.signal,
-        confidence: Math.round(data.confidence),
-        combinedScore: data.signal === 'BUY' || data.signal === 'BULLISH' ? 50 : data.signal === 'SELL' || data.signal === 'BEARISH' ? -50 : 0,
-        technicalScore: data.signal === 'BUY' || data.signal === 'BULLISH' ? 50 : data.signal === 'SELL' || data.signal === 'BEARISH' ? -50 : 0,
+        rawScore: data.signal === 'BUY' || data.signal === 'BULLISH' ? 50 : data.signal === 'SELL' || data.signal === 'BEARISH' ? -50 : 0,
+        calibratedConfidence: data.confidence,
+        finalDecision: data.signal === 'BUY' || data.signal === 'BULLISH' ? 'BUY' : data.signal === 'SELL' || data.signal === 'BEARISH' ? 'SELL' : 'HOLD',
         horizonDays,
-        predictedDir,
-        predictedMovePct: 0,
         entryPrice: data.predictedPrice || 0,
         dueAt,
+        modelVersion: 'ai-learning',
       },
     });
 

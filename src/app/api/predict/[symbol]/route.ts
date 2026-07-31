@@ -6,11 +6,10 @@ import { calculateRelativeStrength } from '@/lib/relative-strength';
 import { checkEventRisk } from '@/lib/event-risk';
 import { runNoTradeGate } from '@/lib/no-trade-gate';
 import { getModelWeights, seedDefaultWeights } from '@/lib/model-weights';
-import { savePrediction as savePredictionBrier } from '@/lib/save-prediction';
+import { savePrediction } from '@/lib/save-prediction';
 import { buildTechnicalFactors, buildFundamentalFactors, type FactorInput } from '@/lib/prediction-factors';
 import { loadLearningStats } from '@/lib/prediction-history';
 import { evaluateDuePredictions } from '@/lib/evaluation-engine';
-import { evaluateDuePredictionsBrier } from '@/lib/evaluate-prediction';
 import { analyzeGlobalSpillover, type SpilloverAnalysis } from '@/lib/global-spillover';
 import { runV2ShadowPrediction, getActiveModel } from '@/lib/spillover-promotion';
 import { getRegimeWithPolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
@@ -25,6 +24,17 @@ function toLegacyRegime(state: MarketRegimeState): 'BULL' | 'BEAR' | 'VOLATILE' 
   if (state === 'BULL_LOW_VOL' || state === 'BULL_HIGH_VOL' || state === 'RELIEF_RALLY') return 'BULL';
   if (state === 'BEAR_LOW_VOL' || state === 'BEAR_HIGH_VOL') return 'BEAR';
   return 'RANGING';
+}
+
+// Map old signal/gate to new finalDecision
+function toFinalDecision(
+  direction: string,
+  gateStatus: string,
+): 'BUY' | 'SELL' | 'HOLD' | 'NO_TRADE' {
+  if (gateStatus === 'NO_TRADE') return 'NO_TRADE';
+  if (direction === 'STRONG_BUY' || direction === 'BUY') return 'BUY';
+  if (direction === 'STRONG_SELL' || direction === 'SELL') return 'SELL';
+  return 'HOLD';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -43,7 +53,7 @@ function toLegacyRegime(state: MarketRegimeState): 'BULL' | 'BEAR' | 'VOLATILE' 
 //   routeByRegime → confidence-calibration → no-trade-gate
 //
 // Phase 4 — Persistence + Response:
-//   save prediction (with regime state + policy for Brier calibration)
+//   save prediction (new lifecycle: entry context + factors + snapshot)
 //   return TRADE / NO_TRADE decision
 // ═══════════════════════════════════════════════════════════════
 
@@ -67,13 +77,7 @@ export async function GET(
     // ── Pre-flight ───────────────────────────────────────────
     await seedDefaultWeights().catch(() => {});
     if (runEval) {
-      try {
-        // Run both evaluators: legacy (wasCorrect) + Brier (actualOutcome)
-        await Promise.all([
-          evaluateDuePredictions(),
-          evaluateDuePredictionsBrier(),
-        ]);
-      } catch (err) {
+      try { await evaluateDuePredictions(); } catch (err) {
         console.error('[PREDICT] Evaluation failed:', err);
       }
     }
@@ -115,9 +119,7 @@ export async function GET(
           modelVersion: 'spillover-v1' as const,
         };
       }),
-      // REGIME INTELLIGENCE — the orchestrator (30-min cache)
       getRegimeWithPolicy({ targetSymbol: ticker }),
-      // SPY snapshot for DB (cached by global-market-data)
       getDailyHistory('SPY', 5),
     ]);
 
@@ -138,12 +140,9 @@ export async function GET(
     }
 
     // ── PHASE 2: Computation (no I/O) ───────────────────────
-
-    // 2a. Technical analysis
     const baseResult = predictStock(ticker, historicalData);
     const techScore = baseResult.technicalScore;
 
-    // 2b. Fundamental analysis
     let fundamentalScore = 0;
     let fundamentalSummary = '';
     let fundamentalScores: Record<string, number> = {};
@@ -162,14 +161,10 @@ export async function GET(
       };
     }
 
-    // 2c. Event risk (pure computation)
     const eventRisk = checkEventRisk(ticker);
     const rsScore = relStrength.rsScore;
 
     // ── PHASE 3: ORCHESTRATION ──────────────────────────────
-    // The regime intelligence layer decides HOW to interpret all signals.
-
-    // 3a. Build raw combined score from engine outputs
     const ratios = weightsResult.horizonRatios;
     const spilloverScore = spillover.spilloverScore;
     const spilloverBaseWeight = isSemiOrTech ? 0.10 : 0.03;
@@ -183,11 +178,9 @@ export async function GET(
        spilloverScore * spilloverWeight) * 100,
     ) / 100;
 
-    // 3b. Determine signal direction from raw score
     const direction = rawScore > 60 ? 'STRONG_BUY' : rawScore > 25 ? 'BUY' :
       rawScore > -25 ? 'HOLD' : rawScore > -60 ? 'SELL' : 'STRONG_SELL';
 
-    // 3c. REGIME ROUTING — adjust weights, score, confidence per regime
     const routingResult = routeByRegime({
       regime: regimeIntel.regime,
       policy: regimePolicy,
@@ -200,7 +193,6 @@ export async function GET(
     const combinedScore = routingResult.adjustedScore;
     const calibratedConfidence = routingResult.adjustedConfidence;
 
-    // 3d. NO_TRADE gate (regime-aware: uses policy floors + direction blocks)
     const gateResult = routingResult.blockedReason
       ? { status: 'NO_TRADE' as const, reason: routingResult.blockedReason }
       : runNoTradeGate({
@@ -221,12 +213,9 @@ export async function GET(
           regimePolicy,
         });
 
-    // 3e. FINAL DECISION — the regime orchestrator's output
-    const finalDecision = gateResult.status === 'NO_TRADE' ? 'NO_TRADE' : 'TRADE';
-
     // ── PHASE 4: Persistence + Response ─────────────────────
 
-    // 4a. Build factor list for DB
+    // Build factor list
     const allFactors: FactorInput[] = [];
     const techFactors = buildTechnicalFactors(
       baseResult.indicatorScores,
@@ -236,7 +225,6 @@ export async function GET(
     );
     allFactors.push(...techFactors);
 
-    // Fundamental factors (policy-adjusted weights)
     if (fundamentalScores && Object.keys(fundamentalScores).length > 0) {
       const adjustedFundWeights: Record<string, number> = {};
       for (const [k, v] of Object.entries(weightsResult.fundamental)) {
@@ -251,7 +239,6 @@ export async function GET(
       allFactors.push(...fundFactors);
     }
 
-    // Regime Intelligence factor
     const regimeSignal = regimeIntel.regime === 'BULL_LOW_VOL' || regimeIntel.regime === 'BULL_HIGH_VOL' || regimeIntel.regime === 'RELIEF_RALLY'
       ? 'BULLISH' : regimeIntel.regime === 'BEAR_HIGH_VOL' || regimeIntel.regime === 'BEAR_LOW_VOL' || regimeIntel.regime === 'PANIC_CAPITULATION'
       ? 'BEARISH' : 'NEUTRAL';
@@ -259,26 +246,20 @@ export async function GET(
       factorName: 'regime_intelligence', factorType: 'regime',
       score: regimePolicy.scoreMultiplier > 1 ? 30 : regimePolicy.scoreMultiplier < 1 ? -30 : 0,
       weight: 0.08, signal: regimeSignal,
-      description: `Regjimi: ${regimeIntel.regime} (conf=${(regimeIntel.confidence * 100).toFixed(0)}%, transRisk=${(regimeIntel.transitionRisk * 100).toFixed(0)}%)`,
+      description: `Regime: ${regimeIntel.regime} (conf=${(regimeIntel.confidence * 100).toFixed(0)}%, transRisk=${(regimeIntel.transitionRisk * 100).toFixed(0)}%)`,
     });
-
-    // Event risk factor
     allFactors.push({
       factorName: 'event_risk', factorType: 'event',
       score: eventRisk.riskScore, weight: ratios.event,
       signal: eventRisk.riskScore < -20 ? 'BEARISH' : 'NEUTRAL',
       description: eventRisk.description,
     });
-
-    // Relative strength factor
     allFactors.push({
       factorName: 'relative_strength', factorType: 'relative_strength',
       score: rsScore, weight: 0.05,
       signal: rsScore > 10 ? 'BULLISH' : rsScore < -10 ? 'BEARISH' : 'NEUTRAL',
       description: `RS vs SPY: ${rsScore > 0 ? '+' : ''}${rsScore.toFixed(1)}`,
     });
-
-    // Global spillover factor
     allFactors.push({
       factorName: 'global_spillover', factorType: 'macro_global',
       score: spilloverScore, weight: spilloverBaseWeight,
@@ -286,57 +267,56 @@ export async function GET(
       description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) - ${(spillover.reasons || []).slice(0, 2).join('; ')}`,
     });
 
-    // 4b. Horizons
+    // Horizons
     const lastClose = historicalData[historicalData.length - 1].close;
+    const spyClose = spySnap[0]?.close;
     const expectedMove1d = baseResult.shortTerm.expectedMove;
     const expectedMove5d = baseResult.mediumTerm.expectedMove;
     const predictedDir1d = baseResult.shortTerm.prediction;
     const predictedDir5d = baseResult.mediumTerm.prediction;
     const predictedDir20d = combinedScore > 15 ? 'UP' : combinedScore < -15 ? 'DOWN' : 'SIDEWAYS';
 
-    // 4c. Save to DB with REGIME STATE + POLICY + TRANSITION RISK (for Brier calibration)
     const modelVersion = 'predict-v3-regime-spillover';
-    const dbBase = {
-      ticker, signal: direction, calibratedConfidence, combinedScore,
-      technicalScore: techScore, fundamentalScore,
-      regimeScore: regimePolicy.scoreMultiplier > 1 ? 10 : regimePolicy.scoreMultiplier < 1 ? -10 : 0,
-      eventRiskScore: eventRisk.riskScore,
-      gateStatus: gateResult.status, gateReason: gateResult.reason,
-      noTradeReason: gateResult.status === 'NO_TRADE' ? gateResult.reason : undefined,
-      finalDecision: finalDecision as 'TRADE' | 'NO_TRADE',
-      modelVersion,
-      factors: allFactors,
-      // Regime Intelligence — persisted for per-regime Brier score calibration
-      regime: regimeIntel.regime,
-      regimeConfidence: regimeIntel.confidence,
-      transitionRisk: regimeIntel.transitionRisk,
-      regimePolicy: regimePolicy as unknown as Record<string, unknown>,
-      rawScore,
-      snapshot: {
-        regime: regimeIntel.regime,
-        regimeConfidence: regimeIntel.confidence,
-        spyPrice: spySnap[0]?.close,
-        spyChange5d: regimeIntel.drivers.spy5d,
-        spyChange20d: regimeIntel.drivers.spy20d,
-        vixLevel: regimeIntel.drivers.vixLevel,
-      },
-    };
+    const finalDecision = toFinalDecision(direction, gateResult.status);
 
-    const [predId1d, predId5d, predId20d] = await Promise.all([
-      savePredictionBrier({ ...dbBase,
-        horizonDays: 1, predictedDir: predictedDir1d, predictedMovePct: expectedMove1d, entryPrice: lastClose,
+    // Convert FactorInput[] to save-prediction FactorInput[] (compatible types)
+    const saveFactors = allFactors.map(f => ({
+      factorName: f.factorName,
+      factorType: f.factorType as string,
+      score: f.score,
+      weight: f.weight,
+      signal: f.signal,
+      description: f.description,
+    }));
+
+    // Save 3 horizons using new lifecycle save
+    const [pred1d, pred5d, pred20d] = await Promise.all([
+      savePrediction({
+        symbol: ticker, horizonDays: 1, modelVersion,
+        entryPrice: lastClose, benchmarkEntryPrice: spyClose,
+        regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
+        transitionRisk: regimeIntel.transitionRisk,
+        rawScore, calibratedConfidence, finalDecision,
+        factors: saveFactors,
       }),
-      savePredictionBrier({ ...dbBase,
-        horizonDays: 5, predictedDir: predictedDir5d, predictedMovePct: expectedMove5d, entryPrice: lastClose,
+      savePrediction({
+        symbol: ticker, horizonDays: 5, modelVersion,
+        entryPrice: lastClose, benchmarkEntryPrice: spyClose,
+        regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
+        transitionRisk: regimeIntel.transitionRisk,
+        rawScore, calibratedConfidence, finalDecision,
+        factors: saveFactors,
       }),
-      savePredictionBrier({ ...dbBase,
-        horizonDays: 20, predictedDir: predictedDir20d, predictedMovePct: expectedMove5d * 2, entryPrice: lastClose,
-      }),
+      savePrediction({
+        symbol: ticker, horizonDays: 20, modelVersion,
+        entryPrice: lastClose, benchmarkEntryPrice: spyClose,
+        regime: regimeIntel.regime, regimeConfidence: regimeIntel.confidence,
+        transitionRisk: regimeIntel.transitionRisk,
+        rawScore, calibratedConfidence, finalDecision,
+        factors: saveFactors,
+      }).catch(() => null),
     ]);
 
-    const primaryPredictionId = predId1d;
-
-    // 4d. Build response
     const elapsedMs = Date.now() - startTime;
     console.log(
       `[PREDICT] ${ticker}: dir=${direction} conf=${calibratedConfidence} score=${combinedScore} ` +
@@ -363,7 +343,6 @@ export async function GET(
         worstIndicators: learningStatsRaw.worstIndicators,
         recentAccuracy: learningStatsRaw.recentAccuracy,
       } : null,
-      // Regime (new 7-state intelligence)
       regime: regimeIntel.regime,
       regimeConfidence: regimeIntel.confidence,
       relativeStrength: rsScore,
@@ -388,7 +367,6 @@ export async function GET(
         v2Promotion: 'V2 must win 2/3 metrics (precision, Brier, return) with 50+ OOS samples',
         v2ShadowResultsSavedToDB: isSemiOrTech,
       },
-      // Regime Intelligence — the orchestrator layer
       regimeIntelligence: {
         regime: regimeIntel.regime,
         confidence: regimeIntel.confidence,
@@ -406,15 +384,14 @@ export async function GET(
         },
         drivers: regimeIntel.drivers,
       },
-      // Final decision from the orchestrator
       finalDecision,
       routingBlockedReason: routingResult.blockedReason ?? null,
       horizons: {
-        '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d, predictionId: predId1d },
-        '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d, predictionId: predId5d },
-        '20D': { predictedDir: predictedDir20d, expectedMovePct: expectedMove5d * 2, predictionId: predId20d },
+        '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d, predictionId: pred1d?.id },
+        '5D': { predictedDir: predictedDir5d, expectedMovePct: expectedMove5d, predictionId: pred5d?.id },
+        '20D': { predictedDir: predictedDir20d, expectedMovePct: expectedMove5d * 2, predictionId: pred20d?.id },
       },
-      predictionId: primaryPredictionId,
+      predictionId: pred1d?.id,
       modelVersion,
       processingTimeMs: elapsedMs,
     });

@@ -38,8 +38,8 @@ async function loadBuckets(): Promise<CalibrationBucket[]> {
     // Get all evaluated predictions from DB
     const evaluated = await prisma.prediction.findMany({
       where: { wasCorrect: { not: null } },
-      select: { confidence: true, wasCorrect: true },
-      orderBy: { createdAt: 'desc' },
+      select: { calibratedConfidence: true, wasCorrect: true },
+      orderBy: { predictedAt: 'desc' },
       take: 2000,
     });
 
@@ -52,7 +52,7 @@ async function loadBuckets(): Promise<CalibrationBucket[]> {
     }));
 
     for (const pred of evaluated) {
-      const conf = pred.confidence;
+      const conf = pred.calibratedConfidence;
       const bucket = buckets.find(b => conf >= b.minConf && conf < b.maxConf);
       if (bucket) {
         bucket.total++;

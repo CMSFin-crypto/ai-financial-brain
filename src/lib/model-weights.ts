@@ -144,9 +144,9 @@ export async function updateWeightsAfterEvaluation(): Promise<{
     const tracker: Record<string, { sameSide: number; total: number; sameSideWeighted: number }> = {};
 
     for (const pred of evaluatedPredictions) {
-      const returnPct = pred.returnPct ?? 0;
-      const actualUp = returnPct > 0.1;
-      const actualDown = returnPct < -0.1;
+      const actualReturn = pred.actualReturn ?? 0;
+      const actualUp = actualReturn > 0.1;
+      const actualDown = actualReturn < -0.1;
 
       for (const factor of pred.factors) {
         if (!tracker[factor.factorName]) {

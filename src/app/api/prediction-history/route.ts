@@ -7,32 +7,29 @@ export async function GET(request: NextRequest) {
     const symbol = searchParams.get('symbol');
     const limit = parseInt(searchParams.get('limit') || '50');
 
+    const selectFields = {
+      symbol: true, finalDecision: true, calibratedConfidence: true,
+      rawScore: true, horizonDays: true,
+      entryPrice: true, actualPrice: true, actualReturn: true,
+      benchmarkReturn: true, excessReturn: true, wasCorrect: true,
+      evaluationStatus: true, regime: true, regimeConfidence: true,
+      predictedAt: true, dueAt: true, evaluatedAt: true,
+    };
+
     if (symbol) {
       const preds = await prisma.prediction.findMany({
-        where: { ticker: symbol.toUpperCase() },
-        orderBy: { createdAt: 'desc' },
+        where: { symbol: symbol.toUpperCase() },
+        orderBy: { predictedAt: 'desc' },
         take: limit,
-        select: {
-          ticker: true, signal: true, confidence: true,
-          combinedScore: true, horizonDays: true, predictedDir: true,
-          entryPrice: true, actualPrice: true, returnPct: true,
-          benchmarkReturnPct: true, wasCorrect: true, gateStatus: true,
-          createdAt: true, dueAt: true, evaluatedAt: true,
-        },
+        select: selectFields,
       });
       return NextResponse.json({ total: preds.length, predictions: preds });
     }
 
     const preds = await prisma.prediction.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: { predictedAt: 'desc' },
       take: limit,
-      select: {
-        ticker: true, signal: true, confidence: true,
-        combinedScore: true, horizonDays: true, predictedDir: true,
-        entryPrice: true, actualPrice: true, returnPct: true,
-        benchmarkReturnPct: true, wasCorrect: true, gateStatus: true,
-        createdAt: true, dueAt: true, evaluatedAt: true,
-      },
+      select: selectFields,
     });
 
     return NextResponse.json({ total: preds.length, predictions: preds });

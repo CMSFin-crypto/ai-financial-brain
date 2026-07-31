@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { fetchHistoricalData, getBatchQuotesFast } from '@/lib/alpha-vantage';
 import { predictStock, rankStocks } from '@/lib/prediction-engine';
 import { analyzeFundamentals } from '@/lib/fundamental-analysis';
-import { loadLearningStats, savePredictionToDB } from '@/lib/prediction-history';
+import { loadLearningStats } from '@/lib/prediction-history';
+import { savePrediction } from '@/lib/save-prediction';
 import type { PredictionResult } from '@/lib/prediction-engine';
 
 export const maxDuration = 300;
@@ -85,20 +86,15 @@ export async function GET() {
           };
 
           // Store for learning (non-blocking, fire and forget)
-          savePredictionToDB({
-            ticker,
-            signal: result.direction,
-            confidence: result.confidence,
-            combinedScore: result.combinedScore,
-            technicalScore: result.technicalScore,
-            fundamentalScore,
-            regimeScore: 0,
-            eventRiskScore: 0,
+          savePrediction({
+            symbol: ticker,
             horizonDays: 1,
-            predictedDir: result.shortTerm.prediction,
-            predictedMovePct: result.shortTerm.expectedMove,
+            modelVersion: 'predict-v3-regime-spillover',
             entryPrice: lastClose,
-            gateStatus: 'TRADE',
+            rawScore: result.combinedScore,
+            calibratedConfidence: result.confidence,
+            finalDecision: result.direction === 'STRONG_SELL' || result.direction === 'SELL' ? 'SELL'
+              : result.direction === 'STRONG_BUY' || result.direction === 'BUY' ? 'BUY' : 'HOLD',
             factors: [],
           }).catch(() => {});
 
