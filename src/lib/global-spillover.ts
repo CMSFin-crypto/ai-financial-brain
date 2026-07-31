@@ -1,17 +1,12 @@
 // ============================================================
-// Global Spillover Engine
-// Detects when movements in Asian/EU markets spill over to US
-// semiconductors. Classifies as CONTINUATION, CAPITULATION, or
-// RELIEF_RALLY based on deceleration patterns, volatility, and
-// cross-market signals.
+// Global Spillover Engine V1 (Heuristic)
+// Classifies Asia→US spillover as CONTINUATION, CAPITULATION,
+// RELIEF_RALLY, or NEUTRAL based on 16 features.
 // ============================================================
 
-import {
-  getMarketHistory,
-  pctChange,
-  saveSnapshotsToDB,
-  type EnrichedMarketData,
-} from './global-market-data';
+import { getDailyHistory, SEMI_TICKERS, saveMarketSnapshots } from './global-market-data';
+import { buildSpilloverFeatures, type SpilloverFeatures, FEATURE_NAMES } from './spillover-features';
+import type { EnrichedMarketData } from './global-market-data';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -29,260 +24,330 @@ export interface SpilloverDrivers {
 
 export interface SpilloverAnalysis {
   setupType: SpilloverSetup;
-  spilloverScore: number;  // -100 to +100
-  confidence: number;      // 0 to 1
+  spilloverScore: number;   // -100 to +100
+  confidence: number;       // 0 to 1
   reasons: string[];
+  features: SpilloverFeatures;
   drivers: SpilloverDrivers;
+  modelVersion: 'spillover-v1';
 }
 
-// ─── Score helpers ─────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-/**
- * Core scoring function based on Kospi, SMH, VIX, QQQ returns.
- * Score >= 40  → RELIEF_RALLY (panic decelerating, oversold bounce likely)
- * Score <= -40 → CONTINUATION (downtrend intact, more pain ahead)
- * Extreme volatility + negative → CAPITULATION
- * Otherwise → NEUTRAL
- */
-function computeBaseScore(d: {
-  kospi2d: number;
-  kospi1d: number;
-  smh1d: number;
-  vix1d: number;
-  qqq1d: number;
-}): number {
+// ─── Detection functions ──────────────────────────────────────
+
+function detectReliefRally(f: SpilloverFeatures): { score: number; reasons: string[] } {
   let score = 0;
-
-  // Kospi 2D: heavy 2-day drop = bearish, but recovery = bullish
-  if (d.kospi2d <= -10) score -= 35;
-  else if (d.kospi2d <= -5) score -= 20;
-  else if (d.kospi2d >= 0) score += 10;
-
-  // Kospi 1D vs 2D: deceleration is the key relief signal
-  // If 2D was very bad but 1D is mild → panic slowing → relief
-  if (d.kospi2d < -8 && d.kospi1d > -2) score += 20;  // strong deceleration
-  else if (d.kospi1d <= -5) score -= 20;                // still crashing
-
-  // SMH: already reflects US semi positioning
-  if (d.smh1d <= -5) score -= 20;
-  else if (d.smh1d > 0) score += 15;
-
-  // VIX: rising = fear, falling = calm
-  if (d.vix1d >= 5) score -= 15;
-  else if (d.vix1d <= -3) score += 10;
-
-  // QQQ: broad tech direction
-  if (d.qqq1d > 0) score += 10;
-  else if (d.qqq1d < -2) score -= 5;
-
-  return clamp(score, -100, 100);
-}
-
-/**
- * Detect capitulation: extreme 2-day drop with volatility spike
- * and no sign of stabilization.
- */
-function isCapitulation(d: {
-  kospi2d: number;
-  kospi1d: number;
-  smh1d: number;
-  vix1d: number;
-  smhAtr14?: number | null;
-  smhClose?: number;
-  smhSma20?: number | null;
-}): boolean {
-  // 2 consecutive strong down days
-  const consecutiveDrop = d.kospi2d < -8 && d.kospi1d < -3;
-  // VIX spiking hard (fear extreme)
-  const vixSpike = d.vix1d >= 8;
-  // SMH already heavily oversold
-  const smhOversold = d.smhSma20 && d.smhClose
-    ? d.smhClose < d.smhSma20 * 0.95
-    : d.smh1d < -4;
-  // SMH volatility elevated
-  const highVol = d.smhAtr14 ? d.smhAtr14 > 0 : false;
-
-  // Capitulation = extreme drop + extreme fear + oversold
-  return consecutiveDrop && vixSpike && smhOversold;
-}
-
-/**
- * Build human-readable reasons for the analysis.
- */
-function buildReasons(d: {
-  kospi1d: number;
-  kospi2d: number;
-  smh1d: number;
-  vix1d: number;
-  qqq1d: number;
-}, setup: SpilloverSetup): string[] {
   const reasons: string[] = [];
 
-  if (d.kospi2d < -5) {
-    reasons.push(`KOSPI -${Math.abs(d.kospi2d).toFixed(1)}% 2D`);
-  }
-  if (d.kospi2d < -8 && d.kospi1d > -2) {
-    reasons.push(`KOSPI decelerating (${d.kospi1d.toFixed(1)}% 1D pas -${Math.abs(d.kospi2d).toFixed(1)}% 2D)`);
-  }
-  if (d.kospi1d <= -5) {
-    reasons.push(`KOSPI akoma duke u rrëzuar (${d.kospi1d.toFixed(1)}% 1D)`);
-  }
-  if (d.smh1d < -3) {
-    reasons.push(`SMH ${d.smh1d.toFixed(1)}% 1D — semis të goditura`);
-  } else if (d.smh1d > 0) {
-    reasons.push(`SMH +${d.smh1d.toFixed(1)}% 1D — semis stabilë`);
-  }
-  if (d.vix1d >= 5) {
-    reasons.push(`VIX +${d.vix1d.toFixed(1)}% — rrezik i lartë`);
-  } else if (d.vix1d <= -3) {
-    reasons.push(`VIX ${d.vix1d.toFixed(1)}% — frika po ulet`);
-  }
-  if (d.qqq1d > 0) {
-    reasons.push(`QQQ +${d.qqq1d.toFixed(1)}% — tech i gjelbër`);
+  // Kospi 2D very negative, 1D much milder → deceleration
+  if (f.kospi2d <= -10 && f.kospi1d > -2) {
+    score += 35;
+    reasons.push(`KOSPI decelerating (${f.kospi1d.toFixed(1)}% 1D pas -${Math.abs(f.kospi2d).toFixed(1)}% 2D)`);
+  } else if (f.kospi2d <= -5 && f.kospi1d > -1) {
+    score += 20;
+    reasons.push(`KOSPI rënia po ngadalësohet`);
   }
 
-  // Setup-specific context
-  if (setup === 'RELIEF_RALLY') {
-    reasons.push('Paniku po ngadalësohet — potencial relief rally');
-  } else if (setup === 'CONTINUATION') {
-    reasons.push('Rënia vazhdon — asnjë shenjë stabilizimi');
-  } else if (setup === 'CAPITULATION') {
-    reasons.push('Panik ekstrem — kapitulim i mundshëm');
+  // Asia deceleration positive
+  if (f.asiaDeceleration > 0.3) {
+    score += 15;
+    reasons.push('Paniku aziatik po ulet');
   }
 
-  return reasons;
+  // SMH already down (oversold context)
+  if (f.smh1d < 0 && f.smh2d < -3) {
+    score += 15;
+    reasons.push(`SMH e goditur (${f.smh2d.toFixed(1)}% 2D)`);
+  }
+
+  // Target oversold
+  if (f.oversoldScore >= 50) {
+    score += 20;
+    reasons.push(`Target oversold (score=${f.oversoldScore.toFixed(0)})`);
+  } else if (f.oversoldScore >= 30) {
+    score += 10;
+  }
+
+  // VIX not accelerating
+  if (f.vix1d <= 0) {
+    score += 10;
+    reasons.push('VIX jo duke rritur');
+  }
+
+  // QQQ flat or positive
+  if (f.qqq1d > 0) {
+    score += 10;
+    reasons.push('QQQ i gjelbër — tech stabil');
+  }
+
+  // Semis breadth very negative (capitulation context → relief more likely)
+  if (f.semisBreadth >= 0.8) {
+    score += 5;
+    reasons.push('Breadth shumë i dobët — potencial revert');
+  }
+
+  return { score, reasons };
 }
 
-// ─── Main analysis function ────────────────────────────────────
+function detectContinuation(f: SpilloverFeatures): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
 
-/**
- * Analyze global spillover for a target US stock/ETF.
- * Uses KOSPI, SMH, QQQ, VIX data to classify the setup.
- */
+  // Kospi still crashing
+  if (f.kospi1d <= -5) {
+    score += 25;
+    reasons.push(`KOSPI akoma duke u rrëzuar (${f.kospi1d.toFixed(1)}% 1D)`);
+  } else if (f.kospi1d <= -3) {
+    score += 15;
+  }
+
+  // Kospi 2D very bad
+  if (f.kospi2d <= -10) {
+    score += 20;
+    reasons.push(`KOSPI -${Math.abs(f.kospi2d).toFixed(1)}% 2D`);
+  } else if (f.kospi2d <= -5) {
+    score += 10;
+  }
+
+  // SMH down
+  if (f.smh1d <= -3) {
+    score += 15;
+    reasons.push(`SMH ${f.smh1d.toFixed(1)}% 1D`);
+  }
+
+  // VIX rising
+  if (f.vix1d >= 5) {
+    score += 15;
+    reasons.push(`VIX +${f.vix1d.toFixed(1)}% — frika rritet`);
+  } else if (f.vix1d >= 2) {
+    score += 8;
+  }
+
+  // QQQ weak
+  if (f.qqq1d < -2) {
+    score += 10;
+    reasons.push('QQQ i dobët');
+  }
+
+  // Asia NOT decelerating
+  if (f.asiaDeceleration < -0.2) {
+    score += 10;
+    reasons.push('Paniku aziatik po përshpejtohet');
+  }
+
+  return { score, reasons };
+}
+
+function detectCapitulation(f: SpilloverFeatures): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+
+  // Breadth extremely weak
+  if (f.semisBreadth >= 0.9) {
+    score += 25;
+    reasons.push('Breadth <10% — gati të gjithë semis negativë');
+  }
+
+  // Extreme moves
+  if (f.kospi2d < -12) {
+    score += 20;
+    reasons.push('KOSPI 2D ekstrem');
+  }
+  if (f.smh2d < -8) {
+    score += 15;
+    reasons.push('SMH 2D ekstrem');
+  }
+
+  // ATR z-score very high
+  if (f.targetAtrZ > 2.0) {
+    score += 20;
+    reasons.push('Volatilitet ekstrem (ATR z-score >2)');
+  } else if (f.targetAtrZ > 1.5) {
+    score += 10;
+  }
+
+  // VIX spike
+  if (f.vix1d >= 8) {
+    score += 15;
+    reasons.push('VIX spike >8%');
+  }
+
+  // No stabilization sign
+  if (f.asiaDeceleration <= 0) {
+    score += 10;
+    reasons.push('Asnjë shenjë stabilizimi nga Azia');
+  }
+
+  return { score, reasons };
+}
+
+// ─── Scoring ──────────────────────────────────────────────────
+
+function scoreSpillover(f: SpilloverFeatures): {
+  setupType: SpilloverSetup;
+  spilloverScore: number;
+  confidence: number;
+  reasons: string[];
+} {
+  const relief = detectReliefRally(f);
+  const cont = detectContinuation(f);
+  const cap = detectCapitulation(f);
+
+  const reasons = [...relief.reasons, ...cont.reasons, ...cap.reasons];
+  const score = clamp(relief.score - cont.score - cap.score, -100, 100);
+
+  // Determine setup type
+  let setupType: SpilloverSetup = 'NEUTRAL';
+  if (cap.score >= 50 && cont.score >= 30) {
+    setupType = 'CAPITULATION';
+  } else if (score >= 30) {
+    setupType = 'RELIEF_RALLY';
+  } else if (score <= -30) {
+    setupType = 'CONTINUATION';
+  }
+
+  // Confidence from absolute score
+  const confidence = Math.min(1, Math.abs(score) / 80);
+
+  // Capitulation overrides if extreme
+  if (setupType === 'CAPITULATION') {
+    return {
+      setupType,
+      spilloverScore: clamp(-score - 20, -100, -20),
+      confidence: Math.min(1, cap.score / 70),
+      reasons: cap.reasons,
+    };
+  }
+
+  return { setupType, spilloverScore: score, confidence, reasons };
+}
+
+// ─── Main analysis (with I/O) ────────────────────────────────
+
 export async function analyzeGlobalSpillover(
   targetSymbol: string,
   sector?: string
 ): Promise<SpilloverAnalysis> {
   const startTime = Date.now();
 
-  // Fetch core instruments in parallel
-  const [kospi, smh, qqq, vix] = await Promise.all([
-    getMarketHistory('^KS11'),
-    getMarketHistory('SMH'),
-    getMarketHistory('QQQ'),
-    getMarketHistory('VIX'),
+  // Fetch all data in parallel
+  const [kospi, nikkei, hsi, smh, qqq, vix, target] = await Promise.all([
+    getDailyHistory('^KS11'),
+    getDailyHistory('^N225'),
+    getDailyHistory('^HSI'),
+    getDailyHistory('SMH'),
+    getDailyHistory('QQQ'),
+    getDailyHistory('VIX'),
+    getDailyHistory(targetSymbol),
   ]);
 
-  // Default to zero if data unavailable
-  const kospi1d = kospi.length >= 2 ? kospi[0].return1d : 0;
-  const kospi2d = kospi.length >= 3 ? (kospi[0].return2d ?? 0) : 0;
-  const kospi5d = kospi.length >= 6 ? (kospi[0].return5d ?? 0) : 0;
-  const smh1d = smh.length >= 2 ? smh[0].return1d : 0;
-  const smh2d = smh.length >= 3 ? (smh[0].return2d ?? 0) : 0;
-  const vix1d = vix.length >= 2 ? vix[0].return1d : 0;
-  const qqq1d = qqq.length >= 2 ? qqq[0].return1d : 0;
-
-  const drivers: SpilloverDrivers = {
-    kospi1d, kospi2d, kospi5d, smh1d, smh2d, vix1d, qqq1d,
-  };
-
-  // ── Heuristic: specific case of Kospi deceleration after heavy drop ──
-  // This is the "missed" case: Kospi dropped hard, then slowed to ~1%,
-  // US semis already beaten down → relief rally likely
-  if (kospi2d <= -10 && kospi1d > -2 && smh1d < 0) {
-    const analysis: SpilloverAnalysis = {
-      setupType: 'RELIEF_RALLY',
-      spilloverScore: 55,
-      confidence: 0.7,
-      reasons: buildReasons(drivers, 'RELIEF_RALLY'),
-      drivers,
-    };
-    console.log(`[SPILLOVER] ${targetSymbol}: HEURISTIC RELIEF_RALLY (score=55) — kospi2d=${kospi2d.toFixed(1)}%, kospi1d=${kospi1d.toFixed(1)}%, smh1d=${smh1d.toFixed(1)}% [${Date.now() - startTime}ms]`);
-    await saveSpilloverSignal(targetSymbol, sector, analysis);
-    return analysis;
-  }
-
-  // ── General scoring ──
-  const score = computeBaseScore({ kospi2d, kospi1d, smh1d, vix1d, qqq1d });
-
-  // ── Check capitulation ──
-  const capitulation = isCapitulation({
-    kospi2d, kospi1d, smh1d, vix1d,
-    smhAtr14: smh[0]?.atr14Val,
-    smhClose: smh[0]?.close,
-    smhSma20: smh[0]?.sma20Val,
+  // Also fetch individual semis for breadth (best-effort)
+  const semiResults = await Promise.allSettled(
+    SEMI_TICKERS.map(t => getDailyHistory(t, 60))
+  );
+  const semiDataMap: Record<string, EnrichedMarketData[]> = {};
+  SEMI_TICKERS.forEach((t, i) => {
+    if (semiResults[i].status === 'fulfilled' && semiResults[i].value.length > 0) {
+      semiDataMap[t] = semiResults[i].value;
+    }
   });
 
-  // ── Determine setup type ──
-  let setupType: SpilloverSetup = 'NEUTRAL';
-  if (capitulation) {
-    setupType = 'CAPITULATION';
-  } else if (score >= 40) {
-    setupType = 'RELIEF_RALLY';
-  } else if (score <= -40) {
-    setupType = 'CONTINUATION';
-  }
+  // Build features
+  const features = buildSpilloverFeatures({
+    kospi, nikkei, hsi, smh, qqq, vix, target, semiDataMap,
+  });
 
-  const confidence = Math.min(1, Math.abs(score) / 100);
-  const reasons = buildReasons(drivers, setupType);
+  // Score
+  const result = scoreSpillover(features);
 
-  const analysis: SpilloverAnalysis = {
-    setupType,
-    spilloverScore: score,
-    confidence,
-    reasons,
-    drivers,
+  // Build drivers for backward compat
+  const drivers: SpilloverDrivers = {
+    kospi1d: features.kospi1d,
+    kospi2d: features.kospi2d,
+    kospi5d: features.kospi5d,
+    smh1d: features.smh1d,
+    smh2d: features.smh2d,
+    vix1d: features.vix1d,
+    qqq1d: features.qqq1d,
   };
 
-  console.log(`[SPILLOVER] ${targetSymbol}: ${setupType} (score=${score}, conf=${confidence.toFixed(2)}) [${Date.now() - startTime}ms]`);
+  const analysis: SpilloverAnalysis = {
+    setupType: result.setupType,
+    spilloverScore: result.spilloverScore,
+    confidence: result.confidence,
+    reasons: result.reasons,
+    features,
+    drivers,
+    modelVersion: 'spillover-v1',
+  };
 
-  // Save to DB
-  await saveSpilloverSignal(targetSymbol, sector, analysis);
+  console.log(`[SPILLOVER-V1] ${targetSymbol}: ${result.setupType} (score=${result.spilloverScore}, conf=${result.confidence.toFixed(2)}) [${Date.now() - startTime}ms]`);
 
-  // Save snapshots to DB
-  const allData = [kospi, smh, qqq, vix].flat();
-  if (allData.length > 0) {
-    await saveSnapshotsToDB(allData).catch(() => {});
-  }
+  // Persist to DB
+  await saveSignalToDB(targetSymbol, sector, analysis).catch(() => {});
+
+  // Save snapshots
+  const allArrays = [kospi, nikkei, hsi, smh, qqq, vix, target, ...Object.values(semiDataMap)];
+ await saveMarketSnapshots(allArrays).catch(() => {});
 
   return analysis;
 }
 
-/**
- * Compute spillover score from pre-fetched drivers (for backtest).
- * This is a pure function — no I/O.
- */
+// ─── Pure scoring for backtest (no I/O) ───────────────────────
+
 export function computeSpilloverFromDrivers(drivers: SpilloverDrivers): {
   setupType: SpilloverSetup;
   spilloverScore: number;
   confidence: number;
 } {
-  // Check heuristic first
-  if (drivers.kospi2d <= -10 && drivers.kospi1d > -2 && drivers.smh1d < 0) {
-    return { setupType: 'RELIEF_RALLY', spilloverScore: 55, confidence: 0.7 };
-  }
-
-  const score = computeBaseScore({
-    kospi2d: drivers.kospi2d,
+  // Reconstruct minimal features from drivers (back-compat)
+  const f: SpilloverFeatures = {
     kospi1d: drivers.kospi1d,
+    kospi2d: drivers.kospi2d,
+    kospi5d: drivers.kospi5d,
+    nikkei1d: 0, hsi1d: 0,
     smh1d: drivers.smh1d,
-    vix1d: drivers.vix1d,
+    smh2d: drivers.smh2d,
     qqq1d: drivers.qqq1d,
-  });
-
-  if (score >= 40) return { setupType: 'RELIEF_RALLY', spilloverScore: score, confidence: Math.min(1, Math.abs(score) / 100) };
-  if (score <= -40) return { setupType: 'CONTINUATION', spilloverScore: score, confidence: Math.min(1, Math.abs(score) / 100) };
-  return { setupType: 'NEUTRAL', spilloverScore: score, confidence: Math.min(1, Math.abs(score) / 100) };
+    vix1d: drivers.vix1d,
+    target1d: drivers.smh1d,
+    target2d: drivers.smh2d,
+    targetDistanceFromSma20: 0,
+    targetAtrZ: 0,
+    semisBreadth: 0.5,
+    asiaDeceleration: 0,
+    oversoldScore: 0,
+  };
+  const result = scoreSpillover(f);
+  return {
+    setupType: result.setupType,
+    spilloverScore: result.spilloverScore,
+    confidence: result.confidence,
+  };
 }
 
-/**
- * Save spillover signal to DB.
- */
-async function saveSpilloverSignal(
+/** Score from full features (used by backtest with full data) */
+export function computeSpilloverFromFeatures(f: SpilloverFeatures): {
+  setupType: SpilloverSetup;
+  spilloverScore: number;
+  confidence: number;
+} {
+  const result = scoreSpillover(f);
+  return {
+    setupType: result.setupType,
+    spilloverScore: result.spilloverScore,
+    confidence: result.confidence,
+  };
+}
+
+// ─── DB persistence ────────────────────────────────────────────
+
+async function saveSignalToDB(
   targetSymbol: string,
   sector: string | undefined,
   analysis: SpilloverAnalysis
@@ -292,72 +357,38 @@ async function saveSpilloverSignal(
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Avoid duplicate for same symbol+date
     const existing = await prisma.spilloverSignal.findFirst({
-      where: { targetSymbol, date: today },
+      where: { targetSymbol, date: today, modelVersion: 'spillover-v1' },
     });
+
+    const data = {
+      setupType: analysis.setupType,
+      spilloverScore: analysis.spilloverScore,
+      confidence: analysis.confidence,
+      reasons: analysis.reasons,
+      features: analysis.features as unknown as Record<string, number>,
+    };
+
     if (existing) {
-      // Update existing
-      await prisma.spilloverSignal.update({
-        where: { id: existing.id },
-        data: {
-          setupType: analysis.setupType,
-          spilloverScore: analysis.spilloverScore,
-          confidence: analysis.confidence,
-          reasons: analysis.reasons,
-          drivers: analysis.drivers as unknown as Record<string, number>,
-        },
-      });
+      await prisma.spilloverSignal.update({ where: { id: existing.id }, data });
     } else {
       await prisma.spilloverSignal.create({
         data: {
           date: today,
           targetSymbol,
-          sector: sector || 'SEMICONDUCTOR',
-          setupType: analysis.setupType,
-          spilloverScore: analysis.spilloverScore,
-          confidence: analysis.confidence,
-          reasons: analysis.reasons,
-          drivers: analysis.drivers as unknown as Record<string, number>,
+          targetSector: sector || 'SEMICONDUCTOR',
+          modelVersion: 'spillover-v1',
+          ...data,
         },
       });
     }
   } catch (err) {
-    console.error('[SPILLOVER] DB save failed:', err);
+    console.error('[SPILLOVER-V1] DB save failed:', err);
   }
 }
 
-/**
- * Get recent spillover signals from DB for a symbol.
- */
-export async function getRecentSpilloverSignals(
-  targetSymbol: string,
-  limit: number = 30
-): Promise<SpilloverAnalysis[]> {
-  try {
-    const { prisma } = await import('./prisma');
-    const signals = await prisma.spilloverSignal.findMany({
-      where: { targetSymbol },
-      orderBy: { date: 'desc' },
-      take: limit,
-    });
-    return signals.map(s => ({
-      setupType: s.setupType as SpilloverSetup,
-      spilloverScore: s.spilloverScore,
-      confidence: s.confidence,
-      reasons: (s.reasons as string[]) || [],
-      drivers: (s.drivers as unknown as SpilloverDrivers) || {},
-    }));
-  } catch (err) {
-    console.error(`[SPILLOVER] DB read failed for ${targetSymbol}:`, err);
-    return [];
-  }
-}
+// ─── Accuracy stats ───────────────────────────────────────────
 
-/**
- * Get spillover accuracy stats: how often RELIEF_RALLY / CONTINUATION
- * calls were correct over the next 1-5 days.
- */
 export async function getSpilloverAccuracy(): Promise<{
   total: number;
   reliefRallyCorrect: number;
@@ -369,70 +400,46 @@ export async function getSpilloverAccuracy(): Promise<{
 }> {
   try {
     const { prisma } = await import('./prisma');
-
     const signals = await prisma.spilloverSignal.findMany({
-      where: {
-        setupType: { in: ['RELIEF_RALLY', 'CONTINUATION'] },
-      },
+      where: { setupType: { in: ['RELIEF_RALLY', 'CONTINUATION'] } },
       orderBy: { date: 'desc' },
       take: 200,
     });
+    let rt = 0, rc = 0, ct = 0, cc = 0;
+    let relRet: number[] = [], contRet: number[] = [];
 
-    let reliefTotal = 0, reliefCorrect = 0;
-    let contTotal = 0, contCorrect = 0;
-    let reliefReturns: number[] = [];
-    let contReturns: number[] = [];
-
-    for (const signal of signals) {
-      // Look at SMH or targetSymbol performance 3 days after signal
-      const target = signal.targetSymbol === 'SMH' ? 'SMH' : 'SMH'; // always use SMH as proxy
-      const futureDate = new Date(signal.date);
+    for (const sig of signals) {
+ const futureDate = new Date(sig.date);
       futureDate.setDate(futureDate.getDate() + 3);
-
-      const futureSnap = await prisma.globalMarketSnapshot.findFirst({
-        where: { symbol: target, date: { gte: futureDate } },
+      const futSnap = await prisma.globalMarketSnapshot.findFirst({
+        where: { symbol: 'SMH', date: { gte: futureDate } },
         orderBy: { date: 'asc' },
       });
-
-      if (!futureSnap) continue;
-
+      if (!futSnap) continue;
       const entrySnap = await prisma.globalMarketSnapshot.findFirst({
-        where: { symbol: target, date: { lte: new Date(signal.date) } },
+        where: { symbol: 'SMH', date: { lte: new Date(sig.date) } },
         orderBy: { date: 'desc' },
       });
-
       if (!entrySnap) continue;
-
-      const ret = pctChange(futureSnap.close, entrySnap.close);
-
-      if (signal.setupType === 'RELIEF_RALLY') {
-        reliefTotal++;
-        reliefReturns.push(ret);
-        if (ret > 0) reliefCorrect++;
+      const ret = ((futSnap.close - entrySnap.close) / entrySnap.close) * 100;
+      if (sig.setupType === 'RELIEF_RALLY') {
+        rt++; relRet.push(ret); if (ret > 0) rc++;
       } else {
-        contTotal++;
-        contReturns.push(ret);
-        if (ret < 0) contCorrect++;
+        ct++; contRet.push(ret); if (ret < 0) cc++;
       }
     }
-
     return {
-      total: reliefTotal + contTotal,
-      reliefRallyCorrect: reliefCorrect,
-      reliefRallyTotal: reliefTotal,
-      continuationCorrect: contCorrect,
-      continuationTotal: contTotal,
-      avgReturnAfterRelief: reliefReturns.length > 0
-        ? reliefReturns.reduce((a, b) => a + b, 0) / reliefReturns.length : 0,
-      avgReturnAfterContinuation: contReturns.length > 0
-        ? contReturns.reduce((a, b) => a + b, 0) / contReturns.length : 0,
+      total: rt + ct,
+      reliefRallyCorrect: rc, reliefRallyTotal: rt,
+      continuationCorrect: cc, continuationTotal: ct,
+      avgReturnAfterRelief: relRet.length > 0 ? relRet.reduce((a, b) => a + b, 0) / relRet.length : 0,
+      avgReturnAfterContinuation: contRet.length > 0 ? contRet.reduce((a, b) => a + b, 0) / contRet.length : 0,
     };
   } catch (err) {
-    console.error('[SPILLOVER] Accuracy calc failed:', err);
-    return {
-      total: 0, reliefRallyCorrect: 0, reliefRallyTotal: 0,
-      continuationCorrect: 0, continuationTotal: 0,
-      avgReturnAfterRelief: 0, avgReturnAfterContinuation: 0,
-    };
+    console.error('[SPILLOVER] Accuracy failed:', err);
+    return { total: 0, reliefRallyCorrect: 0, reliefRallyTotal: 0, continuationCorrect: 0, continuationTotal: 0, avgReturnAfterRelief: 0, avgReturnAfterContinuation: 0 };
   }
 }
+
+// Re-export pctChange for backtest use
+export { pctChange } from './global-market-data';

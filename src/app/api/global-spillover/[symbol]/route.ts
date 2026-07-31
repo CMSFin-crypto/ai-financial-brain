@@ -6,7 +6,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { analyzeGlobalSpillover, getRecentSpilloverSignals, getSpilloverAccuracy } from '@/lib/global-spillover';
+import { analyzeGlobalSpillover, getSpilloverAccuracy } from '@/lib/global-spillover';
 
 export const maxDuration = 30;
 
@@ -38,10 +38,23 @@ export async function GET(
       processingTimeMs: Date.now() - startTime,
     };
 
-    // Optionally include recent signal history
+    // Optionally include recent signal history from DB
     if (includeHistory) {
-      const recent = await getRecentSpilloverSignals(ticker, 30);
-      response.recentSignals = recent;
+      try {
+        const { prisma } = await import('@/lib/prisma');
+        const signals = await prisma.spilloverSignal.findMany({
+          where: { targetSymbol: ticker },
+          orderBy: { date: 'desc' },
+          take: 30,
+        });
+        response.recentSignals = signals.map(s => ({
+          date: s.date.toISOString(),
+          setupType: s.setupType,
+          spilloverScore: s.spilloverScore,
+          confidence: s.confidence,
+          modelVersion: s.modelVersion,
+        }));
+      } catch {}
     }
 
     // Optionally include accuracy stats

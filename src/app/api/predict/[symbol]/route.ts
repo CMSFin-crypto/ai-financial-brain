@@ -212,7 +212,7 @@ export async function GET(
       score: spilloverScore,
       weight: spilloverWeight,
       signal: spilloverScore > 0 ? 'BULLISH' : spilloverScore < 0 ? 'BEARISH' : 'NEUTRAL',
-      description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) — ${spillover.reasons.slice(0, 2).join('; ')}`,
+      description: `${spillover.setupType} (score=${spilloverScore}, conf=${(spillover.confidence * 100).toFixed(0)}%) — ${(spillover.reasons || []).slice(0, 2).join('; ')}`,
     });
 
     // 13. Save prediction to DB (async, don't block response)

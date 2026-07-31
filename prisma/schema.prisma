@@ -192,7 +192,8 @@ model EventSnapshot {
 model GlobalMarketSnapshot {
   id          String   @id @default(cuid())
   date        DateTime @db.Date
-  symbol      String   // "KOSPI" | "^N225" | "^HSI" | "SPY" | "QQQ" | "SMH" | "VIX" | etc.
+  symbol      String   // "KOSPI" | "^N225" | "^HSI" | "SPY" | "QQQ" | "SMH" | "VIX" etc.
+  assetType   String   @default("INDEX") // "INDEX" | "ETF" | "STOCK" | "VOLATILITY"
   region      String   // "ASIA_PACIFIC" | "US" | "EUROPE"
   sector      String?  // "SEMICONDUCTOR" | "INDEX" | "VOLATILITY"
   open        Float
@@ -206,7 +207,7 @@ model GlobalMarketSnapshot {
   atr14       Float?
   sma20       Float?
   sma50       Float?
-  regime      String?  // derived regime for this instrument
+  sma200      Float?
   createdAt   DateTime @default(now())
 
   @@index([symbol, date])
@@ -219,16 +220,36 @@ model SpilloverSignal {
   id             String   @id @default(cuid())
   date           DateTime @db.Date
   targetSymbol   String   // e.g. "NVDA", "SMH", "SOXX"
-  sector         String?  // e.g. "SEMICONDUCTOR"
+  targetSector   String?  // e.g. "SEMICONDUCTOR"
   setupType      String   // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
   spilloverScore Float    // -100 to +100
   confidence     Float    // 0 to 1
+  modelVersion   String   @default("spillover-v1") // "spillover-v1" | "spillover-v2-logreg"
   reasons        Json     // string[] of human-readable reasons
-  drivers        Json     // { kospi1d, kospi2d, kospi5d, smh1d, smh2d, vix1d, qqq1d }
+  features       Json?    // full SpilloverFeatures snapshot
   createdAt      DateTime @default(now())
 
   @@index([targetSymbol, date])
   @@index([setupType, date])
+  @@index([modelVersion, date])
+  @@index([date])
+}
+
+model SpilloverModelResult {
+  id               String   @id @default(cuid())
+  date             DateTime @db.Date
+  targetSymbol     String
+  modelVersion     String   // "spillover-v2-logreg" | "spillover-v2-xgb"
+  probabilityUp    Float    // 0 to 1
+  probabilityDown  Float    // 0 to 1
+  predictedClass    String   // "RELIEF_RALLY" | "CONTINUATION" | "NEUTRAL"
+  actualClass      String?  // filled by evaluator
+  actualReturn     Float?  // filled by evaluator
+  wasCorrect       Boolean?
+  createdAt        DateTime @default(now())
+
+  @@index([targetSymbol, date])
+  @@index([modelVersion, date])
   @@index([date])
 }
 
