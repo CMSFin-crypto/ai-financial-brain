@@ -64,3 +64,44 @@ Stage Summary:
 - Lint passes: 0 errors on all new files
 - Existing prediction-engine.ts was NOT modified
 - Dev server running, no errors in log
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Global Spillover Engine — Asia→US semiconductor spillover detection
+
+Work Log:
+- Added `GlobalMarketSnapshot` and `SpilloverSignal` models to Prisma schema with 4+ indexes each
+- Created `src/lib/global-market-data.ts` — data loader for 13 global instruments (KOSPI, Nikkei, HSI, SPY, QQQ, SMH, VIX + 6 semis), with enrichment (return1d/2d/5d, ATR14, SMA20/50), caching, DB persistence
+- Created `src/lib/global-spillover.ts` — core analysis engine:
+  - `analyzeGlobalSpillover()`: main function, fetches KOSPI/SMH/QQQ/VIX in parallel
+  - `computeBaseScore()`: heuristic scoring (-100 to +100)
+  - `isCapitulation()`: extreme drop + VIX spike + oversold detection
+  - Heuristic: Kospi2D ≤ -10% + Kospi1D > -2% + SMH < 0 → RELIEF_RALLY (score=55, conf=0.7)
+  - DB persistence: upsert SpilloverSignal, save GlobalMarketSnapshot
+  - `getSpilloverAccuracy()`: historical accuracy stats for RELIEF_RALLY/CONTINUATION
+- Created `src/lib/spillover-backtest.ts` — 1yr walk-forward backtest:
+  - RELIEF_RALLY → long, CONTINUATION → short, NEUTRAL → no-trade
+  - 0.2% round-trip costs (0.1% commission + 0.05% slippage + 0.05% spread)
+  - Metrics: Sharpe, Sortino, max drawdown, profit factor, expectancy, per-setup breakdown
+  - `runMultiTickerBacktest()` for SMH/NVDA/AMD/MU/MRVL
+- Created `src/app/api/global-spillover/[symbol]/route.ts` — GET endpoint
+- Created `src/app/api/global-spillover/backtest/route.ts` — GET endpoint (single + multi)
+- Modified `src/app/api/predict/[symbol]/route.ts`:
+  - Spillover runs in parallel with other modules
+  - 10% weight for semis/tech, 3% for other stocks
+  - Stored as `global_spillover` factor with type `macro_global`
+  - Included in response JSON
+- Modified `src/lib/no-trade-gate.ts`:
+  - 3 new spillover gates: NEUTRAL+low conf, CONTINUATION+BUY block, CAPITULATION+low conf
+- Modified `src/lib/prediction-factors.ts`: added `macro_global` to FactorInput type
+- Generated Prisma client, typecheck passes (0 errors in spillover files)
+- Committed and pushed to GitHub
+
+Stage Summary:
+- 4 new files, 4 modified files
+- Prisma schema: 2 new models (GlobalMarketSnapshot, SpilloverSignal)
+- API endpoints: /api/global-spillover/[symbol], /api/global-spillover/backtest
+- Pipeline integration: spillover factor flows through predict → factors → DB → gate
+- Backtest engine: walk-forward with realistic cost model
+- Next step: when DATABASE_URL is configured on Vercel, run migration to create tables
