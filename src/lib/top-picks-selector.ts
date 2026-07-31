@@ -105,27 +105,26 @@ export async function buildTopBottomPicks(
     const nPenBottom = noveltyPenalty(bottomRepeat);
 
     const jitter = hasDeltaData(c) ? 0 : symbolJitter(c.symbol);
-    const volDelta = (c.volumeDelta ?? 0) * 0.10; // 10% weight
 
-    // Bullish ranking: positive score + momentum delta + volume - penalties
+    // Bullish ranking: score 42% + delta1d 22% + delta3d 12% + volume 10% + priceChange 8% - penalties
     const bullishRank =
-      c.score * 0.50 +
-      (c.scoreDelta1d ?? 0) * 0.20 +
-      (c.scoreDelta3d ?? 0) * 0.10 +
-      volDelta +
-      (c.priceChangePct ?? 0) * 0.10 + // intraday momentum
+      c.score * 0.42 +
+      (c.scoreDelta1d ?? 0) * 0.22 +
+      (c.scoreDelta3d ?? 0) * 0.12 +
+      ((c.volumeDelta ?? 0) * 100) * 0.10 +
+      (c.priceChangePct ?? 0) * 0.08 +
       jitter -
       fPen -
       nPenTop;
 
     // Bearish ranking: flip score sign, same structure
     const bearishRank =
-      (-c.score) * 0.50 +
-      (-(c.scoreDelta1d ?? 0)) * 0.20 +
-      (-(c.scoreDelta3d ?? 0)) * 0.10 +
-      (-volDelta) +
-      (-(c.priceChangePct ?? 0)) * 0.10 +
-      (-jitter) - // flip jitter too
+      (-c.score) * 0.42 +
+      (-(c.scoreDelta1d ?? 0)) * 0.22 +
+      (-(c.scoreDelta3d ?? 0)) * 0.12 +
+      ((-(c.volumeDelta ?? 0)) * 100) * 0.10 +
+      (-(c.priceChangePct ?? 0)) * 0.08 +
+      (-jitter) -
       fPen -
       nPenBottom;
 

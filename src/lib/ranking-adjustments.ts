@@ -20,9 +20,9 @@ export function freshnessPenalty(ageSec: number): number {
 // Prevents "stuck" lists showing the same names every scan.
 
 export function noveltyPenalty(repeatCount: number): number {
-  if (repeatCount >= 3) return 25;  // 3+ times in last 3 days
-  if (repeatCount === 2) return 16;
-  if (repeatCount === 1) return 8;
+  if (repeatCount >= 3) return 35;
+  if (repeatCount === 2) return 22;
+  if (repeatCount === 1) return 12;
   return 0;
 }
 

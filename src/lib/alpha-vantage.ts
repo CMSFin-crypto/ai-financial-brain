@@ -18,13 +18,17 @@ export interface LivePrice {
   timestamp: string;
 }
 
+export interface FetchOptions {
+  forceRefresh?: boolean;
+}
+
 // In-memory cache to avoid hitting API limits
 const priceCache = new Map<string, { data: LivePrice; fetchedAt: number }>();
-const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes cache
+const CACHE_TTL_MS = 30 * 1000; // 30 sec
 
 // Historical chart data cache
 const chartCache = new Map<string, { data: HistoricalDataPoint[]; fetchedAt: number }>();
-const CHART_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+const CHART_CACHE_TTL_MS = 60 * 1000; // 1 min
 
 export interface HistoricalDataPoint {
   date: string;
@@ -172,12 +176,15 @@ function delay(ms: number): Promise<void> {
  * Fetch real-time price for a single ticker.
  * Tries Yahoo Finance (both endpoints), then Alpha Vantage.
  */
-export async function getRealPrice(ticker: string): Promise<LivePrice | null> {
+export async function getRealPrice(
+  ticker: string,
+  options: FetchOptions = {},
+): Promise<LivePrice | null> {
   const t = ticker.toUpperCase().trim();
 
   // Check cache first
   const cached = priceCache.get(t);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.data;
   }
 
@@ -204,7 +211,10 @@ export async function getRealPrice(ticker: string): Promise<LivePrice | null> {
  * Processes in chunks of 6 with 800ms delay between chunks to avoid rate limiting.
  * Returns a map of ticker -> LivePrice (only successfully fetched).
  */
-export async function getRealPrices(tickers: string[]): Promise<Record<string, LivePrice>> {
+export async function getRealPrices(
+  tickers: string[],
+  options: FetchOptions = {},
+): Promise<Record<string, LivePrice>> {
   const prices: Record<string, LivePrice> = {};
   const toFetch: string[] = [];
 
@@ -212,7 +222,7 @@ export async function getRealPrices(tickers: string[]): Promise<Record<string, L
   for (const ticker of tickers) {
     const t = ticker.toUpperCase().trim();
     const cached = priceCache.get(t);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
       prices[t] = cached.data;
     } else {
       toFetch.push(t);
@@ -236,7 +246,7 @@ export async function getRealPrices(tickers: string[]): Promise<Record<string, L
 
     // Fetch all tickers in this chunk in parallel
     const results = await Promise.allSettled(
-      chunk.map(t => getRealPrice(t))
+      chunk.map(t => getRealPrice(t, options))
     );
 
     // Collect results
@@ -276,7 +286,11 @@ export function buildPriceContext(prices: Record<string, LivePrice>): string {
  * Fetch 30-day historical chart data from Yahoo Finance.
  * Returns real OHLCV data for charting.
  */
-export async function fetchHistoricalData(ticker: string, range?: string): Promise<HistoricalDataPoint[] | null> {
+export async function fetchHistoricalData(
+  ticker: string,
+  range?: string,
+  options: FetchOptions = {},
+): Promise<HistoricalDataPoint[] | null> {
   const t = ticker.toUpperCase().trim();
   const r = range || '6mo';
 
@@ -286,7 +300,7 @@ export async function fetchHistoricalData(ticker: string, range?: string): Promi
   // Check cache first (include range in cache key)
   const cacheKey = `${t}_${r}`;
   const cached = chartCache.get(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
     return cached.data;
   }
 
@@ -607,7 +621,7 @@ export async function getRealFundamentalsBatch(tickers: string[]): Promise<Recor
 // ═══════════════════════════════════════════════════════════════
 
 const batchQuoteCache = new Map<string, { data: Record<string, YahooFundamentals>; fetchedAt: number }>();
-const BATCH_QUOTE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+const BATCH_QUOTE_CACHE_TTL = 2 * 60 * 1000; // 2 min
 
 // Helper to parse percentage strings like "85.2%" to decimals like 0.852
 function parsePercent(val: unknown): number {
@@ -683,11 +697,14 @@ function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFun
   return result;
 }
 
-export async function getBatchQuotesFast(tickers: string[]): Promise<Record<string, YahooFundamentals>> {
+export async function getBatchQuotesFast(
+  tickers: string[],
+  options: FetchOptions = {},
+): Promise<Record<string, YahooFundamentals>> {
   // Check cache first
-  const cacheKey = tickers.sort().join(',');
+  const cacheKey = [...tickers].sort().join(',');
   const cached = batchQuoteCache.get(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < BATCH_QUOTE_CACHE_TTL) {
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < BATCH_QUOTE_CACHE_TTL) {
     return cached.data;
   }
 
