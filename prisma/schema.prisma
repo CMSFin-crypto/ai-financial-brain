@@ -340,6 +340,22 @@ model AILesson {
   updatedAt   DateTime @updatedAt
 }
 
+// ═══════ DAILY SCAN PICKS (replaces /tmp JSON file) ═══════
+
+model DailyPick {
+  id        String   @id @default(cuid())
+  symbol    String
+  bucket    String   // "TOP" | "BOTTOM"
+  rank      Int
+  score     Float
+  sector    String?
+  scanDate  DateTime @default(now())
+
+  @@index([symbol, scanDate])
+  @@index([bucket, scanDate])
+  @@index([scanDate])
+}
+
 model AIStats {
   id              String   @id @default(cuid())
   totalPredictions Int     @default(0)

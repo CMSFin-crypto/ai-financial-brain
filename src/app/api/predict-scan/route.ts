@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { fetchHistoricalData, getBatchQuotesFast } from '@/lib/alpha-vantage';
-import { predictStock, rankStocks } from '@/lib/prediction-engine';
+import { predictStock, rankStocks, type PredictionResult } from '@/lib/prediction-engine';
 import { analyzeFundamentals } from '@/lib/fundamental-analysis';
 import { loadLearningStats } from '@/lib/prediction-history';
 import { savePrediction } from '@/lib/save-prediction';
 import { buildTopBottomPicks, type RankedCandidate } from '@/lib/top-picks-selector';
-import type { PredictionResult } from '@/lib/prediction-engine';
+import prisma from '@/lib/prisma';
 
 export const maxDuration = 300;
 
@@ -25,7 +25,7 @@ const ALL_TICKERS = [
   'TGT','TJX','VRT','VST','WDC','WFC','WFRD',
 ];
 
-// Rough sector map for concentration penalty
+// Sector map for concentration penalty — covers all scan tickers
 const SECTOR_MAP: Record<string, string> = {
   AAPL:'Tech', MSFT:'Tech', GOOGL:'Tech', AMZN:'Consumer', NVDA:'Semi', META:'Tech',
   TSLA:'Auto', JPM:'Finance', V:'Finance', UNH:'Healthcare', JNJ:'Healthcare',
@@ -37,22 +37,94 @@ const SECTOR_MAP: Record<string, string> = {
   NET:'Tech', ANET:'Tech', SNPS:'Semi', AMAT:'Semi',
   // Finance
   BAC:'Finance', AXP:'Finance', BKNG:'Consumer', SCHW:'Finance', GS:'Finance', MS:'Finance',
-  ICE:'Finance', SPGI:'Finance', AON:'Finance', CBOE:'Finance',
+  ICE:'Finance', SPGI:'Finance', AON:'Finance', FISV:'Finance',
   // Energy
   COP:'Energy', CVX:'Energy', XOM:'Energy', SLB:'Energy', EOG:'Energy', DVN:'Energy', MPC:'Energy', FANG:'Energy',
   // Industrials
   CAT:'Industrial', DE:'Industrial', GE:'Industrial', HON:'Industrial', RTX:'Industrial',
   LMT:'Defense', NOC:'Defense', BA:'Industrial', UPS:'Logistics',
   // Healthcare
-  REGN:'Healthcare', SYK:'Healthcare', PFE:'Healthcare', TMO:'Healthcare', ABT:'Healthcare',
-  // etc.
+  REGN:'Healthcare', SYK:'Healthcare', PFE:'Healthcare', TMO:'Healthcare', ABT:'Healthcare', CI:'Healthcare',
+  // Consumer Staples
+  PEP:'Consumer', KO:'Consumer', MDLZ:'Consumer', CL:'Consumer',
+  // Industrials / Other
+  BSX:'Healthcare', BDX:'Healthcare', PGR:'Insurance', MMC:'Insurance',
+  SO:'Utilities', DUK:'Utilities',
+  // Industrials continued
+  CSCO:'Tech', ACN:'Tech', INTU:'Tech', ISRG:'Healthcare', BLK:'Finance',
+  LOW:'Consumer', SBUX:'Consumer', CMCSA:'Consumer',
+  // Semi / Tech continued
+  ADI:'Semi', ANSS:'Tech', CDNS:'Semi', CEG:'Energy', DDOG:'Tech',
+  FI:'Finance', GD:'Defense', GLW:'Industrial', HPE:'Tech', LHX:'Defense',
+  STX:'Tech', TGT:'Consumer', TJX:'Consumer', VRT:'Tech', VST:'Energy',
+  WDC:'Tech', WFC:'Finance', WFRD:'Finance',
+  // REITs / Infra
+  EQIX:'REIT', PLD:'REIT', PSA:'REIT', WELL:'REIT', AMT:'REIT',
+  // Misc
+  'BRK-B':'Finance', MRK:'Healthcare', ZTS:'Healthcare', CB:'Insurance',
+  DIS:'Consumer', IBM:'Tech', SHW:'Industrial',
 };
 
 const UNIQUE_TICKERS = [...new Set(ALL_TICKERS)];
 
+// ─── Helper: load previous day's scores from DB ───────────────
+async function loadPreviousScores(): Promise<Record<string, { score: number; predictedAt: Date }>> {
+  try {
+    // Get the most recent 1d prediction per symbol from the past 2 days
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+    const preds = await prisma.prediction.findMany({
+      where: {
+        horizonDays: 1,
+        modelVersion: 'predict-v3-regime-spillover',
+        predictedAt: { gte: twoDaysAgo },
+      },
+      orderBy: { predictedAt: 'desc' },
+      select: { symbol: true, rawScore: true, predictedAt: true },
+      take: 500,
+    });
+
+    // Deduplicate: keep only the latest per symbol
+    const bySymbol = new Map<string, { score: number; predictedAt: Date }>();
+    for (const p of preds) {
+      if (p.rawScore != null && !bySymbol.has(p.symbol)) {
+        bySymbol.set(p.symbol, { score: p.rawScore, predictedAt: p.predictedAt });
+      }
+    }
+
+    console.log(`[SCAN] Loaded previous scores for ${bySymbol.size} symbols from DB`);
+    return Object.fromEntries(bySymbol);
+  } catch (err) {
+    console.warn('[SCAN] Failed to load previous scores from DB:', err);
+    return {};
+  }
+}
+
+// ─── Helper: compute volume ratio vs 20d average ──────────────
+function computeVolumeDelta(data: Array<{ volume: number }>): number {
+  if (data.length < 21) return 0;
+  const recent = data[data.length - 1].volume;
+  const avg20 = data.slice(-21, -1).reduce((s, d) => s + d.volume, 0) / 20;
+  return avg20 > 0 ? (recent / avg20) - 1 : 0; // e.g. 0.5 = 150% of avg
+}
+
+// ─── Helper: intraday % change ────────────────────────────────
+function computePriceChangePct(data: Array<{ close: number }>): number {
+  if (data.length < 2) return 0;
+  const prev = data[data.length - 2].close;
+  const curr = data[data.length - 1].close;
+  return prev > 0 ? ((curr - prev) / prev) * 100 : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+
 export async function GET() {
   try {
-    const results: Array<PredictionResult & { _ticker?: string; _lastClose?: number }> = [];
+    const results: Array<PredictionResult & {
+      _ticker?: string; _lastClose?: number;
+      _dataTimestamp?: number; _volumeDelta?: number; _priceChangePct?: number;
+    }> = [];
     const errors: string[] = [];
     let fetched = 0;
     let failed = 0;
@@ -69,28 +141,15 @@ export async function GET() {
       averageAbsoluteError: 0, recentAccuracy: 50,
     }));
 
-    // Batch fundamentals
+    // ── STEP 1: Get previous scores from DB (not broken internal fetch) ──
+    const prevScoresMap = await loadPreviousScores();
+
+    // ── STEP 2: Batch fundamentals ──
     console.log('[SCAN] Fetching fundamentals...');
     const allFundamentals = await getBatchQuotesFast(UNIQUE_TICKERS);
     console.log(`[SCAN] Got fundamentals for ${Object.keys(allFundamentals).length}/${UNIQUE_TICKERS.length} tickers`);
 
-    // Fetch previous scan results for scoreDelta computation
-    let prevScores: Record<string, number> = {};
-    try {
-      const prevRes = await fetch('/api/prediction-history?limit=200').then(r => r.json());
-      if (prevRes.predictions) {
-        // Group by symbol, take latest score per symbol
-        const bySymbol = new Map<string, number>();
-        for (const p of prevRes.predictions) {
-          if (p.rawScore != null) bySymbol.set(p.symbol, p.rawScore);
-        }
-        prevScores = Object.fromEntries(bySymbol);
-      }
-    } catch {
-      // Non-critical
-    }
-
-    // Scan in batches of 5
+    // ── STEP 3: Scan tickers in batches ──
     const BATCH_SIZE = 5;
     for (let i = 0; i < UNIQUE_TICKERS.length; i += BATCH_SIZE) {
       const batch = UNIQUE_TICKERS.slice(i, i + BATCH_SIZE);
@@ -99,7 +158,7 @@ export async function GET() {
         batch.map(async (ticker) => {
           const data = await fetchHistoricalData(ticker, '6mo');
           if (!data || data.length < 60) {
-            throw new Error('Të dhëna të pamjaftueshme');
+            throw new Error('Insufficient data');
           }
 
           const baseResult = predictStock(ticker, data);
@@ -113,8 +172,15 @@ export async function GET() {
             fundamentalScore = fundResult.totalScore;
           }
 
-          // Combined score (same as before)
+          // Combined score
           const combined = baseResult.technicalScore * 0.75 + fundamentalScore * 0.25;
+
+          // Per-ticker data metrics for ranking diversity
+          const volumeDelta = computeVolumeDelta(data);
+          const priceChangePct = computePriceChangePct(data);
+
+          // Use the last data point's date as timestamp (more meaningful than scanStartMs)
+          const dataTimestamp = new Date(data[data.length - 1].date).getTime();
 
           // Store for learning (non-blocking)
           savePrediction({
@@ -137,6 +203,9 @@ export async function GET() {
             } : null,
             _ticker: ticker,
             _lastClose: lastClose,
+            _dataTimestamp: dataTimestamp,
+            _volumeDelta: volumeDelta,
+            _priceChangePct: priceChangePct,
           };
         })
       );
@@ -147,7 +216,7 @@ export async function GET() {
           results.push(r.value);
           fetched++;
         } else {
-          errors.push(`${batch[j]}: ${r.reason?.message || 'Gabim'}`);
+          errors.push(`${batch[j]}: ${r.reason?.message || 'Error'}`);
           failed++;
         }
       }
@@ -159,41 +228,76 @@ export async function GET() {
 
     const ranked = rankStocks(results);
 
-    // ── Top/Bottom picks with freshness/novelty/concentration ──
-    const candidates: RankedCandidate[] = ranked.map((r) => ({
-      symbol: (r as any)._ticker ?? '',
-      sector: SECTOR_MAP[(r as any)._ticker] ?? 'UNKNOWN',
-      score: r.combinedScore ?? r.score ?? 0,
-      scoreDelta1d: (r as any)._ticker && prevScores[(r as any)._ticker] != null
-        ? r.combinedScore - prevScores[(r as any)._ticker]
-        : undefined,
-      quoteTimestamp: scanStartMs, // all scanned in same run, same timestamp
-    })).filter(c => c.symbol);
+    // ── STEP 4: Build candidates with REAL deltas and per-ticker metadata ──
+    const candidates: RankedCandidate[] = ranked.map((r) => {
+      const ticker = (r as any)._ticker ?? '';
+      const prev = prevScoresMap[ticker];
 
+      // Score delta vs previous prediction (only if previous exists and is from a different time)
+      let scoreDelta1d: number | undefined;
+      if (prev && r.combinedScore != null) {
+        scoreDelta1d = Math.round((r.combinedScore - prev.score) * 100) / 100;
+      }
+
+      return {
+        symbol: ticker,
+        sector: SECTOR_MAP[ticker] ?? 'UNKNOWN',
+        score: r.combinedScore ?? r.score ?? 0,
+        scoreDelta1d,
+        volumeDelta: (r as any)._volumeDelta,
+        priceChangePct: (r as any)._priceChangePct,
+        quoteTimestamp: (r as any)._dataTimestamp ?? scanStartMs,
+      };
+    }).filter(c => c.symbol);
+
+    // ── STEP 5: Diversified top/bottom picks ──
     const { top, bottom } = await buildTopBottomPicks(candidates, 5, 5);
 
-    // Build clean output (strip internal fields)
-    const cleanTop = top.map(t => ({
-      symbol: t.symbol,
-      sector: t.sector,
-      score: t.score,
-      bullishRank: t.bullishRank,
-      ageSec: Math.round(t.ageSec),
-      topRepeat: t.topRepeat,
-      confidence: (ranked.find(r => (r as any)._ticker === t.symbol))?.confidence ?? 0,
-      direction: (ranked.find(r => (r as any)._ticker === t.symbol))?.direction ?? 'HOLD',
-    }));
+    // Build a quick lookup for ranked results
+    const rankedBySymbol = new Map<string, PredictionResult>();
+    for (const r of ranked) {
+      const t = (r as any)._ticker;
+      if (t) rankedBySymbol.set(t, r);
+    }
 
-    const cleanBottom = bottom.map(b => ({
-      symbol: b.symbol,
-      sector: b.sector,
-      score: b.score,
-      bearishRank: b.bearishRank,
-      ageSec: Math.round(b.ageSec),
-      bottomRepeat: b.bottomRepeat,
-      confidence: (ranked.find(r => (r as any)._ticker === b.symbol))?.confidence ?? 0,
-      direction: (ranked.find(r => (r as any)._ticker === b.symbol))?.direction ?? 'HOLD',
-    }));
+    // Build clean output (strip internal fields)
+    const cleanTop = top.map(t => {
+      const base = rankedBySymbol.get(t.symbol);
+      return {
+        symbol: t.symbol,
+        sector: t.sector,
+        score: t.score,
+        bullishRank: t.bullishRank,
+        scoreDelta1d: t.scoreDelta1d,
+        volumeDelta: t.volumeDelta,
+        priceChangePct: t.priceChangePct,
+        ageSec: Math.round(t.ageSec),
+        topRepeat: t.topRepeat,
+        freshnessPen: t.freshnessPen,
+        noveltyPen: t.noveltyPenTop,
+        confidence: base?.confidence ?? 0,
+        direction: base?.direction ?? 'HOLD',
+      };
+    });
+
+    const cleanBottom = bottom.map(b => {
+      const base = rankedBySymbol.get(b.symbol);
+      return {
+        symbol: b.symbol,
+        sector: b.sector,
+        score: b.score,
+        bearishRank: b.bearishRank,
+        scoreDelta1d: b.scoreDelta1d,
+        volumeDelta: b.volumeDelta,
+        priceChangePct: b.priceChangePct,
+        ageSec: Math.round(b.ageSec),
+        bottomRepeat: b.bottomRepeat,
+        freshnessPen: b.freshnessPen,
+        noveltyPen: b.noveltyPenBottom,
+        confidence: base?.confidence ?? 0,
+        direction: base?.direction ?? 'HOLD',
+      };
+    });
 
     return NextResponse.json({
       scannedAt: new Date().toISOString(),
@@ -208,18 +312,17 @@ export async function GET() {
         bestIndicators: learningStats.bestIndicators,
         worstIndicators: learningStats.worstIndicators,
       },
-      // New diversified picks
       topPicks: cleanTop,
       topShorts: cleanBottom,
       // Legacy fields (backward compat)
       mostConfident: [...ranked].sort((a, b) => b.confidence - a.confidence).slice(0, 10),
       allResults: ranked.map((r) => {
-        const { _ticker, _lastClose, ...rest } = r as PredictionResult & { _ticker?: string; _lastClose?: number };
+        const { _ticker, _lastClose, _dataTimestamp, _volumeDelta, _priceChangePct, ...rest } = r as any;
         return rest as PredictionResult;
       }),
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Gabim i panjohur';
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[PREDICT-SCAN] Error:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
