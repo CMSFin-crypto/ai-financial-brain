@@ -14,7 +14,7 @@ import { loadLearningStats } from '@/lib/prediction-history';
 import { evaluateDuePredictions } from '@/lib/evaluation-engine';
 import { analyzeGlobalSpillover, type SpilloverAnalysis } from '@/lib/global-spillover';
 import { runV2ShadowPrediction, getActiveModel } from '@/lib/spillover-promotion';
-import { detectRegimeState, getRegimePolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
+import { detectRegimeState, getRegimeWithPolicy, type RegimeIntelligence, type MarketRegimeState } from '@/lib/regime-intelligence';
 import { routeByRegime } from '@/lib/regime-router';
 
 export const maxDuration = 60;
@@ -133,8 +133,9 @@ export async function GET(
     const eventRisk = checkEventRisk(ticker);
 
     // 5b. REGIME INTELLIGENCE — the orchestrator layer
-    const regimeIntel = await detectRegimeState({ spillover, eventRisk });
-    const regimePolicy = getRegimePolicy(regimeIntel.regime);
+    const regimeResult = await getRegimeWithPolicy({ targetSymbol: ticker });
+    const regimeIntel = regimeResult;
+    const regimePolicy = regimeResult.policy;
     console.log(`[PREDICT] ${ticker}: regime=${regimeIntel.regime} (conf=${(regimeIntel.confidence * 100).toFixed(0)}%) floor=${regimePolicy.confidenceFloor})`);
 
     // 6. Compute regime score and relative strength adjustment

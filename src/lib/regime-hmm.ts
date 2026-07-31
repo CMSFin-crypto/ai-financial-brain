@@ -22,13 +22,13 @@
 //   - Smooth state transitions instead of discrete jumps
 // ============================================================
 
-import type { IntelligentRegimeState } from './regime-intelligence';
+import type { MarketRegimeState } from './regime-intelligence';
 import type { EnrichedMarketData } from './global-market-data';
 
 // ─── Types ────────────────────────────────────────────────────
 
 export interface HMMState {
-  name: IntelligentRegimeState;
+  name: MarketRegimeState;
   index: number;
 }
 
@@ -50,10 +50,10 @@ export interface HMMParameters {
 }
 
 export interface HMMInference {
-  currentState: IntelligentRegimeState;
-  stateProbabilities: Record<IntelligentRegimeState, number>;
-  mostLikelyNextState: IntelligentRegimeState;
-  transitionProbs: Record<IntelligentRegimeState, number>; // P(next=state | current)
+  currentState: MarketRegimeState;
+  stateProbabilities: Record<MarketRegimeState, number>;
+  mostLikelyNextState: MarketRegimeState;
+  transitionProbs: Record<MarketRegimeState, number>; // P(next=state | current)
 }
 
 // ─── Feature names for HMM ─────────────────────────────────────
@@ -147,8 +147,8 @@ export function inferCurrentRegime(_params: HMMParameters, _recentObservations: 
   const n = STATES.length;
   const current = STATES[4]; // default to RANGE_NEUTRAL
 
-  const stateProbabilities = {} as Record<IntelligentRegimeState, number>;
-  const transitionProbs = {} as Record<IntelligentRegimeState, number>;
+  const stateProbabilities = {} as Record<MarketRegimeState, number>;
+  const transitionProbs = {} as Record<MarketRegimeState, number>;
 
   for (const state of STATES) {
     stateProbabilities[state.name] = state.name === current.name ? 0.4 : 0.15;
@@ -169,13 +169,13 @@ export function inferCurrentRegime(_params: HMMParameters, _recentObservations: 
  * Predict the most likely next regime based on transition probabilities.
  * NOT YET IMPLEMENTED — uses uniform distribution.
  */
-export function predictNextRegimeTransition(_params: HMMParameters, currentState: IntelligentRegimeState): {
-  nextState: IntelligentRegimeState;
+export function predictNextRegimeTransition(_params: HMMParameters, currentState: MarketRegimeState): {
+  nextState: MarketRegimeState;
   confidence: number;
-  probabilities: Record<IntelligentRegimeState, number>;
+  probabilities: Record<MarketRegimeState, number>;
 } {
   const stateIdx = STATES.findIndex(s => s.name === currentState);
-  const probs = {} as Record<IntelligentRegimeState, number>;
+  const probs = {} as Record<MarketRegimeState, number>;
 
   for (const state of STATES) {
     probs[state.name] = 1 / STATES.length; // uniform until HMM is trained
@@ -183,7 +183,7 @@ export function predictNextRegimeTransition(_params: HMMParameters, currentState
 
   // Sort by probability
   const sorted = Object.entries(probs).sort((a, b) => b[1] - a[1]);
-  const nextState = sorted[0][0] as IntelligentRegimeState;
+  const nextState = sorted[0][0] as MarketRegimeState;
   const confidence = sorted[0][1];
 
   return { nextState, confidence, probabilities: probs };

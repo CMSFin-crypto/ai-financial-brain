@@ -45,7 +45,7 @@ export function runNoTradeGate(input: NoTradeGateInput): NoTradeGateResult {
     if (confidence < regimePolicy.confidenceFloor) {
       return {
         status: 'NO_TRADE',
-        reason: `Konfidencë ${confidence.toFixed(0)}% nën regime floor ${regimePolicy.confidenceFloor}% (${regimePolicy.regime})`,
+        reason: `Konfidencë ${confidence.toFixed(0)}% nën regime floor ${regimePolicy.confidenceFloor}%`,
       };
     }
   }
