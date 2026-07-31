@@ -13,6 +13,7 @@ import { buildTechnicalFactors, buildFundamentalFactors, type FactorInput } from
 import { loadLearningStats } from '@/lib/prediction-history';
 import { evaluateDuePredictions } from '@/lib/evaluation-engine';
 import { analyzeGlobalSpillover, type SpilloverAnalysis } from '@/lib/global-spillover';
+import { runV2ShadowPrediction, getActiveModel } from '@/lib/spillover-promotion';
 
 export const maxDuration = 60;
 
@@ -87,11 +88,29 @@ export async function GET(
           confidence: 0,
           reasons: ['Spillover analysis failed'] as string[],
           drivers: { kospi1d: 0, kospi2d: 0, kospi5d: 0, smh1d: 0, smh2d: 0, vix1d: 0, qqq1d: 0 },
+          features: {
+            kospi1d: 0, kospi2d: 0, kospi5d: 0, nikkei1d: 0, hsi1d: 0,
+            smh1d: 0, smh2d: 0, qqq1d: 0, vix1d: 0,
+            target1d: 0, target2d: 0, targetDistanceFromSma20: 0, targetAtrZ: 0,
+            semisBreadth: 0.5, asiaDeceleration: 0, oversoldScore: 0,
+          },
+          modelVersion: 'spillover-v1' as const,
         };
       }),
     ]);
 
     const spillover = spilloverRaw!;
+
+    // 3b. V2 Shadow Mode: check active model, run V2 shadow for semis/tech
+    // V2 only influences trading after OOS promotion (see spillover-promotion.ts)
+    const isSemiOrTech = ['NVDA', 'AMD', 'MU', 'MRVL', 'WDC', 'SNDK', 'INTC', 'TSM', 'AVGO', 'QCOM', 'SMH', 'SOXX', 'QQQ'].includes(ticker);
+    const activeModel = await getActiveModel();
+    if (isSemiOrTech && spillover.features) {
+      // Run V2 shadow async — saves to DB, doesn't affect scoring
+      // Results visible via /api/global-spillover/compare
+      runV2ShadowPrediction(ticker, spillover.features).catch(() => {});
+    }
+
     // 4. Fundamental analysis
     let fundamentalScore = 0;
     let fundamentalSummary = '';
@@ -119,7 +138,6 @@ export async function GET(
     const rsScore = relStrength.rsScore;
 
     // 7. Global spillover factor (for semis and tech)
-    const isSemiOrTech = ['NVDA', 'AMD', 'MU', 'MRVL', 'WDC', 'SNDK', 'INTC', 'TSM', 'AVGO', 'QCOM', 'SMH', 'SOXX', 'QQQ'].includes(ticker);
     const spilloverScore = spillover.spilloverScore;
     const spilloverWeight = isSemiOrTech ? 0.10 : 0.03;
 
@@ -335,6 +353,13 @@ export async function GET(
         confidence: spillover.confidence,
         reasons: spillover.reasons,
         drivers: spillover.drivers,
+        modelVersion: spillover.modelVersion,
+      },
+      spilloverModelConfig: {
+        activeModel,
+        v2Status: activeModel === 'spillover-v1' ? 'shadow' : 'active',
+        v2Promotion: 'V2 must win 2/3 metrics (precision, Brier, return) with 50+ OOS samples',
+        v2ShadowResultsSavedToDB: isSemiOrTech,
       },
       horizons: {
         '1D': { predictedDir: predictedDir1d, expectedMovePct: expectedMove1d },
