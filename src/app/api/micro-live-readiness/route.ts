@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getValidationSummary } from '@/lib/validation-lab';
+import { assessMicroLiveReadiness } from '@/lib/micro-live-gate';
 
 export async function GET() {
   try {
-    const summary = await getValidationSummary();
-    return NextResponse.json(summary);
+    const readiness = await assessMicroLiveReadiness();
+    return NextResponse.json(readiness);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[VALIDATION-SUMMARY] Error:', message);
+    console.error('[MICRO-LIVE-READINESS] Error:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

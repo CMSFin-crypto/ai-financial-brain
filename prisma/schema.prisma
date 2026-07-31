@@ -429,3 +429,43 @@ model ManualDecisionOverride {
   @@index([symbol, createdAt])
   @@index([predictionId])
 }
+
+// ═══════ MODEL RELEASE GOVERNANCE ═══════
+
+model ModelRelease {
+  id                String   @id @default(cuid())
+  modelVersion       String
+  releaseType       String   // "MAJOR" | "MINOR" | "HOTFIX" | "ROLLBACK"
+
+  // What changed
+  description        String
+  features           Json?    // string[] of feature names used
+  trainingWindowFrom DateTime?
+  trainingWindowTo   DateTime?
+
+  // Validation at time of release
+  validationSummary  Json?    // full ValidationSummary snapshot
+  driftStatus        String?  // "STABLE" | "DRIFT_WARNING" | "DRIFT_CRITICAL"
+  robustnessScore    Float?
+  walkForwardConsistency Float?
+  overfittingSeverity String?  // "NONE" | "LOW" | "MEDIUM" | "HIGH"
+  sampleSize        Int      @default(0)
+
+  // Known limitations
+  knownLimitations  Json?    // string[]
+  breakingChanges   Boolean  @default(false)
+
+  // Release lifecycle
+  approvalStatus    String   @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED" | "DEPLOYED" | "ROLLED_BACK"
+  approvedBy        String?
+  approvedAt         DateTime?
+  deployedAt         DateTime?
+  rolledBackAt      DateTime?
+  rollbackReason    String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([modelVersion, createdAt])
+  @@index([approvalStatus])
+}
