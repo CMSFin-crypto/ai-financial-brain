@@ -41,11 +41,16 @@ import {
   Landmark,
   Gauge,
   BrainCircuit,
+  Activity,
+  Shield,
+  Trophy,
+  ExternalLink,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 import { StockPredictor } from '@/components/financial-brain/stock-predictor';
+import Link from 'next/link';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -130,6 +135,24 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
               </div>
+              {/* Category: Kontroll */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Kontrol</span>
+                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+                  <TabsTrigger value="drift" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Activity className="w-3.5 h-3.5 mr-1.5" />Drift
+                  </TabsTrigger>
+                  <TabsTrigger value="overrides" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Shield className="w-3.5 h-3.5 mr-1.5" />Override
+                  </TabsTrigger>
+                  <TabsTrigger value="edge" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Trophy className="w-3.5 h-3.5 mr-1.5" />Edge
+                  </TabsTrigger>
+                  <TabsTrigger value="metrics" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Metriqa
+                  </TabsTrigger>
+                </TabsList>
+              </div>
             </div>
             {/* Mobile/Tablet: grid wrapped rows */}
             <div className="lg:hidden">
@@ -181,6 +204,18 @@ export default function Home() {
                 </TabsTrigger>
                 <TabsTrigger value="predictor" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                   <BrainCircuit className="w-3.5 h-3.5 mr-1" />Predikues
+                </TabsTrigger>
+                <TabsTrigger value="drift" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                  <Activity className="w-3.5 h-3.5 mr-1" />Drift
+                </TabsTrigger>
+                <TabsTrigger value="overrides" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                  <Shield className="w-3.5 h-3.5 mr-1" />Override
+                </TabsTrigger>
+                <TabsTrigger value="edge" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                  <Trophy className="w-3.5 h-3.5 mr-1" />Edge
+                </TabsTrigger>
+                <TabsTrigger value="metrics" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                  <BarChart3 className="w-3.5 h-3.5 mr-1" />Metriqa
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -548,6 +583,98 @@ export default function Home() {
                 </CardContent>
               </Card>
               <StockPredictor />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Drift Review */}
+          <TabsContent value="drift" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+              <Card className="border-orange-500/20 bg-orange-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Activity className="w-4 h-4 text-orange-500" />
+                      <h3 className="text-sm font-semibold">Rishikimi i Parashikimeve & Monitorimi i Drift</h3>
+                    </div>
+                    <Link href="/drift-review" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
+                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Gjurmon shëndetin e modelit: preciziteti sipas afatit, kalibrimi (Brier/ECE), degradimi i regjimit dhe sektorit, dhe shkalla e no-trade.
+                  </p>
+                </CardContent>
+              </Card>
+              <iframe src="/drift-review" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Override Journal */}
+          <TabsContent value="overrides" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+              <Card className="border-orange-500/20 bg-orange-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Shield className="w-4 h-4 text-orange-500" />
+                      <h3 className="text-sm font-semibold">Ditar i Override-ve</h3>
+                    </div>
+                    <Link href="/override-journal" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
+                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Gjurmon çdo ndërhyrje njerëzore: a ndihmoi apo dëmtoi? Modeli vs njeriu, shkaku i override, dhe rezultatet sipas regjimit.
+                  </p>
+                </CardContent>
+              </Card>
+              <iframe src="/override-journal" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Edge Leaderboard */}
+          <TabsContent value="edge" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+              <Card className="border-orange-500/20 bg-orange-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Trophy className="w-4 h-4 text-orange-500" />
+                      <h3 className="text-sm font-semibold">Tabela e Avantazhit: Sektorë & Regjime</h3>
+                    </div>
+                    <Link href="/edge-leaderboard" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
+                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Ku ka sistemi avantazhin e vërtetë? Sektorët dhe regjimet me performancën më të mirë, me filtra të rekomanduara tregtimi.
+                  </p>
+                </CardContent>
+              </Card>
+              <iframe src="/edge-leaderboard" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Model Metrics */}
+          <TabsContent value="metrics" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+              <Card className="border-orange-500/20 bg-orange-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 mb-1">
+                      <BarChart3 className="w-4 h-4 text-orange-500" />
+                      <h3 className="text-sm font-semibold">Metriqa e Modelit</h3>
+                    </div>
+                    <Link href="/model-metrics" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
+                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Brier score, ECE, precision/recall, alpha, drawdown — metrikat e plotë të kalibrit dhe performancës.
+                  </p>
+                </CardContent>
+              </Card>
+              <iframe src="/model-metrics" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
             </motion.div>
           </TabsContent>
         </Tabs>

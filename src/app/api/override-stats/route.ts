@@ -1,9 +1,26 @@
+// ============================================================
+// GET /api/override-stats?full=true  → Full Override Journal
+// GET /api/override-stats?days=30   → Legacy summary (default)
+// POST /api/override-stats          → Log new override
+// ============================================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { computeOverrideJournal } from '@/lib/override-journal';
 
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
+    const full = url.searchParams.get('full') === 'true';
+
+    // Full journal mode — uses override-journal.ts
+    if (full) {
+      const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+      const journal = await computeOverrideJournal(limit);
+      return NextResponse.json({ ok: true, data: journal });
+    }
+
+    // Legacy mode (backward compatible)
     const days = Number(url.searchParams.get('days') ?? '30');
     const since = new Date(Date.now() - days * 86400000);
 

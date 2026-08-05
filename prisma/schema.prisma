@@ -560,6 +560,35 @@ model FeatureSnapshot {
   @@index([symbol, date])
 }
 
+// ═══════ PREDICTION REVIEW & DRIFT MONITOR ═══════
+
+model DriftSnapshot {
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  // Per-horizon daily accuracy
+  accuracy1d      Float?
+  accuracy5d      Float?
+  accuracy20d     Float?
+  sample1d        Int      @default(0)
+  sample5d        Int      @default(0)
+  sample20d       Int      @default(0)
+  // Calibration drift
+  brierScore      Float?
+  ece             Float?
+  // No-trade rate
+  noTradeRate     Float?
+  // Per-regime accuracy (JSON: { "BULL_LOW_VOL": 72.3, ... })
+  regimeAccuracies Json?
+  // Per-sector accuracy (JSON: { "TECHNOLOGY": 65.0, ... })
+  sectorAccuracies Json?
+  // Warnings
+  warnings        Json?    // string[] of active warnings
+  createdAt       DateTime @default(now())
+
+  @@unique([date])
+  @@index([date])
+}
+
 // ═══════ MODEL RELEASE GOVERNANCE ═══════
 
 model ModelRelease {
