@@ -100,3 +100,27 @@ Stage Summary:
 - 4 new API endpoints: /api/model-drift, /api/portfolio-allocation, /api/validation-summary, /api/override-stats
 - 3 new lib modules: drift-monitor.ts, portfolio-allocator.ts, validation-lab.ts
 - 1 new Prisma model: ManualDecisionOverride
+---
+Task ID: 1-8
+Agent: main
+Task: Full 5-factor anticipatory prediction system refactoring
+
+Work Log:
+- Removed indicator-learning.ts from all 6 production routes (hybrid-prediction, ai-predict, ai-predict-scan, learning/evaluate, learning/stats, learning/indicators)
+- Rewrote hybrid-prediction.ts as v2 with async predictHybridV2(): 5-factor scoring (technical/fundamental/spillover/regime/event), horizon-specific weights, decision gates, full factor attribution, DB save
+- Extended save-prediction.ts with SpilloverSignalInput type and SpilloverSignal creation in transaction
+- Updated prisma/schema.prisma: SpilloverSignal gains predictionId, asiaConsensus, riskAlignment, vixDirection, sectorTrend, asiaAligned fields
+- Rewrote event-risk.ts as v2: multi-event detection (FOMC/CPI/NFP/geopolitical/earnings), checkMultiEventRisk() returns all events with composite score
+- Upgraded model-weights.ts: 70/30 blending (70% old + 30% new evidence), optional horizon/sector/regime filter in updateWeightsAfterEvaluation
+- Updated /api/predict-scan: 5-factor scoring with regime+event, saves full factors to DB, returns regime context and top reasons
+- Updated /api/ai-predict-scan: DB-backed evaluation pipeline, no more JSON state
+- Updated /api/learning/* routes: all read from DB (ModelWeight, AIStats, Prediction)
+- Build: 0 errors, pushed as 053555c
+
+Stage Summary:
+- indicator-learning.ts fully removed from production path (only the file remains, no imports)
+- System is now DB-single-source-of-truth with 5-factor anticipatory scoring
+- Horizon weights: 1D(tech55/spill20/regime10/event10/fund5), 5D(40/20/15/10/15), 20D(20/15/20/10/35)
+- Weight learning uses 70/30 blending to prevent wild swings
+- Event risk now detects FOMC, CPI, NFP, earnings, geopolitical, weekend gap
+- All predictions saved with full factor attribution for learning loop
