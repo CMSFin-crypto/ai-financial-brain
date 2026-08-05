@@ -254,3 +254,152 @@ export async function savePrediction(input: SavePredictionInput): Promise<SavedP
     hasSpilloverSignal: !!input.spilloverSignal,
   };
 }
+
+// ─── Multi-horizon atomic save ────────────────────────────────
+
+/**
+ * Save multiple predictions (e.g. 1D/5D/20D for the same symbol)
+ * in a SINGLE Prisma transaction. Either all succeed or all roll back.
+ *
+ * Shared context (marketSnapshot, eventSnapshots, spilloverSignal) is saved once.
+ * Each horizon gets its own Prediction + Factors + PredictionSnapshot.
+ *
+ * Returns a map of "horizonDays" → SavedPrediction.
+ */
+export async function savePredictionsAtomic(
+  inputs: SavePredictionInput[],
+): Promise<Record<string, SavedPrediction>> {
+  if (inputs.length === 0) return {};
+  if (inputs.length === 1) {
+    const saved = await savePrediction(inputs[0]);
+    return { [String(inputs[0].horizonDays ?? 1)]: saved };
+  }
+
+  const results = await prisma.$transaction(async (tx) => {
+    const saved: Record<string, SavedPrediction> = {};
+    let sharedContextDone = false;
+
+    for (const input of inputs) {
+      const horizonDays = input.horizonDays ?? 1;
+      const dueAt = new Date(Date.now() + horizonDays * 24 * 60 * 60 * 1000);
+
+      const prediction = await tx.prediction.create({
+        data: {
+          symbol: input.symbol,
+          sector: input.sector,
+          horizonDays,
+          dueAt,
+          modelVersion: input.modelVersion,
+          entryPrice: input.entryPrice,
+          benchmarkSymbol: input.benchmarkSymbol ?? "SPY",
+          benchmarkEntryPrice: input.benchmarkEntryPrice,
+          regime: input.regime,
+          regimeConfidence: input.regimeConfidence,
+          transitionRisk: input.transitionRisk,
+          rawScore: input.rawScore,
+          calibratedConfidence: input.calibratedConfidence,
+          finalDecision: input.finalDecision,
+          factors: {
+            createMany: {
+              data: input.factors.map((f) => ({
+                factorName: f.factorName,
+                factorType: f.factorType,
+                score: f.score,
+                weight: f.weight,
+                signal: f.signal,
+                description: f.description,
+              })),
+            },
+          },
+          snapshots: {
+            create: {
+              snapshotType: "CREATED",
+              price: input.entryPrice,
+              benchmarkPrice: input.benchmarkEntryPrice,
+              regime: input.regime,
+              regimeConfidence: input.regimeConfidence,
+              transitionRisk: input.transitionRisk,
+              note: `[${horizonDays}d] ${input.decisionReasons?.join("; ") ?? "Prediction created"}`,
+            },
+          },
+        },
+        include: { factors: true },
+      });
+
+      // Shared context: save only once (on first horizon)
+      if (!sharedContextDone) {
+        if (input.marketSnapshot) {
+          const ms = input.marketSnapshot;
+          await tx.marketSnapshot.create({
+            data: {
+              predictionId: prediction.id,
+              regime: ms.regime,
+              regimeConfidence: ms.regimeConfidence,
+              spyPrice: ms.spyPrice,
+              spyChange5d: ms.spyChange5d,
+              spyChange20d: ms.spyChange20d,
+              vixLevel: ms.vixLevel,
+              marketBreadth: ms.marketBreadth,
+              sectorAvg: ms.sectorAvg,
+            },
+          });
+        }
+
+        if (input.eventSnapshots && input.eventSnapshots.length > 0) {
+          await tx.eventSnapshot.createMany({
+            data: input.eventSnapshots.map((e) => ({
+              ticker: input.symbol,
+              eventType: e.eventType,
+              eventDate: e.eventDate,
+              daysUntil: e.daysUntil,
+              severity: e.severity,
+              description: e.description ?? "",
+            })),
+          });
+        }
+
+        if (input.spilloverSignal) {
+          const ss = input.spilloverSignal;
+          await tx.spilloverSignal.create({
+            data: {
+              date: new Date(),
+              targetSymbol: ss.targetSymbol,
+              targetSector: ss.targetSector,
+              setupType: ss.setupType,
+              spilloverScore: ss.spilloverScore,
+              confidence: ss.confidence,
+              modelVersion: 'spillover-prediction-pipeline',
+              reasons: ss.reasons ?? [],
+              predictionId: prediction.id,
+              asiaConsensus: ss.asiaConsensus,
+              riskAlignment: ss.riskAlignment,
+              vixDirection: ss.vixDirection,
+              sectorTrend: ss.sectorTrend,
+              asiaAligned: ss.asiaAligned,
+            },
+          });
+        }
+
+        sharedContextDone = true;
+      }
+
+      saved[String(horizonDays)] = {
+        id: prediction.id,
+        symbol: prediction.symbol,
+        horizonDays: prediction.horizonDays,
+        finalDecision: prediction.finalDecision,
+        rawScore: prediction.rawScore,
+        calibratedConfidence: prediction.calibratedConfidence,
+        factorCount: input.factors.length,
+        hasMarketSnapshot: !!input.marketSnapshot,
+        hasFeatureSnapshot: !!input.featureSnapshot,
+        hasEventSnapshots: (input.eventSnapshots?.length ?? 0) > 0,
+        hasSpilloverSignal: !!input.spilloverSignal,
+      };
+    }
+
+    return saved;
+  });
+
+  return results;
+}

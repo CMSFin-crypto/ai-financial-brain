@@ -1,10 +1,13 @@
 // ============================================================
-// Hybrid Prediction Engine v2 — 5-Factor Anticipatory System
+// Hybrid Prediction Engine v2.1 — 5-Factor Anticipatory System
 //
-// Combines: technical + fundamental + spillover + regime + event
-// Weights are horizon-specific (1D/5D/20D) from model-weights.ts
-// All predictions saved to DB via save-prediction.ts
-// No more indicator-learning.ts / JSON state
+// Improvements over v2:
+//   - hybridConfidence computed from 5-factor confluence (not tech-only)
+//   - Multi-horizon: computePerHorizon() returns 1D/5D/20D with specific
+//     factors, reasons, and decisions per horizon
+//   - Hard gates actually enforced (CAPITULATION → NO_TRADE, regime blocks)
+//   - Multi-horizon save in a single $transaction via savePredictionsAtomic()
+//   - Spillover proxy from regime context when skipSpillover=true (scan)
 // ============================================================
 
 import { predictStock, type PredictionResult, type PricePoint } from '@/lib/prediction-engine';
@@ -12,142 +15,263 @@ import { analyzeFundamentals, type FundamentalScore } from '@/lib/fundamental-en
 import { buildCrossMarketFeatures, type CrossMarketFeatures } from '@/lib/build-spillover-features';
 import { assessSpillover, type SpilloverAssessment } from '@/lib/spillover-engine';
 import { getRegimeAssessment, type RegimeAssessment } from '@/lib/regime-engine';
-import { checkEventRisk, type EventRiskResult } from '@/lib/event-risk';
+import { checkMultiEventRisk, type EventRiskResult, type MultiEventRiskResult } from '@/lib/event-risk';
 import { getModelWeights, type ModelWeightsResult, HORIZON_WEIGHTS } from '@/lib/model-weights';
-import { savePrediction, type FactorInput, type SavePredictionInput } from '@/lib/save-prediction';
+import { savePredictionsAtomic, type SavePredictionInput, type FactorInput } from '@/lib/save-prediction';
 import type { YahooFundamentals } from '@/lib/alpha-vantage';
 
 // ─── Types ──────────────────────────────────────────────────
 
-export interface HybridPredictionResultV2 {
-  // Core prediction
-  symbol: string;
-  direction: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NO_TRADE';
-  rawScore: number;          // -100 to +100
-  calibratedConfidence: number; // 0 to 100
-  horizonDays: number;
+export type Direction6 = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NO_TRADE';
+export type Decision4 = 'BUY' | 'SELL' | 'HOLD' | 'NO_TRADE';
 
-  // Per-factor scores
+/** Result for a single horizon */
+export interface HorizonResult {
+  horizonDays: number;
+  direction: Direction6;
+  decision: Decision4;
+  rawScore: number;
+  hybridConfidence: number;    // 5-factor confluence confidence
   technicalScore: number;
   fundamentalScore: number;
   spilloverScore: number;
   regimeScore: number;
   eventScore: number;
-
-  // Weights used
-  weightsUsed: {
-    technical: number;
-    fundamental: number;
-    spillover: number;
-    regime: number;
-    event: number;
-  };
-
-  // Rich context
-  spilloverAssessment?: SpilloverAssessment;
-  regimeAssessment?: RegimeAssessment;
-  eventRisk?: EventRiskResult;
-  crossMarketFeatures?: CrossMarketFeatures;
-
-  // Attribution & explanation
+  weightsUsed: { technical: number; fundamental: number; spillover: number; regime: number; event: number };
+  factors: FactorInput[];
   decisionReasons: string[];
-  topReasons: string[];        // top 3 for dashboard
-  aiInsight: string;           // full Albanian explanation
+  topReasons: string[];
+  gated: boolean;               // whether a hard gate changed the decision
+  gateReason?: string;           // which gate fired
+}
 
-  // Metadata
-  modelVersion: string;
+/** Full multi-horizon result */
+export interface HybridPredictionResultV2 {
+  symbol: string;
   entryPrice: number;
   sector?: string;
-  saved?: boolean;             // whether it was persisted to DB
-  predictionId?: string;
+  modelVersion: string;
 
-  // Original technical result (for compatibility)
-  technicalResult?: PredictionResult;
-  fundamentalResult?: FundamentalScore | null;
+  // Per-horizon results (always 3: 1, 5, 20)
+  horizons: HorizonResult[];
+
+  // Quick access to primary horizon (1D)
+  direction: Direction6;
+  rawScore: number;
+  hybridConfidence: number;
+  horizonDays: number;
+  topReasons: string[];
+  aiInsight: string;
+
+  // Shared context (same for all horizons)
+  spilloverAssessment?: SpilloverAssessment;
+  regimeAssessment?: RegimeAssessment;
+  eventRisk: MultiEventRiskResult;
+  crossMarketFeatures?: CrossMarketFeatures;
+  technicalResult: PredictionResult;
+  fundamentalResult: FundamentalScore | null;
+
+  // DB persistence
+  saved?: boolean;
+  predictionIds: Record<number, string>; // horizonDays → id
 }
+
+// ─── Constants ──────────────────────────────────────────────
+
+const ALL_HORIZONS = [1, 5, 20] as const;
 
 // ─── Helpers ────────────────────────────────────────────────
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+function clamp(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
 
-function directionFromScore(score: number, confidence: number, eventRisk: EventRiskResult | null): HybridPredictionResultV2['direction'] {
-  // Event risk gate: near CRITICAL event → NO_TRADE unless extreme conviction
-  if (eventRisk && eventRisk.severity === 'CRITICAL' && Math.abs(score) < 40) {
-    return 'NO_TRADE';
-  }
-  // Earnings within 1 day and score < 30 → NO_TRADE
-  if (eventRisk && eventRisk.eventType === 'earnings' && (eventRisk.daysUntil ?? 99) <= 1 && Math.abs(score) < 30) {
-    return 'NO_TRADE';
-  }
-
-  const absScore = Math.abs(score);
-  if (absScore >= 60 && confidence >= 65) {
-    return score > 0 ? 'STRONG_BUY' : 'STRONG_SELL';
-  }
-  if (absScore >= 25) {
-    return score > 0 ? 'BUY' : 'SELL';
-  }
-  if (absScore >= 10) {
-    return 'HOLD';
-  }
-  return 'NO_TRADE';
-}
-
-function directionToDecision(direction: HybridPredictionResultV2['direction']): 'BUY' | 'SELL' | 'HOLD' | 'NO_TRADE' {
-  switch (direction) {
-    case 'STRONG_BUY': case 'BUY': return 'BUY';
-    case 'STRONG_SELL': case 'SELL': return 'SELL';
-    case 'HOLD': return 'HOLD';
-    case 'NO_TRADE': return 'NO_TRADE';
-  }
+function decisionToDirection(d: Decision4): Direction6 {
+  return d;
 }
 
 /**
- * Build factors array for save-prediction.ts from all 5 factor scores.
+ * Compute hybridConfidence from 5-factor confluence.
+ *
+ * Logic:
+ *   - Start with technical confidence as base (most reliable signal)
+ *   - Bonus when factors agree in direction (confluence)
+ *   - Penalty when factors disagree (conflict)
+ *   - Penalty for low regime confidence (uncertain environment)
+ *   - Penalty for event risk severity
+ *
+ * Range: [10, 98]
  */
+function computeHybridConfidence(
+  techConfidence: number,
+  scores: { technical: number; fundamental: number; spillover: number; regime: number; event: number },
+  regimeAssessment: RegimeAssessment | null,
+  eventRisk: MultiEventRiskResult,
+): number {
+  let conf = techConfidence; // base: 0-100
+
+  // 1. Confluence bonus: how many of the 4 non-technical factors agree with technical?
+  const techBullish = scores.technical > 0;
+  const agreeCount = [scores.fundamental, scores.spillover, scores.regime].filter(s => {
+    // event is penalty-only, skip; fundamental=0 means no data → neutral
+    if (s === 0) return false;
+    return (s > 0) === techBullish;
+  }).length;
+
+  // Each agreeing factor: +5% confidence (max +15%)
+  conf += agreeCount * 5;
+
+  // 2. Conflict penalty: factors that strongly disagree
+  const conflictCount = [scores.fundamental, scores.spillover, scores.regime].filter(s => {
+    if (s === 0) return false;
+    return (s > 0) !== techBullish && Math.abs(s) > 20;
+  }).length;
+  conf -= conflictCount * 8;
+
+  // 3. Regime confidence penalty
+  if (regimeAssessment && regimeAssessment.confidence < 0.5) {
+    conf -= 10; // uncertain regime → lower confidence
+  }
+
+  // 4. Regime bearish/volatile penalty
+  if (regimeAssessment?.isVolatile) {
+    conf -= 5;
+  }
+
+  // 5. Event risk penalty
+  if (eventRisk.hasCriticalEvent) {
+    conf -= 15;
+  } else if (eventRisk.events.length > 0) {
+    conf -= 5;
+  }
+
+  // 6. Spillover CAPITULATION penalty
+  // (handled outside, but also reduce confidence)
+
+  return clamp(Math.round(conf), 10, 98);
+}
+
+/**
+ * Compute spillover proxy from regime context when full spillover is skipped.
+ * Uses regime drivers (spy1d, kospi1d, smh1d, vixLevel) to estimate spillover direction.
+ */
+function computeSpilloverProxy(regimeAssessment: RegimeAssessment | null): number {
+  if (!regimeAssessment) return 0;
+  const d = regimeAssessment.drivers;
+
+  // Quick heuristic from regime's built-in market data
+  const spySignal = d.spy1d > 0.5 ? 1 : d.spy1d < -0.5 ? -1 : 0;
+  const qqqSignal = d.qqq1d > 0.5 ? 1 : d.qqq1d < -0.5 ? -1 : 0;
+  const smhSignal = d.smh1d > 0.5 ? 1 : d.smh1d < -0.5 ? -1 : 0;
+  const kospiSignal = d.kospi1d > 0.5 ? 1 : d.kospi1d < -0.5 ? -1 : 0;
+  const vixPenalty = d.vixLevel > 25 ? -10 : d.vixLevel > 20 ? -5 : 0;
+
+  // Average alignment of available signals
+  const signals = [spySignal, qqqSignal, smhSignal, kospiSignal].filter(s => s !== 0);
+  if (signals.length === 0) return 0;
+  const avgSignal = signals.reduce((a, b) => a + b, 0) / signals.length;
+
+  return clamp(Math.round(avgSignal * 25 + vixPenalty), -100, 100);
+}
+
+/**
+ * Hard gate enforcement.
+ * Returns { direction, gated, gateReason } where gated=true means
+ * the original direction was overridden.
+ */
+function applyHardGates(
+  proposedDirection: Direction6,
+  rawScore: number,
+  spilloverAssessment: SpilloverAssessment | null,
+  regimeAssessment: RegimeAssessment | null,
+  eventRisk: MultiEventRiskResult,
+  confidence: number,
+): { direction: Direction6; gated: boolean; gateReason?: string } {
+  // Gate 1: CAPITULATION → no strong BUY
+  if (spilloverAssessment?.setupType === 'CAPITULATION') {
+    if (proposedDirection === 'STRONG_BUY' || proposedDirection === 'BUY') {
+      if (Math.abs(rawScore) < 50) {
+        return { direction: 'NO_TRADE', gated: true, gateReason: 'CAPITULATION: no BUY when Asia risk-off + VIX rising + sector weak' };
+      }
+      // Even if score is high, downgrade STRONG_BUY → HOLD
+      if (proposedDirection === 'STRONG_BUY') {
+        return { direction: 'HOLD', gated: true, gateReason: 'CAPITULATION: STRONG_BUY downgraded to HOLD' };
+      }
+    }
+  }
+
+  // Gate 2: Regime blocks direction
+  if (regimeAssessment) {
+    if ((proposedDirection === 'BUY' || proposedDirection === 'STRONG_BUY') && !regimeAssessment.allowLongs) {
+      return { direction: 'NO_TRADE', gated: true, gateReason: `Regime ${regimeAssessment.regime} blocks longs (allowLongs=false)` };
+    }
+    if ((proposedDirection === 'SELL' || proposedDirection === 'STRONG_SELL') && !regimeAssessment.allowShorts) {
+      return { direction: 'NO_TRADE', gated: true, gateReason: `Regime ${regimeAssessment.regime} blocks shorts` };
+    }
+  }
+
+  // Gate 3: CRITICAL event → NO_TRADE unless extreme conviction
+  if (eventRisk.hasCriticalEvent && Math.abs(rawScore) < 40) {
+    return { direction: 'NO_TRADE', gated: true, gateReason: `CRITICAL event: ${eventRisk.worstEvent.description}` };
+  }
+
+  // Gate 4: Earnings within 1 day and score < 30 → NO_TRADE
+  if (eventRisk.worstEvent.eventType === 'earnings' && (eventRisk.worstEvent.daysUntil ?? 99) <= 1 && Math.abs(rawScore) < 30) {
+    return { direction: 'NO_TRADE', gated: true, gateReason: `Earnings within 1 day: ${eventRisk.worstEvent.description}` };
+  }
+
+  // Gate 5: FOMC/CPI within 1 day → reduce STRONG_BUY to BUY
+  const macroEvent = eventRisk.events.find(e => e.eventType === 'fed' || e.eventType === 'cpi');
+  if (macroEvent && (macroEvent.daysUntil ?? 99) <= 1 && proposedDirection === 'STRONG_BUY') {
+    return { direction: 'BUY', gated: true, gateReason: `${macroEvent.eventType.toUpperCase()} within 1 day: STRONG_BUY downgraded` };
+  }
+
+  return { direction: proposedDirection, gated: false };
+}
+
+function directionFromScoreAndConfidence(score: number, confidence: number): Direction6 {
+  const absScore = Math.abs(score);
+  if (absScore >= 60 && confidence >= 65) return score > 0 ? 'STRONG_BUY' : 'STRONG_SELL';
+  if (absScore >= 25) return score > 0 ? 'BUY' : 'SELL';
+  if (absScore >= 10) return 'HOLD';
+  return 'NO_TRADE';
+}
+
+// ─── Factor Builder (per-horizon) ──────────────────────────
+
 function buildFactorInputs(
   technicalResult: PredictionResult,
   fundamentalScore: FundamentalScore | null,
   spilloverAssessment: SpilloverAssessment | null,
+  spilloverProxy: number,
   regimeAssessment: RegimeAssessment | null,
-  eventRisk: EventRiskResult | null,
+  eventRisk: MultiEventRiskResult,
   weights: ModelWeightsResult,
+  useProxy: boolean,
 ): FactorInput[] {
   const factors: FactorInput[] = [];
 
-  // Technical factors (from indicatorScores)
+  // Technical (same for all horizons — indicator scores don't change by horizon)
   if (technicalResult.indicatorScores) {
     for (const [name, data] of Object.entries(technicalResult.indicatorScores)) {
-      const w = weights.technical[name] ?? 0.05;
       factors.push({
-        factorName: name,
-        factorType: 'technical',
-        score: (data as any).score ?? (data as any) ?? 0,
-        weight: w,
+        factorName: name, factorType: 'technical',
+        score: (data as any).score ?? 0, weight: weights.technical[name] ?? 0.05,
         signal: (data as any).signal,
-        description: `${name}: ${((data as any).signal ?? 'neutral')}`,
       });
     }
   }
-  // Aggregate technical
   factors.push({
     factorName: 'technicalAggregate', factorType: 'technical',
     score: technicalResult.score, weight: weights.horizonWeights.technical,
     signal: technicalResult.score > 0 ? 'BULLISH' : 'BEARISH',
-    description: `Technical aggregate: ${technicalResult.score.toFixed(1)}`,
   });
 
-  // Fundamental factors
+  // Fundamental (same raw data, but weight changes per horizon)
   if (fundamentalScore) {
     factors.push({
       factorName: 'fundamentalAggregate', factorType: 'fundamental',
       score: fundamentalScore.score, weight: weights.horizonWeights.fundamental,
       signal: fundamentalScore.signal,
-      description: `Fundamental: ${fundamentalScore.signal} (${fundamentalScore.score.toFixed(1)})`,
     });
-    // Sub-factors
     const fFactors = fundamentalScore.factors;
     if (fFactors) {
       for (const [key, val] of Object.entries(fFactors)) {
@@ -156,221 +280,117 @@ function buildFactorInputs(
           factorName: `fund_${key}`, factorType: 'fundamental',
           score: fv.score ?? 0, weight: weights.fundamental[key] ?? 0.1,
           signal: fv.score > 0 ? 'BULLISH' : fv.score < 0 ? 'BEARISH' : 'NEUTRAL',
-          description: `${key}: ${fv.description ?? ''}`,
         });
       }
     }
   }
 
-  // Spillover factors
-  if (spilloverAssessment) {
-    const sa = spilloverAssessment;
-    factors.push({
-      factorName: 'spilloverAggregate', factorType: 'spillover',
-      score: sa.spilloverScore, weight: weights.horizonWeights.spillover,
-      signal: sa.spilloverScore > 0 ? 'BULLISH' : sa.spilloverScore < 0 ? 'BEARISH' : 'NEUTRAL',
-      description: `Spillover ${sa.setupType}: ${sa.spilloverScore.toFixed(1)}`,
-    });
+  // Spillover (different weight per horizon; score is same or proxy)
+  const spillScore = useProxy ? spilloverProxy : (spilloverAssessment?.spilloverScore ?? 0);
+  factors.push({
+    factorName: 'spilloverAggregate', factorType: 'spillover',
+    score: spillScore, weight: weights.horizonWeights.spillover,
+    signal: spillScore > 10 ? 'BULLISH' : spillScore < -10 ? 'BEARISH' : 'NEUTRAL',
+    description: useProxy ? 'Spillover (proxy from regime)' : `Spillover ${spilloverAssessment?.setupType ?? 'N/A'}`,
+  });
+  if (spilloverAssessment && !useProxy) {
     factors.push({
       factorName: 'asiaConsensus', factorType: 'spillover',
-      score: sa.drivers.asiaConsensus * 100, weight: weights.spillover.kospi1d ?? 0.1,
-      signal: sa.drivers.asiaConsensus > 0 ? 'RISK_ON' : 'RISK_OFF',
+      score: spilloverAssessment.drivers.asiaConsensus * 100,
+      weight: weights.spillover.kospi1d ?? 0.1,
+      signal: spilloverAssessment.drivers.asiaConsensus > 0 ? 'RISK_ON' : 'RISK_OFF',
     });
     factors.push({
       factorName: 'riskAlignment', factorType: 'spillover',
-      score: sa.drivers.riskAlignment * 100, weight: weights.spillover.riskAlignment ?? 0.1,
-      signal: sa.drivers.asiaAlign ? 'ALIGNED' : 'MIXED',
-    });
-    factors.push({
-      factorName: 'vixDirection', factorType: 'spillover',
-      score: sa.drivers.vixDirection === 'falling' ? 30 : sa.drivers.vixDirection === 'rising' ? -30 : 0,
-      weight: weights.spillover.vix1d ?? 0.1,
-      signal: sa.drivers.vixDirection,
+      score: spilloverAssessment.drivers.riskAlignment * 100,
+      weight: weights.spillover.riskAlignment ?? 0.1,
+      signal: spilloverAssessment.drivers.asiaAlign ? 'ALIGNED' : 'MIXED',
     });
   }
 
-  // Regime factors
+  // Regime (different weight per horizon)
   if (regimeAssessment) {
-    const ra = regimeAssessment;
     factors.push({
       factorName: 'regimeAggregate', factorType: 'regime',
-      score: ra.regimeScore, weight: weights.horizonWeights.regime,
-      signal: ra.isBullish ? 'BULLISH' : ra.isBearish ? 'BEARISH' : 'NEUTRAL',
-      description: `Regime ${ra.regime}: ${ra.regimeScore.toFixed(1)}`,
+      score: regimeAssessment.regimeScore, weight: weights.horizonWeights.regime,
+      signal: regimeAssessment.isBullish ? 'BULLISH' : regimeAssessment.isBearish ? 'BEARISH' : 'NEUTRAL',
+      description: `Regime ${regimeAssessment.regime}`,
     });
     factors.push({
       factorName: 'transitionRisk', factorType: 'regime',
-      score: -ra.transitionRisk * 100, weight: weights.regime.transitionRisk ?? 0.25,
-      signal: ra.transitionRisk > 0.5 ? 'HIGH' : 'LOW',
+      score: -regimeAssessment.transitionRisk * 100,
+      weight: weights.regime.transitionRisk ?? 0.25,
+      signal: regimeAssessment.transitionRisk > 0.5 ? 'HIGH' : 'LOW',
     });
   }
 
-  // Event factors
-  if (eventRisk) {
-    const er = eventRisk;
-    factors.push({
-      factorName: 'eventRiskAggregate', factorType: 'event',
-      score: er.riskScore, weight: weights.horizonWeights.event,
-      signal: er.severity,
-      description: er.description,
-    });
+  // Event (same penalty, but weight changes per horizon)
+  if (eventRisk.events.length > 0) {
+    for (const ev of eventRisk.events) {
+      factors.push({
+        factorName: `event_${ev.eventType}`, factorType: 'event',
+        score: ev.riskScore, weight: weights.horizonWeights.event / eventRisk.events.length,
+        signal: ev.severity, description: ev.description,
+      });
+    }
   }
 
   return factors;
 }
 
-/**
- * Generate rich Albanian AI insight from all 5 factors.
- */
-function generateV2Insight(
+// ─── Insight Generator (per-horizon) ────────────────────────
+
+function generateHorizonInsight(
   symbol: string,
-  techResult: PredictionResult,
-  fundScore: FundamentalScore | null,
+  hr: HorizonResult,
   spillover: SpilloverAssessment | null,
   regime: RegimeAssessment | null,
-  eventRisk: EventRiskResult | null,
-  finalScore: number,
-  direction: string,
-): { full: string; topReasons: string[]; allReasons: string[] } {
+  eventRisk: MultiEventRiskResult,
+): { topReasons: string[]; allReasons: string[] } {
   const allReasons: string[] = [];
-  const topReasons: string[] = [];
 
-  // Technical
-  const techDir = techResult.score > 20 ? 'bulliz' : techResult.score < -20 ? 'beariz' : 'neutral';
-  allReasons.push(`Teknika: ${techDir} (${techResult.score > 0 ? '+' : ''}${techResult.score.toFixed(1)}) me besim ${techResult.confidence.toFixed(0)}%`);
-
-  // Spillover
-  if (spillover && spillover.setupType !== 'NEUTRAL') {
-    const spDir = spillover.spilloverScore > 0 ? 'pozitiv' : 'negativ';
-    allReasons.push(`Spillover: ${spillover.setupType} (${spDir}, score=${spillover.spilloverScore.toFixed(1)})`);
-    if (spillover.drivers.asiaAlign) {
-      allReasons.push(`Asia + US + sektori të lidhur në të njëjtin drejtim`);
-    }
+  allReasons.push(`Teknika: ${hr.technicalScore > 0 ? '+' : ''}${hr.technicalScore.toFixed(1)}`);
+  if (hr.fundamentalScore !== 0) allReasons.push(`Fundamentet: ${hr.fundamentalScore > 0 ? '+' : ''}${hr.fundamentalScore.toFixed(1)}`);
+  if (hr.spilloverScore !== 0) {
+    const spLabel = spillover ? spillover.setupType : 'proxy';
+    allReasons.push(`Spillover (${spLabel}): ${hr.spilloverScore > 0 ? '+' : ''}${hr.spilloverScore.toFixed(1)}`);
   }
+  if (regime && regime.regime !== 'RANGE_NEUTRAL') allReasons.push(`Regjimi: ${regime.regime} (${regime.regimeScore})`);
+  if (eventRisk.hasCriticalEvent) allReasons.push(`Rrezik: ${eventRisk.summary}`);
+  if (hr.gated) allReasons.push(`GATE: ${hr.gateReason}`);
 
-  // Regime
-  if (regime && regime.regime !== 'RANGE_NEUTRAL') {
-    allReasons.push(`Regjimi: ${regime.regime} (besim=${(regime.confidence * 100).toFixed(0)}%, skor=${regime.regimeScore})`);
-  }
+  // Top 3: prioritize by absolute score contribution
+  const contributions = [
+    { reason: allReasons[0], impact: Math.abs(hr.technicalScore * hr.weightsUsed.technical) },
+    ...(allReasons.slice(1).map((r, i) => ({ reason: r, impact: 40 - i * 8 }))),
+  ];
+  contributions.sort((a, b) => b.impact - a.impact);
+  const topReasons = contributions.slice(0, 3).map(c => c.reason);
 
-  // Event
-  if (eventRisk && eventRisk.eventType !== 'none') {
-    allReasons.push(`Rrezik ngjarjeje: ${eventRisk.description}`);
-  }
-
-  // Fundamental
-  if (fundScore) {
-    const fDir = fundScore.score > 0 ? 'pozitive' : fundScore.score < 0 ? 'negative' : 'neutrale';
-    allReasons.push(`Fundamente: ${fDir} (${fundScore.score.toFixed(1)})`);
-  }
-
-  // Top 3 reasons (prioritized by impact)
-  const scoredReasons = allReasons.map((r, i) => ({ r, impact: i === 0 ? Math.abs(techResult.score) : 50 - i * 5 }));
-  scoredReasons.sort((a, b) => b.impact - a.impact);
-  for (const sr of scoredReasons.slice(0, 3)) {
-    topReasons.push(sr.r);
-  }
-
-  // Build full insight
-  const dirAlb = direction === 'STRONG_BUY' ? 'Blerje të fortë' : direction === 'BUY' ? 'Blerje' : direction === 'SELL' ? 'Shitje' : direction === 'STRONG_SELL' ? 'Shitje të fortë' : direction === 'NO_TRADE' ? 'Pa tregtuar' : 'Mbaj';
-
-  let full = `${symbol}: ${dirAlb} (skor=${finalScore > 0 ? '+' : ''}${finalScore.toFixed(1)}, besim=${techResult.confidence.toFixed(0)}%). `;
-  full += topReasons.join('. ') + '.';
-
-  return { full, topReasons, allReasons };
+  return { topReasons, allReasons };
 }
 
-// ─── Main Prediction Function (v2) ─────────────────────────
+// ─── Core: Compute per-horizon ─────────────────────────────
 
-/**
- * predictHybridV2 — the new 5-factor anticipatory prediction.
- *
- * Flow:
- *   1. Technical analysis (prediction-engine)
- *   2. Fundamental analysis (fundamental-engine)
- *   3. Spillover features + scoring (build-spillover-features + spillover-engine)
- *   4. Regime assessment (regime-engine)
- *   5. Event risk check (event-risk)
- *   6. Weighted combination using horizon-specific weights from model-weights.ts
- *   7. Decision gates (CAPITULATION → no strong BUY, event proximity → reduce)
- *   8. Save to DB via save-prediction.ts
- */
-export async function predictHybridV2(
-  symbol: string,
-  priceData: PricePoint[],
-  fundamentals?: YahooFundamentals | null,
-  currentPrice?: number,
-  options?: {
-    horizonDays?: number;
-    sector?: string;
-    saveToDb?: boolean;
-    skipSpillover?: boolean;  // for scan speed
-  },
-): Promise<HybridPredictionResultV2> {
-  const horizonDays = options?.horizonDays ?? 1;
-  const sector = options?.sector;
-  const shouldSave = options?.saveToDb ?? true;
-  const skipSpillover = options?.skipSpillover ?? false;
-  const modelVersion = 'predict-v5-5factor';
-
-  const entryPrice = currentPrice && currentPrice > 0
-    ? currentPrice
-    : (priceData[priceData.length - 1]?.close ?? 0);
-
-  // ── Step 1: Get model weights (DB-backed) ──
+async function computePerHorizon(
+  horizonDays: number,
+  techResult: PredictionResult,
+  fundamentalResult: FundamentalScore | null,
+  spilloverAssessment: SpilloverAssessment | null,
+  spilloverProxy: number,
+  regimeAssessment: RegimeAssessment | null,
+  eventRisk: MultiEventRiskResult,
+  useProxy: boolean,
+): Promise<HorizonResult> {
   const weights = await getModelWeights(horizonDays);
   const hw = weights.horizonWeights;
 
-  // ── Step 2: Technical analysis ──
-  const techResult = predictStock(symbol, priceData);
-  const technicalScore = techResult.score;
-
-  // ── Step 3: Fundamental analysis ──
-  let fundamentalResult: FundamentalScore | null = null;
-  let fundamentalScoreVal = 0;
-  if (fundamentals && fundamentals.currentPrice > 0) {
-    try {
-      fundamentalResult = analyzeFundamentals(symbol, fundamentals);
-      fundamentalScoreVal = fundamentalResult.score;
-    } catch { /* fundamentals unavailable */ }
-  }
-
-  // ── Step 4: Spillover analysis ──
-  let spilloverAssessment: SpilloverAssessment | null = null;
-  let crossMarketFeatures: CrossMarketFeatures | null = null;
-  let spilloverScoreVal = 0;
-
-  if (!skipSpillover) {
-    try {
-      crossMarketFeatures = await buildCrossMarketFeatures(symbol, sector);
-      spilloverAssessment = assessSpillover(crossMarketFeatures, symbol, sector);
-      spilloverScoreVal = spilloverAssessment.spilloverScore;
-    } catch (err: any) {
-      console.warn(`[HYBRID-V2] Spillover failed for ${symbol}: ${err.message}`);
-    }
-  }
-
-  // ── Step 5: Regime assessment ──
-  let regimeAssessment: RegimeAssessment | null = null;
-  let regimeScoreVal = 0;
-  try {
-    regimeAssessment = await getRegimeAssessment(symbol);
-    regimeScoreVal = regimeAssessment.regimeScore;
-  } catch (err: any) {
-    console.warn(`[HYBRID-V2] Regime failed for ${symbol}: ${err.message}`);
-  }
-
-  // ── Step 6: Event risk check ──
-  const eventRisk = checkEventRisk(symbol);
-  const eventScoreVal = eventRisk.riskScore; // 0 to -100 (penalty)
-
-  // ── Step 7: Weighted combination ──
-  // Normalize scores to [-100, +100] range before weighting
-  const techNorm = clamp(technicalScore, -100, 100);
-  const fundNorm = clamp(fundamentalScoreVal * 3, -100, 100); // fundamental typically -30 to +30, amplify
-  const spillNorm = clamp(spilloverScoreVal, -100, 100);
-  const regimeNorm = clamp(regimeScoreVal, -100, 100);
-  const eventNorm = clamp(eventScoreVal, -100, 100); // already negative or 0
+  // Normalized scores
+  const techNorm = clamp(techResult.score, -100, 100);
+  const fundNorm = clamp((fundamentalResult?.score ?? 0) * 3, -100, 100);
+  const spillNorm = clamp(useProxy ? spilloverProxy : (spilloverAssessment?.spilloverScore ?? 0), -100, 100);
+  const regimeNorm = clamp(regimeAssessment?.regimeScore ?? 0, -100, 100);
+  const eventNorm = clamp(eventRisk.compositeRiskScore, -100, 100);
 
   const rawScore = clamp(Math.round(
     techNorm * hw.technical +
@@ -378,48 +398,140 @@ export async function predictHybridV2(
     spillNorm * hw.spillover +
     regimeNorm * hw.regime +
     eventNorm * hw.event
-  ) / 10, -100, 100);
+  ), -100, 100);
 
-  // ── Step 8: Decision gates ──
-  const direction = directionFromScore(rawScore, techResult.confidence, eventRisk);
+  const scores = { technical: techNorm, fundamental: fundNorm, spillover: spillNorm, regime: regimeNorm, event: eventNorm };
 
-  // Gate: CAPITULATION → no strong BUY
-  if (direction === 'STRONG_BUY' && spilloverAssessment?.setupType === 'CAPITULATION') {
-    // Downgrade to HOLD
-    // (direction is already set, we handle via confidence reduction)
+  // 5-factor confidence
+  const hybridConfidence = computeHybridConfidence(techResult.confidence, scores, regimeAssessment, eventRisk);
+
+  // Proposed direction (before gates)
+  const proposedDirection = directionFromScoreAndConfidence(rawScore, hybridConfidence);
+
+  // Hard gates
+  const { direction: gatedDirection, gated, gateReason } = applyHardGates(
+    proposedDirection, rawScore, spilloverAssessment, regimeAssessment, eventRisk, hybridConfidence,
+  );
+
+  // Factors specific to this horizon
+  const factors = buildFactorInputs(techResult, fundamentalResult, spilloverAssessment, spilloverProxy, regimeAssessment, eventRisk, weights, useProxy);
+
+  // Reasons specific to this horizon
+  const { topReasons, allReasons: decisionReasons } = generateHorizonInsight(
+    '', gatedDirection === 'NO_TRADE' ? { ...techResult, score: rawScore } : techResult,
+    spilloverAssessment, regimeAssessment, eventRisk,
+  );
+  if (gated && gateReason) decisionReasons.push(gateReason);
+
+  return {
+    horizonDays,
+    direction: gatedDirection,
+    decision: (gatedDirection === 'STRONG_BUY' || gatedDirection === 'BUY') ? 'BUY'
+      : (gatedDirection === 'STRONG_SELL' || gatedDirection === 'SELL') ? 'SELL'
+      : gatedDirection === 'HOLD' ? 'HOLD' : 'NO_TRADE',
+    rawScore,
+    hybridConfidence,
+    technicalScore: techNorm,
+    fundamentalScore: fundNorm,
+    spilloverScore: spillNorm,
+    regimeScore: regimeNorm,
+    eventScore: eventNorm,
+    weightsUsed: { ...hw },
+    factors,
+    decisionReasons,
+    topReasons,
+    gated,
+    gateReason,
+  };
+}
+
+// ─── Main: predictHybridV2 ──────────────────────────────────
+
+/**
+ * predictHybridV2 — 5-factor anticipatory prediction for ALL 3 horizons.
+ * Saves all 3 predictions in a single atomic transaction.
+ */
+export async function predictHybridV2(
+  symbol: string,
+  priceData: PricePoint[],
+  fundamentals?: YahooFundamentals | null,
+  currentPrice?: number,
+  options?: {
+    horizons?: number[];         // default [1, 5, 20]
+    sector?: string;
+    saveToDb?: boolean;
+    skipSpillover?: boolean;
+  },
+): Promise<HybridPredictionResultV2> {
+  const horizons = options?.horizons ?? [1, 5, 20];
+  const sector = options?.sector;
+  const shouldSave = options?.saveToDb ?? true;
+  const skipSpillover = options?.skipSpillover ?? false;
+  const modelVersion = 'predict-v5-5factor';
+
+  const entryPrice = currentPrice && currentPrice > 0
+    ? currentPrice : (priceData[priceData.length - 1]?.close ?? 0);
+
+  // ── Shared analysis (done once) ──
+  const techResult = predictStock(symbol, priceData);
+
+  let fundamentalResult: FundamentalScore | null = null;
+  if (fundamentals && fundamentals.currentPrice > 0) {
+    try { fundamentalResult = analyzeFundamentals(symbol, fundamentals); } catch { /* */ }
   }
 
-  // Gate: Regime doesn't allow this direction
-  if (regimeAssessment) {
-    if (direction === 'BUY' || direction === 'STRONG_BUY') {
-      if (!regimeAssessment.allowLongs) {
-        // Would need to return NO_TRADE, but let's adjust score instead
-      }
+  let spilloverAssessment: SpilloverAssessment | null = null;
+  let crossMarketFeatures: CrossMarketFeatures | null = null;
+  if (!skipSpillover) {
+    try {
+      crossMarketFeatures = await buildCrossMarketFeatures(symbol, sector);
+      spilloverAssessment = assessSpillover(crossMarketFeatures, symbol, sector);
+    } catch (err: any) {
+      console.warn(`[HYBRID-V2] Spillover failed for ${symbol}: ${err.message}`);
     }
   }
 
-  // ── Step 9: Build factors & reasons ──
-  const factors = buildFactorInputs(techResult, fundamentalResult, spilloverAssessment, regimeAssessment, eventRisk, weights);
-  const { full: aiInsight, topReasons, allReasons: decisionReasons } = generateV2Insight(
-    symbol, techResult, fundamentalResult, spilloverAssessment, regimeAssessment, eventRisk, rawScore, direction,
+  let regimeAssessment: RegimeAssessment | null = null;
+  try { regimeAssessment = await getRegimeAssessment(symbol); } catch { /* */ }
+
+  const eventRisk = checkMultiEventRisk(symbol);
+
+  // Spillover proxy (used when skipSpillover=true or when spillover failed)
+  const spilloverProxy = computeSpilloverProxy(regimeAssessment);
+  const useProxy = skipSpillover || !spilloverAssessment;
+
+  // ── Compute per-horizon ──
+  const horizonResults = await Promise.all(
+    horizons.map(h => computePerHorizon(h, techResult, fundamentalResult, spilloverAssessment, spilloverProxy, regimeAssessment, eventRisk, useProxy)),
   );
 
-  // ── Step 10: Save to DB ──
+  // Primary = first horizon (usually 1D)
+  const primary = horizonResults[0];
+
+  // ── AI insight (Albanian, primary horizon) ──
+  const dirAlb = primary.direction === 'STRONG_BUY' ? 'Blerje të fortë'
+    : primary.direction === 'BUY' ? 'Blerje'
+    : primary.direction === 'SELL' ? 'Shitje'
+    : primary.direction === 'STRONG_SELL' ? 'Shitje të fortë'
+    : primary.direction === 'NO_TRADE' ? 'Pa tregtuar' : 'Mbaj';
+  const aiInsight = `${symbol}: ${dirAlb} (skor=${primary.rawScore > 0 ? '+' : ''}${primary.rawScore.toFixed(1)}, besim=${primary.hybridConfidence.toFixed(0)}%, ${horizons.map(h => `${h}d`).join('/')}). ${primary.topReasons.join('. ')}.`;
+
+  // ── Save all horizons in one transaction ──
   let saved = false;
-  let predictionId: string | undefined;
+  const predictionIds: Record<number, string> = {};
 
   if (shouldSave && entryPrice > 0) {
     try {
-      const savedPred = await savePrediction({
+      const inputs: SavePredictionInput[] = horizonResults.map(hr => ({
         symbol,
         sector,
-        horizonDays,
+        horizonDays: hr.horizonDays,
         modelVersion,
         entryPrice,
-        rawScore,
-        calibratedConfidence: techResult.confidence,
-        finalDecision: directionToDecision(direction),
-        factors,
+        rawScore: hr.rawScore,
+        calibratedConfidence: hr.hybridConfidence,
+        finalDecision: hr.decision,
+        factors: hr.factors,
         regime: regimeAssessment?.regime,
         regimeConfidence: regimeAssessment?.confidence,
         transitionRisk: regimeAssessment?.transitionRisk,
@@ -429,17 +541,34 @@ export async function predictHybridV2(
           spyPrice: regimeAssessment.drivers.spy1d || 0,
           vixLevel: regimeAssessment.drivers.vixLevel,
         } : undefined,
-        eventSnapshots: eventRisk.eventType !== 'none' ? [{
-          eventType: eventRisk.eventType,
-          eventDate: eventRisk.daysUntil != null ? new Date(Date.now() + eventRisk.daysUntil * 86400000) : undefined,
-          daysUntil: eventRisk.daysUntil,
-          severity: eventRisk.severity,
-          description: eventRisk.description,
-        }] : undefined,
-        decisionReasons,
-      });
+        spilloverSignal: spilloverAssessment ? {
+          setupType: spilloverAssessment.setupType,
+          spilloverScore: spilloverAssessment.spilloverScore,
+          confidence: spilloverAssessment.confidence,
+          asiaConsensus: spilloverAssessment.drivers.asiaConsensus,
+          riskAlignment: spilloverAssessment.drivers.riskAlignment,
+          vixDirection: spilloverAssessment.drivers.vixDirection,
+          sectorTrend: spilloverAssessment.drivers.sectorTrend,
+          asiaAligned: spilloverAssessment.drivers.asiaAlign,
+          targetSymbol: symbol,
+          targetSector: sector,
+          reasons: spilloverAssessment.reasons,
+        } : undefined,
+        eventSnapshots: eventRisk.events.length > 0 ? eventRisk.events.map(e => ({
+          eventType: e.eventType,
+          eventDate: e.daysUntil != null ? new Date(Date.now() + e.daysUntil * 86400000) : undefined,
+          daysUntil: e.daysUntil,
+          severity: e.severity,
+          description: e.description,
+        })) : undefined,
+        decisionReasons: hr.decisionReasons,
+      }));
+
+      const savedMap = await savePredictionsAtomic(inputs);
       saved = true;
-      predictionId = savedPred.id;
+      for (const [h, sp] of Object.entries(savedMap)) {
+        predictionIds[parseInt(h)] = sp.id;
+      }
     } catch (err: any) {
       console.warn(`[HYBRID-V2] DB save failed for ${symbol}: ${err.message}`);
     }
@@ -447,90 +576,46 @@ export async function predictHybridV2(
 
   return {
     symbol,
-    direction,
-    rawScore,
-    calibratedConfidence: techResult.confidence,
-    horizonDays,
-    technicalScore: techNorm,
-    fundamentalScore: fundNorm,
-    spilloverScore: spillNorm,
-    regimeScore: regimeNorm,
-    eventScore: eventNorm,
-    weightsUsed: { ...hw },
+    entryPrice,
+    sector,
+    modelVersion,
+    horizons: horizonResults,
+    direction: primary.direction,
+    rawScore: primary.rawScore,
+    hybridConfidence: primary.hybridConfidence,
+    horizonDays: primary.horizonDays,
+    topReasons: primary.topReasons,
+    aiInsight,
     spilloverAssessment: spilloverAssessment ?? undefined,
     regimeAssessment: regimeAssessment ?? undefined,
     eventRisk,
     crossMarketFeatures: crossMarketFeatures ?? undefined,
-    decisionReasons,
-    topReasons,
-    aiInsight,
-    modelVersion,
-    entryPrice,
-    sector,
-    saved,
-    predictionId,
     technicalResult: techResult,
-    fundamentalResult: fundamentalResult,
+    fundamentalResult,
+    saved,
+    predictionIds,
   };
 }
 
-// ─── Ranking Functions (v2) ────────────────────────────────
+// ─── Ranking ────────────────────────────────────────────────
 
-export function rankHybridStocksV2(results: HybridPredictionResultV2[]): {
-  topPicks: HybridPredictionResultV2[];
-  topShorts: HybridPredictionResultV2[];
-  mostConfident: HybridPredictionResultV2[];
-  allResults: HybridPredictionResultV2[];
-} {
+export function rankHybridStocksV2(results: HybridPredictionResultV2[]) {
   const sorted = [...results].sort((a, b) => b.rawScore - a.rawScore);
-
-  const topPicks = sorted
-    .filter(r => r.direction === 'BUY' || r.direction === 'STRONG_BUY')
-    .slice(0, 20);
-
-  const topShorts = [...results]
-    .sort((a, b) => a.rawScore - b.rawScore)
-    .filter(r => r.direction === 'SELL' || r.direction === 'STRONG_SELL')
-    .slice(0, 10);
-
-  const mostConfident = [...results]
-    .sort((a, b) => b.calibratedConfidence - a.calibratedConfidence)
-    .slice(0, 15);
-
-  return { topPicks, topShorts, mostConfident, allResults: sorted };
-}
-
-// ─── Legacy compat wrapper ─────────────────────────────────
-
-/**
- * @deprecated Use predictHybridV2 instead.
- * Kept only for backward compat during migration.
- */
-export function predictHybrid(
-  symbol: string,
-  priceData: PricePoint[],
-  fundamentals?: YahooFundamentals | null,
-  currentPrice?: number,
-  recordForLearning?: boolean,
-): any {
-  // This is a synchronous shim — the real v2 is async.
-  // Routes that import this should be updated to use predictHybridV2.
-  console.warn(`[DEPRECATED] predictHybrid() called for ${symbol} — migrate to predictHybridV2()`);
-  const techResult = predictStock(symbol, priceData);
   return {
-    ...techResult,
-    fundamentalScore: null,
-    fundamentalAvailable: false,
-    aiInsight: `[DEPRECATED] Përdor predictHybridV2() për ${symbol}`,
-    totalScore: techResult.score,
-    hybridConfidence: techResult.confidence,
+    topPicks: sorted.filter(r => r.direction === 'BUY' || r.direction === 'STRONG_BUY').slice(0, 20),
+    topShorts: [...results].sort((a, b) => a.rawScore - b.rawScore).filter(r => r.direction === 'SELL' || r.direction === 'STRONG_SELL').slice(0, 10),
+    mostConfident: [...results].sort((a, b) => b.hybridConfidence - a.hybridConfidence).slice(0, 15),
+    allResults: sorted,
   };
 }
 
-export function rankHybridStocks(results: any[]): any {
-  return rankHybridStocksV2(results as HybridPredictionResultV2[]);
-}
+// ─── Legacy compat ──────────────────────────────────────────
 
-export function rankByTotalScore(results: any[]): any[] {
-  return [...results].sort((a: any, b: any) => (b.totalScore ?? b.rawScore ?? 0) - (a.totalScore ?? a.rawScore ?? 0));
+/** @deprecated Use predictHybridV2 */
+export function predictHybrid(symbol: string, priceData: PricePoint[], fundamentals?: YahooFundamentals | null, currentPrice?: number, _recordForLearning?: boolean): any {
+  console.warn(`[DEPRECATED] predictHybrid() for ${symbol}`);
+  const techResult = predictStock(symbol, priceData);
+  return { ...techResult, totalScore: techResult.score, hybridConfidence: techResult.confidence };
 }
+export function rankHybridStocks(results: any[]) { return rankHybridStocksV2(results); }
+export function rankByTotalScore(results: any[]) { return [...results].sort((a: any, b: any) => (b.totalScore ?? b.rawScore ?? 0) - (a.totalScore ?? a.rawScore ?? 0)); }

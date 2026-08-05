@@ -178,12 +178,25 @@ export async function GET() {
           const multiEvent = checkMultiEventRisk(ticker);
           const eventScore = multiEvent.compositeRiskScore;
 
-          // 5-factor combination (spillover skipped for scan speed)
+          // 5-factor combination with spillover PROXY from regime drivers
           const techNorm = Math.max(-100, Math.min(100, baseResult.score));
           const fundNorm = Math.max(-100, Math.min(100, fundamentalScore * 3));
           const eventNorm = Math.max(-100, Math.min(100, eventScore));
           const regimeNorm = regimeAssessment ? Math.max(-100, Math.min(100, regimeAssessment.regimeScore)) : 0;
-          const spillNorm = 0; // skipped for scan
+
+          // Spillover proxy from regime context (no per-ticker API call needed)
+          let spillProxy = 0;
+          if (regimeAssessment) {
+            const d = regimeAssessment.drivers;
+            const spySig = d.spy1d > 0.5 ? 1 : d.spy1d < -0.5 ? -1 : 0;
+            const qqqSig = d.qqq1d > 0.5 ? 1 : d.qqq1d < -0.5 ? -1 : 0;
+            const smhSig = d.smh1d > 0.5 ? 1 : d.smh1d < -0.5 ? -1 : 0;
+            const kospiSig = d.kospi1d > 0.5 ? 1 : d.kospi1d < -0.5 ? -1 : 0;
+            const vixPen = d.vixLevel > 25 ? -10 : d.vixLevel > 20 ? -5 : 0;
+            const sigs = [spySig, qqqSig, smhSig, kospiSig].filter(s => s !== 0);
+            spillProxy = sigs.length > 0 ? Math.max(-100, Math.min(100, Math.round((sigs.reduce((a, b) => a + b, 0) / sigs.length) * 25 + vixPen))) : 0;
+          }
+          const spillNorm = spillProxy;
 
           const techW = hw?.technical ?? 0.55;
           const fundW = hw?.fundamental ?? 0.05;
@@ -212,9 +225,25 @@ export async function GET() {
             direction = 'NO_TRADE';
           }
 
+          // 5-factor confluence confidence
+          const agreeCount = [fundNorm, spillNorm, regimeNorm].filter(s => {
+            if (s === 0) return false;
+            return (s > 0) === (techNorm > 0);
+          }).length;
+          const conflictCount = [fundNorm, spillNorm, regimeNorm].filter(s => {
+            if (s === 0) return false;
+            return (s > 0) !== (techNorm > 0) && Math.abs(s) > 20;
+          }).length;
+          let hybridConf = baseResult.confidence + agreeCount * 5 - conflictCount * 8;
+          if (regimeAssessment?.isVolatile) hybridConf -= 5;
+          if (multiEvent.hasCriticalEvent) hybridConf -= 15;
+          else if (multiEvent.events.length > 0) hybridConf -= 5;
+          hybridConf = Math.max(10, Math.min(98, Math.round(hybridConf)));
+
           // Build reasons
           const reasons: string[] = [];
           reasons.push(`Teknika: ${techNorm > 0 ? '+' : ''}${techNorm.toFixed(1)}`);
+          if (spillNorm !== 0) reasons.push(`Spillover (proxy): ${spillNorm > 0 ? '+' : ''}${spillNorm.toFixed(1)}`);
           if (fundNorm !== 0) reasons.push(`Fundamentet: ${fundNorm > 0 ? '+' : ''}${fundNorm.toFixed(1)}`);
           if (regimeAssessment && regimeAssessment.regime !== 'RANGE_NEUTRAL') {
             reasons.push(`Regjimi: ${regimeAssessment.regime}`);
@@ -228,16 +257,17 @@ export async function GET() {
             { factorName: 'technicalAggregate', factorType: 'technical', score: techNorm, weight: techW, signal: techNorm > 0 ? 'BULLISH' : 'BEARISH' },
             { factorName: 'fundamentalAggregate', factorType: 'fundamental', score: fundNorm, weight: fundW, signal: fundNorm > 0 ? 'BULLISH' : fundNorm < 0 ? 'BEARISH' : 'NEUTRAL' },
             { factorName: 'regimeAggregate', factorType: 'regime', score: regimeNorm, weight: regimeW, signal: regimeAssessment?.isBullish ? 'BULLISH' : regimeAssessment?.isBearish ? 'BEARISH' : 'NEUTRAL' },
+            { factorName: 'spilloverAggregate', factorType: 'spillover', score: spillNorm, weight: spillW, signal: spillNorm > 10 ? 'BULLISH' : spillNorm < -10 ? 'BEARISH' : 'NEUTRAL', description: 'Spillover (proxy from regime)' },
             { factorName: 'eventRiskAggregate', factorType: 'event', score: eventNorm, weight: eventW, signal: multiEvent.worstEvent.severity },
           ];
 
-          // Save with full factors
+          // Save with full factors + 5-factor confidence
           savePrediction({
             symbol: ticker, sector, horizonDays: 1,
             modelVersion: 'predict-v5-5factor',
             entryPrice: lastClose,
             rawScore: combined,
-            calibratedConfidence: baseResult.confidence,
+            calibratedConfidence: hybridConf,
             finalDecision: direction,
             factors,
             regime: regimeAssessment?.regime,

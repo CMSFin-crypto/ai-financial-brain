@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchHistoricalData, getRealFundamentals, getRealPrice } from '@/lib/alpha-vantage';
 import { predictHybridV2 } from '@/lib/hybrid-prediction';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET(
   request: NextRequest,
@@ -17,16 +17,17 @@ export async function GET(
     }
 
     const horizonParam = request.nextUrl.searchParams.get('horizon');
-    const horizonDays = horizonParam ? parseInt(horizonParam, 10) : 1;
-    const validHorizon = [1, 5, 20].includes(horizonDays) ? horizonDays : 1;
+    const sectorParam = request.nextUrl.searchParams.get('sector');
+    // Default: all 3 horizons. ?horizon=5 → only 5D
+    const horizons = horizonParam
+      ? [parseInt(horizonParam, 10)].filter(h => [1, 5, 20].includes(h))
+      : [1, 5, 20];
 
-    // Fetch historical data (6 months)
     const historicalData = await fetchHistoricalData(ticker, '6mo');
     if (!historicalData || historicalData.length < 60) {
       return NextResponse.json({ error: 'Të dhëna të pamjaftueshme' }, { status: 404 });
     }
 
-    // Fetch current price and fundamentals in parallel
     const [priceResult, fundamentals] = await Promise.all([
       getRealPrice(ticker).catch(() => null),
       getRealFundamentals(ticker).catch(() => null),
@@ -34,9 +35,9 @@ export async function GET(
 
     const currentPrice = priceResult?.price || (historicalData[historicalData.length - 1]?.close ?? 0);
 
-    // Use v2 5-factor prediction
     const result = await predictHybridV2(ticker, historicalData, fundamentals, currentPrice, {
-      horizonDays: validHorizon,
+      horizons,
+      sector: sectorParam ?? undefined,
       saveToDb: true,
     });
 
