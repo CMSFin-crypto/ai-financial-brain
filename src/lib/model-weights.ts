@@ -1,6 +1,13 @@
 // ============================================================
-// Model Weights — Dynamic weight management from DB
-// Weights are only updated when sample size >= minSample
+// Model Weights — 5-Factor Horizon-Specific Weight Management
+//
+// Weights per horizon:
+//   1D:  technical 55%, spillover 20%, regime 10%, event 10%, fundamental 5%
+//   5D:  technical 40%, spillover 20%, regime 15%, event 10%, fundamental 15%
+//   20D: fundamental 35%, regime 20%, technical 20%, spillover 15%, event 10%
+//
+// Weights are learned from DB (when sampleSize >= minSample)
+// and fall back to defaults otherwise.
 // ============================================================
 
 import prisma from './prisma';
@@ -14,7 +21,24 @@ export interface WeightResult {
   accuracy: number;
 }
 
-// Default technical weights
+// ─── Horizon-specific type weights (the user's exact spec) ──
+
+export interface HorizonWeights {
+  technical: number;
+  spillover: number;
+  regime: number;
+  event: number;
+  fundamental: number;
+}
+
+export const HORIZON_WEIGHTS: Record<number, HorizonWeights> = {
+  1:  { technical: 0.55, spillover: 0.20, regime: 0.10, event: 0.10, fundamental: 0.05 },
+  5:  { technical: 0.40, spillover: 0.20, regime: 0.15, event: 0.10, fundamental: 0.15 },
+  20: { technical: 0.20, spillover: 0.15, regime: 0.20, event: 0.10, fundamental: 0.35 },
+};
+
+// ─── Default per-indicator weights (within each factor type) ──
+
 const DEFAULT_TECHNICAL_WEIGHTS: Record<string, number> = {
   rsi: 0.10, macdHistogram: 0.08, bollinger: 0.08, maTrend: 0.12,
   stochastic: 0.06, adx: 0.06, atr: 0.03, roc: 0.08,
@@ -22,25 +46,31 @@ const DEFAULT_TECHNICAL_WEIGHTS: Record<string, number> = {
   divergence: 0.06, vwap: 0.04, pattern: 0.05,
 };
 
-// Default fundamental weights
 const DEFAULT_FUNDAMENTAL_WEIGHTS: Record<string, number> = {
   valuation: 0.15, growth: 0.25, profitability: 0.15,
   analystSentiment: 0.20, debtHealth: 0.10, momentum: 0.15,
 };
 
-// Horizon-specific type weights
-const HORIZON_TYPE_WEIGHTS: Record<number, { technical: number; fundamental: number; event: number }> = {
-  1:  { technical: 0.75, fundamental: 0.15, event: 0.10 },
-  5:  { technical: 0.50, fundamental: 0.30, event: 0.20 },
-  20: { technical: 0.25, fundamental: 0.55, event: 0.20 },
+const DEFAULT_SPILLOVER_WEIGHTS: Record<string, number> = {
+  kospi1d: 0.10, kospi2d: 0.08, nikkei1d: 0.08, hsi1d: 0.06,
+  smh1d: 0.12, qqq1d: 0.10, vix1d: 0.10, spy1d: 0.10,
+  sectorEtf1d: 0.08, riskAlignment: 0.10, asiaDeceleration: 0.08,
+};
+
+const DEFAULT_REGIME_WEIGHTS: Record<string, number> = {
+  regimeScore: 0.40, transitionRisk: 0.25, vixLevel: 0.15,
+  spyTrend: 0.10, breadth: 0.10,
+};
+
+const DEFAULT_EVENT_WEIGHTS: Record<string, number> = {
+  earningsProximity: 0.35, fedProximity: 0.30,
+  cpiProximity: 0.20, geopoliticalRisk: 0.15,
 };
 
 const MIN_SAMPLE = 30;
 
-/**
- * Seed default weights into DB if table is empty.
- * Called on app init or first prediction.
- */
+// ─── Seed defaults ──────────────────────────────────────────
+
 export async function seedDefaultWeights(): Promise<void> {
   try {
     const existing = await prisma.modelWeight.count();
@@ -49,86 +79,101 @@ export async function seedDefaultWeights(): Promise<void> {
     console.log('[WEIGHTS] Seeding default weights...');
     const entries = [
       ...Object.entries(DEFAULT_TECHNICAL_WEIGHTS).map(([name, weight]) => ({
-        factorName: name,
-        factorType: 'technical',
-        weight,
-        minSample: MIN_SAMPLE,
+        factorName: name, factorType: 'technical', weight, minSample: MIN_SAMPLE,
       })),
       ...Object.entries(DEFAULT_FUNDAMENTAL_WEIGHTS).map(([name, weight]) => ({
-        factorName: name,
-        factorType: 'fundamental',
-        weight,
-        minSample: MIN_SAMPLE,
+        factorName: name, factorType: 'fundamental', weight, minSample: MIN_SAMPLE,
+      })),
+      ...Object.entries(DEFAULT_SPILLOVER_WEIGHTS).map(([name, weight]) => ({
+        factorName: name, factorType: 'spillover', weight, minSample: MIN_SAMPLE,
+      })),
+      ...Object.entries(DEFAULT_REGIME_WEIGHTS).map(([name, weight]) => ({
+        factorName: name, factorType: 'regime', weight, minSample: MIN_SAMPLE,
+      })),
+      ...Object.entries(DEFAULT_EVENT_WEIGHTS).map(([name, weight]) => ({
+        factorName: name, factorType: 'event', weight, minSample: MIN_SAMPLE,
       })),
     ];
 
     await prisma.modelWeight.createMany({ data: entries });
-    console.log(`[WEIGHTS] Seeded ${entries.length} default weights`);
+    console.log(`[WEIGHTS] Seeded ${entries.length} default weights across 5 factor types`);
   } catch (err) {
     console.error('[WEIGHTS] Seed failed:', err);
   }
 }
 
-/**
- * Get current weights for a given horizon.
- * Returns normalized weights for technical and fundamental factors.
- */
-export async function getModelWeights(horizonDays: number = 1): Promise<{
+// ─── Get weights for a horizon ─────────────────────────────
+
+export interface ModelWeightsResult {
+  horizonWeights: HorizonWeights;
   technical: Record<string, number>;
   fundamental: Record<string, number>;
-  horizonRatios: { technical: number; fundamental: number; event: number };
-}> {
+  spillover: Record<string, number>;
+  regime: Record<string, number>;
+  event: Record<string, number>;
+}
+
+export async function getModelWeights(horizonDays: number = 1): Promise<ModelWeightsResult> {
   try {
     const dbWeights = await prisma.modelWeight.findMany();
+    const hw = HORIZON_WEIGHTS[horizonDays] ?? HORIZON_WEIGHTS[1];
 
     if (dbWeights.length === 0) {
-      // Return defaults without DB
-      const ratios = HORIZON_TYPE_WEIGHTS[horizonDays] || HORIZON_TYPE_WEIGHTS[1];
-      return { technical: DEFAULT_TECHNICAL_WEIGHTS, fundamental: DEFAULT_FUNDAMENTAL_WEIGHTS, horizonRatios: ratios };
+      return {
+        horizonWeights: hw,
+        technical: { ...DEFAULT_TECHNICAL_WEIGHTS },
+        fundamental: { ...DEFAULT_FUNDAMENTAL_WEIGHTS },
+        spillover: { ...DEFAULT_SPILLOVER_WEIGHTS },
+        regime: { ...DEFAULT_REGIME_WEIGHTS },
+        event: { ...DEFAULT_EVENT_WEIGHTS },
+      };
     }
 
-    // Build weight maps
-    const technical: Record<string, number> = {};
-    const fundamental: Record<string, number> = {};
-
-    for (const w of dbWeights) {
-      if (w.sampleSize < w.minSample) {
-        // Not enough data — use default
-        const def = w.factorType === 'technical' ? DEFAULT_TECHNICAL_WEIGHTS[w.factorName] : DEFAULT_FUNDAMENTAL_WEIGHTS[w.factorName];
-        if (def !== undefined) {
-          if (w.factorType === 'technical') technical[w.factorName] = def;
-          else fundamental[w.factorName] = def;
+    // Build per-type weight maps from DB, falling back to defaults
+    const buildMap = (type: string, defaults: Record<string, number>): Record<string, number> => {
+      const map: Record<string, number> = {};
+      const typeRows = dbWeights.filter(w => w.factorType === type);
+      for (const [name, def] of Object.entries(defaults)) {
+        const row = typeRows.find(r => r.factorName === name);
+        if (row && row.sampleSize >= row.minSample) {
+          map[name] = row.weight;
+        } else {
+          map[name] = def;
         }
-      } else {
-        // Use learned weight
-        if (w.factorType === 'technical') technical[w.factorName] = w.weight;
-        else fundamental[w.factorName] = w.weight;
       }
-    }
+      normalizeRecord(map);
+      return map;
+    };
 
-    // Normalize each type to sum to 1
-    normalizeRecord(technical);
-    normalizeRecord(fundamental);
-
-    const ratios = HORIZON_TYPE_WEIGHTS[horizonDays] || HORIZON_TYPE_WEIGHTS[1];
-    return { technical, fundamental, horizonRatios: ratios };
+    return {
+      horizonWeights: hw,
+      technical: buildMap('technical', DEFAULT_TECHNICAL_WEIGHTS),
+      fundamental: buildMap('fundamental', DEFAULT_FUNDAMENTAL_WEIGHTS),
+      spillover: buildMap('spillover', DEFAULT_SPILLOVER_WEIGHTS),
+      regime: buildMap('regime', DEFAULT_REGIME_WEIGHTS),
+      event: buildMap('event', DEFAULT_EVENT_WEIGHTS),
+    };
   } catch (err) {
     console.error('[WEIGHTS] getModelWeights failed:', err);
-    const ratios = HORIZON_TYPE_WEIGHTS[horizonDays] || HORIZON_TYPE_WEIGHTS[1];
-    return { technical: DEFAULT_TECHNICAL_WEIGHTS, fundamental: DEFAULT_FUNDAMENTAL_WEIGHTS, horizonRatios: ratios };
+    const hw = HORIZON_WEIGHTS[horizonDays] ?? HORIZON_WEIGHTS[1];
+    return {
+      horizonWeights: hw,
+      technical: { ...DEFAULT_TECHNICAL_WEIGHTS },
+      fundamental: { ...DEFAULT_FUNDAMENTAL_WEIGHTS },
+      spillover: { ...DEFAULT_SPILLOVER_WEIGHTS },
+      regime: { ...DEFAULT_REGIME_WEIGHTS },
+      event: { ...DEFAULT_EVENT_WEIGHTS },
+    };
   }
 }
 
-/**
- * Update weights after evaluating predictions.
- * Only updates factors that have sampleSize >= minSample.
- */
+// ─── Update weights after evaluation ───────────────────────
+
 export async function updateWeightsAfterEvaluation(): Promise<{
   updated: number;
   details: { factorName: string; oldWeight: number; newWeight: number; accuracy: number }[];
 }> {
   try {
-    // Get all evaluated predictions with their factors
     const evaluatedPredictions = await prisma.prediction.findMany({
       where: { wasCorrect: { not: null } },
       include: { factors: true },
@@ -140,8 +185,7 @@ export async function updateWeightsAfterEvaluation(): Promise<{
       return { updated: 0, details: [] };
     }
 
-    // Per-factor accuracy tracking
-    const tracker: Record<string, { sameSide: number; total: number; sameSideWeighted: number }> = {};
+    const tracker: Record<string, { sameSide: number; total: number }> = {};
 
     for (const pred of evaluatedPredictions) {
       const actualReturn = pred.actualReturn ?? 0;
@@ -150,19 +194,17 @@ export async function updateWeightsAfterEvaluation(): Promise<{
 
       for (const factor of pred.factors) {
         if (!tracker[factor.factorName]) {
-          tracker[factor.factorName] = { sameSide: 0, total: 0, sameSideWeighted: 0 };
+          tracker[factor.factorName] = { sameSide: 0, total: 0 };
         }
         tracker[factor.factorName].total++;
 
         const factorBullish = factor.score > 0;
         if ((factorBullish && actualUp) || (!factorBullish && actualDown)) {
           tracker[factor.factorName].sameSide++;
-          tracker[factor.factorName].sameSideWeighted += factor.weight;
         }
       }
     }
 
-    // Update weights in DB
     const details: { factorName: string; oldWeight: number; newWeight: number; accuracy: number }[] = [];
     let updated = 0;
 
@@ -174,8 +216,6 @@ export async function updateWeightsAfterEvaluation(): Promise<{
       if (!currentRow) continue;
 
       const oldWeight = currentRow.weight;
-
-      // Only update if accuracy data is meaningful
       const newWeight = Math.round(accuracy * 1000) / 1000;
 
       await prisma.modelWeight.update({
@@ -193,7 +233,8 @@ export async function updateWeightsAfterEvaluation(): Promise<{
     }
 
     // Normalize weights per factor type
-    for (const type of ['technical', 'fundamental']) {
+    const factorTypes = ['technical', 'fundamental', 'spillover', 'regime', 'event'];
+    for (const type of factorTypes) {
       const rows = await prisma.modelWeight.findMany({ where: { factorType: type } });
       const sum = rows.reduce((s, r) => s + r.weight, 0);
       if (sum > 0) {
@@ -212,6 +253,8 @@ export async function updateWeightsAfterEvaluation(): Promise<{
     return { updated: 0, details: [] };
   }
 }
+
+// ─── Helpers ────────────────────────────────────────────────
 
 function normalizeRecord(record: Record<string, number>): void {
   const sum = Object.values(record).reduce((a, b) => a + b, 0);

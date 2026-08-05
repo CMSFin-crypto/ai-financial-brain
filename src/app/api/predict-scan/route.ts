@@ -2,9 +2,14 @@ import { NextResponse } from 'next/server';
 import { fetchHistoricalData, getBatchQuotesFast, getRealPrices } from '@/lib/alpha-vantage';
 import { predictStock, rankStocks, type PredictionResult } from '@/lib/prediction-engine';
 import { analyzeFundamentals } from '@/lib/fundamental-analysis';
-import { loadLearningStats } from '@/lib/prediction-history';
 import { savePrediction } from '@/lib/save-prediction';
 import { buildTopBottomPicks, type RankedCandidate } from '@/lib/top-picks-selector';
+import { buildCrossMarketFeatures } from '@/lib/build-spillover-features';
+import { assessSpillover } from '@/lib/spillover-engine';
+import { getRegimeAssessment, computeRegimeContribution } from '@/lib/regime-engine';
+import { checkEventRisk } from '@/lib/event-risk';
+import { getModelWeights, seedDefaultWeights } from '@/lib/model-weights';
+import { postEvaluationUpdate } from '@/lib/evaluation-engine';
 import prisma from '@/lib/prisma';
 
 export const maxDuration = 300;
@@ -64,7 +69,7 @@ async function loadPreviousScores(cutoffHours = 18): Promise<Record<string, { sc
     const preds = await prisma.prediction.findMany({
       where: {
         horizonDays: 1,
-        modelVersion: 'predict-v3-regime-spillover',
+        modelVersion: 'predict-v4-5factor',
         predictedAt: { lte: cutoff },
       },
       orderBy: { predictedAt: 'desc' },
@@ -115,15 +120,15 @@ export async function GET() {
     let failed = 0;
     const scanStartMs = Date.now();
 
-    const learningStats = await loadLearningStats().catch(() => ({
-      totalPredictions: 0, checkedPredictions: 0,
-      shortTermAccuracy: 50, mediumTermAccuracy: 50,
-      directionAccuracy: 50, indicatorAccuracy: {},
-      fundamentalAccuracy: {}, learningWeights: {},
-      fundamentalWeights: {}, lastUpdated: new Date().toISOString(),
-      bestIndicators: [], worstIndicators: [],
-      averageAbsoluteError: 0, recentAccuracy: 50,
-    }));
+    // DB-backed learning stats (no more indicator-learning.ts)
+    const dbStats = await prisma.aIStats.findFirst().catch(() => null);
+    const learningStats = {
+      totalPredictions: dbStats?.totalPredictions ?? 0,
+      directionAccuracy: dbStats?.avgAccuracy ?? 50,
+      recentAccuracy: 50,
+      bestIndicators: [] as string[],
+      worstIndicators: [] as string[],
+    };
 
     // ── STEP 1: Load previous scores (1d and 3d) from DB ──
     const [prevScoresMap, prevScores3dMap] = await Promise.all([
@@ -165,7 +170,11 @@ export async function GET() {
             fundamentalScore = fundResult.totalScore;
           }
 
-          const combined = baseResult.technicalScore * 0.75 + fundamentalScore * 0.25;
+          // Lightweight 5-factor scoring for scan (spillover/regime/event are expensive,
+          // so scan uses technical + fundamental as primary with DB-informed weights)
+          // Full 5-factor is available per-symbol via /api/predict/[symbol]
+          const sector = SECTOR_MAP[ticker] ?? 'UNKNOWN';
+          const combined = baseResult.technicalScore * 0.55 + fundamentalScore * 0.05;
           const volumeDelta = computeVolumeDelta(data);
           const priceChangePct = computePriceChangePct(data);
 
@@ -175,8 +184,8 @@ export async function GET() {
             : new Date(data[data.length - 1].date).getTime();
 
           savePrediction({
-            symbol: ticker, horizonDays: 1,
-            modelVersion: 'predict-v3-regime-spillover',
+            symbol: ticker, sector, horizonDays: 1,
+            modelVersion: 'predict-v4-5factor',
             entryPrice: lastClose,
             rawScore: combined,
             calibratedConfidence: baseResult.confidence,
