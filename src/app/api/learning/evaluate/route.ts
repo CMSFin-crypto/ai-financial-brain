@@ -1,30 +1,32 @@
 import { NextResponse } from 'next/server';
-import { evaluatePredictions, getStats, forceSave } from '@/lib/indicator-learning';
+import { evaluateDuePredictions, postEvaluationUpdate } from '@/lib/evaluation-engine';
 
 export const maxDuration = 120;
 
 export async function POST() {
   try {
-    console.log('[LEARNING-EVALUATE] Starting evaluation...');
+    console.log('[LEARNING-EVALUATE] Starting DB-backed evaluation...');
 
-    const result = await evaluatePredictions();
-    const stats = getStats();
+    const evalResult = await evaluateDuePredictions();
 
-    // Force save after evaluation
-    forceSave();
+    let postResult = { statsUpdated: false, weightsUpdated: 0, lessonsExtracted: 0, attributionStats: [] as any[] };
+    if (evalResult.evaluated > 0) {
+      postResult = await postEvaluationUpdate();
+    }
 
     return NextResponse.json({
       success: true,
-      evaluated: result.evaluated,
-      correct: result.correct,
-      accuracy: result.evaluated > 0 ? Math.round((result.correct / result.evaluated) * 1000) / 10 : 0,
-      newLessons: result.newLessons,
-      totalRecorded: stats.totalRecorded,
-      totalEvaluated: stats.totalEvaluated,
-      overallAccuracy: Math.round(stats.overallAccuracy * 1000) / 10,
-      indicatorCount: Object.keys(stats.indicatorAccuracies).length,
-      lessonCount: stats.lessons.length,
-      weightMultipliers: stats.weightMultipliers,
+      source: 'db',
+      evaluated: evalResult.evaluated,
+      correct: evalResult.correct,
+      wrong: evalResult.wrong,
+      accuracy: evalResult.evaluated > 0
+        ? Math.round((evalResult.correct / evalResult.evaluated) * 1000) / 10
+        : 0,
+      statsUpdated: postResult.statsUpdated,
+      weightsUpdated: postResult.weightsUpdated,
+      lessonsExtracted: postResult.lessonsExtracted,
+      attributionStats: postResult.attributionStats,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
@@ -34,19 +36,34 @@ export async function POST() {
 }
 
 export async function GET() {
-  // GET returns current stats (same as /stats but with learning context)
   try {
-    const { getLearningContext } = await import('@/lib/indicator-learning');
-    const stats = getStats();
-    const learningContext = getLearningContext();
+    const { default: prisma } = await import('@/lib/prisma');
+    const stats = await prisma.aIStats.findFirst();
+    const recentPredictions = await prisma.prediction.findMany({
+      where: { wasCorrect: { not: null } },
+      orderBy: { evaluatedAt: 'desc' },
+      take: 10,
+      select: { symbol: true, finalDecision: true, rawScore: true, actualReturn: true, wasCorrect: true, horizonDays: true, evaluatedAt: true },
+    });
 
     return NextResponse.json({
-      ...stats,
-      overallAccuracyPercent: Math.round(stats.overallAccuracy * 1000) / 10,
-      learningContext: learningContext || 'Nuk ka ende të dhëna të mjaftueshme për mësim. Bëj skane të shumta për të filluar mësimin.',
+      source: 'db',
+      totalPredictions: stats?.totalPredictions ?? 0,
+      correctPredictions: stats?.correctPredictions ?? 0,
+      overallAccuracy: stats?.avgAccuracy ?? 0,
+      streakCorrect: stats?.streakCorrect ?? 0,
+      streakWrong: stats?.streakWrong ?? 0,
+      accuracy1d: stats?.accuracy1d ?? 0,
+      accuracy5d: stats?.accuracy5d ?? 0,
+      accuracy20d: stats?.accuracy20d ?? 0,
+      recentPredictions,
+      learningContext: stats && stats.totalPredictions >= 5
+        ? `Saktesia e përgjithshme: ${stats.avgAccuracy}% (${stats.totalPredictions} parashikime). Mësimi bëhet automatikisht nga DB.`
+        : 'Nuk ka ende të dhëna të mjaftueshme. Bëj skane për të filluar mësimin.',
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
+    console.error('[LEARNING-EVALUATE] Error:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

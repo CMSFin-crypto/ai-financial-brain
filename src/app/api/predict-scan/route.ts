@@ -4,12 +4,10 @@ import { predictStock, rankStocks, type PredictionResult } from '@/lib/predictio
 import { analyzeFundamentals } from '@/lib/fundamental-analysis';
 import { savePrediction } from '@/lib/save-prediction';
 import { buildTopBottomPicks, type RankedCandidate } from '@/lib/top-picks-selector';
-import { buildCrossMarketFeatures } from '@/lib/build-spillover-features';
-import { assessSpillover } from '@/lib/spillover-engine';
-import { getRegimeAssessment, computeRegimeContribution } from '@/lib/regime-engine';
-import { checkEventRisk } from '@/lib/event-risk';
+import { getRegimeAssessment } from '@/lib/regime-engine';
+import { checkMultiEventRisk } from '@/lib/event-risk';
 import { getModelWeights, seedDefaultWeights } from '@/lib/model-weights';
-import { postEvaluationUpdate } from '@/lib/evaluation-engine';
+import { evaluateDuePredictions, postEvaluationUpdate } from '@/lib/evaluation-engine';
 import prisma from '@/lib/prisma';
 
 export const maxDuration = 300;
@@ -61,33 +59,26 @@ const SECTOR_MAP: Record<string, string> = {
 
 const UNIQUE_TICKERS = [...new Set(ALL_TICKERS)];
 
-// ─── Helper: load previous day's scores (cutoff 18h for real 1d delta) ─
+// ─── Helpers ──
+
 async function loadPreviousScores(cutoffHours = 18): Promise<Record<string, { score: number; predictedAt: Date }>> {
   try {
     const cutoff = new Date(Date.now() - cutoffHours * 60 * 60 * 1000);
-
     const preds = await prisma.prediction.findMany({
-      where: {
-        horizonDays: 1,
-        modelVersion: 'predict-v4-5factor',
-        predictedAt: { lte: cutoff },
-      },
+      where: { horizonDays: 1, modelVersion: 'predict-v5-5factor', predictedAt: { lte: cutoff } },
       orderBy: { predictedAt: 'desc' },
       select: { symbol: true, rawScore: true, predictedAt: true },
       take: 1000,
     });
-
     const bySymbol = new Map<string, { score: number; predictedAt: Date }>();
     for (const p of preds) {
       if (p.rawScore != null && !bySymbol.has(p.symbol)) {
         bySymbol.set(p.symbol, { score: p.rawScore, predictedAt: p.predictedAt });
       }
     }
-
-    console.log(`[SCAN] Loaded ${cutoffHours}h-ago scores for ${bySymbol.size} symbols from DB`);
+    console.log(`[SCAN] Loaded ${cutoffHours}h-ago scores for ${bySymbol.size} symbols`);
     return Object.fromEntries(bySymbol);
   } catch (err) {
-    console.warn('[SCAN] Failed to load previous scores from DB:', err);
     return {};
   }
 }
@@ -114,37 +105,50 @@ export async function GET() {
       _ticker?: string; _lastClose?: number;
       _dataTimestamp?: number; _volumeDelta?: number;
       _priceChangePct?: number; _liveChangePct?: number; _liveSource?: string;
+      _sector?: string; _topReasons?: string[]; _eventSummary?: string;
+      _regime?: string;
     }> = [];
     const errors: string[] = [];
     let fetched = 0;
     let failed = 0;
     const scanStartMs = Date.now();
 
-    // DB-backed learning stats (no more indicator-learning.ts)
-    const dbStats = await prisma.aIStats.findFirst().catch(() => null);
-    const learningStats = {
-      totalPredictions: dbStats?.totalPredictions ?? 0,
-      directionAccuracy: dbStats?.avgAccuracy ?? 50,
-      recentAccuracy: 50,
-      bestIndicators: [] as string[],
-      worstIndicators: [] as string[],
-    };
+    // ── STEP 0: Auto-evaluate past predictions (DB-backed) ──
+    console.log('[SCAN] Step 0: Auto-evaluating past predictions...');
+    try {
+      const evalResult = await evaluateDuePredictions();
+      if (evalResult.evaluated > 0) {
+        console.log(`[SCAN] Evaluated ${evalResult.evaluated} (${evalResult.correct} correct). Post-eval...`);
+        await postEvaluationUpdate().catch(() => {});
+      }
+    } catch (err: any) {
+      console.log(`[SCAN] Evaluation skipped: ${err.message}`);
+    }
 
-    // ── STEP 1: Load previous scores (1d and 3d) from DB ──
+    // ── STEP 1: Get regime + weights (shared across all tickers) ──
+    console.log('[SCAN] Step 1: Loading regime + weights...');
+    const [regimeAssessment, weights] = await Promise.all([
+      getRegimeAssessment().catch(() => null),
+      getModelWeights(1).catch(() => null),
+    ]);
+    const hw = weights?.horizonWeights;
+
+    // ── STEP 2: Load previous scores ──
     const [prevScoresMap, prevScores3dMap] = await Promise.all([
       loadPreviousScores(18),
       loadPreviousScores(72),
     ]);
 
-    // ── STEP 2: Fetch live prices (force refresh) + fundamentals ──
-    console.log('[SCAN] Fetching live prices (force refresh)...');
+    // ── STEP 3: Fetch live prices + fundamentals ──
+    console.log('[SCAN] Step 3: Fetching live prices + fundamentals...');
     const [livePrices, allFundamentals] = await Promise.all([
       getRealPrices(UNIQUE_TICKERS, { forceRefresh: true }),
       getBatchQuotesFast(UNIQUE_TICKERS, { forceRefresh: true }),
     ]);
-    console.log(`[SCAN] Live prices: ${Object.keys(livePrices).length}/${UNIQUE_TICKERS.length}, Fundamentals: ${Object.keys(allFundamentals).length}/${UNIQUE_TICKERS.length}`);
+    console.log(`[SCAN] Live: ${Object.keys(livePrices).length}, Fund: ${Object.keys(allFundamentals).length}`);
 
-    // ── STEP 3: Scan tickers in batches ──
+    // ── STEP 4: Scan with 5-factor scoring ──
+    console.log('[SCAN] Step 4: Scanning with 5-factor engine...');
     const BATCH_SIZE = 5;
     for (let i = 0; i < UNIQUE_TICKERS.length; i += BATCH_SIZE) {
       const batch = UNIQUE_TICKERS.slice(i, i + BATCH_SIZE);
@@ -152,55 +156,118 @@ export async function GET() {
       const batchResults = await Promise.allSettled(
         batch.map(async (ticker) => {
           const data = await fetchHistoricalData(ticker, '6mo', { forceRefresh: true });
-          if (!data || data.length < 60) {
-            throw new Error('Insufficient data');
-          }
+          if (!data || data.length < 60) throw new Error('Insufficient data');
 
           const baseResult = predictStock(ticker, data);
           const historicalLastClose = data[data.length - 1].close;
-
-          // Use live price when available, fallback to historical
           const live = livePrices[ticker];
           const lastClose = live?.price && live.price > 0 ? live.price : historicalLastClose;
+          const sector = SECTOR_MAP[ticker] ?? 'UNKNOWN';
 
+          // Fundamental
           const fund = allFundamentals[ticker];
           let fundamentalScore = 0;
           if (fund) {
-            const fundResult = analyzeFundamentals(ticker, fund);
-            fundamentalScore = fundResult.totalScore;
+            try {
+              const fundResult = analyzeFundamentals(ticker, fund);
+              fundamentalScore = fundResult.totalScore;
+            } catch { /* skip */ }
           }
 
-          // Lightweight 5-factor scoring for scan (spillover/regime/event are expensive,
-          // so scan uses technical + fundamental as primary with DB-informed weights)
-          // Full 5-factor is available per-symbol via /api/predict/[symbol]
-          const sector = SECTOR_MAP[ticker] ?? 'UNKNOWN';
-          const combined = baseResult.technicalScore * 0.55 + fundamentalScore * 0.05;
-          const volumeDelta = computeVolumeDelta(data);
-          const priceChangePct = computePriceChangePct(data);
+          // Event risk (per-ticker, cheap)
+          const multiEvent = checkMultiEventRisk(ticker);
+          const eventScore = multiEvent.compositeRiskScore;
 
-          // Prefer live quote timestamp; fallback to historical date
-          const dataTimestamp = live?.timestamp
-            ? new Date(live.timestamp).getTime()
-            : new Date(data[data.length - 1].date).getTime();
+          // 5-factor combination (spillover skipped for scan speed)
+          const techNorm = Math.max(-100, Math.min(100, baseResult.score));
+          const fundNorm = Math.max(-100, Math.min(100, fundamentalScore * 3));
+          const eventNorm = Math.max(-100, Math.min(100, eventScore));
+          const regimeNorm = regimeAssessment ? Math.max(-100, Math.min(100, regimeAssessment.regimeScore)) : 0;
+          const spillNorm = 0; // skipped for scan
 
+          const techW = hw?.technical ?? 0.55;
+          const fundW = hw?.fundamental ?? 0.05;
+          const spillW = hw?.spillover ?? 0.20;
+          const regimeW = hw?.regime ?? 0.10;
+          const eventW = hw?.event ?? 0.10;
+
+          const combined = Math.round((
+            techNorm * techW +
+            fundNorm * fundW +
+            spillNorm * spillW +
+            regimeNorm * regimeW +
+            eventNorm * eventW
+          ) * 10) / 10;
+
+          // Decision
+          const absScore = Math.abs(combined);
+          let direction: 'BUY' | 'SELL' | 'HOLD' | 'NO_TRADE';
+          if (multiEvent.hasCriticalEvent && absScore < 40) {
+            direction = 'NO_TRADE';
+          } else if (absScore >= 25) {
+            direction = combined > 0 ? 'BUY' : 'SELL';
+          } else if (absScore >= 10) {
+            direction = 'HOLD';
+          } else {
+            direction = 'NO_TRADE';
+          }
+
+          // Build reasons
+          const reasons: string[] = [];
+          reasons.push(`Teknika: ${techNorm > 0 ? '+' : ''}${techNorm.toFixed(1)}`);
+          if (fundNorm !== 0) reasons.push(`Fundamentet: ${fundNorm > 0 ? '+' : ''}${fundNorm.toFixed(1)}`);
+          if (regimeAssessment && regimeAssessment.regime !== 'RANGE_NEUTRAL') {
+            reasons.push(`Regjimi: ${regimeAssessment.regime}`);
+          }
+          if (multiEvent.hasCriticalEvent) {
+            reasons.push(`Rrezik ngjarjeje: ${multiEvent.summary}`);
+          }
+
+          // Build factors for DB (lightweight for scan)
+          const factors = [
+            { factorName: 'technicalAggregate', factorType: 'technical', score: techNorm, weight: techW, signal: techNorm > 0 ? 'BULLISH' : 'BEARISH' },
+            { factorName: 'fundamentalAggregate', factorType: 'fundamental', score: fundNorm, weight: fundW, signal: fundNorm > 0 ? 'BULLISH' : fundNorm < 0 ? 'BEARISH' : 'NEUTRAL' },
+            { factorName: 'regimeAggregate', factorType: 'regime', score: regimeNorm, weight: regimeW, signal: regimeAssessment?.isBullish ? 'BULLISH' : regimeAssessment?.isBearish ? 'BEARISH' : 'NEUTRAL' },
+            { factorName: 'eventRiskAggregate', factorType: 'event', score: eventNorm, weight: eventW, signal: multiEvent.worstEvent.severity },
+          ];
+
+          // Save with full factors
           savePrediction({
             symbol: ticker, sector, horizonDays: 1,
-            modelVersion: 'predict-v4-5factor',
+            modelVersion: 'predict-v5-5factor',
             entryPrice: lastClose,
             rawScore: combined,
             calibratedConfidence: baseResult.confidence,
-            finalDecision: baseResult.direction === 'STRONG_SELL' || baseResult.direction === 'SELL' ? 'SELL'
-              : baseResult.direction === 'STRONG_BUY' || baseResult.direction === 'BUY' ? 'BUY' : 'HOLD',
-            factors: [],
+            finalDecision: direction,
+            factors,
+            regime: regimeAssessment?.regime,
+            regimeConfidence: regimeAssessment?.confidence,
+            transitionRisk: regimeAssessment?.transitionRisk,
+            marketSnapshot: regimeAssessment ? {
+              regime: regimeAssessment.regime,
+              regimeConfidence: regimeAssessment.confidence,
+              spyPrice: 0,
+              vixLevel: regimeAssessment.drivers.vixLevel,
+            } : undefined,
+            eventSnapshots: multiEvent.events.length > 0 ? multiEvent.events.map(e => ({
+              eventType: e.eventType,
+              daysUntil: e.daysUntil,
+              severity: e.severity,
+              description: e.description,
+            })) : undefined,
+            decisionReasons: reasons,
           }).catch(() => {});
+
+          const volumeDelta = computeVolumeDelta(data);
+          const priceChangePct = computePriceChangePct(data);
+          const dataTimestamp = live?.timestamp
+            ? new Date(live.timestamp).getTime()
+            : new Date(data[data.length - 1].date).getTime();
 
           return {
             ...baseResult,
             score: Math.round(combined * 100) / 100,
             combinedScore: Math.round(combined * 100) / 100,
-            fundamentalData: fundamentalScore !== 0 ? {
-              score: fundamentalScore, summary: '', scores: {},
-            } : null,
             _ticker: ticker,
             _lastClose: lastClose,
             _dataTimestamp: dataTimestamp,
@@ -208,6 +275,10 @@ export async function GET() {
             _priceChangePct: priceChangePct,
             _liveChangePct: live?.change ?? 0,
             _liveSource: live?.source ?? 'historical_fallback',
+            _sector: sector,
+            _topReasons: reasons.slice(0, 3),
+            _eventSummary: multiEvent.hasCriticalEvent ? multiEvent.summary : undefined,
+            _regime: regimeAssessment?.regime,
           };
         })
       );
@@ -230,7 +301,7 @@ export async function GET() {
 
     const ranked = rankStocks(results);
 
-    // ── STEP 4: Build candidates with REAL deltas, live prices, 3d history ──
+    // ── STEP 5: Build candidates ──
     const candidates: RankedCandidate[] = ranked.map((r) => {
       const ticker = (r as any)._ticker ?? '';
       const prev1d = prevScoresMap[ticker];
@@ -248,17 +319,16 @@ export async function GET() {
 
       return {
         symbol: ticker,
-        sector: SECTOR_MAP[ticker] ?? 'UNKNOWN',
+        sector: (r as any)._sector ?? SECTOR_MAP[ticker] ?? 'UNKNOWN',
         score: r.combinedScore ?? r.score ?? 0,
-        scoreDelta1d,
-        scoreDelta3d,
+        scoreDelta1d, scoreDelta3d,
         volumeDelta: (r as any)._volumeDelta,
         priceChangePct: (r as any)._liveChangePct ?? (r as any)._priceChangePct,
         quoteTimestamp: (r as any)._dataTimestamp ?? scanStartMs,
       };
     }).filter(c => c.symbol);
 
-    // ── STEP 5: Diversified top/bottom picks ──
+    // ── STEP 6: Top/Bottom picks ──
     const { top, bottom } = await buildTopBottomPicks(candidates, 5, 5);
 
     const rankedBySymbol = new Map<string, PredictionResult>();
@@ -269,6 +339,7 @@ export async function GET() {
 
     const cleanTop = top.map(t => {
       const base = rankedBySymbol.get(t.symbol);
+      const r = base as any;
       return {
         symbol: t.symbol, sector: t.sector, score: t.score,
         bullishRank: t.bullishRank, scoreDelta1d: t.scoreDelta1d, scoreDelta3d: t.scoreDelta3d,
@@ -276,11 +347,13 @@ export async function GET() {
         ageSec: Math.round(t.ageSec), topRepeat: t.topRepeat,
         freshnessPen: t.freshnessPen, noveltyPen: t.noveltyPenTop,
         confidence: base?.confidence ?? 0, direction: base?.direction ?? 'HOLD',
+        topReasons: r?._topReasons, eventSummary: r?._eventSummary, regime: r?._regime,
       };
     });
 
     const cleanBottom = bottom.map(b => {
       const base = rankedBySymbol.get(b.symbol);
+      const r = base as any;
       return {
         symbol: b.symbol, sector: b.sector, score: b.score,
         bearishRank: b.bearishRank, scoreDelta1d: b.scoreDelta1d, scoreDelta3d: b.scoreDelta3d,
@@ -288,11 +361,16 @@ export async function GET() {
         ageSec: Math.round(b.ageSec), bottomRepeat: b.bottomRepeat,
         freshnessPen: b.freshnessPen, noveltyPen: b.noveltyPenBottom,
         confidence: base?.confidence ?? 0, direction: base?.direction ?? 'HOLD',
+        topReasons: r?._topReasons, eventSummary: r?._eventSummary, regime: r?._regime,
       };
     });
 
+    // ── STEP 7: DB stats ──
+    const dbStats = await prisma.aIStats.findFirst().catch(() => null);
+
     return NextResponse.json({
       scannedAt: new Date().toISOString(),
+      modelVersion: 'predict-v5-5factor',
       total: UNIQUE_TICKERS.length, successful: fetched, failed,
       errors: errors.slice(0, 20),
       dataFreshness: {
@@ -300,17 +378,30 @@ export async function GET() {
         fundamentalsSource: 'static_json',
         historicalForcedRefresh: true,
       },
+      regime: regimeAssessment ? {
+        regime: regimeAssessment.regime,
+        confidence: regimeAssessment.confidence,
+        regimeScore: regimeAssessment.regimeScore,
+        isBullish: regimeAssessment.isBullish,
+        isBearish: regimeAssessment.isBearish,
+        allowLongs: regimeAssessment.allowLongs,
+        allowShorts: regimeAssessment.allowShorts,
+      } : null,
       learningStats: {
-        totalPredictions: learningStats.totalPredictions,
-        directionAccuracy: learningStats.directionAccuracy,
-        recentAccuracy: learningStats.recentAccuracy,
-        bestIndicators: learningStats.bestIndicators,
-        worstIndicators: learningStats.worstIndicators,
+        totalPredictions: dbStats?.totalPredictions ?? 0,
+        directionAccuracy: dbStats?.avgAccuracy ?? 50,
+        source: 'db',
       },
       topPicks: cleanTop, topShorts: cleanBottom,
-      mostConfident: [...ranked].sort((a, b) => b.confidence - a.confidence).slice(0, 10),
-      allResults: ranked.map((r) => {
-        const { _ticker, _lastClose, _dataTimestamp, _volumeDelta, _priceChangePct, _liveChangePct, _liveSource, ...rest } = r as any;
+      mostConfident: [...ranked].sort((a, b) => b.confidence - a.confidence).slice(0, 10).map((r: any) => ({
+        symbol: r._ticker, score: r.combinedScore ?? r.score,
+        direction: r.direction, confidence: r.confidence,
+        topReasons: r._topReasons, regime: r._regime,
+      })),
+      allResults: ranked.map((r: any) => {
+        const { _ticker, _lastClose, _dataTimestamp, _volumeDelta, _priceChangePct,
+                _liveChangePct, _liveSource, _sector, _topReasons, _eventSummary,
+                _regime, ...rest } = r;
         return rest as PredictionResult;
       }),
     });

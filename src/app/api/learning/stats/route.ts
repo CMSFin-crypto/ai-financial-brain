@@ -1,37 +1,68 @@
 import { NextResponse } from 'next/server';
-import { getStats, getIndicatorRanking, getRecentPredictions } from '@/lib/indicator-learning';
+import { getAllWeights } from '@/lib/model-weights';
 
 export async function GET() {
   try {
-    const stats = getStats();
-    const ranking = getIndicatorRanking();
-    const recent = getRecentPredictions(30);
+    const { default: prisma } = await import('@/lib/prisma');
 
-    // Format recent predictions for display
-    const recentFormatted = recent.map(r => ({
-      ticker: r.ticker,
-      timestamp: r.timestamp,
-      direction: r.direction,
-      totalScore: r.totalScore,
-      confidence: r.confidence,
-      priceAtPrediction: r.priceAtPrediction,
-      actualPrice: r.actualPrice,
-      actualChangePercent: r.actualChangePercent,
-      wasCorrect: r.wasCorrect,
-      evaluated: !!r.evaluatedAt,
-      topWrongIndicators: r.perIndicatorCorrect
-        ? Object.entries(r.perIndicatorCorrect)
-            .filter(([_, correct]) => !correct)
-            .map(([ind]) => ind)
-            .slice(0, 3)
-        : [],
+    // DB-backed stats
+    const stats = await prisma.aIStats.findFirst();
+    const totalPreds = stats?.totalPredictions ?? 0;
+    const accuracy = stats?.avgAccuracy ?? 0;
+
+    // Recent predictions from DB
+    const recentPredictions = await prisma.prediction.findMany({
+      where: { wasCorrect: { not: null } },
+      orderBy: { evaluatedAt: 'desc' },
+      take: 30,
+      select: {
+        symbol: true, finalDecision: true, rawScore: true,
+        actualReturn: true, wasCorrect: true, horizonDays: true,
+        evaluatedAt: true, regime: true,
+        factors: { select: { factorName: true, factorType: true, score: true, signal: true } },
+      },
+    });
+
+    // Factor weights from DB
+    const allWeights = await getAllWeights();
+    const indicatorRanking = allWeights.map(w => ({
+      name: w.factorName,
+      type: w.factorType,
+      accuracy: w.accuracy ?? 0,
+      totalPredictions: w.sampleSize ?? 0,
+      weightMultiplier: w.weight,
+      reliability: (w.sampleSize ?? 0) >= 30 ? 'HIGH' : (w.sampleSize ?? 0) >= 10 ? 'MEDIUM' : 'LOW',
     }));
 
+    // Recent formatted
+    const recentFormatted = recentPredictions.map(p => {
+      const wrongFactors = p.factors.filter(f => {
+        const factorBullish = f.score > 0;
+        const actualDown = (p.actualReturn ?? 0) < -0.1;
+        const actualUp = (p.actualReturn ?? 0) > 0.1;
+        return (factorBullish && actualDown) || (!factorBullish && actualUp);
+      });
+      return {
+        ticker: p.symbol,
+        timestamp: p.evaluatedAt?.toISOString(),
+        direction: p.finalDecision,
+        totalScore: p.rawScore,
+        actualChangePercent: p.actualReturn,
+        wasCorrect: p.wasCorrect,
+        regime: p.regime,
+        topWrongIndicators: wrongFactors.map(f => f.factorName).slice(0, 3),
+      };
+    });
+
     return NextResponse.json({
-      ...stats,
-      overallAccuracyPercent: Math.round(stats.overallAccuracy * 1000) / 10,
-      indicatorRanking: ranking,
+      source: 'db',
+      totalPredictions: totalPreds,
+      totalEvaluated: recentPredictions.length > 0 ? totalPreds : 0,
+      overallAccuracy: accuracy,
+      overallAccuracyPercent: accuracy,
+      indicatorRanking,
       recentPredictions: recentFormatted,
+      hasEnoughData: totalPreds >= 5,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';

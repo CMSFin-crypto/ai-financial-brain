@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchHistoricalData, getRealFundamentals, getRealPrice } from '@/lib/alpha-vantage';
-import { predictHybrid } from '@/lib/hybrid-prediction';
-import { forceSave } from '@/lib/indicator-learning';
+import { predictHybridV2 } from '@/lib/hybrid-prediction';
 
 export const maxDuration = 60;
 
@@ -17,6 +16,10 @@ export async function GET(
       return NextResponse.json({ error: 'Ticker i pavlefshëm' }, { status: 400 });
     }
 
+    const horizonParam = request.nextUrl.searchParams.get('horizon');
+    const horizonDays = horizonParam ? parseInt(horizonParam, 10) : 1;
+    const validHorizon = [1, 5, 20].includes(horizonDays) ? horizonDays : 1;
+
     // Fetch historical data (6 months)
     const historicalData = await fetchHistoricalData(ticker, '6mo');
     if (!historicalData || historicalData.length < 60) {
@@ -31,14 +34,11 @@ export async function GET(
 
     const currentPrice = priceResult?.price || (historicalData[historicalData.length - 1]?.close ?? 0);
 
-    const result = predictHybrid(ticker, historicalData, fundamentals, currentPrice, true);
-
-    // Save learning data
-    try {
-      forceSave();
-    } catch {
-      // Non-critical
-    }
+    // Use v2 5-factor prediction
+    const result = await predictHybridV2(ticker, historicalData, fundamentals, currentPrice, {
+      horizonDays: validHorizon,
+      saveToDb: true,
+    });
 
     return NextResponse.json(result);
   } catch (error: unknown) {

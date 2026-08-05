@@ -116,6 +116,7 @@ model Prediction {
   factors               PredictionFactor[]
   snapshots             PredictionSnapshot[]
   marketSnapshots       MarketSnapshot[]
+  spilloverSignal       SpilloverSignal?
 
   @@index([symbol, predictedAt])
   @@index([symbol, dueAt])
@@ -235,22 +236,34 @@ model GlobalMarketSnapshot {
 }
 
 model SpilloverSignal {
-  id             String   @id @default(cuid())
-  date           DateTime @db.Date
-  targetSymbol   String   // e.g. "NVDA", "SMH", "SOXX"
-  targetSector   String?  // e.g. "SEMICONDUCTOR"
-  setupType      String   // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
-  spilloverScore Float    // -100 to +100
-  confidence     Float    // 0 to 1
-  modelVersion   String   @default("spillover-v1") // "spillover-v1" | "spillover-v2-logreg"
-  reasons        Json     // string[] of human-readable reasons
-  features       Json?    // full SpilloverFeatures snapshot
-  createdAt      DateTime @default(now())
+  id             String    @id @default(cuid())
+  date           DateTime  @db.Date
+  targetSymbol   String    // e.g. "NVDA", "SMH", "SOXX"
+  targetSector   String?   // e.g. "SEMICONDUCTOR"
+  setupType      String    // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
+  spilloverScore Float     // -100 to +100
+  confidence     Float     // 0 to 1
+  modelVersion   String    @default("spillover-v1")
+  reasons        Json      // string[] of human-readable reasons
+  features       Json?     // full SpilloverFeatures snapshot
+  createdAt      DateTime  @default(now())
+
+  // Prediction linkage (optional — only set when created by prediction pipeline)
+  predictionId   String?   @unique
+  prediction     Prediction? @relation(fields: [predictionId], references: [id])
+
+  // Cross-market driver fields (populated by prediction pipeline)
+  asiaConsensus  Float?    // -1 to +1
+  riskAlignment  Float?    // -1 to +1
+  vixDirection   String?   // "rising" | "falling" | "stable"
+  sectorTrend    String?   // "strong" | "weak" | "neutral"
+  asiaAligned    Boolean?
 
   @@index([targetSymbol, date])
   @@index([setupType, date])
   @@index([modelVersion, date])
   @@index([date])
+  @@index([predictionId])
 }
 
 model SpilloverModelResult {

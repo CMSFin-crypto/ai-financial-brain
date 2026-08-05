@@ -1,13 +1,13 @@
 // ============================================================
-// Model Weights — 5-Factor Horizon-Specific Weight Management
+// Model Weights v2 — 5-Factor Horizon-Specific Weight Management
 //
 // Weights per horizon:
 //   1D:  technical 55%, spillover 20%, regime 10%, event 10%, fundamental 5%
 //   5D:  technical 40%, spillover 20%, regime 15%, event 10%, fundamental 15%
 //   20D: fundamental 35%, regime 20%, technical 20%, spillover 15%, event 10%
 //
-// Weights are learned from DB (when sampleSize >= minSample)
-// and fall back to defaults otherwise.
+// Learning uses 70/30 blending (70% old, 30% new evidence)
+// with horizon + sector + regime awareness.
 // ============================================================
 
 import prisma from './prisma';
@@ -21,7 +21,7 @@ export interface WeightResult {
   accuracy: number;
 }
 
-// ─── Horizon-specific type weights (the user's exact spec) ──
+// ─── Horizon-specific type weights ──
 
 export interface HorizonWeights {
   technical: number;
@@ -37,7 +37,7 @@ export const HORIZON_WEIGHTS: Record<number, HorizonWeights> = {
   20: { technical: 0.20, spillover: 0.15, regime: 0.20, event: 0.10, fundamental: 0.35 },
 };
 
-// ─── Default per-indicator weights (within each factor type) ──
+// ─── Default per-indicator weights ──
 
 const DEFAULT_TECHNICAL_WEIGHTS: Record<string, number> = {
   rsi: 0.10, macdHistogram: 0.08, bollinger: 0.08, maTrend: 0.12,
@@ -68,6 +68,8 @@ const DEFAULT_EVENT_WEIGHTS: Record<string, number> = {
 };
 
 const MIN_SAMPLE = 30;
+const BLEND_OLD = 0.70;
+const BLEND_NEW = 0.30;
 
 // ─── Seed defaults ──────────────────────────────────────────
 
@@ -129,7 +131,6 @@ export async function getModelWeights(horizonDays: number = 1): Promise<ModelWei
       };
     }
 
-    // Build per-type weight maps from DB, falling back to defaults
     const buildMap = (type: string, defaults: Record<string, number>): Record<string, number> => {
       const map: Record<string, number> = {};
       const typeRows = dbWeights.filter(w => w.factorType === type);
@@ -167,15 +168,25 @@ export async function getModelWeights(horizonDays: number = 1): Promise<ModelWei
   }
 }
 
-// ─── Update weights after evaluation ───────────────────────
+// ─── Update weights after evaluation (with 70/30 blending) ─
 
-export async function updateWeightsAfterEvaluation(): Promise<{
+export async function updateWeightsAfterEvaluation(options?: {
+ horizonDays?: number;
+  sector?: string;
+  regime?: string;
+}): Promise<{
   updated: number;
   details: { factorName: string; oldWeight: number; newWeight: number; accuracy: number }[];
 }> {
   try {
+    // Build query filter based on options
+    const where: any = { wasCorrect: { not: null } };
+    if (options?.horizonDays) where.horizonDays = options.horizonDays;
+    if (options?.sector) where.sector = options.sector;
+    if (options?.regime) where.regime = options.regime;
+
     const evaluatedPredictions = await prisma.prediction.findMany({
-      where: { wasCorrect: { not: null } },
+      where,
       include: { factors: true },
       orderBy: { createdAt: 'desc' },
       take: 1000,
@@ -185,6 +196,7 @@ export async function updateWeightsAfterEvaluation(): Promise<{
       return { updated: 0, details: [] };
     }
 
+    // Compute per-factor accuracy
     const tracker: Record<string, { sameSide: number; total: number }> = {};
 
     for (const pred of evaluatedPredictions) {
@@ -216,7 +228,13 @@ export async function updateWeightsAfterEvaluation(): Promise<{
       if (!currentRow) continue;
 
       const oldWeight = currentRow.weight;
-      const newWeight = Math.round(accuracy * 1000) / 1000;
+
+      // ── 70/30 BLENDING: don't jump directly to accuracy ──
+      // newWeight = 0.70 * oldWeight + 0.30 * accuracy
+      // This prevents wild swings from small sample changes
+      const evidenceWeight = accuracy;
+      const blendedWeight = BLEND_OLD * oldWeight + BLEND_NEW * evidenceWeight;
+      const newWeight = Math.round(blendedWeight * 1000) / 1000;
 
       await prisma.modelWeight.update({
         where: { factorName },
@@ -228,11 +246,14 @@ export async function updateWeightsAfterEvaluation(): Promise<{
         },
       });
 
-      details.push({ factorName, oldWeight, newWeight, accuracy: Math.round(accuracy * 100) });
+      details.push({
+        factorName, oldWeight, newWeight,
+        accuracy: Math.round(accuracy * 100),
+      });
       updated++;
     }
 
-    // Normalize weights per factor type
+    // Normalize weights per factor type (after blending)
     const factorTypes = ['technical', 'fundamental', 'spillover', 'regime', 'event'];
     for (const type of factorTypes) {
       const rows = await prisma.modelWeight.findMany({ where: { factorType: type } });

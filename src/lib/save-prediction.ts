@@ -7,6 +7,8 @@
 //   3. PredictionSnapshot (CREATED snapshot)
 //   4. MarketSnapshot (regime, VIX, SPY, breadth at prediction time)
 //   5. FeatureSnapshot (full feature vector for meta-model training)
+//   6. SpilloverSignal (cross-market spillover context)
+//   7. EventSnapshot[] (earnings, Fed, CPI events)
 //
 // Uses Prisma transaction for atomicity.
 // ============================================================
@@ -47,6 +49,20 @@ export type EventSnapshotInput = {
   description?: string;
 };
 
+export type SpilloverSignalInput = {
+  setupType: string;
+  spilloverScore: number;
+  confidence: number;
+  asiaConsensus: number;
+  riskAlignment: number;
+  vixDirection: string;
+  sectorTrend: string;
+  asiaAligned: boolean;
+  targetSymbol: string;
+  targetSector?: string;
+  reasons?: string[];
+};
+
 export type SavePredictionInput = {
   symbol: string;
   sector?: string;
@@ -62,10 +78,11 @@ export type SavePredictionInput = {
   calibratedConfidence: number;
   finalDecision: "BUY" | "SELL" | "HOLD" | "NO_TRADE";
   factors: FactorInput[];
-  // New: optional snapshots for full audit trail
+  // Snapshots for full audit trail
   marketSnapshot?: MarketSnapshotInput;
   featureSnapshot?: FeatureSnapshotInput;
   eventSnapshots?: EventSnapshotInput[];
+  spilloverSignal?: SpilloverSignalInput;
   // Attribution: why this decision was made
   decisionReasons?: string[];
 };
@@ -81,6 +98,7 @@ export type SavedPrediction = {
   hasMarketSnapshot: boolean;
   hasFeatureSnapshot: boolean;
   hasEventSnapshots: boolean;
+  hasSpilloverSignal: boolean;
 };
 
 /**
@@ -136,7 +154,7 @@ export async function savePrediction(input: SavePredictionInput): Promise<SavedP
       include: { factors: true, snapshots: true },
     });
 
-    // 2. Create MarketSnapshot (regime, VIX, SPY context)
+    // 2. Create MarketSnapshot
     if (input.marketSnapshot) {
       const ms = input.marketSnapshot;
       await tx.marketSnapshot.create({
@@ -154,7 +172,7 @@ export async function savePrediction(input: SavePredictionInput): Promise<SavedP
       });
     }
 
-    // 3. Create FeatureSnapshot (for meta-model training data)
+    // 3. Create FeatureSnapshot
     if (input.featureSnapshot) {
       const fs = input.featureSnapshot;
       const today = new Date().toISOString().split("T")[0];
@@ -182,7 +200,7 @@ export async function savePrediction(input: SavePredictionInput): Promise<SavedP
       });
     }
 
-    // 4. Create EventSnapshots (earnings, FOMC, CPI, etc.)
+    // 4. Create EventSnapshots
     if (input.eventSnapshots && input.eventSnapshots.length > 0) {
       await tx.eventSnapshot.createMany({
         data: input.eventSnapshots.map((e) => ({
@@ -193,6 +211,29 @@ export async function savePrediction(input: SavePredictionInput): Promise<SavedP
           severity: e.severity,
           description: e.description ?? "",
         })),
+      });
+    }
+
+    // 5. Create SpilloverSignal
+    if (input.spilloverSignal) {
+      const ss = input.spilloverSignal;
+      await tx.spilloverSignal.create({
+        data: {
+          date: new Date(),
+          targetSymbol: ss.targetSymbol,
+          targetSector: ss.targetSector,
+          setupType: ss.setupType,
+          spilloverScore: ss.spilloverScore,
+          confidence: ss.confidence,
+          modelVersion: 'spillover-prediction-pipeline',
+          reasons: ss.reasons ?? [],
+          predictionId: prediction.id,
+          asiaConsensus: ss.asiaConsensus,
+          riskAlignment: ss.riskAlignment,
+          vixDirection: ss.vixDirection,
+          sectorTrend: ss.sectorTrend,
+          asiaAligned: ss.asiaAligned,
+        },
       });
     }
 
@@ -210,5 +251,6 @@ export async function savePrediction(input: SavePredictionInput): Promise<SavedP
     hasMarketSnapshot: !!input.marketSnapshot,
     hasFeatureSnapshot: !!input.featureSnapshot,
     hasEventSnapshots: (input.eventSnapshots?.length ?? 0) > 0,
+    hasSpilloverSignal: !!input.spilloverSignal,
   };
 }
