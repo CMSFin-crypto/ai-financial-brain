@@ -148,7 +148,7 @@ export default function Home() {
                     <Trophy className="w-3.5 h-3.5 mr-1.5" />Edge
                   </TabsTrigger>
                   <TabsTrigger value="metrics" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Metriqa
+                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Metrics
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -158,7 +158,7 @@ export default function Home() {
               {/* Tregu */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="watchlist" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Eye className="w-3 h-3 mr-1" />Watchlist
                   </TabsTrigger>
@@ -179,7 +179,7 @@ export default function Home() {
               {/* Analizë */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="daily-picks" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Target className="w-3 h-3 mr-1" />Pikat
                   </TabsTrigger>
@@ -203,7 +203,7 @@ export default function Home() {
               {/* AI & Trading */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">AI &</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="trading" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <ShoppingCart className="w-3 h-3 mr-1" />Trading
                   </TabsTrigger>
@@ -224,7 +224,7 @@ export default function Home() {
               {/* Kontrol */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Kontrol</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="drift" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
                     <Activity className="w-3 h-3 mr-1" />Drift
                   </TabsTrigger>
@@ -235,7 +235,7 @@ export default function Home() {
                     <Trophy className="w-3 h-3 mr-1" />Edge
                   </TabsTrigger>
                   <TabsTrigger value="metrics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                    <BarChart3 className="w-3 h-3 mr-1" />Metriqa
+                    <BarChart3 className="w-3 h-3 mr-1" />Metrics
                   </TabsTrigger>
                 </TabsList>
               </div>
