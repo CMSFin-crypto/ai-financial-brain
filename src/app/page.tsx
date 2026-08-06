@@ -66,9 +66,8 @@ export default function Home() {
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {/* Tab category labels + tabs */}
-          <div className="space-y-2">
-            {/* Desktop: grouped tabs with category labels */}
-            <div className="hidden lg:flex flex-col gap-2">
+          {/* Desktop: grouped tabs with category labels */}
+          <div className="hidden lg:flex flex-col gap-2">
               {/* Category: Tregu */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Tregu</span>
@@ -153,75 +152,96 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
               </div>
-            </div>
-            {/* Mobile/Tablet: grid wrapped rows */}
-            <div className="lg:hidden">
-              <TabsList className="flex flex-wrap gap-1 w-full h-auto p-1">
-                <TabsTrigger value="watchlist" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                  <Eye className="w-3.5 h-3.5 mr-1" />Watchlist
-                </TabsTrigger>
-                <TabsTrigger value="dashboard" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                  <LayoutDashboard className="w-3.5 h-3.5 mr-1" />Tregu
-                </TabsTrigger>
-                <TabsTrigger value="top-movers" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                  <Flame className="w-3.5 h-3.5 mr-1" />Top 5+5
-                </TabsTrigger>
-                <TabsTrigger value="sector" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                  <Radar className="w-3.5 h-3.5 mr-1" />Sektoret
-                </TabsTrigger>
-                <TabsTrigger value="fear-greed" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                  <Gauge className="w-3.5 h-3.5 mr-1" />F&G
-                </TabsTrigger>
-                <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <Target className="w-3.5 h-3.5 mr-1" />Pikat
-                </TabsTrigger>
-                <TabsTrigger value="quant" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <Crosshair className="w-3.5 h-3.5 mr-1" />Quant
-                </TabsTrigger>
-                <TabsTrigger value="technical" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <LineChart className="w-3.5 h-3.5 mr-1" />Teknike
-                </TabsTrigger>
-                <TabsTrigger value="fundamental" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <Building2 className="w-3.5 h-3.5 mr-1" />Fund.
-                </TabsTrigger>
-                <TabsTrigger value="earnings" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <CalendarDays className="w-3.5 h-3.5 mr-1" />Fitimet
-                </TabsTrigger>
-                <TabsTrigger value="screener" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  <Filter className="w-3.5 h-3.5 mr-1" />Screener
-                </TabsTrigger>
-                <TabsTrigger value="trading" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                  <ShoppingCart className="w-3.5 h-3.5 mr-1" />Trading
-                </TabsTrigger>
-                <TabsTrigger value="chat" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                  <MessageSquare className="w-3.5 h-3.5 mr-1" />AI Chat
-                </TabsTrigger>
-                <TabsTrigger value="analytics" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                  <BarChart3 className="w-3.5 h-3.5 mr-1" />Statistikat
-                </TabsTrigger>
-                <TabsTrigger value="advanced" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                  <Brain className="w-3.5 h-3.5 mr-1" />Analiza
-                </TabsTrigger>
-                <TabsTrigger value="predictor" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                  <BrainCircuit className="w-3.5 h-3.5 mr-1" />Predikues
-                </TabsTrigger>
-                <TabsTrigger value="drift" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                  <Activity className="w-3.5 h-3.5 mr-1" />Drift
-                </TabsTrigger>
-                <TabsTrigger value="overrides" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                  <Shield className="w-3.5 h-3.5 mr-1" />Override
-                </TabsTrigger>
-                <TabsTrigger value="edge" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                  <Trophy className="w-3.5 h-3.5 mr-1" />Edge
-                </TabsTrigger>
-                <TabsTrigger value="metrics" className="text-xs py-2 px-3 flex-1 min-w-[calc(33%-6px)] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                  <BarChart3 className="w-3.5 h-3.5 mr-1" />Metriqa
-                </TabsTrigger>
-              </TabsList>
-            </div>
+          </div>
+          {/* Mobile/Tablet: scrollable horizontal tabs by category */
+          <div className="lg:hidden space-y-2">
+              {/* Tregu */}
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                  <TabsTrigger value="watchlist" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Eye className="w-3 h-3 mr-1" />Watchlist
+                  </TabsTrigger>
+                  <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
+                  </TabsTrigger>
+                  <TabsTrigger value="top-movers" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Flame className="w-3 h-3 mr-1" />Top 5+5
+                  </TabsTrigger>
+                  <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Radar className="w-3 h-3 mr-1" />Sektoret
+                  </TabsTrigger>
+                  <TabsTrigger value="fear-greed" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Gauge className="w-3 h-3 mr-1" />F&G
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Analizë */}
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                  <TabsTrigger value="daily-picks" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Target className="w-3 h-3 mr-1" />Pikat
+                  </TabsTrigger>
+                  <TabsTrigger value="quant" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Crosshair className="w-3 h-3 mr-1" />Quant
+                  </TabsTrigger>
+                  <TabsTrigger value="technical" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <LineChart className="w-3 h-3 mr-1" />Teknike
+                  </TabsTrigger>
+                  <TabsTrigger value="fundamental" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Building2 className="w-3 h-3 mr-1" />Fund.
+                  </TabsTrigger>
+                  <TabsTrigger value="earnings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <CalendarDays className="w-3 h-3 mr-1" />Fitimet
+                  </TabsTrigger>
+                  <TabsTrigger value="screener" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Filter className="w-3 h-3 mr-1" />Screener
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* AI & Trading */}
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">AI &</span>
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                  <TabsTrigger value="trading" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <ShoppingCart className="w-3 h-3 mr-1" />Trading
+                  </TabsTrigger>
+                  <TabsTrigger value="chat" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <MessageSquare className="w-3 h-3 mr-1" />AI Chat
+                  </TabsTrigger>
+                  <TabsTrigger value="analytics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BarChart3 className="w-3 h-3 mr-1" />Statistikat
+                  </TabsTrigger>
+                  <TabsTrigger value="advanced" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Brain className="w-3 h-3 mr-1" />Analiza
+                  </TabsTrigger>
+                  <TabsTrigger value="predictor" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BrainCircuit className="w-3 h-3 mr-1" />Predikues
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Kontrol */}
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Kontrol</span>
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full">
+                  <TabsTrigger value="drift" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Activity className="w-3 h-3 mr-1" />Drift
+                  </TabsTrigger>
+                  <TabsTrigger value="overrides" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Shield className="w-3 h-3 mr-1" />Override
+                  </TabsTrigger>
+                  <TabsTrigger value="edge" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Trophy className="w-3 h-3 mr-1" />Edge
+                  </TabsTrigger>
+                  <TabsTrigger value="metrics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <BarChart3 className="w-3 h-3 mr-1" />Metriqa
+                  </TabsTrigger>
+                </TabsList>
+              </div>
           </div>
 
-          {/* Tab: Watchlist */}
+}
           <TabsContent value="watchlist" className="mt-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
