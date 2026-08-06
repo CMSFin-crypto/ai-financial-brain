@@ -50,7 +50,13 @@ import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashb
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 import { StockPredictor } from '@/components/financial-brain/stock-predictor';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
+
+const DriftReviewPage = dynamic(() => import('@/app/drift-review/page'), { ssr: false });
+const OverrideJournalPage = dynamic(() => import('@/app/override-journal/page'), { ssr: false });
+const EdgeLeaderboardPage = dynamic(() => import('@/app/edge-leaderboard/page'), { ssr: false });
+const ModelMetricsPage = dynamic(() => import('@/app/model-metrics/page'), { ssr: false });
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -625,7 +631,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/drift-review" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <DriftReviewPage />
             </motion.div>
           </TabsContent>
 
@@ -648,7 +654,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/override-journal" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <OverrideJournalPage />
             </motion.div>
           </TabsContent>
 
@@ -671,7 +677,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/edge-leaderboard" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <EdgeLeaderboardPage />
             </motion.div>
           </TabsContent>
 
@@ -694,7 +700,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/model-metrics" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <ModelMetricsPage />
             </motion.div>
           </TabsContent>
         </Tabs>
