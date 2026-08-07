@@ -625,7 +625,13 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/drift-review" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <div className="flex flex-col items-center justify-center py-12 gap-4">
+                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
+                    <Link href="/drift-review" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
+                      <Activity className="w-4 h-4" /> Hape Drift Review
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
             </motion.div>
           </TabsContent>
 
@@ -648,7 +654,13 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/override-journal" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <div className="flex flex-col items-center justify-center py-12 gap-4">
+                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
+                    <Link href="/override-journal" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
+                      <Shield className="w-4 h-4" /> Hape Override Journal
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
             </motion.div>
           </TabsContent>
 
@@ -671,7 +683,13 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/edge-leaderboard" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <div className="flex flex-col items-center justify-center py-12 gap-4">
+                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
+                    <Link href="/edge-leaderboard" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
+                      <Trophy className="w-4 h-4" /> Hape Edge Leaderboard
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
             </motion.div>
           </TabsContent>
 
@@ -694,7 +712,13 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <iframe src="/model-metrics" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
+              <div className="flex flex-col items-center justify-center py-12 gap-4">
+                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
+                    <Link href="/model-metrics" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
+                      <BarChart3 className="w-4 h-4" /> Hape Model Metrics
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
             </motion.div>
           </TabsContent>
         </Tabs>
