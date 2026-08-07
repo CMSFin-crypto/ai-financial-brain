@@ -50,13 +50,7 @@ import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashb
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 import { StockPredictor } from '@/components/financial-brain/stock-predictor';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
-
-const DriftReviewPage = dynamic(() => import('@/app/drift-review/page'), { ssr: false });
-const OverrideJournalPage = dynamic(() => import('@/app/override-journal/page'), { ssr: false });
-const EdgeLeaderboardPage = dynamic(() => import('@/app/edge-leaderboard/page'), { ssr: false });
-const ModelMetricsPage = dynamic(() => import('@/app/model-metrics/page'), { ssr: false });
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -631,7 +625,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <DriftReviewPage />
+              <iframe src="/drift-review" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
             </motion.div>
           </TabsContent>
 
@@ -654,7 +648,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <OverrideJournalPage />
+              <iframe src="/override-journal" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
             </motion.div>
           </TabsContent>
 
@@ -677,7 +671,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <EdgeLeaderboardPage />
+              <iframe src="/edge-leaderboard" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
             </motion.div>
           </TabsContent>
 
@@ -689,7 +683,7 @@ export default function Home() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 mb-1">
                       <BarChart3 className="w-4 h-4 text-orange-500" />
-                      <h3 className="text-sm font-semibold">Metriqa e Modelit</h3>
+                      <h3 className="text-sm font-semibold">Metrics e Modelit</h3>
                     </div>
                     <Link href="/model-metrics" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
                       Hape faqen e plotë <ExternalLink className="w-3 h-3" />
@@ -700,7 +694,7 @@ export default function Home() {
                   </p>
                 </CardContent>
               </Card>
-              <ModelMetricsPage />
+              <iframe src="/model-metrics" className="w-full border border-border/50 rounded-lg bg-background" style={{ height: '80vh' }} />
             </motion.div>
           </TabsContent>
         </Tabs>
