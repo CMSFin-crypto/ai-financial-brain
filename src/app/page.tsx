@@ -65,7 +65,7 @@ export default function Home() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          {/* Tab category labels + tabs */}
+          <div className="space-y-2">
           {/* Desktop: grouped tabs with category labels */}
           <div className="hidden lg:flex flex-col gap-2">
               {/* Category: Tregu */}
@@ -152,8 +152,8 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
               </div>
-          </div>
-          {/* Mobile/Tablet: scrollable horizontal tabs by category */
+            </div>
+          {/* Mobile/Tablet: scrollable horizontal tabs by category */}
           <div className="lg:hidden space-y-2">
               {/* Tregu */}
               <div className="flex items-center gap-1">
@@ -239,9 +239,9 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
               </div>
+            </div>
           </div>
 
-}
           <TabsContent value="watchlist" className="mt-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
