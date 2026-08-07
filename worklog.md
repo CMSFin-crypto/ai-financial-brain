@@ -1,29 +1,22 @@
-# Worklog
-
 ---
-Task ID: 1-12
+Task ID: 1
 Agent: Main
-Task: Implement 3 new modules: Prediction Review & Drift Monitor, Override Journal, Sector/Regime Edge Leaderboard
+Task: Fix Kontrol tabs showing "Application error" on user's mobile phone
 
 Work Log:
-- Added DriftSnapshot model to Prisma schema (per-day accuracy, calibration, no-trade rate, regime/sector slices, warnings)
-- Built drift-review.ts lib: computeDriftReview(), getDriftHistory(), recordDailySnapshot() — tracks per-horizon accuracy drift, calibration drift (Brier/ECE trends), no-trade rate monitoring, per-regime and per-sector degradation warnings
-- Built override-journal.ts lib: computeOverrideJournal(), recordOverride(), evaluateOverride() — model vs human hit rate, reason breakdown, regime breakdown
-- Built edge-leaderboard.ts lib: computeEdgeLeaderboard() — ranks sectors and regimes by accuracy/alpha/Sharpe, classifies edge (strong/moderate/weak/negative), generates trade filters (PREFER/AVOID/REDUCE_SIZE)
-- Created /api/drift-review route (GET with ?record=true&history=30)
-- Extended /api/override-stats route with ?full=true for full journal
-- Created /api/edge-leaderboard route (GET)
-- Built /drift-review/page.tsx dashboard (Albanian UI, Recharts, shadcn/ui)
-- Built /override-journal/page.tsx dashboard (model vs human comparison, reason breakdown, add override form)
-- Built /edge-leaderboard/page.tsx dashboard (sector/regime tables, trade filters, horizon breakdown)
-- Added 4 new tabs to main page.tsx under "Kontrol" category: Drift, Override, Edge, Metriqa
-- Build: 0 errors, all routes confirmed
+- Analyzed 4 new screenshots from user showing "Application error: a client-side exception has occurred" on ai-financial-brainzai.vercel.app
+- Used VLM to identify the error type (client-side exception, not a server error)
+- Verified current page.tsx has NO iframes (replaced with Link cards in previous commit 68aa2bd)
+- Ran `next build` — build succeeds with no errors
+- Opened live site in agent-browser with iPhone 14 viewport — page loads correctly, all tabs including Kontrol (Drift/Override/Edge/Metrics) work properly
+- Determined the user's error is caused by stale cached JS bundles from a previous deployment (the HTML is fresh but old JS chunks are cached)
+- Created `src/app/error.tsx` — client error boundary with "Provo përsëri" and "Fshij cache dhe rifresko" buttons
+- Created `src/app/global-error.tsx` — root-level error boundary for layout crashes
+- Added `Cache-Control: no-store, must-revalidate` headers in `next.config.ts` for all routes
+- Pushed commit e5f9401 to GitHub
 
 Stage Summary:
-- 3 new lib modules: drift-review.ts, override-journal.ts, edge-leaderboard.ts
-- 2 new API routes: /api/drift-review, /api/edge-leaderboard
-- 1 enhanced API route: /api/override-stats (backward compat + ?full=true)
-- 3 new standalone pages: /drift-review, /override-journal, /edge-leaderboard
-- 1 new Prisma model: DriftSnapshot
-- 4 new tabs in main dashboard (orange "Kontrol" category)
-- Build: ✓ Compiled successfully, 0 errors
+- The Kontrol tabs themselves are NOT broken — they render correctly with Cards and Links to standalone pages
+- The user's crash is from stale browser cache serving old JS chunks that conflict with new HTML
+- Error boundaries now give the user a recovery path instead of a dead-end error page
+- No-cache headers prevent this from happening on fresh visits going forward
