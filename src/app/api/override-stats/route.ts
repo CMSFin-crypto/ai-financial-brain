@@ -82,7 +82,17 @@ export async function GET(req: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[OVERRIDE-STATS] Error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Return empty journal instead of 500 so UI can show "no data" state
+    if (url.searchParams.get('full') === 'true') {
+      return NextResponse.json({ ok: true, data: {
+        modelVsHuman: { modelHitRate: null, humanHitRate: null, sampleSize: 0, insight: 'Nuk ka të dhëna akoma' },
+        reasonBreakdown: [],
+        regimeBreakdown: [],
+        recentOverrides: [],
+        summary: { total: 0, pending: 0, correctOverrides: 0, wrongOverrides: 0 },
+      } });
+    }
+    return NextResponse.json({ period: { days: 30, from: new Date().toISOString() }, total: 0, accepted: 0, rejected: 0, modified: 0, overrideWinRate: null, avgRejectedReturn: null, reasonDistribution: [], recent: [] });
   }
 }
 

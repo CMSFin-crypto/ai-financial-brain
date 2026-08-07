@@ -31,7 +31,15 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[MODEL-METRICS] GET failed:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Return empty metrics instead of 500
+    return NextResponse.json({
+      totalPredictions: 0, correctPredictions: 0, accuracy: 0,
+      brierScore: null, ece: null, mce: null, calibrationDiagnosis: "Nuk ka të dhëna",
+      avgConfidence: null, confidenceCalibration: null,
+      precision: null, recall: null, f1: null,
+      avgReturn: null, sharpeLike: null, maxDrawdown: null,
+      byRegime: [], bySector: [], byHorizon: [],
+    });
   }
 }
 

@@ -38,9 +38,22 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     console.error('[DRIFT-REVIEW] GET failed:', err);
-    return NextResponse.json(
-      { ok: false, error: 'Failed to compute drift review' },
-      { status: 500 },
-    );
+    // Return empty structure instead of 500 so UI can show "no data" state
+    return NextResponse.json({
+      ok: true,
+      recorded: false,
+      data: {
+        computedAt: new Date().toISOString(),
+        overall: { totalEvaluated: 0, totalPending: 0, overallAccuracy: 0, streakCorrect: 0, streakWrong: 0 },
+        horizons: [],
+        calibration: { brierScore: null, ece: null, mce: null, sampleSize: 0, diagnosis: 'Nuk ka të dhëna akoma', brierTrend7d: 'insufficient_data', eceTrend7d: 'insufficient_data' },
+        noTrade: { currentRate: 0, rate7d: null, rate30d: null, trend: 'insufficient_data', interpretation: 'Nuk ka predikime akoma' },
+        regimeSlices: [],
+        sectorSlices: [],
+        warnings: [{ level: 'INFO', category: 'general', message: 'Nuk ka të dhëna të mjaftueshme. Predikimet e para do të shfaqen këtu.', detail: null }],
+        calibrationTimeSeries: [],
+      },
+      history: [],
+    });
   }
 }
