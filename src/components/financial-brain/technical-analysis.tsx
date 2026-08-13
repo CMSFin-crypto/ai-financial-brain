@@ -180,6 +180,53 @@ function computeBollingerBands(closes: number[], period: number = 20, mult: numb
   return { upper, middle, lower };
 }
 
+// ═══ TradingView-style right-edge label group ═══
+// Renders colored tags at the end of each indicator line (left of Y-axis),
+// stacking them vertically if they overlap.
+function EdgeLabels({ items, rightEdge, fontSize = 9.5 }: {
+  items: { label: string; y: number; color: string }[];
+  rightEdge: number;
+  fontSize?: number;
+}) {
+  const LH = fontSize + 3; // line height per label
+  const MIN_GAP = 2;
+
+  // Sort by Y, then resolve overlaps by pushing downward
+  const sorted = [...items].sort((a, b) => a.y - b.y);
+  const placed: { label: string; y: number; color: string }[] = [];
+  for (const item of sorted) {
+    let y = item.y - LH / 2; // center vertically on the line
+    for (const p of placed) {
+      if (y < p.y + LH + MIN_GAP && y + LH > p.y) {
+        y = p.y + LH + MIN_GAP; // push below
+      }
+    }
+    placed.push({ ...item, y });
+  }
+
+  return (
+    <g>
+      {placed.map((p, i) => {
+        const textW = p.label.length * fontSize * 0.6 + 8;
+        const rx = rightEdge - textW - 4;
+        return (
+          <g key={i}>
+            <rect x={rx} y={p.y} width={textW} height={LH} rx={2} fill={p.color} opacity={0.92} />
+            <text
+              x={rx + 4}
+              y={p.y + fontSize + 1}
+              fill="white"
+              fontSize={fontSize}
+              fontFamily="Trebuchet MS, sans-serif"
+              fontWeight="600"
+            >{p.label}</text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 // ═══ TradingView-Style Technical Chart ═══
 function CandlestickChart({ data }: { data: CandleData[] }) {
   const chart = useMemo(() => {
@@ -436,16 +483,16 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <rect x={W - R + 1} y={lastY - 10} width={R - 2} height={20} rx={2} fill={d[dn-1].close >= d[dn-1].open ? BULL : BEAR} />
         <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastClose.toFixed(2)}</text>
 
-        {/* TV-style top-right indicator legend with box */}
-        <rect x={W - R - 210} y={priceTop + 4} width={206} height={52} rx={4} fill="rgba(19,23,34,0.85)" stroke="#2a2e39" strokeWidth={0.5} />
-        <text x={W - R - 204} y={priceTop + 17} fill={TXT_BRIGHT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" opacity={0.7}>Indicators</text>
-        {lastSma20 !== null && <text x={W - R - 204} y={priceTop + 30} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaP})</text>}
-        {lastSma20 !== null && <text x={W - R - 130} y={priceTop + 30} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastSma20.toFixed(2)}</text>}
-        {lastSma50 !== null && <text x={W - R - 60} y={priceTop + 30} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaLongP})</text>}
-        {lastSma50 !== null && <text x={W - R - 4} y={priceTop + 30} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif" textAnchor="end">{lastSma50.toFixed(2)}</text>}
-        {lastEma12 !== null && <text x={W - R - 204} y={priceTop + 44} fill={EMA12_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">EMA({emaP})</text>}
-        {lastEma12 !== null && <text x={W - R - 130} y={priceTop + 44} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastEma12.toFixed(2)}</text>}
-        <text x={W - R - 60} y={priceTop + 44} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB({bbP})</text>
+        {/* ═══ TradingView-style RIGHT-EDGE line labels ═══ */}
+        {/* Each label sits at the Y-position where its line ends, left of the Y-axis */}
+        <EdgeLabels items={[
+          ...(lastSma20 !== null ? [{ label: `SMA(${smaP}) ${lastSma20.toFixed(2)}`, y: yP(lastSma20), color: SMA20_CLR }] : []),
+          ...(lastSma50 !== null ? [{ label: `SMA(${smaLongP}) ${lastSma50.toFixed(2)}`, y: yP(lastSma50), color: SMA50_CLR }] : []),
+          ...(lastEma12 !== null ? [{ label: `EMA(${emaP}) ${lastEma12.toFixed(2)}`, y: yP(lastEma12), color: EMA12_CLR }] : []),
+          ...(bb.upper[dn-1] !== null ? [{ label: `BB Upper ${bb.upper[dn-1]!.toFixed(2)}`, y: yP(bb.upper[dn-1]!), color: BB_CLR }] : []),
+          ...(bb.middle[dn-1] !== null ? [{ label: `BB Mid ${bb.middle[dn-1]!.toFixed(2)}`, y: yP(bb.middle[dn-1]!), color: BB_CLR }] : []),
+          ...(bb.lower[dn-1] !== null ? [{ label: `BB Lower ${bb.lower[dn-1]!.toFixed(2)}`, y: yP(bb.lower[dn-1]!), color: BB_CLR }] : []),
+        ]} rightEdge={W - R} fontSize={9.5} />
 
         {/* Volume label */}
         <text x={L + 8} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.5}>Vol</text>
@@ -466,10 +513,11 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <g clipPath="url(#rsiClip)">
           {line(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi')}
         </g>
-        {/* TV-style RSI label top-left */}
-        <text x={L + 8} y={rsiTop + 14} fill={RSI_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">RSI ({rsiP})</text>
+        {/* RSI right-edge label */}
         {lastRsi !== null && (
-          <text x={L + 78} y={rsiTop + 14} fill={lastRsi > 70 ? BEAR : lastRsi < 30 ? BULL : TXT_BRIGHT} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastRsi.toFixed(2)}</text>
+          <EdgeLabels items={[
+            { label: `RSI(${rsiP}) ${lastRsi.toFixed(2)}`, y: yR(lastRsi), color: RSI_CLR },
+          ]} rightEdge={W - R} fontSize={9.5} />
         )}
 
         {/* ═══════ PANEL SEPARATOR ═══════ */}
@@ -496,14 +544,11 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
           {line(macdData.macd.map(v => v !== null ? yM(v) : null), MACD_CLR, 1.5, 'macd')}
           {line(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig')}
         </g>
-        {/* TV-style MACD label top-left */}
-        <text x={L + 8} y={macdTop + 14} fill={MACD_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">MACD ({macdFast},{macdSlow})</text>
-        {lastMacd !== null && (
-          <text x={L + 105} y={macdTop + 14} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastMacd.toFixed(2)}</text>
-        )}
-        {lastSig !== null && (
-          <text x={L + 168} y={macdTop + 14} fill={SIG_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastSig.toFixed(2)}</text>
-        )}
+        {/* MACD right-edge labels */}
+        <EdgeLabels items={[
+          ...(lastMacd !== null ? [{ label: `MACD ${lastMacd.toFixed(2)}`, y: yM(lastMacd), color: MACD_CLR }] : []),
+          ...(lastSig !== null ? [{ label: `Signal ${lastSig.toFixed(2)}`, y: yM(lastSig), color: SIG_CLR }] : []),
+        ]} rightEdge={W - R} fontSize={9.5} />
 
         {/* ═══════ X-AXIS DATE LABELS ═══════ */}
         {d.map((dd, i) => {
