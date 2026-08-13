@@ -226,19 +226,19 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const macdTop = rsiTop + rsiH + sep;
     const totalH = macdTop + macdH + bottomLabel;
 
-    // ═══ Adaptive indicator periods ═══
-    // Use shorter periods when data is limited so lines are visible
+    // ═══ Compute indicators (standard periods — API fetches enough lookback) ═══
     const closes = data.map(d => d.close);
-    const smaP = Math.max(5, Math.min(20, Math.floor(n * 0.35))); // ensure ≥60% coverage
-    const smaLongP = n >= 50 ? 50 : Math.max(7, Math.min(Math.floor(n * 0.5), n));
-    const bbP = smaP;
-    const macdFast = n >= 35 ? 12 : Math.max(5, Math.floor(n * 0.25));
-    const macdSlow = n >= 35 ? 26 : Math.max(8, Math.floor(n * 0.45));
-    const rsiP = Math.max(5, Math.min(14, n - 2));
+    const smaP = Math.min(20, n);
+    const smaLongP = Math.min(50, n);
+    const bbP = Math.min(20, n);
+    const emaP = Math.min(12, n);
+    const rsiP = Math.min(14, n - 2);
+    const macdFast = Math.min(12, n);
+    const macdSlow = Math.min(26, n);
 
     const sma20 = computeSMA(closes, smaP);
     const sma50 = computeSMA(closes, smaLongP);
-    const ema12 = computeEMA(closes, Math.min(12, n));
+    const ema12 = computeEMA(closes, emaP);
     const bb = computeBollingerBands(closes, bbP);
     const rsi = computeRSI(closes, rsiP);
     const macdData = computeMACD(closes, macdFast, macdSlow);
@@ -268,7 +268,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
 
     // ═══ Helpers ═══
     const xOf = (i: number) => L + barW * i + barW / 2;
-    const labelN = n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 4 : 5;
+    const labelN = n <= 15 ? 1 : n <= 30 ? 3 : n <= 60 ? 5 : n <= 130 ? 10 : 20;
 
     const line = (vals: (number | null)[], color: string, sw = 1, id?: string) => {
       const pts: string[] = [];
@@ -374,10 +374,10 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastClose.toFixed(2)}</text>
 
         {/* TV-style top-left indicator legend */}
-        {lastSma20 !== null && <text x={L + 8} y={priceTop + 14} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaP}) {lastSma20.toFixed(2)}</text>}
-        {lastSma50 !== null && <text x={L + 8} y={priceTop + 26} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaLongP}) {lastSma50.toFixed(2)}</text>}
+        {lastSma20 !== null && <text x={L + 8} y={priceTop + 14} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA(20) {lastSma20.toFixed(2)}</text>}
+        {lastSma50 !== null && <text x={L + 8} y={priceTop + 26} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA(50) {lastSma50.toFixed(2)}</text>}
         {lastEma12 !== null && <text x={L + 8} y={priceTop + 38} fill={EMA12_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">EMA(12) {lastEma12.toFixed(2)}</text>}
-        <text x={L + 8} y={priceTop + 50} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB ({bbP}, 2)</text>
+        <text x={L + 8} y={priceTop + 50} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB (20, 2)</text>
 
         {/* Volume label */}
         <text x={L + 8} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.6}>Vol</text>
@@ -400,7 +400,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
           {line(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi')}
         </g>
         {/* TV-style RSI label top-left */}
-        <text x={L + 8} y={rsiTop + 14} fill={RSI_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">RSI ({rsiP})</text>
+        <text x={L + 8} y={rsiTop + 14} fill={RSI_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">RSI (14)</text>
         {lastRsi !== null && (
           <text x={L + 72} y={rsiTop + 14} fill={lastRsi > 70 ? BEAR : lastRsi < 30 ? BULL : TXT} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastRsi.toFixed(2)}</text>
         )}

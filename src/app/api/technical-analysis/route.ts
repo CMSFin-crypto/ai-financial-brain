@@ -458,10 +458,23 @@ export async function POST(request: NextRequest) {
 
     tickerUpper = ticker.trim().toUpperCase();
 
+    // ═══ Lookback range: always fetch enough data for indicators ═══
+    // Need ~70+ bars for SMA50, MACD(12,26), BB(20) to compute fully
+    const LOOKBACK_MAP: Record<string, string> = {
+      '1d': '5d',
+      '5d': '3mo',
+      '1mo': '6mo',
+      '3mo': '1y',
+      '6mo': '1y',
+      '1y': '5y',
+      '5y': 'max',
+    };
+    const lookbackRange = LOOKBACK_MAP[range] || '6mo';
+
     // ═══ PARALLEL: Fetch real price + real historical chart data ═══
     const [livePrice, realChartData] = await Promise.all([
       getRealPrice(tickerUpper),
-      fetchHistoricalData(tickerUpper, range),
+      fetchHistoricalData(tickerUpper, lookbackRange),
     ]);
 
     const realPriceNum = livePrice ? livePrice.price : null;
