@@ -34,7 +34,7 @@ async function searchYahooFinance(query: string): Promise<YahooQuoteResult[]> {
   for (const base of endpoints) {
     try {
       // Use Yahoo Finance v1 search API
-      const url = `${base}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query`;
+      const url = `${base}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&enableFuzzyQuery=true&quotesQueryId=tss_match_phrase_query`;
       const res = await fetch(url, {
         signal: AbortSignal.timeout(6000),
         headers,

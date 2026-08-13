@@ -51,9 +51,9 @@ export function StockSearch({ onSelect, onQueryChange, placeholder = 'Kërko aks
     return Object.keys(allStocks).includes(q);
   }, [query]);
 
-  // Search external API when no local match found
+  // Search external API for any query >= 1 char
   useEffect(() => {
-    if (!query.trim() || query.length < 2 || hasExactMatch) {
+    if (!query.trim() || query.length < 1) {
       setExternalResults([]);
       return;
     }
@@ -122,7 +122,7 @@ export function StockSearch({ onSelect, onQueryChange, placeholder = 'Kërko aks
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const showExternal = externalResults.length > 0 || (isSearching && query.length >= 2 && !hasExactMatch);
+  const showExternal = externalResults.length > 0 || (isSearching && query.length >= 1);
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>

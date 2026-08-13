@@ -6,17 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ResponsiveContainer,
-  ComposedChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  Customized,
-} from 'recharts';
+import { useMemo } from 'react';
+import { ResponsiveContainer } from 'recharts';
 import {
   BarChart3,
   Activity,
@@ -93,6 +84,105 @@ interface TechnicalAnalysisResult {
   candlestickData: CandleData[];
   summary: string;
   actionPlan: string;
+}
+
+// ═══ Self-contained Candlestick SVG Chart ═══
+// Avoids recharts Customized internal API which breaks across versions
+function CandlestickChart({ data }: { data: CandleData[] }) {
+  const chart = useMemo(() => {
+    if (!data || data.length === 0) return null;
+
+    const W = 800;
+    const H = 360;
+    const margin = { top: 15, right: 60, bottom: 30, left: 5 };
+    const priceH = H * 0.72;
+    const volH = H * 0.18;
+    const gap = H * 0.05;
+    const chartW = W - margin.left - margin.right;
+    const n = data.length;
+    const barSpace = chartW / n;
+    const bodyW = Math.max(barSpace * 0.55, 2);
+
+    // Price range
+    const allHigh = Math.max(...data.map(d => d.high));
+    const allLow = Math.min(...data.map(d => d.low));
+    const pricePad = (allHigh - allLow) * 0.08 || 1;
+    const pMin = allLow - pricePad;
+    const pMax = allHigh + pricePad;
+
+    const yPrice = (v: number) => margin.top + (1 - (v - pMin) / (pMax - pMin)) * priceH;
+
+    // Volume range
+    const maxVol = Math.max(...data.map(d => d.volume || 0)) || 1;
+    const volTop = margin.top + priceH + gap;
+    const yVol = (v: number) => volTop + volH - (v / maxVol) * volH;
+
+    // Grid lines (price)
+    const gridLines: { y: number; label: string }[] = [];
+    const steps = 5;
+    for (let i = 0; i <= steps; i++) {
+      const v = pMin + (pMax - pMin) * (i / steps);
+      gridLines.push({ y: yPrice(v), label: '$' + v.toFixed(1) });
+    }
+
+    // X-axis labels (show every N-th)
+    const labelEvery = n <= 10 ? 1 : n <= 20 ? 3 : 5;
+
+    const borderClr = 'hsl(240 6% 30%)';
+    const textClr = 'hsl(240 5% 65%)';
+
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" style={{ background: 'transparent' }}>
+        {/* Grid lines */}
+        {gridLines.map((g, i) => (
+          <g key={i}>
+            <line x1={margin.left} y1={g.y} x2={W - margin.right} y2={g.y} stroke={borderClr} strokeDasharray="3 3" strokeOpacity={0.4} />
+            <text x={W - margin.right + 5} y={g.y + 3} fill={textClr} fontSize={9} fontFamily="monospace">{g.label}</text>
+          </g>
+        ))}
+
+        {/* Volume separator */}
+        <line x1={margin.left} y1={volTop} x2={W - margin.right} y2={volTop} stroke={borderClr} strokeOpacity={0.3} />
+
+        {/* Candlesticks */}
+        {data.map((d, i) => {
+          const cx = margin.left + barSpace * i + barSpace / 2;
+          const isUp = d.close >= d.open;
+          const color = isUp ? '#10b981' : '#ef4444';
+          const volColor = isUp ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)';
+
+          const bodyTop = yPrice(Math.max(d.open, d.close));
+          const bodyBot = yPrice(Math.min(d.open, d.close));
+          const bodyH = Math.max(Math.abs(bodyBot - bodyTop), 1);
+
+          const wickTop = yPrice(d.high);
+          const wickBot = yPrice(d.low);
+
+          const vy = yVol(d.volume || 0);
+          const vh = Math.max(volTop + volH - vy, 0);
+
+          return (
+            <g key={i}>
+              {/* Volume bar */}
+              <rect x={cx - bodyW / 2} y={vy} width={bodyW} height={vh} fill={volColor} rx={1} />
+              {/* Wick */}
+              <line x1={cx} y1={wickTop} x2={cx} y2={wickBot} stroke={color} strokeWidth={1} />
+              {/* Body */}
+              <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill={color} stroke={color} strokeWidth={0.5} rx={1} />
+              {/* X label */}
+              {i % labelEvery === 0 && (
+                <text x={cx} y={H - 5} fill={textClr} fontSize={8} textAnchor="middle" fontFamily="monospace">
+                  {d.date.substring(5)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }, [data]);
+
+  return chart || <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
 }
 
 export function TechnicalAnalysis() {
@@ -301,126 +391,7 @@ export function TechnicalAnalysis() {
               <CardContent>
                 <div className="h-[360px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={analysis.candlestickData} margin={{ top: 10, right: 60, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(v: string) => v.substring(5)} />
-                      <YAxis yAxisId="price" domain={['auto', 'auto']} tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="volume" orientation="right" tick={{ fontSize: 9 }} />
-                      <Tooltip
-                        contentStyle={{
-                          background: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                          fontSize: '11px',
-                        }}
-                        formatter={(value: number, name: string) => {
-                          if (name === 'Volumi') return [`${(value / 1e6).toFixed(1)}M`, name];
-                          return [`$${value.toFixed(2)}`, name];
-                        }}
-                        content={({ payload, label }) => {
-                          if (!payload || payload.length === 0) return null;
-                          const d = payload[0]?.payload;
-                          if (!d) return null;
-                          const isUp = d.close >= d.open;
-                          return (
-                            <div className="bg-card border border-border rounded-lg p-2.5 shadow-lg text-[11px]">
-                              <p className="font-semibold mb-1">{label}</p>
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                                <span className="text-muted-foreground">Hapurje:</span>
-                                <span className="text-right font-mono">${d.open?.toFixed(2)}</span>
-                                <span className="text-muted-foreground">Mbyllje:</span>
-                                <span className={`text-right font-mono ${isUp ? 'text-emerald-500' : 'text-red-500'}`}>${d.close?.toFixed(2)}</span>
-                                <span className="text-muted-foreground">High:</span>
-                                <span className="text-right font-mono text-emerald-400">${d.high?.toFixed(2)}</span>
-                                <span className="text-muted-foreground">Low:</span>
-                                <span className="text-right font-mono text-red-400">${d.low?.toFixed(2)}</span>
-                                <span className="text-muted-foreground">Volumi:</span>
-                                <span className="text-right font-mono">{((d.volume || 0) / 1e6).toFixed(1)}M</span>
-                              </div>
-                            </div>
-                          );
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: '11px' }} />
-                      <Customized component={(props: any) => {
-                        const { formattedGraphicalItems, xAxisMap, yAxisMap, offset } = props;
-                        if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
-
-                        const xAxis = Object.values(xAxisMap)[0] as any;
-                        const priceAxis = Object.values(yAxisMap)[0] as any;
-                        const volumeAxis = Object.values(yAxisMap)[1] as any;
-                        if (!xAxis || !priceAxis || !volumeAxis) return null;
-
-                        const data = analysis.candlestickData;
-                        const bandwidth = Math.max(
-                          (xAxis.bandSize || ((offset.width - 40) / data.length)) * 0.6,
-                          2
-                        );
-                        const barWidth = Math.max(bandwidth * 0.65, 1.5);
-                        const scaleX = xAxis.scale || xAxis.xScale;
-                        if (!scaleX) return null;
-
-                        const priceScale = priceAxis.scale;
-                        const volumeScale = volumeAxis.scale;
-
-                        return (
-                          <g>
-                            {data.map((d, i) => {
-                              const x = scaleX(d.date) - bandwidth / 2;
-                              const isUp = d.close >= d.open;
-
-                              // Candlestick body
-                              const bodyTop = priceScale(Math.max(d.open, d.close));
-                              const bodyBottom = priceScale(Math.min(d.open, d.close));
-                              const bodyHeight = Math.max(Math.abs(bodyBottom - bodyTop), 1);
-
-                              // Wick (high to low)
-                              const wickTop = priceScale(d.high);
-                              const wickBottom = priceScale(d.low);
-
-                              // Volume bar
-                              const volHeight = Math.max((volumeScale(d.volume) || 0), 0);
-                              const volBottom = volumeScale(0) || offset.top + offset.height;
-                              const volColor = isUp ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)';
-
-                              return (
-                                <g key={`candle-${i}`}>
-                                  {/* Volume bar at bottom */}
-                                  <rect
-                                    x={x}
-                                    y={volBottom - volHeight}
-                                    width={barWidth}
-                                    height={volHeight}
-                                    fill={volColor}
-                                    rx={1}
-                                  />
-                                  {/* Wick */}
-                                  <line
-                                    x1={x + bandwidth / 2}
-                                    y1={wickTop}
-                                    x2={x + bandwidth / 2}
-                                    y2={wickBottom}
-                                    stroke={isUp ? '#10b981' : '#ef4444'}
-                                    strokeWidth={1}
-                                  />
-                                  {/* Body */}
-                                  <rect
-                                    x={x + (bandwidth - barWidth) / 2}
-                                    y={bodyTop}
-                                    width={barWidth}
-                                    height={bodyHeight}
-                                    fill={isUp ? '#10b981' : '#ef4444'}
-                                    stroke={isUp ? '#10b981' : '#ef4444'}
-                                    strokeWidth={0.5}
-                                    rx={1}
-                                  />
-                                </g>
-                              );
-                            })}
-                          </g>
-                        );
-                      }} />
-                    </ComposedChart>
+                    <CandlestickChart data={analysis.candlestickData} />
                   </ResponsiveContainer>
                 </div>
                 {/* Legend explanation */}
