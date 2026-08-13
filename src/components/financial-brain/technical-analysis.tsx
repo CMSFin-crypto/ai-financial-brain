@@ -235,17 +235,26 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const macdTop = rsiTop + rsiH + sep;
     const totalH = macdTop + macdH + bottomLabel;
 
-    // ═══ Compute indicators on FULL dataset first ═══
-    // Use standard TradingView periods — warmup offset will trim the null region
+    // ═══ Compute indicators — DUAL STRATEGY ═══
+    // Strategy A (70+ bars): standard TradingView periods + warmup offset trim
+    // Strategy B (<70 bars): scaled-down periods so warmup ≤ 10% of bars
     const closes = data.map(d => d.close);
 
-    const smaP      = 20;
-    const smaLongP  = 50;
-    const bbP       = 20;
-    const emaP      = 12;
-    const rsiP      = 14;
-    const macdFast  = 12;
-    const macdSlow  = 26;
+    let smaP: number, smaLongP: number, bbP: number, emaP: number, rsiP: number, macdFast: number, macdSlow: number;
+
+    if (n >= 70) {
+      smaP = 20; smaLongP = 50; bbP = 20; emaP = 12; rsiP = 14; macdFast = 12; macdSlow = 26;
+    } else {
+      // Scale the longest period so warmup ≈ 8% of n, derive others proportionally
+      const maxPeriod = Math.max(3, Math.floor(n * 0.08) + 1);
+      smaLongP  = maxPeriod;
+      smaP      = Math.max(2, Math.round(maxPeriod * 0.4));
+      bbP       = smaP;
+      emaP      = Math.max(2, Math.round(maxPeriod * 0.3));
+      rsiP      = Math.max(2, Math.round(maxPeriod * 0.35));
+      macdFast  = emaP;
+      macdSlow  = Math.max(macdFast + 1, Math.round(maxPeriod * 0.6));
+    }
 
     const sma20All = computeSMA(closes, smaP);
     const sma50All = computeSMA(closes, smaLongP);
@@ -279,7 +288,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
       histogram: macdAll.histogram.slice(warmup),
     };
 
-    console.log(`[CHART] total=${n} warmup=${warmup} display=${dn} bars`);
+    console.log(`[CHART] total=${n} warmup=${warmup} display=${dn} bars periods: SMA(${smaP},${smaLongP}) EMA(${emaP}) RSI(${rsiP}) MACD(${macdFast},${macdSlow})`);
 
     // ═══ Recalculate bar dimensions for DISPLAY data (after warmup trim) ═══
     displayBarW = chartW / dn;
@@ -314,8 +323,16 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
 
     const line = (vals: (number | null)[], color: string, sw = 1, id?: string) => {
       const pts: string[] = [];
+      let firstValidY: number | null = null;
       for (let i = 0; i < vals.length; i++) {
-        if (vals[i] !== null) pts.push(`${xOf(i)},${vals[i]}`);
+        if (vals[i] !== null) {
+          if (firstValidY === null) {
+            firstValidY = vals[i];
+            // Backfill: extend line to the left edge using first valid value
+            if (i > 0) pts.push(`${xOf(0)},${vals[i]}`);
+          }
+          pts.push(`${xOf(i)},${vals[i]}`);
+        }
       }
       return pts.length > 1 ? <polyline key={id ?? color} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" /> : null;
     };
