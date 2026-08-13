@@ -226,15 +226,16 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const macdTop = rsiTop + rsiH + sep;
     const totalH = macdTop + macdH + bottomLabel;
 
-    // ═══ Compute indicators (standard periods — API fetches enough lookback) ═══
+    // ═══ Compute indicators — adaptive periods based on data length ═══
+    // Scales periods proportionally so lines span ~85%+ of chart width
     const closes = data.map(d => d.close);
-    const smaP = Math.min(20, n);
-    const smaLongP = Math.min(50, n);
-    const bbP = Math.min(20, n);
-    const emaP = Math.min(12, n);
-    const rsiP = Math.min(14, n - 2);
-    const macdFast = Math.min(12, n);
-    const macdSlow = Math.min(26, n);
+    const smaP = Math.max(3, Math.min(20, Math.round(n * 0.16)));
+    const smaLongP = Math.max(5, Math.min(50, Math.round(n * 0.40)));
+    const bbP = Math.max(3, Math.min(20, Math.round(n * 0.16)));
+    const emaP = Math.max(3, Math.min(12, Math.round(n * 0.10)));
+    const rsiP = Math.max(3, Math.min(14, Math.round(n * 0.11)));
+    const macdFast = Math.max(3, Math.min(12, Math.round(n * 0.10)));
+    const macdSlow = Math.max(5, Math.min(26, Math.round(n * 0.21)));
 
     const sma20 = computeSMA(closes, smaP);
     const sma50 = computeSMA(closes, smaLongP);
@@ -374,10 +375,10 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastClose.toFixed(2)}</text>
 
         {/* TV-style top-left indicator legend */}
-        {lastSma20 !== null && <text x={L + 8} y={priceTop + 14} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA(20) {lastSma20.toFixed(2)}</text>}
-        {lastSma50 !== null && <text x={L + 8} y={priceTop + 26} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA(50) {lastSma50.toFixed(2)}</text>}
-        {lastEma12 !== null && <text x={L + 8} y={priceTop + 38} fill={EMA12_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">EMA(12) {lastEma12.toFixed(2)}</text>}
-        <text x={L + 8} y={priceTop + 50} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB (20, 2)</text>
+        {lastSma20 !== null && <text x={L + 8} y={priceTop + 14} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaP}) {lastSma20.toFixed(2)}</text>}
+        {lastSma50 !== null && <text x={L + 8} y={priceTop + 26} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaLongP}) {lastSma50.toFixed(2)}</text>}
+        {lastEma12 !== null && <text x={L + 8} y={priceTop + 38} fill={EMA12_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">EMA({emaP}) {lastEma12.toFixed(2)}</text>}
+        <text x={L + 8} y={priceTop + 50} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB ({bbP}, 2)</text>
 
         {/* Volume label */}
         <text x={L + 8} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.6}>Vol</text>
@@ -400,7 +401,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
           {line(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi')}
         </g>
         {/* TV-style RSI label top-left */}
-        <text x={L + 8} y={rsiTop + 14} fill={RSI_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">RSI (14)</text>
+        <text x={L + 8} y={rsiTop + 14} fill={RSI_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">RSI ({rsiP})</text>
         {lastRsi !== null && (
           <text x={L + 72} y={rsiTop + 14} fill={lastRsi > 70 ? BEAR : lastRsi < 30 ? BULL : TXT} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastRsi.toFixed(2)}</text>
         )}
@@ -430,12 +431,12 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
           {line(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig')}
         </g>
         {/* TV-style MACD label top-left */}
-        <text x={L + 8} y={macdTop + 14} fill={MACD_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">MACD</text>
+        <text x={L + 8} y={macdTop + 14} fill={MACD_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">MACD ({macdFast},{macdSlow})</text>
         {lastMacd !== null && (
-          <text x={L + 52} y={macdTop + 14} fill={MACD_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastMacd.toFixed(2)}</text>
+          <text x={L + 100} y={macdTop + 14} fill={MACD_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastMacd.toFixed(2)}</text>
         )}
         {lastSig !== null && (
-          <text x={L + 110} y={macdTop + 14} fill={SIG_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">Signal {lastSig.toFixed(2)}</text>
+          <text x={L + 155} y={macdTop + 14} fill={SIG_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">Signal {lastSig.toFixed(2)}</text>
         )}
 
         {/* ═══════ X-AXIS DATE LABELS ═══════ */}
@@ -460,7 +461,7 @@ export function TechnicalAnalysis() {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [timeframe, setTimeframe] = useState('1mo');
+  const [timeframe, setTimeframe] = useState('6mo');
 
   const timeframes = [
     { value: '1d', label: '1D' },
