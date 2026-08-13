@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Based on the provided image, here is a detailed description addressing your specific questions:\n\n**1) Is there a candlestick chart with green/red bars visible?**\n**No.** The image does not display a visual financial chart, candlestick bars (green or red), or any graphical price data representation. The screenshot consists entirely of text-based analysis and interface elements.\n\n**2) Are there colored lines overlaid on the candlesticks (yellow, blue, pink, purple)?**\n**No.** Since there is no chart visible in the image, there are no overlaid indicator lines of any color.\n\n**3) Below the candlesticks, is there a volume bar chart?**\n**No.** There is no volume chart or any secondary graphical panel below a main chart area.\n\n**4) Below volume, is there an RSI panel with a purple line and 30/70 levels?**\n**No.** While the text content explicitly **mentions** RSI data (\"RSI prej 38.4\"), there is no visual RSI graph or panel displayed in the screenshot.\n\n**5) At the bottom, is there a MACD panel with cyan/orange lines and green/red histogram bars?**\n**No.** Similar to the RSI, the text **references** MACD data (\"Indikatorët si MACD dhe mesataret...\"), but there is no visual MACD histogram or line chart present.\n\n**6) What legend items are shown below the chart?**\nThere are no legend items because there is no chart. The space where a legend might appear is occupied by text sections titled \"**Përmbledhje**\" (Summary) and \"**Plan i Veprimit**\" (Action Plan).\n\n---\n\n### Detailed Visual Description of Actual Content\n\nThe image displays a dark-themed mobile application interface for a tool called **\"AI Financial Brain\"**, which appears to be generating a text-based trading report for the stock **AAPL** (Apple Inc.). The language used is **Albanian**.\n\n*   **Header:**\n    *   **Top Left:** A logo featuring a green brain icon with a red downward trend line.\n    *   **Title:** \"AI Financial Brain\" in large white bold text.\n    *   **Background Text:** Faintly visible text behind the title reads \"Downtrend Channel,\" \"Bearish,\" and \"High.\"\n\n*   **Top Analysis Box (Partially Visible):**\n    *   A dark red/brown rounded box contains text discussing resistance levels and a probability for the price to test a support level around **310.00**.\n\n*   **Main Content Area (Dark Green/Black Background):**\n    *   **Section 1: Përmbledhje (Summary)**\n        *   **Icon:** A green line graph icon trending downwards.\n        *   **Text:** The analysis states that AAPL is in a \"fourth wave downtrend.\" It cites the current price at **302.25**, approaching a psychological critical level of **300.00**.\n        *   **Indicators Mentioned:** It notes that MACD and moving averages confirm selling dominance. It mentions the **RSI is at 38.4**, suggesting buying pressure is not yet extreme but approaching oversold zones.\n        *   **Recommendation:** It recommends waiting for stabilization near the **310.00** level.\n        *   **Outlook:** The orientation is described as **BEARISH** in the short term.\n\n    *   **Section 2: Plan i Veprimit (Action Plan)**\n        *   **Icon:** A green arrow pointing up and to the right.\n        *   **Strategy Box:** A distinct outlined box contains specific trade details:\n            *   **Strategjia (Strategy):** Short position (Pozicionim i shkurtër).\n            *   **Hyrje (Entry):** If price breaks below **300.00**.\n            *   **Stop Loss:** **311.00** (above resistance).\n            *   **Target 1:** **295.00**.\n            *   **Target 2:** **288.00**.\n            *   **Risk/Reward:** 1:2.\n            *   **Menaxhimi i fondove (Money Management):** Risking 1-2% of total capital due to high volatility.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1786623375,
+  "id": "202608132016031b45b697969746d6",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "202608132016031b45b697969746d6",
+  "usage": {
+    "completion_tokens": 903,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 3809,
+    "prompt_tokens_details": {
+      "cached_tokens": 2
+    },
+    "total_tokens": 4712
+  }
+}

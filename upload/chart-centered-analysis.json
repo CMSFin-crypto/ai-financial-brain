@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Based on the provided image, here are the answers regarding the graphical chart area:\n\n1) **Are there green/red candlestick bars?** **NO**. There is no graphical chart or candlestick bars visible in the image.\n2) **Are there colored lines (yellow SMA20, blue SMA50, pink EMA12, purple Bollinger)?** **NO**. There are no colored lines or indicators visible.\n3) **Is there a volume panel below?** **NO**. There is no volume panel visible.\n4) **Is there an RSI panel with purple line?** **NO**. While the text mentions \"RSI prej 38.4\", there is no actual RSI graph or line displayed.\n5) **Is there a MACD panel at bottom with cyan/orange lines?** **NO**. Although the text discusses the MACD indicator, there is no MACD chart or lines shown.\n\n**Description of what is actually seen:** The image does not contain a graphical chart area at all. Instead, it displays a text-based report titled \"AI Financial Brain\" and \"Përmbledhje\" (Summary). The content consists of written analysis about AAPL stock, mentioning price levels (302.25, 300.00), technical indicators (MACD, RSI 38.4), and a trading strategy (\"Plan i Veprimit\") with entry, stop-loss, and target prices. The entire visual is composed of white and green text on a dark background within a mobile interface layout.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1786623403,
+  "id": "20260813201637d7117fedbcde4368",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "20260813201637d7117fedbcde4368",
+  "usage": {
+    "completion_tokens": 318,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 3794,
+    "prompt_tokens_details": {
+      "cached_tokens": 2
+    },
+    "total_tokens": 4112
+  }
+}
