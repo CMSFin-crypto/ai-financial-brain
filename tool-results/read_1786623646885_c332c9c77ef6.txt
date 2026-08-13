@@ -1,0 +1,916 @@
+     1→'use client';
+     2→
+     3→import { useState } from 'react';
+     4→import { Button } from '@/components/ui/button';
+     5→import { Input } from '@/components/ui/input';
+     6→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+     7→import { Badge } from '@/components/ui/badge';
+     8→import { Skeleton } from '@/components/ui/skeleton';
+     9→import { useMemo } from 'react';
+    10→import { ResponsiveContainer } from 'recharts';
+    11→import {
+    12→  BarChart3,
+    13→  Activity,
+    14→  Search,
+    15→  Loader2,
+    16→  TrendingUp,
+    17→  TrendingDown,
+    18→  Minus,
+    19→  ArrowUp,
+    20→  ArrowDown,
+    21→  DollarSign,
+    22→  AlertTriangle,
+    23→} from 'lucide-react';
+    24→import { StockSearch } from './stock-search';
+    25→
+    26→interface CandleData {
+    27→  date: string;
+    28→  open: number;
+    29→  high: number;
+    30→  low: number;
+    31→  close: number;
+    32→  volume: number;
+    33→}
+    34→
+    35→interface Indicator {
+    36→  value: number;
+    37→  signal: string;
+    38→  interpretation: string;
+    39→}
+    40→
+    41→interface PriceAnalysis {
+    42→  currentPrice: number;
+    43→  previousClose: number;
+    44→  priceChange: number;
+    45→  trend: string;
+    46→  trendStrength: string;
+    47→}
+    48→
+    49→interface TechnicalAnalysisResult {
+    50→  ticker: string;
+    51→  company: string;
+    52→  sector?: string;
+    53→  overallSignal: string;
+    54→  confidence: number;
+    55→  priceAnalysis: PriceAnalysis;
+    56→  isDemo?: boolean;
+    57→  isRealChart?: boolean;
+    58→  indicators: {
+    59→    rsi: Indicator;
+    60→    macd: Indicator;
+    61→    movingAverage: {
+    62→      sma20: string;
+    63→      sma50: string;
+    64→      sma200: string;
+    65→      ema12: string;
+    66→      signal: string;
+    67→      interpretation: string;
+    68→    };
+    69→    bollingerBands: {
+    70→      upper: string;
+    71→      middle: string;
+    72→      lower: string;
+    73→      signal: string;
+    74→      interpretation: string;
+    75→    };
+    76→    volume: Indicator;
+    77→    stochastic: { k: number; d: number; signal: string; interpretation: string };
+    78→  };
+    79→  supportResistance: {
+    80→    supports: string[];
+    81→    resistances: string[];
+    82→  };
+    83→  patterns: Array<{ name: string; type: string; reliability: string; description: string }>;
+    84→  candlestickData: CandleData[];
+    85→  summary: string;
+    86→  actionPlan: string;
+    87→}
+    88→
+    89→// ═══ Technical indicator computations ═══
+    90→function computeSMA(closes: number[], period: number): (number | null)[] {
+    91→  const result: (number | null)[] = [];
+    92→  for (let i = 0; i < closes.length; i++) {
+    93→    if (i < period - 1) { result.push(null); continue; }
+    94→    let sum = 0;
+    95→    for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+    96→    result.push(sum / period);
+    97→  }
+    98→  return result;
+    99→}
+   100→
+   101→function computeEMA(closes: number[], period: number): (number | null)[] {
+   102→  const k = 2 / (period + 1);
+   103→  const result: (number | null)[] = [];
+   104→  let ema: number | null = null;
+   105→  for (let i = 0; i < closes.length; i++) {
+   106→    if (i < period - 1) { result.push(null); continue; }
+   107→    if (ema === null) {
+   108→      let sum = 0; for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+   109→      ema = sum / period;
+   110→    } else {
+   111→      ema = closes[i] * k + ema * (1 - k);
+   112→    }
+   113→    result.push(ema);
+   114→  }
+   115→  return result;
+   116→}
+   117→
+   118→function computeRSI(closes: number[], period: number = 14): (number | null)[] {
+   119→  const result: (number | null)[] = [];
+   120→  const gains: number[] = [];
+   121→  const losses: number[] = [];
+   122→  for (let i = 1; i < closes.length; i++) {
+   123→    const diff = closes[i] - closes[i - 1];
+   124→    gains.push(diff > 0 ? diff : 0);
+   125→    losses.push(diff < 0 ? -diff : 0);
+   126→  }
+   127→  let avgGain = 0, avgLoss = 0;
+   128→  for (let i = 0; i < Math.min(period, gains.length); i++) { avgGain += gains[i]; avgLoss += losses[i]; }
+   129→  avgGain /= period; avgLoss /= period;
+   130→  for (let i = 0; i < period - 1; i++) result.push(null);
+   131→  const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+   132→  result.push(100 - 100 / (1 + rs));
+   133→  for (let i = period; i < gains.length; i++) {
+   134→    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+   135→    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+   136→    const rs2 = avgLoss === 0 ? 100 : avgGain / avgLoss;
+   137→    result.push(100 - 100 / (1 + rs2));
+   138→  }
+   139→  return result;
+   140→}
+   141→
+   142→function computeMACD(closes: number[]): { macd: (number | null)[]; signal: (number | null)[]; histogram: (number | null)[] } {
+   143→  const ema12 = computeEMA(closes, 12);
+   144→  const ema26 = computeEMA(closes, 26);
+   145→  const macdLine: (number | null)[] = [];
+   146→  for (let i = 0; i < closes.length; i++) {
+   147→    if (ema12[i] === null || ema26[i] === null) { macdLine.push(null); continue; }
+   148→    macdLine.push(ema12[i]! - ema26[i]!);
+   149→  }
+   150→  // Signal = 9-period EMA of MACD line
+   151→  const validMACD = macdLine.filter((v): v is number => v !== null);
+   152→  const signalEma = computeEMA(validMACD, 9);
+   153→  const signal: (number | null)[] = [];
+   154→  let vi = 0;
+   155→  for (let i = 0; i < closes.length; i++) {
+   156→    if (macdLine[i] === null) { signal.push(null); continue; }
+   157→    signal.push(signalEma[vi] ?? null);
+   158→    vi++;
+   159→  }
+   160→  const histogram: (number | null)[] = [];
+   161→  for (let i = 0; i < closes.length; i++) {
+   162→    if (macdLine[i] === null || signal[i] === null) { histogram.push(null); continue; }
+   163→    histogram.push(macdLine[i]! - signal[i]!);
+   164→  }
+   165→  return { macd: macdLine, signal, histogram };
+   166→}
+   167→
+   168→function computeBollingerBands(closes: number[], period: number = 20, mult: number = 2): { upper: (number | null)[]; middle: (number | null)[]; lower: (number | null)[] } {
+   169→  const middle = computeSMA(closes, period);
+   170→  const upper: (number | null)[] = [];
+   171→  const lower: (number | null)[] = [];
+   172→  for (let i = 0; i < closes.length; i++) {
+   173→    if (middle[i] === null) { upper.push(null); lower.push(null); continue; }
+   174→    let sumSq = 0;
+   175→    for (let j = i - period + 1; j <= i; j++) sumSq += (closes[j] - middle[i]!) ** 2;
+   176→    const std = Math.sqrt(sumSq / period);
+   177→    upper.push(middle[i]! + mult * std);
+   178→    lower.push(middle[i]! - mult * std);
+   179→  }
+   180→  return { upper, middle, lower };
+   181→}
+   182→
+   183→// ═══ Full Technical Chart with Indicators ═══
+   184→function CandlestickChart({ data }: { data: CandleData[] }) {
+   185→  const chart = useMemo(() => {
+   186→    if (!data || data.length < 3) return null;
+   187→
+   188→    const W = 800;
+   189→    const H = 620;
+   190→    const margin = { top: 12, right: 58, bottom: 22, left: 5 };
+   191→    const chartW = W - margin.left - margin.right;
+   192→    const n = data.length;
+   193→    const barSpace = chartW / n;
+   194→    const bodyW = Math.max(barSpace * 0.55, 2);
+   195→
+   196→    // Panel heights
+   197→    const priceH = H * 0.46;
+   198→    const volH = H * 0.10;
+   199→    const rsiH = H * 0.12;
+   200→    const macdH = H * 0.14;
+   201→    const gapH = H * 0.02;
+   202→    
+   203→    let yCursor = margin.top;
+   204→    const priceTop = yCursor; yCursor += priceH;
+   205→    const volTop = yCursor; yCursor += volH + gapH;
+   206→    const rsiTop = yCursor; yCursor += rsiH;
+   207→    const macdTop = yCursor; yCursor += macdH;
+   208→    const xLabelY = H - 4;
+   209→
+   210→    // ═══ Compute indicators ═══
+   211→    const closes = data.map(d => d.close);
+   212→    const sma20 = computeSMA(closes, Math.min(20, n));
+   213→    const sma50 = computeSMA(closes, Math.min(50, n));
+   214→    const ema12 = computeEMA(closes, Math.min(12, n));
+   215→    const bb = computeBollingerBands(closes, Math.min(20, n));
+   216→    const rsi = computeRSI(closes, 14);
+   217→    const macdData = computeMACD(closes);
+   218→
+   219→    // ═══ Price scale ═══
+   220→    const allH = Math.max(...data.map(d => d.high), ...sma20.filter((v): v is number => v !== null) ?? [], ...bb.upper.filter((v): v is number => v !== null) ?? []);
+   221→    const allL = Math.min(...data.map(d => d.low), ...sma20.filter((v): v is number => v !== null) ?? [], ...bb.lower.filter((v): v is number => v !== null) ?? []);
+   222→    const pPad = (allH - allL) * 0.06 || 1;
+   223→    const pMin = allL - pPad;
+   224→    const pMax = allH + pPad;
+   225→    const yP = (v: number) => priceTop + (1 - (v - pMin) / (pMax - pMin)) * priceH;
+   226→
+   227→    // ═══ Volume scale ═══
+   228→    const maxVol = Math.max(...data.map(d => d.volume || 0)) || 1;
+   229→    const yV = (v: number) => volTop + volH - (v / maxVol) * volH;
+   230→
+   231→    // ═══ RSI scale (0-100) ═══
+   232→    const yR = (v: number) => rsiTop + (1 - v / 100) * rsiH;
+   233→
+   234→    // ═══ MACD scale ═══
+   235→    const allMacd = macdData.macd.filter((v): v is number => v !== null);
+   236→    const allHist = macdData.histogram.filter((v): v is number => v !== null);
+   237→    const macdMax = Math.max(Math.abs(Math.min(...allMacd, ...allHist)), Math.abs(Math.max(...allMacd, ...allHist)), 0.01);
+   238→    const yM = (v: number) => macdTop + macdH / 2 - (v / macdMax) * (macdH / 2);
+   239→
+   240→    // ═══ Helpers ═══
+   241→    const xOf = (i: number) => margin.left + barSpace * i + barSpace / 2;
+   242→    const labelEvery = n <= 10 ? 1 : n <= 20 ? 3 : 5;
+   243→    const gridClr = 'hsl(240 6% 30%)';
+   244→    const txtClr = 'hsl(240 5% 60%)';
+   245→
+   246→    // ═══ Polyline helper ═══
+   247→    const polyline = (vals: (number | null)[], color: string, width = 1.2) => {
+   248→      const pts: string[] = [];
+   249→      for (let i = 0; i < vals.length; i++) {
+   250→        if (vals[i] !== null) pts.push(`${xOf(i)},${vals[i]}`);
+   251→      }
+   252→      return pts.length > 1 ? <polyline key={color} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={width} strokeOpacity={0.85} /> : null;
+   253→    };
+   254→
+   255→    // ═══ Grid lines (price) ═══
+   256→    const priceGrid: { y: number; label: string }[] = [];
+   257→    for (let i = 0; i <= 4; i++) {
+   258→      const v = pMin + (pMax - pMin) * (i / 4);
+   259→      priceGrid.push({ y: yP(v), label: '$' + v.toFixed(1) });
+   260→    }
+   261→
+   262→    // ═══ Bollinger Band fill ═══
+   263→    const bbFill: string[] = [];
+   264→    for (let i = 0; i < n; i++) {
+   265→      if (bb.upper[i] !== null) bbFill.push(`${xOf(i)},${yP(bb.upper[i]!)}`);
+   266→    }
+   267→    for (let i = n - 1; i >= 0; i--) {
+   268→      if (bb.lower[i] !== null) bbFill.push(`${xOf(i)},${yP(bb.lower[i]!)}`);
+   269→    }
+   270→
+   271→    // ═══ RSI zones ═══
+   272→    const rsiOverbought = yR(70);
+   273→    const rsiOversold = yR(30);
+   274→    const rsiMid = yR(50);
+   275→
+   276→    return (
+   277→      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" style={{ background: 'transparent' }}>
+   278→        {/* ── PRICE PANEL ── */}
+   279→        {/* Grid */}
+   280→        {priceGrid.map((g, i) => (
+   281→          <g key={i}>
+   282→            <line x1={margin.left} y1={g.y} x2={W - margin.right} y2={g.y} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.35} />
+   283→            <text x={W - margin.right + 4} y={g.y + 3} fill={txtClr} fontSize={8.5} fontFamily="monospace">{g.label}</text>
+   284→          </g>
+   285→        ))}
+   286→
+   287→        {/* Bollinger Bands shaded area */}
+   288→        {bbFill.length > 2 && (
+   289→          <polygon points={bbFill.join(' ')} fill="rgba(139,92,246,0.07)" stroke="none" />
+   290→        )}
+   291→
+   292→        {/* Bollinger Band lines */}
+   293→        {polyline(bb.upper.map(v => v !== null ? yP(v) : null), '#8b5cf6', 0.8)}
+   294→        {polyline(bb.middle.map(v => v !== null ? yP(v) : null), '#8b5cf6', 0.8)}
+   295→        {polyline(bb.lower.map(v => v !== null ? yP(v) : null), '#8b5cf6', 0.8)}
+   296→
+   297→        {/* Moving Average lines */}
+   298→        {polyline(sma20.map(v => v !== null ? yP(v) : null), '#f59e0b', 1.2)}
+   299→        {polyline(sma50.map(v => v !== null ? yP(v) : null), '#3b82f6', 1.2)}
+   300→        {polyline(ema12.map(v => v !== null ? yP(v) : null), '#ec4899', 1)}
+   301→
+   302→        {/* Candlesticks */}
+   303→        {data.map((d, i) => {
+   304→          const cx = xOf(i);
+   305→          const isUp = d.close >= d.open;
+   306→          const color = isUp ? '#10b981' : '#ef4444';
+   307→          const bodyTop = yP(Math.max(d.open, d.close));
+   308→          const bodyBot = yP(Math.min(d.open, d.close));
+   309→          const bodyH = Math.max(Math.abs(bodyBot - bodyTop), 1);
+   310→          return (
+   311→            <g key={i}>
+   312→              <line x1={cx} y1={yP(d.high)} x2={cx} y2={yP(d.low)} stroke={color} strokeWidth={1} />
+   313→              <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill={color} stroke={color} strokeWidth={0.5} rx={1} />
+   314→            </g>
+   315→          );
+   316→        })}
+   317→
+   318→        {/* Panel separator */}
+   319→        <line x1={margin.left} y1={volTop - 2} x2={W - margin.right} y2={volTop - 2} stroke={gridClr} strokeOpacity={0.3} />
+   320→
+   321→        {/* ── VOLUME PANEL ── */}
+   322→        {data.map((d, i) => {
+   323→          const cx = xOf(i);
+   324→          const isUp = d.close >= d.open;
+   325→          const vy = yV(d.volume || 0);
+   326→          const vh = Math.max(volTop + volH - vy, 0);
+   327→          return (
+   328→            <rect key={i} x={cx - bodyW / 2} y={vy} width={bodyW} height={vh}
+   329→              fill={isUp ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'} rx={1} />
+   330→          );
+   331→        })}
+   332→        <text x={margin.left + 2} y={volTop + 10} fill={txtClr} fontSize={8} opacity={0.6}>VOL</text>
+   333→
+   334→        {/* Panel separator */}
+   335→        <line x1={margin.left} y1={rsiTop - 2} x2={W - margin.right} y2={rsiTop - 2} stroke={gridClr} strokeOpacity={0.3} />
+   336→
+   337→        {/* ── RSI PANEL ── */}
+   338→        {/* Overbought / oversold zones */}
+   339→        <rect x={margin.left} y={rsiTop} width={chartW} height={yR(70) - rsiTop} fill="rgba(239,68,68,0.06)" />
+   340→        <rect x={margin.left} y={yR(30)} width={chartW} height={rsiTop + rsiH - yR(30)} fill="rgba(16,185,129,0.06)" />
+   341→        <line x1={margin.left} y1={rsiOverbought} x2={W - margin.right} y2={rsiOverbought} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.4} />
+   342→        <line x1={margin.left} y1={rsiOversold} x2={W - margin.right} y2={rsiOversold} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.4} />
+   343→        <line x1={margin.left} y1={rsiMid} x2={W - margin.right} y2={rsiMid} stroke={gridClr} strokeDasharray="2 4" strokeOpacity={0.2} />
+   344→        <text x={W - margin.right + 4} y={rsiOverbought + 3} fill={txtClr} fontSize={7.5}>70</text>
+   345→        <text x={W - margin.right + 4} y={rsiOversold + 3} fill={txtClr} fontSize={7.5}>30</text>
+   346→        {polyline(rsi.map(v => v !== null ? yR(v) : null), '#a855f7', 1.5)}
+   347→        <text x={margin.left + 2} y={rsiTop + 10} fill={txtClr} fontSize={8} opacity={0.6}>RSI(14)</text>
+   348→
+   349→        {/* Panel separator */}
+   350→        <line x1={margin.left} y1={macdTop - 2} x2={W - margin.right} y2={macdTop - 2} stroke={gridClr} strokeOpacity={0.3} />
+   351→
+   352→        {/* ── MACD PANEL ── */}
+   353→        <line x1={margin.left} y1={macdTop + macdH / 2} x2={W - margin.right} y2={macdTop + macdH / 2} stroke={gridClr} strokeDasharray="2 4" strokeOpacity={0.25} />
+   354→        {/* MACD histogram */}
+   355→        {macdData.histogram.map((v, i) => {
+   356→          if (v === null) return null;
+   357→          const cx = xOf(i);
+   358→          const isPos = v >= 0;
+   359→          const barY = isPos ? yM(v) : macdTop + macdH / 2;
+   360→          const barH = Math.abs(yM(v) - (macdTop + macdH / 2));
+   361→          return (
+   362→            <rect key={i} x={cx - bodyW * 0.4} y={barY} width={bodyW * 0.8} height={Math.max(barH, 0.5)}
+   363→              fill={isPos ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'} rx={0.5} />
+   364→          );
+   365→        })}
+   366→        {/* MACD line & signal line */}
+   367→        {polyline(macdData.macd.map(v => v !== null ? yM(v) : null), '#06b6d4', 1.3)}
+   368→        {polyline(macdData.signal.map(v => v !== null ? yM(v) : null), '#f97316', 1)}
+   369→        <text x={margin.left + 2} y={macdTop + 10} fill={txtClr} fontSize={8} opacity={0.6}>MACD</text>
+   370→        <text x={W - margin.right + 4} y={macdTop + 10} fill="#06b6d4" fontSize={7}>MACD</text>
+   371→        <text x={W - margin.right + 4} y={macdTop + 20} fill="#f97316" fontSize={7}>Signal</text>
+   372→
+   373→        {/* ── X-AXIS LABELS ── */}
+   374→        {data.map((d, i) => {
+   375→          if (i % labelEvery !== 0) return null;
+   376→          return (
+   377→            <text key={i} x={xOf(i)} y={xLabelY} fill={txtClr} fontSize={7.5} textAnchor="middle" fontFamily="monospace">
+   378→              {d.date.substring(5)}
+   379→            </text>
+   380→          );
+   381→        })}
+   382→      </svg>
+   383→    );
+   384→  }, [data]);
+   385→
+   386→  return chart || <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
+   387→}
+   388→
+   389→export function TechnicalAnalysis() {
+   390→  const [ticker, setTicker] = useState('');
+   391→  const [searchQuery, setSearchQuery] = useState('');
+   392→  const [isLoading, setIsLoading] = useState(false);
+   393→  const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null);
+   394→  const [error, setError] = useState<string | null>(null);
+   395→  const [timeframe, setTimeframe] = useState('1mo');
+   396→
+   397→  const timeframes = [
+   398→    { value: '1d', label: '1D' },
+   399→    { value: '5d', label: '5D' },
+   400→    { value: '1mo', label: '1Mo' },
+   401→    { value: '3mo', label: '3Mo' },
+   402→    { value: '6mo', label: '6Mo' },
+   403→    { value: '1y', label: '1V' },
+   404→    { value: '5y', label: '5V' },
+   405→  ];
+   406→
+   407→  const runAnalysisForTicker = async (tickerSymbol?: string) => {
+   408→    const sym = (tickerSymbol || ticker).trim().toUpperCase();
+   409→    if (!sym) return;
+   410→    setTicker(sym);
+   411→    setIsLoading(true);
+   412→    setError(null);
+   413→    setAnalysis(null);
+   414→
+   415→    try {
+   416→      const res = await fetch('/api/technical-analysis', {
+   417→        method: 'POST',
+   418→        headers: { 'Content-Type': 'application/json' },
+   419→        body: JSON.stringify({ ticker: sym, range: timeframe }),
+   420→      });
+   421→      const data = await res.json();
+   422→
+   423→      if (!res.ok) {
+   424→        setError(data.error || 'Analiza dështoi');
+   425→        return;
+   426→      }
+   427→      setAnalysis(data.analysis);
+   428→    } catch {
+   429→      setError('Gabim rrjeti. Provo përsëri.');
+   430→    } finally {
+   431→      setIsLoading(false);
+   432→    }
+   433→  };
+   434→
+   435→  const runAnalysis = () => runAnalysisForTicker();
+   436→
+   437→  const getSignalIcon = (signal: string) => {
+   438→    const s = signal.toLowerCase();
+   439→    if (s.includes('bullish') || s.includes('buy') || s === 'overbought')
+   440→      return <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />;
+   441→    if (s.includes('bearish') || s.includes('sell') || s === 'oversold')
+   442→      return <TrendingDown className="w-3.5 h-3.5 text-red-400" />;
+   443→    return <Minus className="w-3.5 h-3.5 text-amber-400" />;
+   444→  };
+   445→
+   446→  const getSignalColor = (signal: string) => {
+   447→    const s = signal.toLowerCase();
+   448→    if (s.includes('bullish') || s.includes('buy')) return 'text-emerald-400';
+   449→    if (s.includes('bearish') || s.includes('sell')) return 'text-red-400';
+   450→    return 'text-amber-400';
+   451→  };
+   452→
+   453→  const getSignalBg = (signal: string) => {
+   454→    const s = signal.toLowerCase();
+   455→    if (s.includes('bullish') || s.includes('buy')) return 'bg-emerald-500';
+   456→    if (s.includes('bearish') || s.includes('sell')) return 'bg-red-500';
+   457→    return 'bg-amber-500';
+   458→  };
+   459→
+   460→  const price = analysis?.priceAnalysis?.currentPrice;
+   461→  const priceChange = analysis?.priceAnalysis?.priceChange;
+   462→
+   463→  return (
+   464→    <div className="space-y-4">
+   465→      {/* Timeframe Selector */}
+   466→      <div className="flex items-center gap-1.5">
+   467→        {timeframes.map((tf) => (
+   468→          <button
+   469→            key={tf.value}
+   470→            onClick={() => setTimeframe(tf.value)}
+   471→            className={`text-xs px-2.5 py-1 rounded-md transition-colors font-medium ${
+   472→              timeframe === tf.value
+   473→                ? 'bg-emerald-600 text-white'
+   474→                : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+   475→            }`}
+   476→          >
+   477→            {tf.label}
+   478→          </button>
+   479→        ))}
+   480→      </div>
+   481→
+   482→      {/* Search Bar */}
+   483→      <div className="flex gap-2">
+   484→        <StockSearch
+   485→          onSelect={(t) => runAnalysisForTicker(t)}
+   486→          onQueryChange={(q) => setSearchQuery(q)}
+   487→          placeholder="Kërko ticker-in... AAPL, VRT, GLW"
+   488→          className="flex-1"
+   489→          inputClassName="h-10 text-sm"
+   490→        />
+   491→        <Button
+   492→          onClick={() => runAnalysisForTicker(searchQuery || ticker)}
+   493→          disabled={isLoading || !(searchQuery.trim() || ticker.trim())}
+   494→          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   495→        >
+   496→          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4 mr-1.5" />}
+   497→          Analizo
+   498→        </Button>
+   499→      </div>
+   500→
+   501→      {/* Error */}
+   502→      {error && (
+   503→        <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+   504→          {error}
+   505→        </div>
+   506→      )}
+   507→
+   508→      {/* Loading */}
+   509→      {isLoading && (
+   510→        <div className="space-y-4">
+   511→          <Skeleton className="h-[120px] rounded-xl" />
+   512→          <Skeleton className="h-[300px] rounded-xl" />
+   513→          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+   514→            <Skeleton className="h-[180px] rounded-xl" />
+   515→            <Skeleton className="h-[180px] rounded-xl" />
+   516→            <Skeleton className="h-[180px] rounded-xl" />
+   517→          </div>
+   518→        </div>
+   519→      )}
+   520→
+   521→      {/* Results */}
+   522→      {analysis && !isLoading && (
+   523→        <div className="space-y-4">
+   524→          {/* ═══ HEADER — Ticker, Price, Signal ═══ */}
+   525→          <Card className="border-border/50 bg-card/50">
+   526→            <CardContent className="pt-5">
+   527→              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+   528→                <div>
+   529→                  <div className="flex items-center gap-2.5">
+   530→                    <h3 className="text-2xl font-bold">{analysis.ticker}</h3>
+   531→                    <Badge className={`${getSignalBg(analysis.overallSignal)} text-white font-semibold`}>
+   532→                      {analysis.overallSignal}
+   533→                    </Badge>
+   534→                    {analysis.isDemo && (
+   535→                      <Badge variant="outline" className="text-[9px] text-muted-foreground border-muted">
+   536→                        <AlertTriangle className="w-2.5 h-2.5 mr-0.5" /> Demo
+   537→                      </Badge>
+   538→                    )}
+   539→                  </div>
+   540→                  <p className="text-sm text-muted-foreground mt-0.5">{analysis.company}</p>
+   541→                  {analysis.sector && (
+   542→                    <p className="text-[11px] text-muted-foreground">{analysis.sector}</p>
+   543→                  )}
+   544→                </div>
+   545→
+   546→                {/* PRICE DISPLAY — Prominent */}
+   547→                <div className="flex items-center gap-5">
+   548→                  <div className="text-right">
+   549→                    <div className="flex items-center gap-1.5 justify-end">
+   550→                      <DollarSign className="w-4 h-4 text-muted-foreground" />
+   551→                      <p className="text-3xl font-bold tabular-nums">
+   552→                        {price ? price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+   553→                      </p>
+   554→                    </div>
+   555→                    {priceChange !== undefined && priceChange !== 0 && (
+   556→                      <p className={`text-sm font-medium tabular-nums ${priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+   557→                        {priceChange >= 0 ? '▲' : '▼'} {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+   558→                      </p>
+   559→                    )}
+   560→                  </div>
+   561→                  <div className="text-right">
+   562→                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Besueshmëria</p>
+   563→                    <p className="text-2xl font-bold">{analysis.confidence}<span className="text-sm text-muted-foreground">%</span></p>
+   564→                  </div>
+   565→                  <div className="text-right">
+   566→                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Trendi</p>
+   567→                    <div className="flex items-center gap-1 justify-end">
+   568→                      {getSignalIcon(analysis.priceAnalysis?.trend || '')}
+   569→                      <span className="text-sm font-medium capitalize">{analysis.priceAnalysis?.trend}</span>
+   570→                    </div>
+   571→                    <p className="text-[10px] text-muted-foreground capitalize">
+   572→                      {analysis.priceAnalysis?.trendStrength}
+   573→                    </p>
+   574→                  </div>
+   575→                </div>
+   576→              </div>
+   577→            </CardContent>
+   578→          </Card>
+   579→
+   580→          {/* ═══ CHART — Candlestick + Volume ═══ */}
+   581→          {analysis.candlestickData && analysis.candlestickData.length > 0 && (
+   582→            <Card className="border-border/50 bg-card/50">
+   583→              <CardHeader className="pb-2">
+   584→                <CardTitle className="text-sm font-medium flex items-center gap-2">
+   585→                  <Activity className="w-4 h-4 text-emerald-500" />
+   586→                  Candlestick Chart ({timeframe}) + Volumi
+   587→                  {analysis.isRealChart && (
+   588→                    <Badge variant="outline" className="text-[9px] border-emerald-500/30 text-emerald-400">Real Data</Badge>
+   589→                  )}
+   590→                </CardTitle>
+   591→              </CardHeader>
+   592→              <CardContent>
+   593→                <div className="h-[580px]">
+   594→                  <ResponsiveContainer width="100%" height="100%">
+   595→                    <CandlestickChart data={analysis.candlestickData} />
+   596→                  </ResponsiveContainer>
+   597→                </div>
+   598→                {/* Legend explanation */}
+   599→                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-2">
+   600→                  <div className="flex items-center gap-1.5">
+   601→                    <div className="w-3 h-3 rounded-sm bg-emerald-500" />
+   602→                    <span className="text-[10px] text-muted-foreground">Bullish</span>
+   603→                  </div>
+   604→                  <div className="flex items-center gap-1.5">
+   605→                    <div className="w-3 h-3 rounded-sm bg-red-500" />
+   606→                    <span className="text-[10px] text-muted-foreground">Bearish</span>
+   607→                  </div>
+   608→                  <div className="flex items-center gap-1.5">
+   609→                    <div className="w-5 h-0.5 bg-amber-500 rounded" />
+   610→                    <span className="text-[10px] text-muted-foreground">SMA 20</span>
+   611→                  </div>
+   612→                  <div className="flex items-center gap-1.5">
+   613→                    <div className="w-5 h-0.5 bg-blue-500 rounded" />
+   614→                    <span className="text-[10px] text-muted-foreground">SMA 50</span>
+   615→                  </div>
+   616→                  <div className="flex items-center gap-1.5">
+   617→                    <div className="w-5 h-0.5 bg-pink-500 rounded" />
+   618→                    <span className="text-[10px] text-muted-foreground">EMA 12</span>
+   619→                  </div>
+   620→                  <div className="flex items-center gap-1.5">
+   621→                    <div className="w-5 h-0.5 bg-violet-500 rounded" />
+   622→                    <span className="text-[10px] text-muted-foreground">Bollinger</span>
+   623→                  </div>
+   624→                  <div className="flex items-center gap-1.5">
+   625→                    <div className="w-5 h-0.5 bg-purple-500 rounded" />
+   626→                    <span className="text-[10px] text-muted-foreground">RSI(14)</span>
+   627→                  </div>
+   628→                  <div className="flex items-center gap-1.5">
+   629→                    <div className="w-5 h-0.5 bg-cyan-500 rounded" />
+   630→                    <span className="text-[10px] text-muted-foreground">MACD</span>
+   631→                  </div>
+   632→                </div>
+   633→              </CardContent>
+   634→            </Card>
+   635→          )}
+   636→
+   637→          {/* ═══ INDICATORS — Detailed Cards ═══ */}
+   638→          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+   639→
+   640→            {/* RSI */}
+   641→            {analysis.indicators?.rsi && (
+   642→              <Card className="border-border/50 bg-card/50">
+   643→                <CardContent className="pt-4 space-y-2">
+   644→                  <div className="flex items-center justify-between">
+   645→                    <span className="text-xs font-bold">RSI (14)</span>
+   646→                    <div className="flex items-center gap-1.5">
+   647→                      {getSignalIcon(analysis.indicators.rsi.signal)}
+   648→                      <span className={`text-sm font-bold ${getSignalColor(analysis.indicators.rsi.signal)}`}>
+   649→                        {analysis.indicators.rsi.value}
+   650→                      </span>
+   651→                    </div>
+   652→                  </div>
+   653→                  <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+   654→                    <div
+   655→                      className={`h-full rounded-full transition-all duration-700 ${
+   656→                        analysis.indicators.rsi.value > 70
+   657→                          ? 'bg-red-500'
+   658→                          : analysis.indicators.rsi.value < 30
+   659→                            ? 'bg-emerald-500'
+   660→                            : 'bg-amber-500'
+   661→                      }`}
+   662→                      style={{ width: `${Math.min(analysis.indicators.rsi.value, 100)}%` }}
+   663→                    />
+   664→                  </div>
+   665→                  {/* RSI zones */}
+   666→                  <div className="flex justify-between text-[8px] text-muted-foreground">
+   667→                    <span>Nënshitje (&lt;30)</span>
+   668→                    <span>Neutral</span>
+   669→                    <span>Mbipëshitje (&gt;70)</span>
+   670→                  </div>
+   671→                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+   672→                    {analysis.indicators.rsi.interpretation}
+   673→                  </p>
+   674→                </CardContent>
+   675→              </Card>
+   676→            )}
+   677→
+   678→            {/* MACD */}
+   679→            {analysis.indicators?.macd && (
+   680→              <Card className="border-border/50 bg-card/50">
+   681→                <CardContent className="pt-4 space-y-2">
+   682→                  <div className="flex items-center justify-between">
+   683→                    <span className="text-xs font-bold">MACD</span>
+   684→                    <div className="flex items-center gap-1.5">
+   685→                      {getSignalIcon(analysis.indicators.macd.signal)}
+   686→                      <span className={`text-xs font-semibold uppercase ${getSignalColor(analysis.indicators.macd.signal)}`}>
+   687→                        {analysis.indicators.macd.signal}
+   688→                      </span>
+   689→                    </div>
+   690→                  </div>
+   691→                  <p className="text-2xl font-bold tabular-nums">{analysis.indicators.macd.value}</p>
+   692→                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+   693→                    {analysis.indicators.macd.interpretation}
+   694→                  </p>
+   695→                </CardContent>
+   696→              </Card>
+   697→            )}
+   698→
+   699→            {/* Moving Averages */}
+   700→            {analysis.indicators?.movingAverage && (
+   701→              <Card className="border-border/50 bg-card/50">
+   702→                <CardContent className="pt-4 space-y-2">
+   703→                  <div className="flex items-center justify-between">
+   704→                    <span className="text-xs font-bold">Moving Averages</span>
+   705→                    <div className="flex items-center gap-1.5">
+   706→                      {getSignalIcon(analysis.indicators.movingAverage.signal)}
+   707→                      <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.movingAverage.signal)}`}>
+   708→                        {analysis.indicators.movingAverage.signal}
+   709→                      </span>
+   710→                    </div>
+   711→                  </div>
+   712→                  <div className="space-y-1 text-[11px]">
+   713→                    <div className="flex justify-between"><span className="text-muted-foreground">SMA 20</span><span className="font-mono font-medium">${analysis.indicators.movingAverage.sma20}</span></div>
+   714→                    <div className="flex justify-between"><span className="text-muted-foreground">SMA 50</span><span className="font-mono font-medium">${analysis.indicators.movingAverage.sma50}</span></div>
+   715→                    <div className="flex justify-between"><span className="text-muted-foreground">SMA 200</span><span className="font-mono font-medium">${analysis.indicators.movingAverage.sma200}</span></div>
+   716→                    <div className="flex justify-between"><span className="text-muted-foreground">EMA 12</span><span className="font-mono font-medium">${analysis.indicators.movingAverage.ema12}</span></div>
+   717→                  </div>
+   718→                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+   719→                    {analysis.indicators.movingAverage.interpretation}
+   720→                  </p>
+   721→                </CardContent>
+   722→              </Card>
+   723→            )}
+   724→
+   725→            {/* Bollinger Bands */}
+   726→            {analysis.indicators?.bollingerBands && (
+   727→              <Card className="border-border/50 bg-card/50">
+   728→                <CardContent className="pt-4 space-y-2">
+   729→                  <div className="flex items-center justify-between">
+   730→                    <span className="text-xs font-bold">Bollinger Bands</span>
+   731→                    <div className="flex items-center gap-1.5">
+   732→                      {getSignalIcon(analysis.indicators.bollingerBands.signal)}
+   733→                      <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.bollingerBands.signal)}`}>
+   734→                        {analysis.indicators.bollingerBands.signal}
+   735→                      </span>
+   736→                    </div>
+   737→                  </div>
+   738→                  <div className="space-y-1 text-[11px]">
+   739→                    <div className="flex justify-between"><span className="text-red-400">Upper Band</span><span className="font-mono font-medium text-red-400">${analysis.indicators.bollingerBands.upper}</span></div>
+   740→                    <div className="flex justify-between"><span className="text-muted-foreground">Middle (SMA 20)</span><span className="font-mono font-medium">${analysis.indicators.bollingerBands.middle}</span></div>
+   741→                    <div className="flex justify-between"><span className="text-emerald-400">Lower Band</span><span className="font-mono font-medium text-emerald-400">${analysis.indicators.bollingerBands.lower}</span></div>
+   742→                    {/* Price position indicator */}
+   743→                    {price && (
+   744→                      <div className="flex justify-between text-[10px]">
+   745→                        <span className="text-muted-foreground">Çmimi aktual</span>
+   746→                        <span className="font-mono font-bold">${price.toFixed(2)}</span>
+   747→                      </div>
+   748→                    )}
+   749→                  </div>
+   750→                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+   751→                    {analysis.indicators.bollingerBands.interpretation}
+   752→                  </p>
+   753→                </CardContent>
+   754→              </Card>
+   755→            )}
+   756→
+   757→            {/* Volume */}
+   758→            {analysis.indicators?.volume && (
+   759→              <Card className="border-border/50 bg-card/50">
+   760→                <CardContent className="pt-4 space-y-2">
+   761→                  <div className="flex items-center justify-between">
+   762→                    <span className="text-xs font-bold">Volumi</span>
+   763→                    <div className="flex items-center gap-1.5">
+   764→                      {getSignalIcon(analysis.indicators.volume.signal)}
+   765→                      <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.volume.signal)}`}>
+   766→                        {analysis.indicators.volume.signal}
+   767→                      </span>
+   768→                    </div>
+   769→                  </div>
+   770→                  <Badge variant="secondary" className="text-[10px] capitalize">
+   771→                    {(analysis.indicators.volume as any)?.trend ?? 'N/A'}
+   772→                  </Badge>
+   773→                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+   774→                    {analysis.indicators.volume.interpretation}
+   775→                  </p>
+   776→                </CardContent>
+   777→              </Card>
+   778→            )}
+   779→
+   780→            {/* Stochastic */}
+   781→            {analysis.indicators?.stochastic && (
+   782→              <Card className="border-border/50 bg-card/50">
+   783→                <CardContent className="pt-4 space-y-2">
+   784→                  <div className="flex items-center justify-between">
+   785→                    <span className="text-xs font-bold">Stochastic</span>
+   786→                    <div className="flex items-center gap-1.5">
+   787→                      {getSignalIcon(analysis.indicators.stochastic.signal)}
+   788→                      <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.stochastic.signal)}`}>
+   789→                        {analysis.indicators.stochastic.signal}
+   790→                      </span>
+   791→                    </div>
+   792→                  </div>
+   793→                  <div className="flex gap-4 text-sm">
+   794→                    <span>%K: <b className="font-mono">{analysis.indicators.stochastic.k}</b></span>
+   795→                    <span>%D: <b className="font-mono">{analysis.indicators.stochastic.d}</b></span>
+   796→                  </div>
+   797→                  {/* Stochastic visual bar */}
+   798→                  <div className="relative h-2 bg-muted rounded-full overflow-hidden">
+   799→                    <div className="absolute left-[20%] w-[60%] h-full bg-emerald-500/20 rounded-full" />
+   800→                    <div
+   801→                      className={`h-full rounded-full transition-all duration-500 ${
+   802→                        analysis.indicators.stochastic.k > 80 ? 'bg-red-500' : analysis.indicators.stochastic.k < 20 ? 'bg-emerald-500' : 'bg-amber-500'
+   803→                      }`}
+   804→                      style={{ width: `${Math.min(Math.max(analysis.indicators.stochastic.k, 0), 100)}%` }}
+   805→                    />
+   806→                  </div>
+   807→                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+   808→                    {analysis.indicators.stochastic.interpretation}
+   809→                  </p>
+   810→                </CardContent>
+   811→              </Card>
+   812→            )}
+   813→          </div>
+   814→
+   815→          {/* ═══ SUPPORT/RESISTANCE + PATTERNS ═══ */}
+   816→          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+   817→            {analysis.supportResistance && (
+   818→              <Card className="border-border/50 bg-card/50">
+   819→                <CardHeader className="pb-2">
+   820→                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+   821→                    <ArrowDown className="w-3.5 h-3.5 text-emerald-500" />
+   822→                    Suporti & Rezistenca
+   823→                  </CardTitle>
+   824→                </CardHeader>
+   825→                <CardContent className="space-y-3">
+   826→                  <div>
+   827→                    <p className="text-xs text-emerald-500 font-medium mb-1.5">Suporte (nivele blerjeje)</p>
+   828→                    <div className="flex flex-wrap gap-1">
+   829→                      {analysis.supportResistance.supports.map((s, i) => (
+   830→                        <Badge key={i} variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 font-mono px-2 py-0.5">
+   831→                          ${s}
+   832→                        </Badge>
+   833→                      ))}
+   834→                    </div>
+   835→                  </div>
+   836→                  <div>
+   837→                    <p className="text-xs text-red-500 font-medium mb-1.5">Rezistencë (nivele shitjeje)</p>
+   838→                    <div className="flex flex-wrap gap-1">
+   839→                      {analysis.supportResistance.resistances.map((r, i) => (
+   840→                        <Badge key={i} variant="outline" className="text-[10px] border-red-500/30 text-red-500 font-mono px-2 py-0.5">
+   841→                          ${r}
+   842→                        </Badge>
+   843→                      ))}
+   844→                    </div>
+   845→                  </div>
+   846→                </CardContent>
+   847→              </Card>
+   848→            )}
+   849→
+   850→            {analysis.patterns && analysis.patterns.length > 0 && (
+   851→              <Card className="border-border/50 bg-card/50">
+   852→                <CardHeader className="pb-2">
+   853→                  <CardTitle className="text-sm font-medium">Modelet Grafike</CardTitle>
+   854→                </CardHeader>
+   855→                <CardContent>
+   856→                  <div className="space-y-2">
+   857→                    {analysis.patterns.map((p, i) => (
+   858→                      <div key={i} className={`p-2.5 rounded-lg ${
+   859→                        p.type === 'bullish' ? 'bg-emerald-500/5 border border-emerald-500/20'
+   860→                        : p.type === 'bearish' ? 'bg-red-500/5 border border-red-500/20'
+   861→                        : 'bg-muted/30 border border-muted/30'
+   862→                      }`}>
+   863→                        <div className="flex items-center gap-2 mb-1">
+   864→                          <span className="text-xs font-bold">{p.name}</span>
+   865→                          <Badge
+   866→                            variant="outline"
+   867→                            className={`text-[9px] ${
+   868→                              p.type === 'bullish'
+   869→                                ? 'border-emerald-500/30 text-emerald-500'
+   870→                                : p.type === 'bearish'
+   871→                                  ? 'border-red-500/30 text-red-500'
+   872→                                  : 'border-amber-500/30 text-amber-500'
+   873→                            }`}
+   874→                          >
+   875→                            {p.type}
+   876→                          </Badge>
+   877→                          <Badge variant="outline" className="text-[9px]">
+   878→                            {p.reliability}
+   879→                          </Badge>
+   880→                        </div>
+   881→                        <p className="text-[11px] text-muted-foreground leading-relaxed">{p.description}</p>
+   882→                      </div>
+   883→                    ))}
+   884→                  </div>
+   885→                </CardContent>
+   886→              </Card>
+   887→            )}
+   888→          </div>
+   889→
+   890→          {/* ═══ SUMMARY & ACTION PLAN — ALWAYS visible, NEVER empty ═══ */}
+   891→          {(analysis.summary || analysis.actionPlan) && (
+   892→          <Card className="border-emerald-500/20 bg-emerald-500/5">
+   893→            <CardContent className="pt-5 space-y-4">
+   894→              <div>
+   895→                <h4 className="text-sm font-bold text-emerald-500 mb-2 flex items-center gap-1.5">
+   896→                  <Activity className="w-4 h-4" /> Përmbledhje
+   897→                </h4>
+   898→                <p className="text-sm text-muted-foreground leading-relaxed">{analysis.summary || 'Analiza teknike është e disponueshme në indikatorët më sipër.'}</p>
+   899→              </div>
+   900→              <div>
+   901→                <h4 className="text-sm font-bold text-emerald-500 mb-2 flex items-center gap-1.5">
+   902→                  <TrendingUp className="w-4 h-4" /> Plan i Veprimit
+   903→                </h4>
+   904→                <div className="bg-card/80 rounded-lg p-3 border border-emerald-500/20">
+   905→                  <p className="text-sm text-foreground leading-relaxed font-medium">{analysis.actionPlan || 'Monitoroni indikatorët dhe prisni sinjal të qartë.'}</p>
+   906→                </div>
+   907→              </div>
+   908→            </CardContent>
+   909→          </Card>
+   910→          )}
+   911→        </div>
+   912→      )}
+   913→    </div>
+   914→  );
+   915→}
+   916→

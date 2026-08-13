@@ -185,41 +185,56 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
 
-    const W = 800;
-    const H = 620;
-    const margin = { top: 12, right: 58, bottom: 22, left: 5 };
+    const W = 900;
+    const H = 780;
+    const margin = { top: 20, right: 62, bottom: 28, left: 8 };
     const chartW = W - margin.left - margin.right;
     const n = data.length;
     const barSpace = chartW / n;
-    const bodyW = Math.max(barSpace * 0.55, 2);
+    const bodyW = Math.max(barSpace * 0.6, 3);
 
-    // Panel heights
-    const priceH = H * 0.46;
-    const volH = H * 0.10;
-    const rsiH = H * 0.12;
-    const macdH = H * 0.14;
-    const gapH = H * 0.02;
-    
+    // Panel layout with proper spacing
+    const sepH = 6; // separator height between panels
+    const priceH = 310;
+    const volH = 65;
+    const rsiH = 100;
+    const macdH = 110;
+    const legendH = 22;
+
     let yCursor = margin.top;
     const priceTop = yCursor; yCursor += priceH;
-    const volTop = yCursor; yCursor += volH + gapH;
-    const rsiTop = yCursor; yCursor += rsiH;
-    const macdTop = yCursor; yCursor += macdH;
-    const xLabelY = H - 4;
+    const volTop = yCursor + sepH; yCursor = volTop + volH;
+    const rsiTop = yCursor + sepH; yCursor = rsiTop + rsiH;
+    const macdTop = yCursor + sepH; yCursor = macdTop + macdH;
+    const legendTop = yCursor + sepH;
+    const xLabelY = legendTop + legendH + 14;
+
+    // Colors
+    const bgPanel = 'hsl(240 6% 9%)';
+    const gridClr = 'hsl(240 6% 22%)';
+    const txtClr = 'hsl(240 5% 55%)';
+    const sepClr = 'hsl(240 6% 18%)';
+    const bullClr = '#22c55e';
+    const bearClr = '#ef4444';
 
     // ═══ Compute indicators ═══
     const closes = data.map(d => d.close);
     const sma20 = computeSMA(closes, Math.min(20, n));
-    const sma50 = computeSMA(closes, Math.min(50, n));
+    const sma50 = n >= 50 ? computeSMA(closes, 50) : computeSMA(closes, n);
     const ema12 = computeEMA(closes, Math.min(12, n));
     const bb = computeBollingerBands(closes, Math.min(20, n));
     const rsi = computeRSI(closes, 14);
     const macdData = computeMACD(closes);
 
     // ═══ Price scale ═══
-    const allH = Math.max(...data.map(d => d.high), ...sma20.filter((v): v is number => v !== null) ?? [], ...bb.upper.filter((v): v is number => v !== null) ?? []);
-    const allL = Math.min(...data.map(d => d.low), ...sma20.filter((v): v is number => v !== null) ?? [], ...bb.lower.filter((v): v is number => v !== null) ?? []);
-    const pPad = (allH - allL) * 0.06 || 1;
+    const priceHighs = data.map(d => d.high);
+    const priceLows = data.map(d => d.low);
+    const bbUpperVals = bb.upper.filter((v): v is number => v !== null);
+    const bbLowerVals = bb.lower.filter((v): v is number => v !== null);
+    const smaVals = sma20.filter((v): v is number => v !== null);
+    const allH = Math.max(...priceHighs, ...bbUpperVals, ...smaVals);
+    const allL = Math.min(...priceLows, ...bbLowerVals, ...smaVals);
+    const pPad = (allH - allL) * 0.08 || 1;
     const pMin = allL - pPad;
     const pMax = allH + pPad;
     const yP = (v: number) => priceTop + (1 - (v - pMin) / (pMax - pMin)) * priceH;
@@ -234,124 +249,163 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     // ═══ MACD scale ═══
     const allMacd = macdData.macd.filter((v): v is number => v !== null);
     const allHist = macdData.histogram.filter((v): v is number => v !== null);
-    const macdMax = Math.max(Math.abs(Math.min(...allMacd, ...allHist)), Math.abs(Math.max(...allMacd, ...allHist)), 0.01);
-    const yM = (v: number) => macdTop + macdH / 2 - (v / macdMax) * (macdH / 2);
+    const macdAbsMax = Math.max(Math.abs(Math.min(...allMacd, ...allHist)), Math.abs(Math.max(...allMacd, ...allHist)), 0.01);
+    const yM = (v: number) => macdTop + macdH / 2 - (v / macdAbsMax) * (macdH / 2);
 
     // ═══ Helpers ═══
     const xOf = (i: number) => margin.left + barSpace * i + barSpace / 2;
-    const labelEvery = n <= 10 ? 1 : n <= 20 ? 3 : 5;
-    const gridClr = 'hsl(240 6% 30%)';
-    const txtClr = 'hsl(240 5% 60%)';
+    const labelEvery = n <= 8 ? 1 : n <= 15 ? 2 : n <= 25 ? 3 : 5;
 
     // ═══ Polyline helper ═══
-    const polyline = (vals: (number | null)[], color: string, width = 1.2) => {
+    const polyline = (vals: (number | null)[], color: string, width = 1.2, id?: string) => {
       const pts: string[] = [];
       for (let i = 0; i < vals.length; i++) {
         if (vals[i] !== null) pts.push(`${xOf(i)},${vals[i]}`);
       }
-      return pts.length > 1 ? <polyline key={color} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={width} strokeOpacity={0.85} /> : null;
+      return pts.length > 1 ? <polyline key={id || color} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={width} strokeLinejoin="round" strokeLinecap="round" /> : null;
     };
 
-    // ═══ Grid lines (price) ═══
+    // ═══ Price grid lines ═══
     const priceGrid: { y: number; label: string }[] = [];
-    for (let i = 0; i <= 4; i++) {
-      const v = pMin + (pMax - pMin) * (i / 4);
+    for (let i = 0; i <= 5; i++) {
+      const v = pMin + (pMax - pMin) * (i / 5);
       priceGrid.push({ y: yP(v), label: '$' + v.toFixed(1) });
     }
 
-    // ═══ Bollinger Band fill ═══
-    const bbFill: string[] = [];
+    // ═══ Bollinger Band fill polygon ═══
+    const bbFillPts: string[] = [];
     for (let i = 0; i < n; i++) {
-      if (bb.upper[i] !== null) bbFill.push(`${xOf(i)},${yP(bb.upper[i]!)}`);
+      if (bb.upper[i] !== null) bbFillPts.push(`${xOf(i)},${yP(bb.upper[i]!)}`);
     }
     for (let i = n - 1; i >= 0; i--) {
-      if (bb.lower[i] !== null) bbFill.push(`${xOf(i)},${yP(bb.lower[i]!)}`);
+      if (bb.lower[i] !== null) bbFillPts.push(`${xOf(i)},${yP(bb.lower[i]!)}`);
     }
 
     // ═══ RSI zones ═══
-    const rsiOverbought = yR(70);
-    const rsiOversold = yR(30);
+    const rsiOB = yR(70);
+    const rsiOS = yR(30);
     const rsiMid = yR(50);
+
+    // ═══ Current price line ═══
+    const lastClose = data[n - 1].close;
+    const lastY = yP(lastClose);
 
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" style={{ background: 'transparent' }}>
-        {/* ── PRICE PANEL ── */}
-        {/* Grid */}
+        <defs>
+          <linearGradient id="bbGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.12" />
+            <stop offset="50%" stopColor="#8b5cf6" stopOpacity="0.04" />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.12" />
+          </linearGradient>
+          <linearGradient id="rsiOBGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.10" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+          </linearGradient>
+          <linearGradient id="rsiOSGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.02" />
+            <stop offset="100%" stopColor="#22c55e" stopOpacity="0.10" />
+          </linearGradient>
+        </defs>
+
+        {/* ════════ PRICE PANEL ════════ */}
+        {/* Panel background */}
+        <rect x={margin.left} y={priceTop} width={chartW} height={priceH} fill={bgPanel} rx={4} />
+
+        {/* Price grid lines + labels */}
         {priceGrid.map((g, i) => (
-          <g key={i}>
-            <line x1={margin.left} y1={g.y} x2={W - margin.right} y2={g.y} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.35} />
-            <text x={W - margin.right + 4} y={g.y + 3} fill={txtClr} fontSize={8.5} fontFamily="monospace">{g.label}</text>
+          <g key={"pg" + i}>
+            <line x1={margin.left} y1={g.y} x2={W - margin.right} y2={g.y} stroke={gridClr} strokeDasharray="3 4" strokeOpacity={0.5} />
+            <text x={W - margin.right + 5} y={g.y + 3.5} fill={txtClr} fontSize={9} fontFamily="ui-monospace, monospace" fontWeight="500">{g.label}</text>
           </g>
         ))}
 
-        {/* Bollinger Bands shaded area */}
-        {bbFill.length > 2 && (
-          <polygon points={bbFill.join(' ')} fill="rgba(139,92,246,0.07)" stroke="none" />
+        {/* Bollinger Bands shaded fill */}
+        {bbFillPts.length > 2 && (
+          <polygon points={bbFillPts.join(' ')} fill="url(#bbGrad)" stroke="none" />
         )}
 
-        {/* Bollinger Band lines */}
-        {polyline(bb.upper.map(v => v !== null ? yP(v) : null), '#8b5cf6', 0.8)}
-        {polyline(bb.middle.map(v => v !== null ? yP(v) : null), '#8b5cf6', 0.8)}
-        {polyline(bb.lower.map(v => v !== null ? yP(v) : null), '#8b5cf6', 0.8)}
+        {/* Bollinger Band lines (upper, middle, lower) */}
+        {polyline(bb.upper.map(v => v !== null ? yP(v) : null), '#8b5cf6', 1, 'bb-upper')}
+        {polyline(bb.middle.map(v => v !== null ? yP(v) : null), '#8b5cf6', 1, 'bb-mid')}
+        {polyline(bb.lower.map(v => v !== null ? yP(v) : null), '#8b5cf6', 1, 'bb-lower')}
 
         {/* Moving Average lines */}
-        {polyline(sma20.map(v => v !== null ? yP(v) : null), '#f59e0b', 1.2)}
-        {polyline(sma50.map(v => v !== null ? yP(v) : null), '#3b82f6', 1.2)}
-        {polyline(ema12.map(v => v !== null ? yP(v) : null), '#ec4899', 1)}
+        {polyline(sma20.map(v => v !== null ? yP(v) : null), '#f59e0b', 1.6, 'sma20')}
+        {polyline(sma50.map(v => v !== null ? yP(v) : null), '#3b82f6', 1.6, 'sma50')}
+        {polyline(ema12.map(v => v !== null ? yP(v) : null), '#ec4899', 1.3, 'ema12')}
 
         {/* Candlesticks */}
         {data.map((d, i) => {
           const cx = xOf(i);
           const isUp = d.close >= d.open;
-          const color = isUp ? '#10b981' : '#ef4444';
+          const color = isUp ? bullClr : bearClr;
           const bodyTop = yP(Math.max(d.open, d.close));
           const bodyBot = yP(Math.min(d.open, d.close));
-          const bodyH = Math.max(Math.abs(bodyBot - bodyTop), 1);
+          const bodyH = Math.max(Math.abs(bodyBot - bodyTop), 1.5);
           return (
-            <g key={i}>
-              <line x1={cx} y1={yP(d.high)} x2={cx} y2={yP(d.low)} stroke={color} strokeWidth={1} />
-              <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill={color} stroke={color} strokeWidth={0.5} rx={1} />
+            <g key={"c" + i}>
+              <line x1={cx} y1={yP(d.high)} x2={cx} y2={yP(d.low)} stroke={color} strokeWidth={1.2} />
+              <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill={isUp ? color : color} stroke={color} strokeWidth={0.6} rx={1.5} />
             </g>
           );
         })}
 
-        {/* Panel separator */}
-        <line x1={margin.left} y1={volTop - 2} x2={W - margin.right} y2={volTop - 2} stroke={gridClr} strokeOpacity={0.3} />
+        {/* Current price dashed line */}
+        <line x1={margin.left} y1={lastY} x2={W - margin.right} y2={lastY} stroke={data[n-1].close >= data[n-1].open ? bullClr : bearClr} strokeDasharray="4 3" strokeOpacity={0.6} strokeWidth={1} />
+        <rect x={W - margin.right + 1} y={lastY - 8} width={58} height={16} rx={3} fill={data[n-1].close >= data[n-1].open ? bullClr : bearClr} fillOpacity={0.85} />
+        <text x={W - margin.right + 4} y={lastY + 3.5} fill="white" fontSize={8.5} fontFamily="ui-monospace, monospace" fontWeight="600">{'$' + lastClose.toFixed(2)}</text>
 
-        {/* ── VOLUME PANEL ── */}
+        {/* Price panel label */}
+        <text x={margin.left + 6} y={priceTop + 14} fill={txtClr} fontSize={9} fontWeight="600" opacity={0.7}>CENA</text>
+
+        {/* ════════ VOLUME PANEL ════════ */}
+        <rect x={margin.left} y={volTop} width={chartW} height={volH} fill={bgPanel} rx={4} />
+        {/* Volume grid */}
+        <line x1={margin.left} y1={volTop + volH * 0.5} x2={W - margin.right} y2={volTop + volH * 0.5} stroke={gridClr} strokeDasharray="2 4" strokeOpacity={0.3} />
         {data.map((d, i) => {
           const cx = xOf(i);
           const isUp = d.close >= d.open;
           const vy = yV(d.volume || 0);
           const vh = Math.max(volTop + volH - vy, 0);
           return (
-            <rect key={i} x={cx - bodyW / 2} y={vy} width={bodyW} height={vh}
-              fill={isUp ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'} rx={1} />
+            <rect key={"v" + i} x={cx - bodyW / 2} y={vy} width={bodyW} height={vh}
+              fill={isUp ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)'} rx={1} />
           );
         })}
-        <text x={margin.left + 2} y={volTop + 10} fill={txtClr} fontSize={8} opacity={0.6}>VOL</text>
+        <text x={margin.left + 6} y={volTop + 12} fill={txtClr} fontSize={8.5} fontWeight="600" opacity={0.65}>VOL</text>
+        {/* Volume Y labels */}
+        <text x={W - margin.right + 5} y={volTop + 12} fill={txtClr} fontSize={7} fontFamily="ui-monospace, monospace">{(maxVol / 1e6).toFixed(1)}M</text>
+        <text x={W - margin.right + 5} y={volTop + volH - 2} fill={txtClr} fontSize={7} fontFamily="ui-monospace, monospace">0</text>
 
-        {/* Panel separator */}
-        <line x1={margin.left} y1={rsiTop - 2} x2={W - margin.right} y2={rsiTop - 2} stroke={gridClr} strokeOpacity={0.3} />
+        {/* ════════ RSI PANEL ════════ */}
+        <rect x={margin.left} y={rsiTop} width={chartW} height={rsiH} fill={bgPanel} rx={4} />
+        {/* Overbought zone */}
+        <rect x={margin.left} y={rsiTop} width={chartW} height={rsiOB - rsiTop} fill="url(#rsiOBGrad)" rx={4} />
+        {/* Oversold zone */}
+        <rect x={margin.left} y={rsiOS} width={chartW} height={rsiTop + rsiH - rsiOS} fill="url(#rsiOSGrad)" rx={4} />
+        {/* Grid lines */}
+        <line x1={margin.left} y1={rsiOB} x2={W - margin.right} y2={rsiOB} stroke="#ef4444" strokeDasharray="4 3" strokeOpacity={0.35} strokeWidth={0.8} />
+        <line x1={margin.left} y1={rsiOS} x2={W - margin.right} y2={rsiOS} stroke="#22c55e" strokeDasharray="4 3" strokeOpacity={0.35} strokeWidth={0.8} />
+        <line x1={margin.left} y1={rsiMid} x2={W - margin.right} y2={rsiMid} stroke={gridClr} strokeDasharray="2 4" strokeOpacity={0.25} />
+        {/* RSI labels */}
+        <text x={W - margin.right + 5} y={rsiOB + 3.5} fill="#ef4444" fontSize={8} fontFamily="ui-monospace, monospace" opacity={0.7}>70</text>
+        <text x={W - margin.right + 5} y={rsiMid + 3.5} fill={txtClr} fontSize={8} fontFamily="ui-monospace, monospace" opacity={0.5}>50</text>
+        <text x={W - margin.right + 5} y={rsiOS + 3.5} fill="#22c55e" fontSize={8} fontFamily="ui-monospace, monospace" opacity={0.7}>30</text>
+        {/* RSI line */}
+        {polyline(rsi.map(v => v !== null ? yR(v) : null), '#a855f7', 2, 'rsi-line')}
+        {/* RSI panel label */}
+        <text x={margin.left + 6} y={rsiTop + 14} fill="#a855f7" fontSize={9.5} fontWeight="700" opacity={0.85}>RSI (14)</text>
+        {/* Latest RSI value */}
+        {rsi[n - 1] !== null && (
+          <text x={margin.left + 68} y={rsiTop + 14} fill={rsi[n-1]! > 70 ? '#ef4444' : rsi[n-1]! < 30 ? '#22c55e' : txtClr} fontSize={9} fontWeight="600" fontFamily="ui-monospace, monospace">{rsi[n-1]!.toFixed(1)}</text>
+        )}
 
-        {/* ── RSI PANEL ── */}
-        {/* Overbought / oversold zones */}
-        <rect x={margin.left} y={rsiTop} width={chartW} height={yR(70) - rsiTop} fill="rgba(239,68,68,0.06)" />
-        <rect x={margin.left} y={yR(30)} width={chartW} height={rsiTop + rsiH - yR(30)} fill="rgba(16,185,129,0.06)" />
-        <line x1={margin.left} y1={rsiOverbought} x2={W - margin.right} y2={rsiOverbought} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.4} />
-        <line x1={margin.left} y1={rsiOversold} x2={W - margin.right} y2={rsiOversold} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.4} />
-        <line x1={margin.left} y1={rsiMid} x2={W - margin.right} y2={rsiMid} stroke={gridClr} strokeDasharray="2 4" strokeOpacity={0.2} />
-        <text x={W - margin.right + 4} y={rsiOverbought + 3} fill={txtClr} fontSize={7.5}>70</text>
-        <text x={W - margin.right + 4} y={rsiOversold + 3} fill={txtClr} fontSize={7.5}>30</text>
-        {polyline(rsi.map(v => v !== null ? yR(v) : null), '#a855f7', 1.5)}
-        <text x={margin.left + 2} y={rsiTop + 10} fill={txtClr} fontSize={8} opacity={0.6}>RSI(14)</text>
-
-        {/* Panel separator */}
-        <line x1={margin.left} y1={macdTop - 2} x2={W - margin.right} y2={macdTop - 2} stroke={gridClr} strokeOpacity={0.3} />
-
-        {/* ── MACD PANEL ── */}
-        <line x1={margin.left} y1={macdTop + macdH / 2} x2={W - margin.right} y2={macdTop + macdH / 2} stroke={gridClr} strokeDasharray="2 4" strokeOpacity={0.25} />
-        {/* MACD histogram */}
+        {/* ════════ MACD PANEL ════════ */}
+        <rect x={margin.left} y={macdTop} width={chartW} height={macdH} fill={bgPanel} rx={4} />
+        {/* Zero line */}
+        <line x1={margin.left} y1={macdTop + macdH / 2} x2={W - margin.right} y2={macdTop + macdH / 2} stroke={gridClr} strokeDasharray="3 3" strokeOpacity={0.4} />
+        {/* MACD histogram bars */}
         {macdData.histogram.map((v, i) => {
           if (v === null) return null;
           const cx = xOf(i);
@@ -359,22 +413,50 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
           const barY = isPos ? yM(v) : macdTop + macdH / 2;
           const barH = Math.abs(yM(v) - (macdTop + macdH / 2));
           return (
-            <rect key={i} x={cx - bodyW * 0.4} y={barY} width={bodyW * 0.8} height={Math.max(barH, 0.5)}
-              fill={isPos ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'} rx={0.5} />
+            <rect key={"mh" + i} x={cx - bodyW * 0.4} y={barY} width={bodyW * 0.8} height={Math.max(barH, 0.5)}
+              fill={isPos ? 'rgba(34,197,94,0.55)' : 'rgba(239,68,68,0.55)'} rx={1} />
           );
         })}
-        {/* MACD line & signal line */}
-        {polyline(macdData.macd.map(v => v !== null ? yM(v) : null), '#06b6d4', 1.3)}
-        {polyline(macdData.signal.map(v => v !== null ? yM(v) : null), '#f97316', 1)}
-        <text x={margin.left + 2} y={macdTop + 10} fill={txtClr} fontSize={8} opacity={0.6}>MACD</text>
-        <text x={W - margin.right + 4} y={macdTop + 10} fill="#06b6d4" fontSize={7}>MACD</text>
-        <text x={W - margin.right + 4} y={macdTop + 20} fill="#f97316" fontSize={7}>Signal</text>
+        {/* MACD line */}
+        {polyline(macdData.macd.map(v => v !== null ? yM(v) : null), '#06b6d4', 1.8, 'macd-line')}
+        {/* Signal line */}
+        {polyline(macdData.signal.map(v => v !== null ? yM(v) : null), '#f97316', 1.4, 'signal-line')}
+        {/* MACD panel label + legend */}
+        <text x={margin.left + 6} y={macdTop + 14} fill={txtClr} fontSize={9.5} fontWeight="700" opacity={0.85}>MACD</text>
+        <line x1={margin.left + 52} y1={macdTop + 11} x2={margin.left + 70} y2={macdTop + 11} stroke="#06b6d4" strokeWidth={2} />
+        <text x={margin.left + 73} y={macdTop + 14} fill="#06b6d4" fontSize={8} opacity={0.8}>MACD</text>
+        <line x1={margin.left + 105} y1={macdTop + 11} x2={margin.left + 123} y2={macdTop + 11} stroke="#f97316" strokeWidth={2} />
+        <text x={margin.left + 126} y={macdTop + 14} fill="#f97316" fontSize={8} opacity={0.8}>Signal</text>
+        <rect x={margin.left + 165} y={macdTop + 5} width={10} height={10} fill="rgba(34,197,94,0.5)" rx={1.5} />
+        <text x={margin.left + 178} y={macdTop + 14} fill={txtClr} fontSize={8} opacity={0.6}>Hist</text>
+        {/* MACD zero label */}
+        <text x={W - margin.right + 5} y={macdTop + macdH / 2 + 3.5} fill={txtClr} fontSize={7.5} fontFamily="ui-monospace, monospace" opacity={0.5}>0</text>
 
-        {/* ── X-AXIS LABELS ── */}
+        {/* ════════ LEGEND BAR ════════ */}
+        <rect x={margin.left} y={legendTop} width={chartW} height={legendH} fill={bgPanel} rx={4} />
+        {/* SMA 20 */}
+        <line x1={margin.left + 12} y1={legendTop + legendH / 2} x2={margin.left + 30} y2={legendTop + legendH / 2} stroke="#f59e0b" strokeWidth={2.5} />
+        <text x={margin.left + 34} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>SMA 20</text>
+        {/* SMA 50 */}
+        <line x1={margin.left + 95} y1={legendTop + legendH / 2} x2={margin.left + 113} y2={legendTop + legendH / 2} stroke="#3b82f6" strokeWidth={2.5} />
+        <text x={margin.left + 117} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>SMA 50</text>
+        {/* EMA 12 */}
+        <line x1={margin.left + 178} y1={legendTop + legendH / 2} x2={margin.left + 196} y2={legendTop + legendH / 2} stroke="#ec4899" strokeWidth={2.5} />
+        <text x={margin.left + 200} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>EMA 12</text>
+        {/* Bollinger Bands */}
+        <rect x={margin.left + 262} y={legendTop + 4} width={16} height={legendH - 8} fill="url(#bbGrad)" stroke="#8b5cf6" strokeWidth={1} rx={2} />
+        <text x={margin.left + 282} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>Bollinger Bands</text>
+        {/* Bullish / Bearish candles */}
+        <rect x={margin.left + 385} y={legendTop + 4} width={8} height={legendH - 8} fill={bullClr} rx={1.5} />
+        <text x={margin.left + 397} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>Bullish</text>
+        <rect x={margin.left + 448} y={legendTop + 4} width={8} height={legendH - 8} fill={bearClr} rx={1.5} />
+        <text x={margin.left + 460} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>Bearish</text>
+
+        {/* ════════ X-AXIS DATE LABELS ════════ */}
         {data.map((d, i) => {
           if (i % labelEvery !== 0) return null;
           return (
-            <text key={i} x={xOf(i)} y={xLabelY} fill={txtClr} fontSize={7.5} textAnchor="middle" fontFamily="monospace">
+            <text key={"x" + i} x={xOf(i)} y={xLabelY} fill={txtClr} fontSize={8.5} textAnchor="middle" fontFamily="ui-monospace, monospace" opacity={0.75}>
               {d.date.substring(5)}
             </text>
           );
@@ -590,45 +672,10 @@ export function TechnicalAnalysis() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[580px]">
+                <div className="h-[700px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <CandlestickChart data={analysis.candlestickData} />
                   </ResponsiveContainer>
-                </div>
-                {/* Legend explanation */}
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-3 rounded-sm bg-emerald-500" />
-                    <span className="text-[10px] text-muted-foreground">Bullish</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-3 rounded-sm bg-red-500" />
-                    <span className="text-[10px] text-muted-foreground">Bearish</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-0.5 bg-amber-500 rounded" />
-                    <span className="text-[10px] text-muted-foreground">SMA 20</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-0.5 bg-blue-500 rounded" />
-                    <span className="text-[10px] text-muted-foreground">SMA 50</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-0.5 bg-pink-500 rounded" />
-                    <span className="text-[10px] text-muted-foreground">EMA 12</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-0.5 bg-violet-500 rounded" />
-                    <span className="text-[10px] text-muted-foreground">Bollinger</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-0.5 bg-purple-500 rounded" />
-                    <span className="text-[10px] text-muted-foreground">RSI(14)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-0.5 bg-cyan-500 rounded" />
-                    <span className="text-[10px] text-muted-foreground">MACD</span>
-                  </div>
                 </div>
               </CardContent>
             </Card>
