@@ -146,9 +146,9 @@ function computeMACD(closes: number[], fastPeriod = 12, slowPeriod = 26, signalP
     if (emaFast[i] === null || emaSlow[i] === null) { macdLine.push(null); continue; }
     macdLine.push(emaFast[i]! - emaSlow[i]!);
   }
-  // Signal = EMA of MACD line
+  // Signal = EMA of MACD line — very short period so signal starts quickly
   const validMACD = macdLine.filter((v): v is number => v !== null);
-  const sigPeriod = Math.min(signalPeriod, Math.max(3, Math.floor(validMACD.length * 0.4)));
+  const sigPeriod = Math.min(signalPeriod, Math.max(2, Math.floor(validMACD.length * 0.15)));
   const signalEma = computeEMA(validMACD, sigPeriod);
   const signal: (number | null)[] = [];
   let vi = 0;
@@ -226,16 +226,22 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const macdTop = rsiTop + rsiH + sep;
     const totalH = macdTop + macdH + bottomLabel;
 
-    // ═══ Compute indicators — adaptive periods based on data length ═══
-    // Scales periods proportionally so lines span ~85%+ of chart width
+    // ═══ Compute indicators — ULTRA-ADAPTIVE periods ═══
+    // Goal: every line must span ≥90% of chart width
+    // With 20 bars → max 2 nulls at start. With 100+ bars → standard TradingView periods.
     const closes = data.map(d => d.close);
-    const smaP = Math.max(3, Math.min(20, Math.round(n * 0.16)));
-    const smaLongP = Math.max(5, Math.min(50, Math.round(n * 0.40)));
-    const bbP = Math.max(3, Math.min(20, Math.round(n * 0.16)));
-    const emaP = Math.max(3, Math.min(12, Math.round(n * 0.10)));
-    const rsiP = Math.max(3, Math.min(14, Math.round(n * 0.11)));
-    const macdFast = Math.max(3, Math.min(12, Math.round(n * 0.10)));
-    const macdSlow = Math.max(5, Math.min(26, Math.round(n * 0.21)));
+
+    // Stepped adaptation: tiny periods for small datasets, standard for large
+    const smaP      = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.18)) : n < 100 ? Math.round(n * 0.20) : 20;
+    const smaLongP  = n < 30 ? 5 : n < 60 ? Math.max(5, Math.round(n * 0.35)) : n < 100 ? Math.round(n * 0.50) : 50;
+    const bbP       = smaP;
+    const emaP      = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.10)) : 12;
+    const rsiP      = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.12)) : 14;
+    const macdFast  = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.10)) : 12;
+    const macdSlow  = n < 30 ? 4 : n < 60 ? Math.max(5, Math.round(n * 0.22)) : 26;
+
+    // Debug: log data length and periods
+    console.log(`[CHART] bars=${n} SMA(${smaP}) SMA(${smaLongP}) EMA(${emaP}) RSI(${rsiP}) MACD(${macdFast},${macdSlow})`);
 
     const sma20 = computeSMA(closes, smaP);
     const sma50 = computeSMA(closes, smaLongP);
@@ -456,6 +462,8 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
             </text>
           );
         })}
+        {/* Debug: bar count — REMOVE AFTER FIX */}
+        <text x={L + 8} y={macdTop + macdH + 14} fill={TXT} fontSize={8} fontFamily="monospace" opacity={0.5}>{n} bars</text>
       </svg>
     );
   }, [data]);
