@@ -50,3 +50,20 @@ Stage Summary:
 - All indicators visible: Bollinger Bands (3 lines + fill), SMA 20/50, EMA 12, RSI(14), MACD + Signal + Histogram
 - Professional legend bar integrated inside the SVG
 - Current price highlighted with dashed line and badge
+---
+Task ID: 2
+Agent: Main
+Task: Fix indicator lines spanning only from middle of chart instead of full width
+
+Work Log:
+- Identified root cause: indicators produce null values at start due to warm-up periods (SMA50 = 49 nulls = 39% of 126 bars)
+- Previous "ultra-adaptive periods" approach distorted indicator values and still left gaps
+- Implemented "warmup offset" approach: compute all indicators on full dataset with standard TradingView periods (SMA20, SMA50, EMA12, BB20, RSI14, MACD 12/26), find first index where ALL indicators have valid values, slice data and indicators from that point
+- Displayed portion fills full chart width — every indicator line spans edge-to-edge
+- Removed debug text and adaptive period hack
+- Verified no TypeScript compilation errors
+
+Stage Summary:
+- Key change: `src/components/financial-brain/technical-analysis.tsx` — warmup offset logic
+- With ~252 bars (1y lookback), warmup = ~33 bars, displaying ~219 bars — all lines 100% width
+- Files modified: `src/components/financial-brain/technical-analysis.tsx`

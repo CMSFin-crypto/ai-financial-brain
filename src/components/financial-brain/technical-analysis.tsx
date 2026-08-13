@@ -207,8 +207,17 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const L = 2;  // left margin
     const chartW = W - L - R;
     const n = data.length;
+    // barW uses full `n` initially; will be recalculated after warmup trim
     const barW = chartW / n;
     const candleW = Math.max(barW * 0.6, 2);
+
+    // ── All indicator computation uses `n` and `closes` on the full dataset ──
+    // (computed below, then sliced by warmup offset)
+
+    // Placeholder — actual `dn` (display count) set after warmup calculation
+    let dn = n; // will be overwritten after warmup trim
+    let displayBarW = barW;
+    let displayCandleW = candleW;
 
     // Layout: price (with volume overlay), separator, RSI, separator, MACD
     const priceH = 280;
@@ -226,33 +235,59 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const macdTop = rsiTop + rsiH + sep;
     const totalH = macdTop + macdH + bottomLabel;
 
-    // ═══ Compute indicators — ULTRA-ADAPTIVE periods ═══
-    // Goal: every line must span ≥90% of chart width
-    // With 20 bars → max 2 nulls at start. With 100+ bars → standard TradingView periods.
+    // ═══ Compute indicators on FULL dataset first ═══
+    // Use standard TradingView periods — warmup offset will trim the null region
     const closes = data.map(d => d.close);
 
-    // Stepped adaptation: tiny periods for small datasets, standard for large
-    const smaP      = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.18)) : n < 100 ? Math.round(n * 0.20) : 20;
-    const smaLongP  = n < 30 ? 5 : n < 60 ? Math.max(5, Math.round(n * 0.35)) : n < 100 ? Math.round(n * 0.50) : 50;
-    const bbP       = smaP;
-    const emaP      = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.10)) : 12;
-    const rsiP      = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.12)) : 14;
-    const macdFast  = n < 30 ? 3 : n < 60 ? Math.max(3, Math.round(n * 0.10)) : 12;
-    const macdSlow  = n < 30 ? 4 : n < 60 ? Math.max(5, Math.round(n * 0.22)) : 26;
+    const smaP      = 20;
+    const smaLongP  = 50;
+    const bbP       = 20;
+    const emaP      = 12;
+    const rsiP      = 14;
+    const macdFast  = 12;
+    const macdSlow  = 26;
 
-    // Debug: log data length and periods
-    console.log(`[CHART] bars=${n} SMA(${smaP}) SMA(${smaLongP}) EMA(${emaP}) RSI(${rsiP}) MACD(${macdFast},${macdSlow})`);
+    const sma20All = computeSMA(closes, smaP);
+    const sma50All = computeSMA(closes, smaLongP);
+    const ema12All = computeEMA(closes, emaP);
+    const bbAll = computeBollingerBands(closes, bbP);
+    const rsiAll = computeRSI(closes, rsiP);
+    const macdAll = computeMACD(closes, macdFast, macdSlow);
 
-    const sma20 = computeSMA(closes, smaP);
-    const sma50 = computeSMA(closes, smaLongP);
-    const ema12 = computeEMA(closes, emaP);
-    const bb = computeBollingerBands(closes, bbP);
-    const rsi = computeRSI(closes, rsiP);
-    const macdData = computeMACD(closes, macdFast, macdSlow);
+    // ═══ WARMUP OFFSET: find first index where ALL indicators have valid values ═══
+    // This trims the null region so every line spans the full visible chart width
+    let warmup = 0;
+    for (let i = 0; i < n; i++) {
+      if (sma20All[i] !== null && sma50All[i] !== null && ema12All[i] !== null &&
+          bbAll.upper[i] !== null && rsiAll[i] !== null && macdAll.macd[i] !== null && macdAll.signal[i] !== null) {
+        warmup = i;
+        break;
+      }
+    }
 
-    // ═══ Price Y scale (candles area only, not volume) ═══
-    const hiVals = [ ...data.map(d => d.high), ...bb.upper.filter((v): v is number => v !== null), ...sma20.filter((v): v is number => v !== null) ];
-    const loVals = [ ...data.map(d => d.low), ...bb.lower.filter((v): v is number => v !== null), ...sma20.filter((v): v is number => v !== null) ];
+    // Slice data and indicators to remove the warmup null region
+    const d = data.slice(warmup);
+    dn = d.length; // display bar count (overwrite placeholder from above)
+    const sma20 = sma20All.slice(warmup);
+    const sma50 = sma50All.slice(warmup);
+    const ema12 = ema12All.slice(warmup);
+    const bb = { upper: bbAll.upper.slice(warmup), middle: bbAll.middle.slice(warmup), lower: bbAll.lower.slice(warmup) };
+    const rsi = rsiAll.slice(warmup);
+    const macdData = {
+      macd: macdAll.macd.slice(warmup),
+      signal: macdAll.signal.slice(warmup),
+      histogram: macdAll.histogram.slice(warmup),
+    };
+
+    console.log(`[CHART] total=${n} warmup=${warmup} display=${dn} bars`);
+
+    // ═══ Recalculate bar dimensions for DISPLAY data (after warmup trim) ═══
+    displayBarW = chartW / dn;
+    displayCandleW = Math.max(displayBarW * 0.6, 2);
+
+    // ═══ Price Y scale based on DISPLAY data (candles area only, not volume) ═══
+    const hiVals = [ ...d.map(dd => dd.high), ...bb.upper.filter((v): v is number => v !== null), ...sma20.filter((v): v is number => v !== null) ];
+    const loVals = [ ...d.map(dd => dd.low), ...bb.lower.filter((v): v is number => v !== null), ...sma20.filter((v): v is number => v !== null) ];
     const allH = Math.max(...hiVals);
     const allL = Math.min(...loVals);
     const pad = (allH - allL) * 0.06 || 1;
@@ -261,7 +296,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const yP = (v: number) => priceTop + (1 - (v - pMin) / (pMax - pMin)) * candleH;
 
     // ═══ Volume Y scale (bottom of price panel) ═══
-    const maxVol = Math.max(...data.map(d => d.volume || 0)) || 1;
+    const maxVol = Math.max(...d.map(dd => dd.volume || 0)) || 1;
     const yV = (v: number) => volTop + volH - (v / maxVol) * volH;
 
     // ═══ RSI scale 0-100 ═══
@@ -273,9 +308,9 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const mMax = Math.max(Math.abs(Math.min(...macdVals, ...histVals)), Math.abs(Math.max(...macdVals, ...histVals)), 0.01);
     const yM = (v: number) => macdTop + macdH / 2 - (v / mMax) * (macdH / 2);
 
-    // ═══ Helpers ═══
-    const xOf = (i: number) => L + barW * i + barW / 2;
-    const labelN = n <= 15 ? 1 : n <= 30 ? 3 : n <= 60 ? 5 : n <= 130 ? 10 : 20;
+    // ═══ Helpers (use DISPLAY dimensions) ═══
+    const xOf = (i: number) => L + displayBarW * i + displayBarW / 2;
+    const labelN = dn <= 15 ? 1 : dn <= 30 ? 3 : dn <= 60 ? 5 : dn <= 130 ? 10 : 20;
 
     const line = (vals: (number | null)[], color: string, sw = 1, id?: string) => {
       const pts: string[] = [];
@@ -292,19 +327,19 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
       pGrid.push({ y: yP(v), lbl: '$' + v.toFixed(1) });
     }
 
-    // BB fill
+    // BB fill (use DISPLAY count)
     const bbPts: string[] = [];
-    for (let i = 0; i < n; i++) if (bb.upper[i] !== null) bbPts.push(`${xOf(i)},${yP(bb.upper[i]!)}`);
-    for (let i = n - 1; i >= 0; i--) if (bb.lower[i] !== null) bbPts.push(`${xOf(i)},${yP(bb.lower[i]!)}`);
+    for (let i = 0; i < dn; i++) if (bb.upper[i] !== null) bbPts.push(`${xOf(i)},${yP(bb.upper[i]!)}`);
+    for (let i = dn - 1; i >= 0; i--) if (bb.lower[i] !== null) bbPts.push(`${xOf(i)},${yP(bb.lower[i]!)}`);
 
-    // Last values for legend
-    const lastSma20 = sma20[n - 1];
-    const lastSma50 = sma50[n - 1];
-    const lastEma12 = ema12[n - 1];
-    const lastRsi = rsi[n - 1];
-    const lastMacd = macdData.macd[n - 1];
-    const lastSig = macdData.signal[n - 1];
-    const lastClose = data[n - 1].close;
+    // Last values for legend (use DISPLAY count)
+    const lastSma20 = sma20[dn - 1];
+    const lastSma50 = sma50[dn - 1];
+    const lastEma12 = ema12[dn - 1];
+    const lastRsi = rsi[dn - 1];
+    const lastMacd = macdData.macd[dn - 1];
+    const lastSig = macdData.signal[dn - 1];
+    const lastClose = d[dn - 1].close;
     const lastY = yP(lastClose);
 
     return (
@@ -330,19 +365,19 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         ))}
 
         {/* Vertical grid (time axis) */}
-        {data.map((d, i) => {
+        {d.map((dd, i) => {
           if (i % labelN !== 0 || i === 0) return null;
           return <line key={"vg" + i} x1={xOf(i)} y1={priceTop} x2={xOf(i)} y2={priceTop + priceH} stroke={GRID} strokeOpacity={0.25} strokeDasharray="1 3" />;
         })}
 
         {/* Volume bars (behind candles, at bottom of price panel) */}
         <g clipPath="url(#priceClip)">
-          {data.map((d, i) => {
+          {d.map((dd, i) => {
             const cx = xOf(i);
-            const isUp = d.close >= d.open;
-            const vy = yV(d.volume || 0);
+            const isUp = dd.close >= dd.open;
+            const vy = yV(dd.volume || 0);
             return (
-              <rect key={"vol" + i} x={cx - candleW / 2} y={vy} width={candleW} height={Math.max(volTop + volH - vy, 0)}
+              <rect key={"vol" + i} x={cx - displayCandleW / 2} y={vy} width={displayCandleW} height={Math.max(volTop + volH - vy, 0)}
                 fill={isUp ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)'} />
             );
           })}
@@ -363,25 +398,25 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
 
         {/* Candlesticks */}
         <g clipPath="url(#priceClip)">
-          {data.map((d, i) => {
+          {d.map((dd, i) => {
             const cx = xOf(i);
-            const up = d.close >= d.open;
+            const up = dd.close >= dd.open;
             const c = up ? BULL : BEAR;
-            const bT = yP(Math.max(d.open, d.close));
-            const bB = yP(Math.min(d.open, d.close));
+            const bT = yP(Math.max(dd.open, dd.close));
+            const bB = yP(Math.min(dd.open, dd.close));
             const bH = Math.max(bB - bT, 1);
             return (
               <g key={"k" + i}>
-                <line x1={cx} y1={yP(d.high)} x2={cx} y2={yP(d.low)} stroke={c} strokeWidth={1} />
-                <rect x={cx - candleW / 2} y={bT} width={candleW} height={bH} fill={c} stroke={c} strokeWidth={0.5} />
+                <line x1={cx} y1={yP(dd.high)} x2={cx} y2={yP(dd.low)} stroke={c} strokeWidth={1} />
+                <rect x={cx - displayCandleW / 2} y={bT} width={displayCandleW} height={bH} fill={c} stroke={c} strokeWidth={0.5} />
               </g>
             );
           })}
         </g>
 
         {/* Current price line + tag */}
-        <line x1={L} y1={lastY} x2={W - R} y2={lastY} stroke={data[n-1].close >= data[n-1].open ? BULL : BEAR} strokeDasharray="4 2" strokeOpacity={0.7} strokeWidth={1} />
-        <rect x={W - R + 1} y={lastY - 10} width={R - 2} height={20} rx={2} fill={data[n-1].close >= data[n-1].open ? BULL : BEAR} />
+        <line x1={L} y1={lastY} x2={W - R} y2={lastY} stroke={d[dn-1].close >= d[dn-1].open ? BULL : BEAR} strokeDasharray="4 2" strokeOpacity={0.7} strokeWidth={1} />
+        <rect x={W - R + 1} y={lastY - 10} width={R - 2} height={20} rx={2} fill={d[dn-1].close >= d[dn-1].open ? BULL : BEAR} />
         <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastClose.toFixed(2)}</text>
 
         {/* TV-style top-right indicator legend with box */}
@@ -436,7 +471,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
             const barY = pos ? yM(v) : macdTop + macdH / 2;
             const barH = Math.abs(yM(v) - (macdTop + macdH / 2));
             return (
-              <rect key={"h" + i} x={cx - candleW * 0.4} y={barY} width={candleW * 0.8} height={Math.max(barH, 0.5)}
+              <rect key={"h" + i} x={cx - displayCandleW * 0.4} y={barY} width={displayCandleW * 0.8} height={Math.max(barH, 0.5)}
                 fill={pos ? 'rgba(38,166,154,0.6)' : 'rgba(239,83,80,0.6)'} />
             );
           })}
@@ -454,16 +489,14 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         )}
 
         {/* ═══════ X-AXIS DATE LABELS ═══════ */}
-        {data.map((d, i) => {
+        {d.map((dd, i) => {
           if (i % labelN !== 0) return null;
           return (
             <text key={"d" + i} x={xOf(i)} y={macdTop + macdH + 14} fill={TXT} fontSize={10} textAnchor="middle" fontFamily="Trebuchet MS, sans-serif">
-              {d.date.substring(5)}
+              {dd.date.substring(5)}
             </text>
           );
         })}
-        {/* Debug: bar count — REMOVE AFTER FIX */}
-        <text x={L + 8} y={macdTop + macdH + 14} fill="#ff0" fontSize={11} fontFamily="monospace" fontWeight="bold">{n} bars</text>
       </svg>
     );
   }, [data]);
