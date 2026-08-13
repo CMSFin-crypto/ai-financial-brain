@@ -90,7 +90,7 @@ CRITICAL REQUIREMENTS:
 3. The "actionPlan" must include: Entry zone, Stop Loss, Target 1, Target 2, Risk/Reward ratio, position sizing.
 4. All "interpretation" fields must be 3-4 sentences with specific reasoning and actionable insights.
 5. All text MUST be in Albanian language.
-6. "candlestickData" should have 20-22 trading days of data (one month).`;
+6. "candlestickData" can be a small sample (5-10 bars) or empty — real chart data will be injected server-side.`;
 
 // ═══════════════════════════════════════════
 // DETERMINISTIC RANDOM — seeded by ticker
@@ -556,8 +556,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Use real chart data if AI's data is empty or we have better real data
-    if (realChartData && realChartData.length > 10 && (!analysis.candlestickData || analysis.candlestickData.length < 10)) {
+    // ALWAYS use real chart data for the chart visualization (AI data is unreliable for charting)
+    if (realChartData && realChartData.length >= 10) {
       (analysis as Record<string, unknown>).candlestickData = realChartData;
     }
 
