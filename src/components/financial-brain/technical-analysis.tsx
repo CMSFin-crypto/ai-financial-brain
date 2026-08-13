@@ -463,7 +463,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
           );
         })}
         {/* Debug: bar count — REMOVE AFTER FIX */}
-        <text x={L + 8} y={macdTop + macdH + 14} fill={TXT} fontSize={8} fontFamily="monospace" opacity={0.5}>{n} bars</text>
+        <text x={L + 8} y={macdTop + macdH + 14} fill="#ff0" fontSize={11} fontFamily="monospace" fontWeight="bold">{n} bars</text>
       </svg>
     );
   }, [data]);
