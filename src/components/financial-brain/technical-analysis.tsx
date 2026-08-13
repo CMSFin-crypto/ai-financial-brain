@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMemo } from 'react';
-import { ResponsiveContainer } from 'recharts';
 import {
   BarChart3,
   Activity,
@@ -186,20 +185,21 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
 
-    // TradingView dark palette
-    const BG = 'transparent';
+    // TradingView dark palette (matching reference)
+    const BG = '#131722';
     const GRID = '#2a2e39';
-    const GRID_OP = 0.4;
+    const GRID_OP = 0.3;
     const TXT = '#787b86';
+    const TXT_BRIGHT = '#d1d4dc';
     const BULL = '#26a69a';
     const BEAR = '#ef5350';
-    const SMA20_CLR = '#f0b90b';
-    const SMA50_CLR = '#2196f3';
-    const EMA12_CLR = '#e040fb';
-    const BB_CLR = '#7c4dff';
-    const RSI_CLR = '#e040fb';
-    const MACD_CLR = '#2196f3';
-    const SIG_CLR = '#ff6d00';
+    const SMA20_CLR = '#f0b323'; // Gold/Yellow — fast MA
+    const SMA50_CLR = '#2962ff'; // Blue — slow MA
+    const EMA12_CLR = '#ff6d00'; // Orange — EMA
+    const BB_CLR = '#7c4dff';   // Purple — Bollinger Bands
+    const RSI_CLR = '#2962ff';  // Blue
+    const MACD_CLR = '#2962ff'; // Blue
+    const SIG_CLR = '#ff6d00';  // Orange
 
     const W = 880;
     const H = 540;
@@ -302,12 +302,16 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const lastY = yP(lastClose);
 
     return (
-      <svg viewBox={`0 0 ${W} ${totalH}`} className="w-full h-full" style={{ background: BG }}>
+      <svg viewBox={`0 0 ${W} ${totalH}`} className="w-full h-full" style={{ background: BG, borderRadius: 0 }}>
         <defs>
           <clipPath id="priceClip"><rect x={L} y={priceTop} width={chartW} height={priceH} /></clipPath>
           <clipPath id="rsiClip"><rect x={L} y={rsiTop} width={chartW} height={rsiH} /></clipPath>
           <clipPath id="macdClip"><rect x={L} y={macdTop} width={chartW} height={macdH} /></clipPath>
         </defs>
+        {/* Background fill for each panel */}
+        <rect x={L} y={priceTop} width={chartW} height={priceH} fill="#1e222d" opacity={0.3} />
+        <rect x={L} y={rsiTop} width={chartW} height={rsiH} fill="#1e222d" opacity={0.2} />
+        <rect x={L} y={macdTop} width={chartW} height={macdH} fill="#1e222d" opacity={0.2} />
 
         {/* ═══════ PRICE CHART (candles + volume) ═══════ */}
 
@@ -315,7 +319,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         {pGrid.map((g, i) => (
           <g key={"g" + i}>
             <line x1={L} y1={g.y} x2={W - R} y2={g.y} stroke={GRID} strokeOpacity={GRID_OP} strokeDasharray="1 3" />
-            <text x={W - R + 6} y={g.y + 3.5} fill={TXT} fontSize={10} fontFamily="Trebuchet MS, Tahoma, sans-serif">{g.lbl}</text>
+            <text x={W - R + 6} y={g.y + 3.5} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, Tahoma, sans-serif">{g.lbl}</text>
           </g>
         ))}
 
@@ -333,13 +337,13 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
             const vy = yV(d.volume || 0);
             return (
               <rect key={"vol" + i} x={cx - candleW / 2} y={vy} width={candleW} height={Math.max(volTop + volH - vy, 0)}
-                fill={isUp ? 'rgba(38,166,154,0.25)' : 'rgba(239,83,80,0.25)'} />
+                fill={isUp ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)'} />
             );
           })}
         </g>
 
         {/* Bollinger Bands fill */}
-        {bbPts.length > 2 && <polygon points={bbPts.join(' ')} fill="rgba(124,77,255,0.06)" stroke="none" />}
+        {bbPts.length > 2 && <polygon points={bbPts.join(' ')} fill="rgba(124,77,255,0.08)" stroke="none" />}
 
         {/* Bollinger Band lines */}
         {line(bb.upper.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-u')}
@@ -374,15 +378,19 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <rect x={W - R + 1} y={lastY - 10} width={R - 2} height={20} rx={2} fill={data[n-1].close >= data[n-1].open ? BULL : BEAR} />
         <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastClose.toFixed(2)}</text>
 
-        {/* TV-style top-left indicator legend */}
-        {lastSma20 !== null && <text x={L + 8} y={priceTop + 14} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaP}) {lastSma20.toFixed(2)}</text>}
-        {lastSma50 !== null && <text x={L + 8} y={priceTop + 26} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaLongP}) {lastSma50.toFixed(2)}</text>}
-        {lastEma12 !== null && <text x={L + 8} y={priceTop + 38} fill={EMA12_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">EMA({emaP}) {lastEma12.toFixed(2)}</text>}
-        <text x={L + 8} y={priceTop + 50} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB ({bbP}, 2)</text>
+        {/* TV-style top-right indicator legend with box */}
+        <rect x={W - R - 210} y={priceTop + 4} width={206} height={52} rx={4} fill="rgba(19,23,34,0.85)" stroke="#2a2e39" strokeWidth={0.5} />
+        <text x={W - R - 204} y={priceTop + 17} fill={TXT_BRIGHT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" opacity={0.7}>Indicators</text>
+        {lastSma20 !== null && <text x={W - R - 204} y={priceTop + 30} fill={SMA20_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaP})</text>}
+        {lastSma20 !== null && <text x={W - R - 130} y={priceTop + 30} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastSma20.toFixed(2)}</text>}
+        {lastSma50 !== null && <text x={W - R - 60} y={priceTop + 30} fill={SMA50_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">SMA({smaLongP})</text>}
+        {lastSma50 !== null && <text x={W - R - 4} y={priceTop + 30} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif" textAnchor="end">{lastSma50.toFixed(2)}</text>}
+        {lastEma12 !== null && <text x={W - R - 204} y={priceTop + 44} fill={EMA12_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">EMA({emaP})</text>}
+        {lastEma12 !== null && <text x={W - R - 130} y={priceTop + 44} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastEma12.toFixed(2)}</text>}
+        <text x={W - R - 60} y={priceTop + 44} fill={BB_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">BB({bbP})</text>
 
         {/* Volume label */}
-        <text x={L + 8} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.6}>Vol</text>
-        <text x={W - R + 6} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.5}>{(maxVol / 1e6).toFixed(1)}M</text>
+        <text x={L + 8} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.5}>Vol</text>
 
         {/* ═══════ PANEL SEPARATOR ═══════ */}
         <line x1={L} y1={rsiTop - 1} x2={W - R} y2={rsiTop - 1} stroke={GRID} strokeOpacity={0.5} />
@@ -403,7 +411,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         {/* TV-style RSI label top-left */}
         <text x={L + 8} y={rsiTop + 14} fill={RSI_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">RSI ({rsiP})</text>
         {lastRsi !== null && (
-          <text x={L + 72} y={rsiTop + 14} fill={lastRsi > 70 ? BEAR : lastRsi < 30 ? BULL : TXT} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastRsi.toFixed(2)}</text>
+          <text x={L + 78} y={rsiTop + 14} fill={lastRsi > 70 ? BEAR : lastRsi < 30 ? BULL : TXT_BRIGHT} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastRsi.toFixed(2)}</text>
         )}
 
         {/* ═══════ PANEL SEPARATOR ═══════ */}
@@ -433,10 +441,10 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         {/* TV-style MACD label top-left */}
         <text x={L + 8} y={macdTop + 14} fill={MACD_CLR} fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">MACD ({macdFast},{macdSlow})</text>
         {lastMacd !== null && (
-          <text x={L + 100} y={macdTop + 14} fill={MACD_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastMacd.toFixed(2)}</text>
+          <text x={L + 105} y={macdTop + 14} fill={TXT_BRIGHT} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastMacd.toFixed(2)}</text>
         )}
         {lastSig !== null && (
-          <text x={L + 155} y={macdTop + 14} fill={SIG_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">Signal {lastSig.toFixed(2)}</text>
+          <text x={L + 168} y={macdTop + 14} fill={SIG_CLR} fontSize={10} fontFamily="Trebuchet MS, sans-serif">{lastSig.toFixed(2)}</text>
         )}
 
         {/* ═══════ X-AXIS DATE LABELS ═══════ */}
@@ -648,24 +656,11 @@ export function TechnicalAnalysis() {
 
           {/* ═══ CHART — Candlestick + Volume ═══ */}
           {analysis.candlestickData && analysis.candlestickData.length > 0 && (
-            <Card className="border-border/50 bg-card/50">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-500" />
-                  Candlestick Chart ({timeframe}) + Volumi
-                  {analysis.isRealChart && (
-                    <Badge variant="outline" className="text-[9px] border-emerald-500/30 text-emerald-400">Real Data</Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[500px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <CandlestickChart data={analysis.candlestickData} />
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="rounded-lg overflow-hidden border border-[#2a2e39]" style={{ background: '#131722' }}>
+              <div className="h-[500px]">
+                <CandlestickChart data={analysis.candlestickData} />
+              </div>
+            </div>
           )}
 
           {/* ═══ INDICATORS — Detailed Cards ═══ */}
