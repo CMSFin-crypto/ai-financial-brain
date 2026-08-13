@@ -185,21 +185,21 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
 
-    const W = 900;
-    const H = 780;
-    const margin = { top: 20, right: 62, bottom: 28, left: 8 };
+    const W = 880;
+    const H = 560;
+    const margin = { top: 8, right: 58, bottom: 4, left: 6 };
     const chartW = W - margin.left - margin.right;
     const n = data.length;
     const barSpace = chartW / n;
-    const bodyW = Math.max(barSpace * 0.6, 3);
+    const bodyW = Math.max(barSpace * 0.55, 2.5);
 
-    // Panel layout with proper spacing
-    const sepH = 6; // separator height between panels
-    const priceH = 310;
-    const volH = 65;
-    const rsiH = 100;
-    const macdH = 110;
-    const legendH = 22;
+    // Panel layout
+    const sepH = 4;
+    const priceH = 220;
+    const volH = 48;
+    const rsiH = 72;
+    const macdH = 80;
+    const legendH = 18;
 
     let yCursor = margin.top;
     const priceTop = yCursor; yCursor += priceH;
@@ -207,7 +207,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const rsiTop = yCursor + sepH; yCursor = rsiTop + rsiH;
     const macdTop = yCursor + sepH; yCursor = macdTop + macdH;
     const legendTop = yCursor + sepH;
-    const xLabelY = legendTop + legendH + 14;
+    const xLabelY = legendTop + legendH + 12;
 
     // Colors
     const bgPanel = 'hsl(240 6% 9%)';
@@ -393,12 +393,12 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <text x={W - margin.right + 5} y={rsiMid + 3.5} fill={txtClr} fontSize={8} fontFamily="ui-monospace, monospace" opacity={0.5}>50</text>
         <text x={W - margin.right + 5} y={rsiOS + 3.5} fill="#22c55e" fontSize={8} fontFamily="ui-monospace, monospace" opacity={0.7}>30</text>
         {/* RSI line */}
-        {polyline(rsi.map(v => v !== null ? yR(v) : null), '#a855f7', 2, 'rsi-line')}
+        {polyline(rsi.map(v => v !== null ? yR(v) : null), '#a855f7', 1.5, 'rsi-line')}
         {/* RSI panel label */}
-        <text x={margin.left + 6} y={rsiTop + 14} fill="#a855f7" fontSize={9.5} fontWeight="700" opacity={0.85}>RSI (14)</text>
+        <text x={margin.left + 6} y={rsiTop + 11} fill="#a855f7" fontSize={8} fontWeight="700" opacity={0.85}>RSI (14)</text>
         {/* Latest RSI value */}
         {rsi[n - 1] !== null && (
-          <text x={margin.left + 68} y={rsiTop + 14} fill={rsi[n-1]! > 70 ? '#ef4444' : rsi[n-1]! < 30 ? '#22c55e' : txtClr} fontSize={9} fontWeight="600" fontFamily="ui-monospace, monospace">{rsi[n-1]!.toFixed(1)}</text>
+          <text x={margin.left + 58} y={rsiTop + 11} fill={rsi[n-1]! > 70 ? '#ef4444' : rsi[n-1]! < 30 ? '#22c55e' : txtClr} fontSize={8} fontWeight="600" fontFamily="ui-monospace, monospace">{rsi[n-1]!.toFixed(1)}</text>
         )}
 
         {/* ════════ MACD PANEL ════════ */}
@@ -422,35 +422,35 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         {/* Signal line */}
         {polyline(macdData.signal.map(v => v !== null ? yM(v) : null), '#f97316', 1.4, 'signal-line')}
         {/* MACD panel label + legend */}
-        <text x={margin.left + 6} y={macdTop + 14} fill={txtClr} fontSize={9.5} fontWeight="700" opacity={0.85}>MACD</text>
-        <line x1={margin.left + 52} y1={macdTop + 11} x2={margin.left + 70} y2={macdTop + 11} stroke="#06b6d4" strokeWidth={2} />
-        <text x={margin.left + 73} y={macdTop + 14} fill="#06b6d4" fontSize={8} opacity={0.8}>MACD</text>
-        <line x1={margin.left + 105} y1={macdTop + 11} x2={margin.left + 123} y2={macdTop + 11} stroke="#f97316" strokeWidth={2} />
-        <text x={margin.left + 126} y={macdTop + 14} fill="#f97316" fontSize={8} opacity={0.8}>Signal</text>
-        <rect x={margin.left + 165} y={macdTop + 5} width={10} height={10} fill="rgba(34,197,94,0.5)" rx={1.5} />
-        <text x={margin.left + 178} y={macdTop + 14} fill={txtClr} fontSize={8} opacity={0.6}>Hist</text>
+        <text x={margin.left + 6} y={macdTop + 12} fill={txtClr} fontSize={8.5} fontWeight="700" opacity={0.85}>MACD</text>
+        <line x1={margin.left + 46} y1={macdTop + 9} x2={margin.left + 60} y2={macdTop + 9} stroke="#06b6d4" strokeWidth={1.5} />
+        <text x={margin.left + 63} y={macdTop + 12} fill="#06b6d4" fontSize={7.5} opacity={0.8}>Line</text>
+        <line x1={margin.left + 90} y1={macdTop + 9} x2={margin.left + 104} y2={macdTop + 9} stroke="#f97316" strokeWidth={1.5} />
+        <text x={margin.left + 107} y={macdTop + 12} fill="#f97316" fontSize={7.5} opacity={0.8}>Signal</text>
+        <rect x={margin.left + 142} y={macdTop + 4} width={8} height={8} fill="rgba(34,197,94,0.5)" rx={1} />
+        <text x={margin.left + 153} y={macdTop + 12} fill={txtClr} fontSize={7.5} opacity={0.6}>Hist</text>
         {/* MACD zero label */}
         <text x={W - margin.right + 5} y={macdTop + macdH / 2 + 3.5} fill={txtClr} fontSize={7.5} fontFamily="ui-monospace, monospace" opacity={0.5}>0</text>
 
         {/* ════════ LEGEND BAR ════════ */}
-        <rect x={margin.left} y={legendTop} width={chartW} height={legendH} fill={bgPanel} rx={4} />
+        <rect x={margin.left} y={legendTop} width={chartW} height={legendH} fill={bgPanel} rx={3} />
         {/* SMA 20 */}
-        <line x1={margin.left + 12} y1={legendTop + legendH / 2} x2={margin.left + 30} y2={legendTop + legendH / 2} stroke="#f59e0b" strokeWidth={2.5} />
-        <text x={margin.left + 34} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>SMA 20</text>
+        <line x1={margin.left + 10} y1={legendTop + legendH / 2} x2={margin.left + 24} y2={legendTop + legendH / 2} stroke="#f59e0b" strokeWidth={2} />
+        <text x={margin.left + 27} y={legendTop + legendH / 2 + 3} fill={txtClr} fontSize={7.5}>SMA20</text>
         {/* SMA 50 */}
-        <line x1={margin.left + 95} y1={legendTop + legendH / 2} x2={margin.left + 113} y2={legendTop + legendH / 2} stroke="#3b82f6" strokeWidth={2.5} />
-        <text x={margin.left + 117} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>SMA 50</text>
+        <line x1={margin.left + 75} y1={legendTop + legendH / 2} x2={margin.left + 89} y2={legendTop + legendH / 2} stroke="#3b82f6" strokeWidth={2} />
+        <text x={margin.left + 92} y={legendTop + legendH / 2 + 3} fill={txtClr} fontSize={7.5}>SMA50</text>
         {/* EMA 12 */}
-        <line x1={margin.left + 178} y1={legendTop + legendH / 2} x2={margin.left + 196} y2={legendTop + legendH / 2} stroke="#ec4899" strokeWidth={2.5} />
-        <text x={margin.left + 200} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>EMA 12</text>
+        <line x1={margin.left + 140} y1={legendTop + legendH / 2} x2={margin.left + 154} y2={legendTop + legendH / 2} stroke="#ec4899" strokeWidth={2} />
+        <text x={margin.left + 157} y={legendTop + legendH / 2 + 3} fill={txtClr} fontSize={7.5}>EMA12</text>
         {/* Bollinger Bands */}
-        <rect x={margin.left + 262} y={legendTop + 4} width={16} height={legendH - 8} fill="url(#bbGrad)" stroke="#8b5cf6" strokeWidth={1} rx={2} />
-        <text x={margin.left + 282} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>Bollinger Bands</text>
-        {/* Bullish / Bearish candles */}
-        <rect x={margin.left + 385} y={legendTop + 4} width={8} height={legendH - 8} fill={bullClr} rx={1.5} />
-        <text x={margin.left + 397} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>Bullish</text>
-        <rect x={margin.left + 448} y={legendTop + 4} width={8} height={legendH - 8} fill={bearClr} rx={1.5} />
-        <text x={margin.left + 460} y={legendTop + legendH / 2 + 3.5} fill={txtClr} fontSize={8.5}>Bearish</text>
+        <rect x={margin.left + 205} y={legendTop + 3} width={14} height={legendH - 6} fill="url(#bbGrad)" stroke="#8b5cf6" strokeWidth={0.8} rx={2} />
+        <text x={margin.left + 222} y={legendTop + legendH / 2 + 3} fill={txtClr} fontSize={7.5}>BB</text>
+        {/* Bullish / Bearish */}
+        <rect x={margin.left + 248} y={legendTop + 3} width={7} height={legendH - 6} fill={bullClr} rx={1} />
+        <text x={margin.left + 258} y={legendTop + legendH / 2 + 3} fill={txtClr} fontSize={7.5}>Bull</text>
+        <rect x={margin.left + 288} y={legendTop + 3} width={7} height={legendH - 6} fill={bearClr} rx={1} />
+        <text x={margin.left + 298} y={legendTop + legendH / 2 + 3} fill={txtClr} fontSize={7.5}>Bear</text>
 
         {/* ════════ X-AXIS DATE LABELS ════════ */}
         {data.map((d, i) => {
@@ -672,7 +672,7 @@ export function TechnicalAnalysis() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[700px]">
+                <div className="h-[500px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <CandlestickChart data={analysis.candlestickData} />
                   </ResponsiveContainer>
