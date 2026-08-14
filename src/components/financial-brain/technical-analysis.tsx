@@ -1,12 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemo } from 'react';
 import {
   BarChart3,
   Activity,
@@ -229,6 +228,8 @@ function EdgeLabels({ items, rightEdge, fontSize = 9.5 }: {
 
 // ═══ TradingView-Style Technical Chart ═══
 function CandlestickChart({ data }: { data: CandleData[] }) {
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
 
@@ -329,20 +330,38 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const xOf = (i: number) => L + barW * i + barW / 2;
     const labelN = n <= 15 ? 1 : n <= 30 ? 3 : n <= 60 ? 5 : n <= 130 ? 10 : 20;
 
-    const line = (vals: (number | null)[], color: string, sw = 1, id?: string) => {
-      const pts: string[] = [];
-      let firstValidY: number | null = null;
+    // ═══ FULL-WIDTH LINE FUNCTION ═══
+    // Every line ALWAYS spans from left edge (x=L) to right edge (x=W-R).
+    // Horizontal extension uses first/last valid Y value — exactly like TradingView.
+    const fullLine = (vals: (number | null)[], color: string, sw = 1, id?: string, label?: string) => {
+      let firstY: number | null = null;
+      let lastY: number | null = null;
+      const validPts: string[] = [];
       for (let i = 0; i < vals.length; i++) {
         if (vals[i] !== null) {
-          if (firstValidY === null) {
-            firstValidY = vals[i];
-            // Backfill: extend line to the left edge using first valid value
-            if (i > 0) pts.push(`${xOf(0)},${vals[i]}`);
-          }
-          pts.push(`${xOf(i)},${vals[i]}`);
+          if (firstY === null) firstY = vals[i];
+          lastY = vals[i];
+          validPts.push(`${xOf(i)},${vals[i]}`);
         }
       }
-      return pts.length > 1 ? <polyline key={id ?? color} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" /> : null;
+      if (firstY === null || validPts.length === 0) return null;
+      // Build full-width points: left edge → first valid → ... → last valid → right edge
+      const allPts = [`${L},${firstY}`, ...validPts, `${W - R},${lastY}`];
+      const ptsStr = allPts.join(' ');
+      // Click handler for tooltip
+      const clickHandler = label ? ((e: { stopPropagation: () => void; currentTarget: { closest: (s: string) => SVGSVGElement | null }; clientX: number; clientY: number }) => {
+        e.stopPropagation();
+        const svgEl = e.currentTarget.closest('svg');
+        if (!svgEl) return;
+        const rect = svgEl.getBoundingClientRect();
+        setTooltip({ text: label, x: e.clientX - rect.left, y: e.clientY - rect.top });
+      }) : undefined;
+      return (
+        <g key={id ?? color}>
+          {label && <polyline points={ptsStr} fill="none" stroke="transparent" strokeWidth={14} strokeLinecap="round" style={{ cursor: 'pointer' }} onPointerDown={clickHandler} />}
+          <polyline points={ptsStr} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
+        </g>
+      );
     };
 
     // Price grid
@@ -412,14 +431,14 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         {bbPts.length > 2 && <polygon points={bbPts.join(' ')} fill="rgba(124,77,255,0.08)" stroke="none" />}
 
         {/* Bollinger Band lines */}
-        {line(bb.upper.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-u')}
-        {line(bb.middle.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-m')}
-        {line(bb.lower.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-l')}
+        {fullLine(bb.upper.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-u', `BB Sip\u00ebrme — Bollinger Band Upper`)}
+        {fullLine(bb.middle.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-m', `BB Mesme — Bollinger Band Mid (SMA ${bbP})`)}
+        {fullLine(bb.lower.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-l', `BB Posht\u00ebme — Bollinger Band Lower`)}
 
         {/* Moving Averages */}
-        {line(sma20.map(v => v !== null ? yP(v) : null), SMA20_CLR, 1.5, 's20')}
-        {line(sma50.map(v => v !== null ? yP(v) : null), SMA50_CLR, 1.5, 's50')}
-        {line(ema12.map(v => v !== null ? yP(v) : null), EMA12_CLR, 1.2, 'e12')}
+        {fullLine(sma20.map(v => v !== null ? yP(v) : null), SMA20_CLR, 1.5, 's20', `SMA(${smaP}) — Mesatare e Thjesht\u00eb`)}
+        {fullLine(sma50.map(v => v !== null ? yP(v) : null), SMA50_CLR, 1.5, 's50', `SMA(${smaLongP}) — Mesatare e Gjat\u00eb`)}
+        {fullLine(ema12.map(v => v !== null ? yP(v) : null), EMA12_CLR, 1.2, 'e12', `EMA(${emaP}) — Mesatare Eksponenciale`)}
 
         {/* Candlesticks */}
         <g clipPath="url(#priceClip)">
@@ -472,7 +491,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         <text x={W - R + 6} y={yR(30) + 3.5} fill={TXT} fontSize={9.5} fontFamily="Trebuchet MS, sans-serif">30.00</text>
         {/* RSI line */}
         <g clipPath="url(#rsiClip)">
-          {line(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi')}
+          {fullLine(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi', `RSI(${rsiP}) — Indeksi i Forc\u00ebs Relative`)}
         </g>
         {/* RSI right-edge label */}
         {lastRsi !== null && (
@@ -502,8 +521,8 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
             );
           })}
           {/* MACD & Signal lines */}
-          {line(macdData.macd.map(v => v !== null ? yM(v) : null), MACD_CLR, 1.5, 'macd')}
-          {line(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig')}
+          {fullLine(macdData.macd.map(v => v !== null ? yM(v) : null), MACD_CLR, 1.5, 'macd', `MACD(${macdFast},${macdSlow}) — Divergjenc\u00eb Mesataresh`)}
+          {fullLine(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig', `Signal — Vija e Sinjalit MACD`)}
         </g>
         {/* MACD right-edge labels */}
         <EdgeLabels items={[
@@ -524,7 +543,30 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     );
   }, [data]);
 
-  return chart || <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
+  if (!chart) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
+
+  return (
+    <div className="relative w-full h-full" onPointerDown={() => setTooltip(null)}>
+      {chart}
+      {tooltip && (
+        <div
+          className="absolute pointer-events-none z-10 px-2.5 py-1.5 rounded text-xs font-semibold"
+          style={{
+            left: tooltip.x,
+            top: tooltip.y,
+            transform: 'translate(-50%, -140%)',
+            background: '#2a2e39',
+            color: '#d1d4dc',
+            border: '1px solid #363a45',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function TechnicalAnalysis() {
