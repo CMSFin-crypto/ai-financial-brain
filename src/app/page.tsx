@@ -20,6 +20,7 @@ import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
 import { EarningsCalendar } from '@/components/financial-brain/earnings-calendar';
 import { EconomicCalendar } from '@/components/financial-brain/economic-calendar';
 import { StockScreener } from '@/components/financial-brain/stock-screener';
+import { SecFilings } from '@/components/financial-brain/sec-filings';
 import {
   Zap,
   Brain,
@@ -45,6 +46,7 @@ import {
   Shield,
   Trophy,
   ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -110,6 +112,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="screener" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Filter className="w-3.5 h-3.5 mr-1.5" />Screener
+                  </TabsTrigger>
+                  <TabsTrigger value="sec-filings" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <FileText className="w-3.5 h-3.5 mr-1.5" />10-Q
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -197,6 +202,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="screener" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Filter className="w-3 h-3 mr-1" />Screener
+                  </TabsTrigger>
+                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <FileText className="w-3 h-3 mr-1" />10-Q
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -475,6 +483,29 @@ export default function Home() {
                   <EconomicCalendar />
                 </TabsContent>
               </Tabs>
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: SEC Filings (10-Q) */}
+          <TabsContent value="sec-filings" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <FileText className="w-4 h-4 text-blue-500" />
+                    <h3 className="text-sm font-semibold">Raportet 10-Q (SEC EDGAR)</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Të dhëna financiare tremujore direkt nga SEC — Income Statement, Balance Sheet, Cash Flow për çdo kuartal.
+                  </p>
+                </CardContent>
+              </Card>
+              <SecFilings />
             </motion.div>
           </TabsContent>
 
