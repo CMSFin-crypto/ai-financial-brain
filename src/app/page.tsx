@@ -94,26 +94,26 @@ export default function Home() {
               {/* Category: Analizë */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Analizë</span>
-                <TabsList className="flex gap-1 h-auto p-1 flex-1">
-                  <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <TabsList className="flex gap-1 h-auto p-1 flex-1 overflow-x-auto scrollbar-none">
+                  <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Target className="w-3.5 h-3.5 mr-1.5" />Pikat Ditore
                   </TabsTrigger>
-                  <TabsTrigger value="quant" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="quant" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Crosshair className="w-3.5 h-3.5 mr-1.5" />Quant
                   </TabsTrigger>
-                  <TabsTrigger value="technical" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="technical" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <LineChart className="w-3.5 h-3.5 mr-1.5" />Teknike
                   </TabsTrigger>
-                  <TabsTrigger value="fundamental" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="fundamental" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Building2 className="w-3.5 h-3.5 mr-1.5" />Fundamentale
                   </TabsTrigger>
-                  <TabsTrigger value="earnings" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="earnings" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <CalendarDays className="w-3.5 h-3.5 mr-1.5" />Fitimet
                   </TabsTrigger>
-                  <TabsTrigger value="screener" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="screener" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Filter className="w-3.5 h-3.5 mr-1.5" />Screener
                   </TabsTrigger>
-                  <TabsTrigger value="sec-filings" className="text-xs py-2 px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="sec-filings" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <FileText className="w-3.5 h-3.5 mr-1.5" />10-Q
                   </TabsTrigger>
                 </TabsList>
@@ -203,7 +203,7 @@ export default function Home() {
                   <TabsTrigger value="screener" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Filter className="w-3 h-3 mr-1" />Screener
                   </TabsTrigger>
-                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <FileText className="w-3 h-3 mr-1" />10-Q
                   </TabsTrigger>
                 </TabsList>
