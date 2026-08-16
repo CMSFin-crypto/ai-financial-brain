@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,6 +22,11 @@ import { EarningsCalendar } from '@/components/financial-brain/earnings-calendar
 import { EconomicCalendar } from '@/components/financial-brain/economic-calendar';
 import { StockScreener } from '@/components/financial-brain/stock-screener';
 import { SecFilings } from '@/components/financial-brain/sec-filings';
+
+const DriftReview = dynamic(() => import('@/app/drift-review/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Drift Review...</CardContent></Card> });
+const OverrideJournal = dynamic(() => import('@/app/override-journal/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Override Journal...</CardContent></Card> });
+const EdgeLeaderboard = dynamic(() => import('@/app/edge-leaderboard/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Edge Leaderboard...</CardContent></Card> });
+const ModelMetrics = dynamic(() => import('@/app/model-metrics/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Model Metrics...</CardContent></Card> });
 import {
   Zap,
   Brain,
@@ -652,118 +658,22 @@ export default function Home() {
 
           {/* Tab: Drift Review */}
           <TabsContent value="drift" className="mt-4">
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
-              <Card className="border-orange-500/20 bg-orange-500/5">
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Activity className="w-4 h-4 text-orange-500" />
-                      <h3 className="text-sm font-semibold">Rishikimi i Parashikimeve & Monitorimi i Drift</h3>
-                    </div>
-                    <Link href="/drift-review" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
-                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
-                    </Link>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Gjurmon shëndetin e modelit: preciziteti sipas afatit, kalibrimi (Brier/ECE), degradimi i regjimit dhe sektorit, dhe shkalla e no-trade.
-                  </p>
-                </CardContent>
-              </Card>
-              <div className="flex flex-col items-center justify-center py-12 gap-4">
-                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
-                    <Link href="/drift-review" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
-                      <Activity className="w-4 h-4" /> Hape Drift Review
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-            </motion.div>
+            <DriftReview />
           </TabsContent>
 
           {/* Tab: Override Journal */}
           <TabsContent value="overrides" className="mt-4">
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
-              <Card className="border-orange-500/20 bg-orange-500/5">
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Shield className="w-4 h-4 text-orange-500" />
-                      <h3 className="text-sm font-semibold">Ditar i Override-ve</h3>
-                    </div>
-                    <Link href="/override-journal" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
-                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
-                    </Link>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Gjurmon çdo ndërhyrje njerëzore: a ndihmoi apo dëmtoi? Modeli vs njeriu, shkaku i override, dhe rezultatet sipas regjimit.
-                  </p>
-                </CardContent>
-              </Card>
-              <div className="flex flex-col items-center justify-center py-12 gap-4">
-                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
-                    <Link href="/override-journal" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
-                      <Shield className="w-4 h-4" /> Hape Override Journal
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-            </motion.div>
+            <OverrideJournal />
           </TabsContent>
 
           {/* Tab: Edge Leaderboard */}
           <TabsContent value="edge" className="mt-4">
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
-              <Card className="border-orange-500/20 bg-orange-500/5">
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Trophy className="w-4 h-4 text-orange-500" />
-                      <h3 className="text-sm font-semibold">Tabela e Avantazhit: Sektorë & Regjime</h3>
-                    </div>
-                    <Link href="/edge-leaderboard" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
-                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
-                    </Link>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Ku ka sistemi avantazhin e vërtetë? Sektorët dhe regjimet me performancën më të mirë, me filtra të rekomanduara tregtimi.
-                  </p>
-                </CardContent>
-              </Card>
-              <div className="flex flex-col items-center justify-center py-12 gap-4">
-                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
-                    <Link href="/edge-leaderboard" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
-                      <Trophy className="w-4 h-4" /> Hape Edge Leaderboard
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-            </motion.div>
+            <EdgeLeaderboard />
           </TabsContent>
 
           {/* Tab: Model Metrics */}
           <TabsContent value="metrics" className="mt-4">
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
-              <Card className="border-orange-500/20 bg-orange-500/5">
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 mb-1">
-                      <BarChart3 className="w-4 h-4 text-orange-500" />
-                      <h3 className="text-sm font-semibold">Metrics e Modelit</h3>
-                    </div>
-                    <Link href="/model-metrics" className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
-                      Hape faqen e plotë <ExternalLink className="w-3 h-3" />
-                    </Link>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Brier score, ECE, precision/recall, alpha, drawdown — metrikat e plotë të kalibrit dhe performancës.
-                  </p>
-                </CardContent>
-              </Card>
-              <div className="flex flex-col items-center justify-center py-12 gap-4">
-                    <p className="text-sm text-muted-foreground text-center">Faqja e plotë hapet në një tab të ri me grafikë dhe tabela të detajuara.</p>
-                    <Link href="/model-metrics" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-orange-500/10 border border-orange-500/30 px-4 py-2.5 text-sm font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
-                      <BarChart3 className="w-4 h-4" /> Hape Model Metrics
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-            </motion.div>
+            <ModelMetrics />
           </TabsContent>
         </Tabs>
       </main>
