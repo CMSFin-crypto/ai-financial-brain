@@ -22,12 +22,7 @@ import { EconomicCalendar } from '@/components/financial-brain/economic-calendar
 import { StockScreener } from '@/components/financial-brain/stock-screener';
 import { SecFilings } from '@/components/financial-brain/sec-filings';
 
-import DriftReviewPage from '@/app/drift-review/page';
-import OverrideJournalPage from '@/app/override-journal/page';
-import EdgeLeaderboardPage from '@/app/edge-leaderboard/page';
-import ModelMetricsPage from '@/app/model-metrics/page';
 import {
-  Zap,
   Brain,
   ShoppingCart,
   LineChart,
@@ -59,6 +54,34 @@ import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 import { StockPredictor } from '@/components/financial-brain/stock-predictor';
 import Link from 'next/link';
+
+function KontrolTab({ icon, title, desc, pageUrl }: { icon: React.ReactNode; title: string; desc: string; pageUrl: string }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+      <Card className="border-orange-500/20 bg-orange-500/5">
+        <CardContent className="pt-5 pb-5">
+          <div className="flex items-start gap-4">
+            <div className="bg-orange-500/15 rounded-lg p-2.5 text-orange-400 flex-shrink-0">{icon}</div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+              <p className="text-sm text-muted-foreground mt-1">{desc}</p>
+              <div className="mt-3 flex items-center gap-2">
+                <Link href={pageUrl} className="inline-flex items-center gap-1.5 rounded-md bg-orange-500/10 border border-orange-500/30 px-3 py-1.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
+                  Hape faqen e plotë <ExternalLink className="w-3 h-3" />
+                </Link>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2.5">
+            <p className="text-xs text-yellow-400/90">
+              <strong>Shënim:</strong> Këto funksione kanë nevojë për database PostgreSQL. Për t&apos;i aktivizuar, shto variablin <code className="bg-yellow-500/15 px-1 rounded text-yellow-300">DATABASE_URL</code> në Vercel Environment Variables.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('top-movers');
@@ -657,22 +680,42 @@ export default function Home() {
 
           {/* Tab: Drift Review */}
           <TabsContent value="drift" className="mt-4">
-            <DriftReviewPage />
+            <KontrolTab
+              icon={<Activity className="w-5 h-5" />}
+              title="Drift Review"
+              desc="Gjurmon shëndetin e modelit: preciziteti sipas afatit, kalibrimi (Brier/ECE), degradimi i regjimit dhe sektorit."
+              pageUrl="/drift-review"
+            />
           </TabsContent>
 
           {/* Tab: Override Journal */}
           <TabsContent value="overrides" className="mt-4">
-            <OverrideJournalPage />
+            <KontrolTab
+              icon={<Shield className="w-5 h-5" />}
+              title="Override Journal"
+              desc="Gjurmon çdo ndërhyrje njerëzore: a ndihmoi apo dëmtoi? Modeli vs njeriu, shkaku i override."
+              pageUrl="/override-journal"
+            />
           </TabsContent>
 
           {/* Tab: Edge Leaderboard */}
           <TabsContent value="edge" className="mt-4">
-            <EdgeLeaderboardPage />
+            <KontrolTab
+              icon={<Trophy className="w-5 h-5" />}
+              title="Edge Leaderboard"
+              desc="Ku ka sistemi avantazhin e vërtetë? Sektorët dhe regjimet me performancën më të mirë."
+              pageUrl="/edge-leaderboard"
+            />
           </TabsContent>
 
           {/* Tab: Model Metrics */}
           <TabsContent value="metrics" className="mt-4">
-            <ModelMetricsPage />
+            <KontrolTab
+              icon={<BarChart3 className="w-5 h-5" />}
+              title="Model Metrics"
+              desc="Brier score, ECE, precision/recall, alpha, drawdown — metrikat e plotë të kalibrit dhe performancës."
+              pageUrl="/model-metrics"
+            />
           </TabsContent>
         </Tabs>
       </main>
