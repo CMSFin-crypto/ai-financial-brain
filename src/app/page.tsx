@@ -47,6 +47,7 @@ import {
   Trophy,
   ExternalLink,
   FileText,
+  ArrowRight,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -63,6 +64,18 @@ export default function Home() {
       <Header />
       <MarketTickerBar />
       <GlobalSearch onSelectStock={(ticker) => { setQuantTicker(ticker); setActiveTab('quant'); }} />
+
+      {/* 10-Q Direct Access Banner */}
+      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6">
+        <Link href="/sec-q" className="flex items-center gap-2 bg-amber-600/15 hover:bg-amber-600/25 border border-amber-500/30 rounded-lg px-4 py-2.5 transition-colors group">
+          <FileText className="w-5 h-5 text-amber-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-amber-400">10-Q SEC Filings</span>
+            <span className="text-xs text-amber-400/70 ml-2 hidden sm:inline">Raportet financiare tremujore nga SEC EDGAR</span>
+          </div>
+          <ArrowRight className="w-4 h-4 text-amber-400/60 group-hover:translate-x-1 transition-transform flex-shrink-0" />
+        </Link>
+      </div>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Main Tabs */}
