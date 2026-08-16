@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,10 +22,10 @@ import { EconomicCalendar } from '@/components/financial-brain/economic-calendar
 import { StockScreener } from '@/components/financial-brain/stock-screener';
 import { SecFilings } from '@/components/financial-brain/sec-filings';
 
-const DriftReview = dynamic(() => import('@/app/drift-review/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Drift Review...</CardContent></Card> });
-const OverrideJournal = dynamic(() => import('@/app/override-journal/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Override Journal...</CardContent></Card> });
-const EdgeLeaderboard = dynamic(() => import('@/app/edge-leaderboard/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Edge Leaderboard...</CardContent></Card> });
-const ModelMetrics = dynamic(() => import('@/app/model-metrics/page'), { ssr: false, loading: () => <Card className="border-orange-500/20"><CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">Duke ngarkuar Model Metrics...</CardContent></Card> });
+import DriftReviewPage from '@/app/drift-review/page';
+import OverrideJournalPage from '@/app/override-journal/page';
+import EdgeLeaderboardPage from '@/app/edge-leaderboard/page';
+import ModelMetricsPage from '@/app/model-metrics/page';
 import {
   Zap,
   Brain,
@@ -658,22 +657,22 @@ export default function Home() {
 
           {/* Tab: Drift Review */}
           <TabsContent value="drift" className="mt-4">
-            <DriftReview />
+            <DriftReviewPage />
           </TabsContent>
 
           {/* Tab: Override Journal */}
           <TabsContent value="overrides" className="mt-4">
-            <OverrideJournal />
+            <OverrideJournalPage />
           </TabsContent>
 
           {/* Tab: Edge Leaderboard */}
           <TabsContent value="edge" className="mt-4">
-            <EdgeLeaderboard />
+            <EdgeLeaderboardPage />
           </TabsContent>
 
           {/* Tab: Model Metrics */}
           <TabsContent value="metrics" className="mt-4">
-            <ModelMetrics />
+            <ModelMetricsPage />
           </TabsContent>
         </Tabs>
       </main>
