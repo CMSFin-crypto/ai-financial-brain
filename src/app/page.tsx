@@ -185,6 +185,9 @@ export default function Home() {
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
                 <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                    <FileText className="w-3 h-3 mr-1" />10-Q
+                  </TabsTrigger>
                   <TabsTrigger value="daily-picks" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Target className="w-3 h-3 mr-1" />Pikat
                   </TabsTrigger>
@@ -202,9 +205,6 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="screener" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Filter className="w-3 h-3 mr-1" />Screener
-                  </TabsTrigger>
-                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <FileText className="w-3 h-3 mr-1" />10-Q
                   </TabsTrigger>
                 </TabsList>
               </div>
