@@ -1,0 +1,842 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useRef } from 'react';
+     4→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+     5→import { Badge } from '@/components/ui/badge';
+     6→import { Skeleton } from '@/components/ui/skeleton';
+     7→import { LineChart, Line, ResponsiveContainer } from 'recharts';
+     8→import {
+     9→  TrendingUp,
+    10→  TrendingDown,
+    11→  ArrowUpRight,
+    12→  ArrowDownRight,
+    13→  Shield,
+    14→  ShieldAlert,
+    15→  Target,
+    16→  BarChart3,
+    17→  RefreshCw,
+    18→  AlertTriangle,
+    19→  Zap,
+    20→  ChevronDown,
+    21→  ChevronUp,
+    22→  Loader2,
+    23→  Wifi,
+    24→  WifiOff,
+    25→  Info,
+    26→  X,
+    27→  TrendingUpIcon,
+    28→  DollarSign,
+    29→  Percent,
+    30→  Scale,
+    31→  Crosshair,
+    32→  Activity,
+    33→} from 'lucide-react';
+    34→
+    35→interface SwingData {
+    36→  swingScore: number;
+    37→  rsi: number;
+    38→  macdSignal: string;
+    39→  bollingerPosition: number;
+    40→  bollingerSqueeze: boolean;
+    41→  sma20vs50: string;
+    42→  ema9vs21: string;
+    43→  atrPercent: number;
+    44→  volumeTrend: string;
+    45→  supportLevel: number;
+    46→  resistanceLevel: number;
+    47→  entryPrice: number;
+    48→  stopLoss: number;
+    49→  swingTarget: number;
+    50→  riskRewardRatio: number;
+    51→  confluenceCount: number;
+    52→  regime: string;
+    53→  swingReasons: string[];
+    54→  warningFlags: string[];
+    55→}
+    56→
+    57→interface MoverStock {
+    58→  ticker: string;
+    59→  company: string;
+    60→  sector: string;
+    61→  industry: string;
+    62→  currentPrice: number;
+    63→  priceChange: number;
+    64→  score: number;
+    65→  targetPrice: string;
+    66→  highTarget: string;
+    67→  lowTarget: string;
+    68→  upside: number;
+    69→  rating: string;
+    70→  signal: string;
+    71→  trend: string;
+    72→  pe: number;
+    73→  fwdPE: number;
+    74→  peg: number;
+    75→  revGrowth: string;
+    76→  epsGrowth: string;
+    77→  opMargin: string;
+    78→  debtEq: number;
+    79→  moat: string;
+    80→  marketCap: string;
+    81→  reasons: string[];
+    82→  strengths: string[];
+    83→  weaknesses: string[];
+    84→  buyCount: number;
+    85→  sellCount: number;
+    86→  isLive?: boolean;
+    87→  hasFundamentals?: boolean;
+    88→  swing?: SwingData | null;
+    89→}
+    90→
+    91→interface TopMoversData {
+    92→  topGrowth: MoverStock[];
+    93→  topRisk: MoverStock[];
+    94→  totalAnalyzed: number;
+    95→  timestamp: string;
+    96→  liveCount?: number;
+    97→  fundCount?: number;
+    98→  totalFetched?: number;
+    99→  cached?: boolean;
+   100→  stale?: boolean;
+   101→}
+   102→
+   103→// ═══ Metric Explanations (Albanian) ═══
+   104→const METRIC_INFO: Record<string, {
+   105→  title: string;
+   106→  icon: React.ReactNode;
+   107→  description: string;
+   108→  ideal: string;
+   109→  good: string;
+   110→  bad: string;
+   111→  formula?: string;
+   112→  // Visual gauge ranges (0-100 scale)
+   113→  gaugeBadEnd: number;
+   114→  gaugeGoodStart: number;
+   115→  gaugeGoodEnd: number;
+   116→  gaugeIdealStart: number;
+   117→  gaugeIdealEnd: number;
+   118→}> = {
+   119→  upside: {
+   120→    title: 'Upside (Potenciali)',
+   121→    icon: <TrendingUpIcon className="w-4 h-4 text-blue-500" />,
+   122→    description:
+   123→      'Upside tregon sa % çmimi aktual është nën objektivin mesatar të analistëve. Llogaritet si: (Target - Çmimi aktual) / Çmimi aktual × 100. Një Upside i lartë do të thotë se analistët mendojnë se aksioni ka hapësirë të madhe rritjeje nga niveli aktual.',
+   124→    ideal: '+15% deri +40% — Rritje e shëndetshme me potencial real',
+   125→    good: '+5% deri +60% — Rrethi i pranueshëm',
+   126→    bad: 'Mbi +80% ose negativ — Ose joshi e çmuar, ose targetet janë josë besueshme',
+   127→    formula: 'Upside = (Target Mesatar - Çmimi Aktual) / Çmimi Aktual × 100',
+   128→    gaugeBadEnd: 20, gaugeGoodStart: 20, gaugeGoodEnd: 70, gaugeIdealStart: 35, gaugeIdealEnd: 55,
+   129→  },
+   130→  revGrowth: {
+   131→    title: 'Revenue Growth (Rritja e të ardhurave)',
+   132→    icon: <DollarSign className="w-4 h-4 text-emerald-500" />,
+   133→    description:
+   134→      'Tregon sa % kanë rritur të ardhurat totale të kompanisë gjatë 12 muajve të fundit. Rritja e të ardhurave është një nga indikatorët më të rëndësishëm sepse konfirmon se kompania po fiton treg, po rritet, apo po shtrëngohet. Kompanitë me rritje të ardhurave >20% konsiderohen me rritje të fortë.',
+   135→    ideal: '+15% deri +40% — Rritje e shpejtë por e qëndrueshme',
+   136→    good: '+5% deri +15% — Rritje e shëndetshme',
+   137→    bad: 'Fitoi −5% ose me ulët — Kompania po humb treg',
+   138→    formula: 'Rev Gr = (Të ardhurat vitore aktuale − Të ardhurat vitore të mëparshme) / Të ardhurat e mëparshme × 100',
+   139→    gaugeBadEnd: 25, gaugeGoodStart: 25, gaugeGoodEnd: 55, gaugeIdealStart: 35, gaugeIdealEnd: 50,
+   140→  },
+   141→  epsGrowth: {
+   142→    title: 'EPS Growth (Rritja e fitimit per aksion)',
+   143→    icon: <Percent className="w-4 h-4 text-violet-500" />,
+   144→    description:
+   145→      'EPS (Earnings Per Share) tregon sa fitim gjeneron kompania për çdo aksion. Rritja e EPS tregon nëse fitimi po rritet me kalimin e kohës. Kjo është e rëndësishme sepse çmimi i aksionit në afat të gjatë ndjek rritjen e EPS-së. Kompanitë me EPS growth >20% konsiderohen në rritje të fortë.',
+   146→    ideal: '+20% deri +50% — Rritje e fortë fitimesh',
+   147→    good: '+5% deri +20% — Rritje e shëndetshme',
+   148→    bad: 'Fitoi −10% ose me ulët — Fitimi po bie',
+   149→    formula: 'EPS Gr = (EPS aktual − EPS i mëparshëm) / EPS i mëparshëm × 100',
+   150→    gaugeBadEnd: 25, gaugeGoodStart: 25, gaugeGoodEnd: 55, gaugeIdealStart: 35, gaugeIdealEnd: 50,
+   151→  },
+   152→  peg: {
+   153→    title: 'PEG Ratio (Çmimi për rritjen)',
+   154→    icon: <Scale className="w-4 h-4 text-amber-500" />,
+   155→    description:
+   156→      'PEG (Price/Earnings to Growth) është P/E i ndarë me rritjen e EPS-së. Një PEG = 1.0 do të thotë se çmimi është i arsyeshëm për rritjen. PEG < 1.0 tregon nënvlerësim (aksioni është i lirë për rritjen që ofron). PEG > 2.0 tregon vlerësim të lartë. PEG është më i mirë se P/E vetëm sepse merr parasysh rritjen.',
+   157→    ideal: '0.5 deri 1.5 — Vlerësim i arsyeshëm për rritjen',
+   158→    good: '0.3 deri 2.0 — Rrethi i pranueshëm',
+   159→    bad: 'Mbi 3.0 ose negativ — Vlerësim shumë i lartë ose rritje negative',
+   160→    formula: 'PEG = P/E (Trailing) / EPS Growth (% në numra)',
+   161→    gaugeBadEnd: 15, gaugeGoodStart: 15, gaugeGoodEnd: 55, gaugeIdealStart: 25, gaugeIdealEnd: 50,
+   162→  },
+   163→};
+   164→
+   165→// ═══ Metric Info Popup ═══
+   166→function MetricInfoPopup({
+   167→  metricKey,
+   168→  onClose,
+   169→}: {
+   170→  metricKey: string;
+   171→  onClose: () => void;
+   172→}) {
+   173→  const info = METRIC_INFO[metricKey];
+   174→  const popupRef = useRef<HTMLDivElement>(null);
+   175→
+   176→  useEffect(() => {
+   177→    const handleClick = (e: MouseEvent) => {
+   178→      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+   179→        onClose();
+   180→      }
+   181→    };
+   182→    const handleEsc = (e: KeyboardEvent) => {
+   183→      if (e.key === 'Escape') onClose();
+   184→    };
+   185→    setTimeout(() => {
+   186→      document.addEventListener('mousedown', handleClick);
+   187→      document.addEventListener('keydown', handleEsc);
+   188→    }, 10);
+   189→    return () => {
+   190→      document.removeEventListener('mousedown', handleClick);
+   191→      document.removeEventListener('keydown', handleEsc);
+   192→    };
+   193→  }, [onClose]);
+   194→
+   195→  if (!info) return null;
+   196→
+   197→  return (
+   198→    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+   199→      <div ref={popupRef} className="bg-card border border-border rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3 animate-in fade-in zoom-in-95 duration-200">
+   200→        {/* Header */}
+   201→        <div className="flex items-center justify-between">
+   202→          <div className="flex items-center gap-2">
+   203→            {info.icon}
+   204→            <h3 className="text-sm font-bold">{info.title}</h3>
+   205→          </div>
+   206→          <button onClick={onClose} className="w-6 h-6 rounded-full bg-muted/50 hover:bg-muted flex items-center justify-center transition-colors">
+   207→            <X className="w-3 h-3" />
+   208→          </button>
+   209→        </div>
+   210→
+   211→        {/* Description */}
+   212→        <p className="text-xs text-muted-foreground leading-relaxed">{info.description}</p>
+   213→
+   214→        {/* Scale indicators */}
+   215→        <div className="space-y-1.5">
+   216→          <div className="flex items-start gap-2">
+   217→            <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1 flex-shrink-0" />
+   218→            <div>
+   219→              <p className="text-[10px] font-semibold text-emerald-500">Ideal</p>
+   220→              <p className="text-[10px] text-muted-foreground">{info.ideal}</p>
+   221→            </div>
+   222→          </div>
+   223→          <div className="flex items-start gap-2">
+   224→            <div className="w-2 h-2 rounded-full bg-blue-500 mt-1 flex-shrink-0" />
+   225→            <div>
+   226→              <p className="text-[10px] font-semibold text-blue-500">I pranueshëm</p>
+   227→              <p className="text-[10px] text-muted-foreground">{info.good}</p>
+   228→            </div>
+   229→          </div>
+   230→          <div className="flex items-start gap-2">
+   231→            <div className="w-2 h-2 rounded-full bg-red-500 mt-1 flex-shrink-0" />
+   232→            <div>
+   233→              <p className="text-[10px] font-semibold text-red-500">Rrezik</p>
+   234→              <p className="text-[10px] text-muted-foreground">{info.bad}</p>
+   235→            </div>
+   236→          </div>
+   237→        </div>
+   238→
+   239→        {/* Visual Gauge Bar — shows ideal/good/bad zones */}
+   240→        <div className="space-y-1.5">
+   241→          <p className="text-[9px] font-medium text-muted-foreground">Shkala e vlerësimit</p>
+   242→          <div className="relative h-4 rounded-full overflow-hidden flex">
+   243→            {/* Bad zone (red) */}
+   244→            <div className="bg-gradient-to-r from-red-500 to-red-400/80" style={{ width: `${info.gaugeBadEnd}%` }} />
+   245→            {/* Good zone (blue) */}
+   246→            <div className="bg-gradient-to-r from-blue-400 to-blue-500" style={{ width: `${info.gaugeGoodEnd - info.gaugeGoodStart}%` }} />
+   247→            {/* Ideal zone (green, highlighted) */}
+   248→            <div className="relative bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: `${info.gaugeIdealEnd - info.gaugeIdealStart}%` }}>
+   249→              <div className="absolute inset-0 border-y-2 border-emerald-300/50" />
+   250→            </div>
+   251→            {/* Remaining good zone */}
+   252→            <div className="bg-gradient-to-r from-blue-500 to-blue-400" style={{ width: `${100 - info.gaugeIdealEnd}%` }} />
+   253→          </div>
+   254→          {/* Zone labels under the bar */}
+   255→          <div className="flex justify-between text-[8px] text-muted-foreground px-0.5">
+   256→            <span className="text-red-400">Rrezik</span>
+   257→            <span className="text-blue-400">I pranueshëm</span>
+   258→            <span className="text-emerald-400 font-semibold">Ideal</span>
+   259→            <span className="text-blue-400">I pranueshëm</span>
+   260→            <span className="text-red-400">Rrezik</span>
+   261→          </div>
+   262→        </div>
+   263→
+   264→        {/* Formula */}
+   265→        {info.formula && (
+   266→          <div className="bg-muted/30 rounded-lg p-2 border border-border/50">
+   267→            <p className="text-[9px] font-medium text-muted-foreground mb-0.5">Formula</p>
+   268→            <p className="text-[10px] font-mono text-foreground/80">{info.formula}</p>
+   269→          </div>
+   270→        )}
+   271→      </div>
+   272→    </div>
+   273→  );
+   274→}
+   275→
+   276→// Clickable metric cell
+   277→function MetricCell({
+   278→  label,
+   279→  value,
+   280→  metricKey,
+   281→  colorClass = '',
+   282→}: {
+   283→  label: string;
+   284→  value: string;
+   285→  metricKey: string;
+   286→  colorClass?: string;
+   287→}) {
+   288→  const [showInfo, setShowInfo] = useState(false);
+   289→
+   290→  return (
+   291→    <>
+   292→      <button
+   293→        onClick={() => setShowInfo(true)}
+   294→        className="bg-muted/30 rounded p-1 text-center hover:bg-muted/60 transition-colors cursor-help group relative"
+   295→      >
+   296→        <div className="flex items-center justify-center gap-0.5">
+   297→          <p className="text-[8px] text-muted-foreground">{label}</p>
+   298→          <Info className="w-2 h-2 text-muted-foreground/40 group-hover:text-muted-foreground/80 transition-colors" />
+   299→        </div>
+   300→        <p className={`text-[11px] font-semibold ${colorClass}`}>{value}</p>
+   301→      </button>
+   302→      {showInfo && <MetricInfoPopup metricKey={metricKey} onClose={() => setShowInfo(false)} />}
+   303→    </>
+   304→  );
+   305→}
+   306→
+   307→// Simple seeded pseudo-random for consistent sparklines
+   308→function seededRandom(seed: number): () => number {
+   309→  let s = seed;
+   310→  return () => {
+   311→    s = (s * 16807 + 0) % 2147483647;
+   312→    return (s - 1) / 2147483646;
+   313→  };
+   314→}
+   315→
+   316→function generateSparklineData(priceChange: number, ticker: string): Array<{ value: number }> {
+   317→  const points = 12;
+   318→  const data: Array<{ value: number }> = [];
+   319→  const magnitude = Math.min(Math.abs(priceChange), 10);
+   320→  // Create a seed from ticker hash + priceChange for consistency
+   321→  const hash = ticker.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+   322→  const rand = seededRandom(hash * 1000 + Math.round(priceChange * 100));
+   323→  for (let i = 0; i < points; i++) {
+   324→    const progress = i / (points - 1);
+   325→    const trend = priceChange >= 0 ? progress * magnitude : -progress * magnitude;
+   326→    const noise = (rand() - 0.5) * magnitude * 0.4;
+   327→    data.push({ value: 50 + trend + noise });
+   328→  }
+   329→  return data;
+   330→}
+   331→
+   332→function MiniSparkline({ priceChange, color, ticker }: { priceChange: number; color: string; ticker: string }) {
+   333→  const data = generateSparklineData(priceChange, ticker);
+   334→  return (
+   335→    <ResponsiveContainer width="100%" height={28}>
+   336→      <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+   337→        <Line
+   338→          type="monotone"
+   339→          dataKey="value"
+   340→          stroke={color}
+   341→          strokeWidth={1.5}
+   342→          dot={false}
+   343→          isAnimationActive={false}
+   344→        />
+   345→      </LineChart>
+   346→    </ResponsiveContainer>
+   347→  );
+   348→}
+   349→
+   350→function ScoreBar({ score, type }: { score: number; type: 'growth' | 'risk' }) {
+   351→  const color = type === 'growth'
+   352→    ? score >= 70 ? 'bg-emerald-500' : score >= 50 ? 'bg-emerald-400' : 'bg-emerald-300'
+   353→    : score >= 70 ? 'bg-red-500' : score >= 50 ? 'bg-red-400' : 'bg-red-300';
+   354→
+   355→  return (
+   356→    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+   357→      <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${score}%` }} />
+   358→    </div>
+   359→  );
+   360→}
+   361→
+   362→function MoatBadge({ moat }: { moat: string }) {
+   363→  if (moat === 'WIDE') return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[9px]">Moat I Gjere</Badge>;
+   364→  if (moat === 'NARROW') return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[9px]">Moat I Ngushte</Badge>;
+   365→  return <Badge className="bg-red-500/10 text-red-500 border-red-500/30 text-[9px]">Asnje Moat</Badge>;
+   366→}
+   367→
+   368→function RatingBadge({ rating }: { rating: string }) {
+   369→  if (rating === 'STRONG_BUY') return <Badge className="bg-emerald-600 text-white text-[9px] px-1.5">STRONG BUY</Badge>;
+   370→  if (rating === 'BUY') return <Badge className="bg-emerald-500 text-white text-[9px] px-1.5">BUY</Badge>;
+   371→  if (rating === 'HOLD') return <Badge className="bg-amber-500 text-white text-[9px] px-1.5">HOLD</Badge>;
+   372→  if (rating === 'SELL') return <Badge className="bg-red-500 text-white text-[9px] px-1.5">SELL</Badge>;
+   373→  return <Badge className="bg-gray-500 text-white text-[9px] px-1.5">{rating}</Badge>;
+   374→}
+   375→
+   376→function StockHeader({ stock, index, color }: { stock: MoverStock; index: number; color: 'green' | 'red' }) {
+   377→  const bgColor = color === 'green' ? 'bg-emerald-500/20' : 'bg-red-500/20';
+   378→  const textColor = color === 'green' ? 'text-emerald-500' : 'text-red-500';
+   379→  const liveColor = color === 'green' ? 'text-emerald-500' : 'text-red-400';
+   380→  const liveBg = color === 'green' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30';
+   381→  const sparkColor = color === 'green' ? '#10b981' : '#ef4444';
+   382→
+   383→  return (
+   384→    <div className="flex items-start justify-between mb-2 gap-2">
+   385→      <div className="flex items-center gap-2 min-w-0">
+   386→        <div className={`w-6 h-6 rounded-full ${bgColor} flex items-center justify-center ${textColor} text-[10px] font-bold flex-shrink-0`}>
+   387→          {index + 1}
+   388→        </div>
+   389→        <div className="min-w-0">
+   390→          <div className="flex items-center gap-1.5 flex-wrap">
+   391→            <span className="text-sm font-bold">{stock.ticker}</span>
+   392→            {stock.hasFundamentals ? (
+   393→              <Badge className={`${liveBg} ${liveColor} text-[7px] px-1 py-0 flex items-center gap-0.5`}>
+   394→                <Wifi className="w-2 h-2" /> Live
+   395→              </Badge>
+   396→            ) : (
+   397→              <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[7px] px-1 py-0 flex items-center gap-0.5">
+   398→                <WifiOff className="w-2 h-2" />
+   399→              </Badge>
+   400→            )}
+   401→            <RatingBadge rating={stock.rating} />
+   402→            <MoatBadge moat={stock.moat} />
+   403→          </div>
+   404→          <p className="text-[10px] text-muted-foreground truncate">{stock.company} — {stock.sector}</p>
+   405→        </div>
+   406→      </div>
+   407→      {/* Price — always visible, sparkline hidden on small screens */}
+   408→      <div className="flex items-center gap-1.5 flex-shrink-0">
+   409→        <div className="hidden sm:block w-16">
+   410→          <MiniSparkline priceChange={stock.priceChange} color={sparkColor} ticker={stock.ticker} />
+   411→        </div>
+   412→        <div className="text-right">
+   413→          <p className="text-sm font-bold">${stock.currentPrice.toFixed(2)}</p>
+   414→          <div className={`flex items-center gap-0.5 text-[10px] font-medium ${stock.priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+   415→            {stock.priceChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+   416→            {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange.toFixed(2)}%
+   417→          </div>
+   418→        </div>
+   419→      </div>
+   420→    </div>
+   421→  );
+   422→}
+   423→
+   424→function SwingPanel({ swing, type }: { swing: SwingData; type: 'growth' | 'risk' }) {
+   425→  const accent = type === 'growth' ? 'emerald' : 'red';
+   426→  const rsiColor = swing.rsi < 35 ? 'text-emerald-500' : swing.rsi > 70 ? 'text-red-500' : 'text-amber-500';
+   427→  const macdColor = swing.macdSignal === 'BULLISH' ? 'text-emerald-500' : swing.macdSignal === 'BEARISH' ? 'text-red-500' : 'text-amber-500';
+   428→  const rrColor = swing.riskRewardRatio >= 2 ? 'text-emerald-500' : swing.riskRewardRatio >= 1 ? 'text-amber-500' : 'text-red-500';
+   429→
+   430→  return (
+   431→    <div className={`mt-2 rounded-lg border border-${accent}-500/15 bg-${accent}-500/[0.03] p-2 space-y-2`}
+   432→      style={{
+   433→        borderLeft: `2px solid ${type === 'growth' ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'}`,
+   434→        background: type === 'growth' ? 'rgba(16, 185, 129, 0.03)' : 'rgba(239, 68, 68, 0.03)',
+   435→      }}>
+   436→      {/* Header: Swing Score + Indicators */}
+   437→      <div className="flex items-center justify-between">
+   438→        <div className="flex items-center gap-1.5">
+   439→          <Activity className={`w-3 h-3 text-${accent}-500`} style={{ color: type === 'growth' ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)' }} />
+   440→          <span className="text-[10px] font-bold text-foreground">Swing Trading</span>
+   441→          <Badge className={`text-[8px] px-1 py-0 ${swing.swingScore >= 60 ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' : swing.swingScore >= 45 ? 'bg-amber-500/15 text-amber-500 border-amber-500/30' : 'bg-red-500/15 text-red-500 border-red-500/30'}`}>
+   442→            {swing.swingScore}/100
+   443→          </Badge>
+   444→          {swing.confluenceCount >= 3 && (
+   445→            <Badge className="text-[7px] px-1 py-0 bg-blue-500/15 text-blue-400 border-blue-500/30">
+   446→              {swing.confluenceCount}/8 confluence
+   447→            </Badge>
+   448→          )}
+   449→        </div>
+   450→        <div className="flex items-center gap-1.5 text-[9px]">
+   451→          <span className={rsiColor}>RSI {swing.rsi.toFixed(0)}</span>
+   452→          <span className={macdColor}>{swing.macdSignal}</span>
+   453→          <span className="text-muted-foreground">ATR {swing.atrPercent.toFixed(1)}%</span>
+   454→          <Badge className="text-[7px] px-1 py-0 bg-purple-500/10 text-purple-400 border-purple-500/20">
+   455→            {swing.regime === 'TRENDING_UP' ? 'Trend↑' : swing.regime === 'TRENDING_DOWN' ? 'Trend↓' : swing.regime === 'VOLATILE' ? 'Volatil' : 'Range'}
+   456→          </Badge>
+   457→        </div>
+   458→      </div>
+   459→
+   460→      {/* Entry / Stop / Target Row */}
+   461→      <div className="grid grid-cols-3 gap-1.5">
+   462→        <div className="bg-background/50 rounded p-1.5 text-center">
+   463→          <p className="text-[8px] text-muted-foreground flex items-center justify-center gap-0.5">
+   464→            <Crosshair className="w-2 h-2" /> Entry
+   465→          </p>
+   466→          <p className="text-[11px] font-bold text-foreground">${swing.entryPrice.toFixed(2)}</p>
+   467→        </div>
+   468→        <div className="bg-background/50 rounded p-1.5 text-center">
+   469→          <p className="text-[8px] text-red-400 flex items-center justify-center gap-0.5">
+   470→            <ShieldAlert className="w-2 h-2" /> Stop Loss
+   471→          </p>
+   472→          <p className="text-[11px] font-bold text-red-500">${swing.stopLoss.toFixed(2)}</p>
+   473→        </div>
+   474→        <div className="bg-background/50 rounded p-1.5 text-center">
+   475→          <p className="text-[8px] text-emerald-400 flex items-center justify-center gap-0.5">
+   476→            <Target className="w-2 h-2" /> Target
+   477→          </p>
+   478→          <p className="text-[11px] font-bold text-emerald-500">${swing.swingTarget.toFixed(2)}</p>
+   479→        </div>
+   480→      </div>
+   481→
+   482→      {/* Risk/Reward + Support/Resistance */}
+   483→      <div className="flex items-center justify-between text-[9px]">
+   484→        <span className="text-muted-foreground">
+   485→          R:R <span className={`font-bold ${rrColor}`}>{swing.riskRewardRatio.toFixed(1)}:1</span>
+   486→        </span>
+   487→        <span className="text-muted-foreground">
+   488→          S: <span className="text-blue-400">${swing.supportLevel.toFixed(2)}</span>
+   489→          {' | '}
+   490→          R: <span className="text-orange-400">${swing.resistanceLevel.toFixed(2)}</span>
+   491→        </span>
+   492→      </div>
+   493→
+   494→      {/* Swing Reasons (compact) */}
+   495→      {swing.swingReasons.length > 0 && (
+   496→        <div className="space-y-0.5">
+   497→          {swing.swingReasons.slice(0, 3).map((r, i) => (
+   498→            <p key={i} className="text-[9px] text-muted-foreground leading-relaxed">
+   499→              {type === 'growth' ? <span className="text-emerald-500">+</span> : <span className="text-red-500">!</span>} {r}
+   500→            </p>
+   501→          ))}
+   502→        </div>
+   503→      )}
+   504→
+   505→      {/* Warnings */}
+   506→      {swing.warningFlags.length > 0 && (
+   507→        <div className="space-y-0.5">
+   508→          {swing.warningFlags.slice(0, 2).map((w, i) => (
+   509→            <p key={i} className="text-[9px] text-amber-500/80 leading-relaxed">
+   510→              <AlertTriangle className="w-2 h-2 inline mr-0.5" /> {w}
+   511→            </p>
+   512→          ))}
+   513→        </div>
+   514→      )}
+   515→    </div>
+   516→  );
+   517→}
+   518→
+   519→function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
+   520→  const [expanded, setExpanded] = useState(false);
+   521→
+   522→  return (
+   523→    <Card className={`border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 hover:from-emerald-500/10 hover:to-teal-500/10 transition-all duration-300 overflow-hidden`}>
+   524→      <CardContent className="pt-3.5 pb-3 px-3.5">
+   525→        <StockHeader stock={stock} index={index} color="green" />
+   526→
+   527→        {/* Score Bar */}
+   528→        <div className="mb-2">
+   529→          <div className="flex items-center justify-between mb-0.5">
+   530→            <span className="text-[9px] text-muted-foreground">Potencial Rritjeje</span>
+   531→            <span className="text-[10px] font-bold text-emerald-500">{stock.score}/100</span>
+   532→          </div>
+   533→          <ScoreBar score={stock.score} type="growth" />
+   534→        </div>
+   535→
+   536→        {/* Key Metrics Grid — clickable */}
+   537→        <div className="grid grid-cols-4 gap-1.5 mb-2">
+   538→          <MetricCell
+   539→            label="Upside"
+   540→            value={stock.upside > 0 ? `+${stock.upside}%` : stock.upside < 0 ? `${stock.upside}%` : 'N/A'}
+   541→            metricKey="upside"
+   542→            colorClass={stock.upside > 0 ? 'text-emerald-500 font-bold' : stock.upside < 0 ? 'text-red-500 font-bold' : 'text-muted-foreground'}
+   543→          />
+   544→          <MetricCell
+   545→            label="Rev Gr"
+   546→            value={stock.revGrowth}
+   547→            metricKey="revGrowth"
+   548→            colorClass={parseFloat(stock.revGrowth) < 0 ? 'text-red-500' : ''}
+   549→          />
+   550→          <MetricCell
+   551→            label="EPS Gr"
+   552→            value={stock.epsGrowth}
+   553→            metricKey="epsGrowth"
+   554→            colorClass={parseFloat(stock.epsGrowth) < 0 ? 'text-red-500' : ''}
+   555→          />
+   556→          <MetricCell
+   557→            label="PEG"
+   558→            value={String(stock.peg)}
+   559→            metricKey="peg"
+   560→          />
+   561→        </div>
+   562→
+   563→        {/* Target */}
+   564→        <div className="flex items-center justify-between text-[10px] bg-emerald-500/5 rounded p-1.5 border border-emerald-500/10">
+   565→          <span className="text-muted-foreground">Objektivi analistëve</span>
+   566→          <span className="font-semibold text-emerald-500">{stock.targetPrice}</span>
+   567→          <span className="text-muted-foreground">{stock.lowTarget} — {stock.highTarget}</span>
+   568→        </div>
+   569→
+   570→        {/* Swing Trading Panel */}
+   571→        {stock.swing && <SwingPanel swing={stock.swing} type="growth" />}
+   572→
+   573→        {/* Reasons (expandable) */}
+   574→        <button
+   575→          onClick={() => setExpanded(!expanded)}
+   576→          className="w-full flex items-center justify-between mt-2 text-[10px] text-emerald-500 hover:text-emerald-400 transition-colors"
+   577→        >
+   578→          <span className="flex items-center gap-1">
+   579→            <Zap className="w-3 h-3" />
+   580→            {expanded ? 'Fshi arsyet' : 'Shiko arsyet'}
+   581→          </span>
+   582→          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+   583→        </button>
+   584→
+   585→        {expanded && (
+   586→          <div className="mt-1.5 space-y-1">
+   587→            {stock.reasons.map((reason, i) => (
+   588→              <div key={i} className="flex items-start gap-1.5">
+   589→                <ArrowUpRight className="w-3 h-3 text-emerald-500 mt-0.5 flex-shrink-0" />
+   590→                <p className="text-[10px] text-muted-foreground leading-relaxed">{reason}</p>
+   591→              </div>
+   592→            ))}
+   593→            {stock.strengths.slice(0, 2).map((s, i) => (
+   594→              <div key={i} className="flex items-start gap-1.5">
+   595→                <Shield className="w-3 h-3 text-emerald-500 mt-0.5 flex-shrink-0" />
+   596→                <p className="text-[10px] text-emerald-500/70 leading-relaxed">{s}</p>
+   597→              </div>
+   598→            ))}
+   599→          </div>
+   600→        )}
+   601→      </CardContent>
+   602→    </Card>
+   603→  );
+   604→}
+   605→
+   606→function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
+   607→  const [expanded, setExpanded] = useState(false);
+   608→
+   609→  return (
+   610→    <Card className="border border-red-500/20 bg-gradient-to-br from-red-500/5 to-rose-500/5 hover:from-red-500/10 hover:to-rose-500/10 transition-all duration-300 overflow-hidden">
+   611→      <CardContent className="pt-3.5 pb-3 px-3.5">
+   612→        <StockHeader stock={stock} index={index} color="red" />
+   613→
+   614→        {/* Score Bar */}
+   615→        <div className="mb-2">
+   616→          <div className="flex items-center justify-between mb-0.5">
+   617→            <span className="text-[9px] text-muted-foreground">Rreziku i Renies</span>
+   618→            <span className="text-[10px] font-bold text-red-500">{stock.score}/100</span>
+   619→          </div>
+   620→          <ScoreBar score={stock.score} type="risk" />
+   621→        </div>
+   622→
+   623→        {/* Key Metrics Grid — clickable */}
+   624→        <div className="grid grid-cols-4 gap-1.5 mb-2">
+   625→          <MetricCell
+   626→            label="Upside"
+   627→            value={stock.upside > 0 ? `+${stock.upside}%` : stock.upside < 0 ? `${stock.upside}%` : 'N/A'}
+   628→            metricKey="upside"
+   629→            colorClass={`font-bold ${stock.upside > 0 ? 'text-emerald-500' : stock.upside < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
+   630→          />
+   631→          <MetricCell
+   632→            label="Rev Gr"
+   633→            value={stock.revGrowth}
+   634→            metricKey="revGrowth"
+   635→            colorClass={parseFloat(stock.revGrowth) < 0 ? 'text-red-500' : ''}
+   636→          />
+   637→          <MetricCell
+   638→            label="EPS Gr"
+   639→            value={stock.epsGrowth}
+   640→            metricKey="epsGrowth"
+   641→            colorClass={parseFloat(stock.epsGrowth) < 0 ? 'text-red-500' : ''}
+   642→          />
+   643→          <MetricCell
+   644→            label="P/E"
+   645→            value={`${stock.pe}x`}
+   646→            metricKey="peg"
+   647→          />
+   648→        </div>
+   649→
+   650→        {/* Target Range */}
+   651→        <div className="flex items-center justify-between text-[10px] bg-red-500/5 rounded p-1.5 border border-red-500/10">
+   652→          <span className="text-muted-foreground">Objektivi analistëve</span>
+   653→          <span className="font-semibold">{stock.targetPrice}</span>
+   654→          <span className="text-muted-foreground">{stock.lowTarget} — {stock.highTarget}</span>
+   655→        </div>
+   656→
+   657→        {/* Swing Trading Panel */}
+   658→        {stock.swing && <SwingPanel swing={stock.swing} type="risk" />}
+   659→
+   660→        {/* Reasons (expandable) */}
+   661→        <button
+   662→          onClick={() => setExpanded(!expanded)}
+   663→          className="w-full flex items-center justify-between mt-2 text-[10px] text-red-500 hover:text-red-400 transition-colors"
+   664→        >
+   665→          <span className="flex items-center gap-1">
+   666→            <AlertTriangle className="w-3 h-3" />
+   667→            {expanded ? 'Fshi arsyet' : 'Shiko arsyet'}
+   668→          </span>
+   669→          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+   670→        </button>
+   671→
+   672→        {expanded && (
+   673→          <div className="mt-1.5 space-y-1">
+   674→            {stock.reasons.map((reason, i) => (
+   675→              <div key={i} className="flex items-start gap-1.5">
+   676→                <ArrowDownRight className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
+   677→                <p className="text-[10px] text-muted-foreground leading-relaxed">{reason}</p>
+   678→              </div>
+   679→            ))}
+   680→            {stock.weaknesses.slice(0, 2).map((w, i) => (
+   681→              <div key={i} className="flex items-start gap-1.5">
+   682→                <ShieldAlert className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
+   683→                <p className="text-[10px] text-red-400/70 leading-relaxed">{w}</p>
+   684→              </div>
+   685→            ))}
+   686→          </div>
+   687→        )}
+   688→      </CardContent>
+   689→    </Card>
+   690→  );
+   691→}
+   692→
+   693→export function TopMovers() {
+   694→  const [data, setData] = useState<TopMoversData | null>(null);
+   695→  const [loading, setLoading] = useState(true);
+   696→  const [error, setError] = useState<string | null>(null);
+   697→
+   698→  const fetchData = async () => {
+   699→    setLoading(true);
+   700→    setError(null);
+   701→    try {
+   702→      const res = await fetch('/api/top-movers');
+   703→      const json = await res.json();
+   704→      if (!res.ok) {
+   705→        setError(json.error || 'Gabim');
+   706→        return;
+   707→      }
+   708→      setData(json);
+   709→    } catch {
+   710→      setError('Gabim rrjeti');
+   711→    } finally {
+   712→      setLoading(false);
+   713→    }
+   714→  };
+   715→
+   716→  useEffect(() => {
+   717→    fetchData();
+   718→  }, []);
+   719→
+   720→  if (loading) {
+   721→    return (
+   722→      <div className="space-y-4">
+   723→        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   724→          <div className="space-y-3">
+   725→            {[...Array(5)].map((_, i) => (
+   726→              <Skeleton key={i} className="h-[160px] rounded-xl" />
+   727→            ))}
+   728→          </div>
+   729→          <div className="space-y-3">
+   730→            {[...Array(5)].map((_, i) => (
+   731→              <Skeleton key={i} className="h-[160px] rounded-xl" />
+   732→            ))}
+   733→          </div>
+   734→        </div>
+   735→      </div>
+   736→    );
+   737→  }
+   738→
+   739→  if (error) {
+   740→    return (
+   741→      <Card className="border-red-500/20 bg-red-500/5">
+   742→        <CardContent className="flex items-center gap-2 py-4">
+   743→          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+   744→          <span className="text-sm text-red-400">{error}</span>
+   745→          <button onClick={fetchData} className="ml-auto text-xs text-red-500 hover:underline">Provo perseri</button>
+   746→        </CardContent>
+   747→      </Card>
+   748→    );
+   749→  }
+   750→
+   751→  if (!data) return null;
+   752→
+   753→  return (
+   754→    <div className="space-y-4">
+   755→      {/* Header Bar */}
+   756→      <div className="flex items-center justify-between flex-wrap gap-2">
+   757→        <div className="flex items-center gap-3">
+   758→          <div className="flex items-center gap-1.5">
+   759→            <BarChart3 className="w-4 h-4 text-emerald-500" />
+   760→            <span className="text-xs text-muted-foreground">
+   761→              {data.totalAnalyzed} stoke te analizuar
+   762→            </span>
+   763→          </div>
+   764→          {data.fundCount !== undefined && (
+   765→            <div className="flex items-center gap-1.5">
+   766→              <div className={`w-1.5 h-1.5 rounded-full ${data.fundCount > data.totalAnalyzed / 2 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+   767→              <span className="text-[10px] text-muted-foreground">
+   768→                {data.fundCount}/{data.totalFetched || data.totalAnalyzed} me te dhena reale nga Yahoo Finance
+   769→              </span>
+   770→            </div>
+   771→          )}
+   772→          {data.cached && (
+   773→            <Badge variant="secondary" className="text-[9px] bg-muted/50">
+   774→              Cache
+   775→            </Badge>
+   776→          )}
+   777→        </div>
+   778→        <button
+   779→          onClick={fetchData}
+   780→          disabled={loading}
+   781→          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-emerald-500 transition-colors"
+   782→        >
+   783→          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+   784→          Rifresko
+   785→        </button>
+   786→      </div>
+   787→
+   788→      {/* Two columns: Growth + Risk */}
+   789→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   790→        {/* Top 5 Growth */}
+   791→        <div className="space-y-2">
+   792→          <div className="flex items-center gap-2">
+   793→            <div className="w-1.5 h-6 bg-gradient-to-b from-emerald-500 to-teal-500 rounded-full" />
+   794→            <h3 className="text-sm font-bold text-emerald-500 flex items-center gap-1.5">
+   795→              <TrendingUp className="w-4 h-4" />
+   796→              Top 5 — Potencial Rritjeje
+   797→            </h3>
+   798→          </div>
+   799→          <p className="text-[10px] text-muted-foreground -mt-1">
+   800→            Swing trading: teknike reale (RSI, MACD, Bollinger, SMA/EMA, ATR) + fundamente + konsensus analistesh
+   801→          </p>
+   802→          <div className="space-y-2.5">
+   803→            {data.topGrowth.map((stock, i) => (
+   804→              <GrowthCard key={stock.ticker} stock={stock} index={i} />
+   805→            ))}
+   806→          </div>
+   807→        </div>
+   808→
+   809→        {/* Top 5 Risk */}
+   810→        <div className="space-y-2">
+   811→          <div className="flex items-center gap-2">
+   812→            <div className="w-1.5 h-6 bg-gradient-to-b from-red-500 to-rose-500 rounded-full" />
+   813→            <h3 className="text-sm font-bold text-red-500 flex items-center gap-1.5">
+   814→              <TrendingDown className="w-4 h-4" />
+   815→              Top 5 — Rreziku i Renies
+   816→            </h3>
+   817→          </div>
+   818→          <p className="text-[10px] text-muted-foreground -mt-1">
+   819→            Aksionet me rrezikun me te larte per renie: teknike bearish, fundamente te dobta, vleresim i larte, borxh te larte
+   820→          </p>
+   821→          <div className="space-y-2.5">
+   822→            {data.topRisk.map((stock, i) => (
+   823→              <RiskCard key={stock.ticker} stock={stock} index={i} />
+   824→            ))}
+   825→          </div>
+   826→        </div>
+   827→      </div>
+   828→
+   829→      {/* Disclaimer */}
+   830→      <div className="border border-amber-500/20 bg-amber-500/5 rounded-xl p-3">
+   831→        <div className="flex items-start gap-2">
+   832→          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+   833→          <p className="text-[10px] text-amber-600/80 leading-relaxed">
+   834→            Kjo analizë përdor teknike reale (RSI, MACD, Bollinger Bands, SMA/EMA, ATR) + 10 faktorë fundamentalë + konsensusin e analistëve.
+   835→            Swing scoring llogaritet nga 3 muaj të dhëna historike. Çmimet e Entry/Stop/Target janë sugjerime, jo këshillë financiare.
+   836→          </p>
+   837→        </div>
+   838→      </div>
+   839→    </div>
+   840→  );
+   841→}
+   842→
