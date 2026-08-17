@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRealPrice, getRealPrices, getRealFundamentalsBatch, getBatchQuotesFast, type YahooFundamentals } from '@/lib/alpha-vantage';
 import { getAllStocks, StockProfile } from '@/lib/market-data';
+import { analyzeSwingBatch, type SwingAnalysis } from '@/lib/swing-engine';
 
 export const maxDuration = 60;
 
@@ -20,6 +21,8 @@ interface ScoredStock {
   hasFundamentals: boolean;
   growthScore: number;
   riskScore: number;
+  swingScore: number;
+  swingData: SwingAnalysis | null;
   profile: StockProfile;
   fund: YahooFundamentals | null;
   growthReasons: string[];
@@ -384,15 +387,59 @@ export async function GET() {
       };
     });
 
-    // Sort by growth score descending, take top 5
-    const topGrowth = [...scored]
+    // ═══ STEP 3.5: Swing analysis for top candidates ═══
+    // Get top ~15 by growth and ~15 by risk for swing analysis
+    const growthCandidates = [...scored]
+      .filter(s => s.currentPrice > 0)
       .sort((a, b) => b.growthScore - a.growthScore)
+      .slice(0, 20)
+      .map(s => s.ticker);
+    const riskCandidates = [...scored]
+      .filter(s => s.currentPrice > 0)
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, 20)
+      .map(s => s.ticker);
+
+    // Combine unique tickers for swing batch
+    const swingTickers = [...new Set([...growthCandidates, ...riskCandidates])];
+    console.log(`[TOP-MOVERS] Running swing analysis for ${swingTickers.length} candidates...`);
+    const swingResults = await analyzeSwingBatch(swingTickers, realPrices, 5);
+    console.log(`[TOP-MOVERS] Swing analysis complete: ${Object.keys(swingResults).length} results`);
+
+    // Merge swing data into scored stocks
+    for (const s of scored) {
+      const swing = swingResults[s.ticker];
+      if (swing) {
+        s.swingData = swing;
+        s.swingScore = swing.swingScore;
+      } else {
+        s.swingData = null;
+        s.swingScore = 50; // neutral
+      }
+    }
+
+    // ═══ STEP 4: Re-rank with SWING-WEIGHTED scoring ═══
+    // For growth: blend 40% fundamental growth + 60% swing technical score
+    // This makes the picks much more accurate for actual swing trading
+    const growthCandidates2 = [...scored]
+      .map(s => ({
+        ...s,
+        blendedScore: s.growthScore * 0.4 + s.swingScore * 0.6,
+      }))
+      .sort((a, b) => b.blendedScore - a.blendedScore)
       .slice(0, 5);
 
-    // Sort by risk score descending, take top 5
-    const topRisk = [...scored]
-      .sort((a, b) => b.riskScore - a.riskScore)
+    // For risk: stocks with HIGHEST risk score AND LOWEST swing score (double bearish)
+    const riskCandidates2 = [...scored]
+      .map(s => ({
+        ...s,
+        blendedRisk: s.riskScore * 0.5 + (100 - s.swingScore) * 0.5,
+      }))
+      .sort((a, b) => b.blendedRisk - a.blendedRisk)
       .slice(0, 5);
+
+    const topGrowth = growthCandidates2;
+    const topRisk = riskCandidates2;
 
     // Enrich with REAL data for output
     const enriched = (list: ScoredStock[], type: 'growth' | 'risk') =>
@@ -505,7 +552,37 @@ export async function GET() {
           }
         }
 
-        return {
+        // Build swing info
+      const swing = stock.swingData;
+      const swingInfo = swing ? {
+        swingScore: swing.swingScore,
+        rsi: swing.rsi,
+        macdSignal: swing.macdSignal,
+        bollingerPosition: swing.bollingerPosition,
+        bollingerSqueeze: swing.bollingerSqueeze,
+        sma20vs50: swing.sma20vs50,
+        ema9vs21: swing.ema9vs21,
+        atrPercent: swing.atrPercent,
+        volumeTrend: swing.volumeTrend,
+        supportLevel: swing.supportLevel,
+        resistanceLevel: swing.resistanceLevel,
+        entryPrice: swing.entryPrice,
+        stopLoss: swing.stopLoss,
+        swingTarget: swing.targetPrice,
+        riskRewardRatio: swing.riskRewardRatio,
+        swingReasons: swing.swingReasons,
+        warningFlags: swing.warningFlags,
+      } : null;
+
+      // For growth: blend reasons (original + swing)
+      // For risk: add swing warnings
+      const combinedReasons = type === 'growth' && swing
+        ? [...swing.swingReasons, ...stock.growthReasons].slice(0, 6)
+        : type === 'risk' && swing
+          ? [...stock.riskReasons, ...swing.warningFlags].slice(0, 6)
+          : (type === 'growth' ? stock.growthReasons : stock.riskReasons);
+
+      return {
           ticker: stock.ticker,
           company: stock.company,
           sector: stock.sector,
@@ -514,7 +591,7 @@ export async function GET() {
           priceChange: stock.priceChange,
           isLive: stock.isLive,
           hasFundamentals: stock.hasFundamentals,
-          score: type === 'growth' ? stock.growthScore : stock.riskScore,
+          score: type === 'growth' ? (stock as any).blendedScore || stock.growthScore : (stock as any).blendedRisk || stock.riskScore,
           targetPrice,
           highTarget,
           lowTarget,
@@ -531,11 +608,12 @@ export async function GET() {
           debtEq,
           moat: stock.profile.moat,
           marketCap: stock.profile.marketCap,
-          reasons: type === 'growth' ? stock.growthReasons : stock.riskReasons,
+          reasons: combinedReasons,
           strengths: stock.profile.strengths,
           weaknesses: stock.profile.weaknesses,
           buyCount,
           sellCount,
+          swing: swingInfo,
         };
       });
 
@@ -546,6 +624,7 @@ export async function GET() {
       liveCount,
       totalFetched: allTickers.length,
       fundCount,
+      swingAnalyzed: Object.keys(swingResults).length,
       timestamp: new Date().toISOString(),
     };
 

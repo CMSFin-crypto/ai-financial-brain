@@ -28,7 +28,29 @@ import {
   DollarSign,
   Percent,
   Scale,
+  Crosshair,
+  Activity,
 } from 'lucide-react';
+
+interface SwingData {
+  swingScore: number;
+  rsi: number;
+  macdSignal: string;
+  bollingerPosition: number;
+  bollingerSqueeze: boolean;
+  sma20vs50: string;
+  ema9vs21: string;
+  atrPercent: number;
+  volumeTrend: string;
+  supportLevel: number;
+  resistanceLevel: number;
+  entryPrice: number;
+  stopLoss: number;
+  swingTarget: number;
+  riskRewardRatio: number;
+  swingReasons: string[];
+  warningFlags: string[];
+}
 
 interface MoverStock {
   ticker: string;
@@ -61,6 +83,7 @@ interface MoverStock {
   sellCount: number;
   isLive?: boolean;
   hasFundamentals?: boolean;
+  swing?: SwingData | null;
 }
 
 interface TopMoversData {
@@ -396,6 +419,93 @@ function StockHeader({ stock, index, color }: { stock: MoverStock; index: number
   );
 }
 
+function SwingPanel({ swing, type }: { swing: SwingData; type: 'growth' | 'risk' }) {
+  const accent = type === 'growth' ? 'emerald' : 'red';
+  const rsiColor = swing.rsi < 35 ? 'text-emerald-500' : swing.rsi > 70 ? 'text-red-500' : 'text-amber-500';
+  const macdColor = swing.macdSignal === 'BULLISH' ? 'text-emerald-500' : swing.macdSignal === 'BEARISH' ? 'text-red-500' : 'text-amber-500';
+  const rrColor = swing.riskRewardRatio >= 2 ? 'text-emerald-500' : swing.riskRewardRatio >= 1 ? 'text-amber-500' : 'text-red-500';
+
+  return (
+    <div className={`mt-2 rounded-lg border border-${accent}-500/15 bg-${accent}-500/[0.03] p-2 space-y-2`}
+      style={{
+        borderLeft: `2px solid ${type === 'growth' ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'}`,
+        background: type === 'growth' ? 'rgba(16, 185, 129, 0.03)' : 'rgba(239, 68, 68, 0.03)',
+      }}>
+      {/* Header: Swing Score + Indicators */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Activity className={`w-3 h-3 text-${accent}-500`} style={{ color: type === 'growth' ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)' }} />
+          <span className="text-[10px] font-bold text-foreground">Swing Trading</span>
+          <Badge className={`text-[8px] px-1 py-0 ${swing.swingScore >= 60 ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' : swing.swingScore >= 45 ? 'bg-amber-500/15 text-amber-500 border-amber-500/30' : 'bg-red-500/15 text-red-500 border-red-500/30'}`}>
+            {swing.swingScore}/100
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1.5 text-[9px]">
+          <span className={rsiColor}>RSI {swing.rsi.toFixed(0)}</span>
+          <span className={macdColor}>{swing.macdSignal}</span>
+          <span className="text-muted-foreground">ATR {swing.atrPercent.toFixed(1)}%</span>
+        </div>
+      </div>
+
+      {/* Entry / Stop / Target Row */}
+      <div className="grid grid-cols-3 gap-1.5">
+        <div className="bg-background/50 rounded p-1.5 text-center">
+          <p className="text-[8px] text-muted-foreground flex items-center justify-center gap-0.5">
+            <Crosshair className="w-2 h-2" /> Entry
+          </p>
+          <p className="text-[11px] font-bold text-foreground">${swing.entryPrice.toFixed(2)}</p>
+        </div>
+        <div className="bg-background/50 rounded p-1.5 text-center">
+          <p className="text-[8px] text-red-400 flex items-center justify-center gap-0.5">
+            <ShieldAlert className="w-2 h-2" /> Stop Loss
+          </p>
+          <p className="text-[11px] font-bold text-red-500">${swing.stopLoss.toFixed(2)}</p>
+        </div>
+        <div className="bg-background/50 rounded p-1.5 text-center">
+          <p className="text-[8px] text-emerald-400 flex items-center justify-center gap-0.5">
+            <Target className="w-2 h-2" /> Target
+          </p>
+          <p className="text-[11px] font-bold text-emerald-500">${swing.swingTarget.toFixed(2)}</p>
+        </div>
+      </div>
+
+      {/* Risk/Reward + Support/Resistance */}
+      <div className="flex items-center justify-between text-[9px]">
+        <span className="text-muted-foreground">
+          R:R <span className={`font-bold ${rrColor}`}>{swing.riskRewardRatio.toFixed(1)}:1</span>
+        </span>
+        <span className="text-muted-foreground">
+          S: <span className="text-blue-400">${swing.supportLevel.toFixed(2)}</span>
+          {' | '}
+          R: <span className="text-orange-400">${swing.resistanceLevel.toFixed(2)}</span>
+        </span>
+      </div>
+
+      {/* Swing Reasons (compact) */}
+      {swing.swingReasons.length > 0 && (
+        <div className="space-y-0.5">
+          {swing.swingReasons.slice(0, 3).map((r, i) => (
+            <p key={i} className="text-[9px] text-muted-foreground leading-relaxed">
+              {type === 'growth' ? <span className="text-emerald-500">+</span> : <span className="text-red-500">!</span>} {r}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Warnings */}
+      {swing.warningFlags.length > 0 && (
+        <div className="space-y-0.5">
+          {swing.warningFlags.slice(0, 2).map((w, i) => (
+            <p key={i} className="text-[9px] text-amber-500/80 leading-relaxed">
+              <AlertTriangle className="w-2 h-2 inline mr-0.5" /> {w}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -446,6 +556,9 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
           <span className="font-semibold text-emerald-500">{stock.targetPrice}</span>
           <span className="text-muted-foreground">{stock.lowTarget} — {stock.highTarget}</span>
         </div>
+
+        {/* Swing Trading Panel */}
+        {stock.swing && <SwingPanel swing={stock.swing} type="growth" />}
 
         {/* Reasons (expandable) */}
         <button
@@ -530,6 +643,9 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
           <span className="font-semibold">{stock.targetPrice}</span>
           <span className="text-muted-foreground">{stock.lowTarget} — {stock.highTarget}</span>
         </div>
+
+        {/* Swing Trading Panel */}
+        {stock.swing && <SwingPanel swing={stock.swing} type="risk" />}
 
         {/* Reasons (expandable) */}
         <button
@@ -671,7 +787,7 @@ export function TopMovers() {
             </h3>
           </div>
           <p className="text-[10px] text-muted-foreground -mt-1">
-            Aksionet me shenjat me te forta per rritje: signal bullish, rritje te ardhurave, EPS, moat i gjere, momentum pozitiv
+            Swing trading: teknike reale (RSI, MACD, Bollinger, SMA/EMA, ATR) + fundamente + konsensus analistesh
           </p>
           <div className="space-y-2.5">
             {data.topGrowth.map((stock, i) => (
@@ -690,7 +806,7 @@ export function TopMovers() {
             </h3>
           </div>
           <p className="text-[10px] text-muted-foreground -mt-1">
-            Aksionet me rrezikun me te larte per renie: signal bearish, te ardhura ne ulje, vleresim i larte, borxh te larte, momentum negativ
+            Aksionet me rrezikun me te larte per renie: teknike bearish, fundamente te dobta, vleresim i larte, borxh te larte
           </p>
           <div className="space-y-2.5">
             {data.topRisk.map((stock, i) => (
@@ -705,8 +821,8 @@ export function TopMovers() {
         <div className="flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
           <p className="text-[10px] text-amber-600/80 leading-relaxed">
-            Kjo analizë bazohet në data fundamentale, sinjale teknike, dhe konsensusin e analistëve. 
-            Multi-factor scoring përdor 10 faktorë për çdo kategori. Nuk përbën këshillë financiare. Çmimet përditësohen nga Yahoo Finance.
+            Kjo analizë përdor teknike reale (RSI, MACD, Bollinger Bands, SMA/EMA, ATR) + 10 faktorë fundamentalë + konsensusin e analistëve.
+            Swing scoring llogaritet nga 3 muaj të dhëna historike. Çmimet e Entry/Stop/Target janë sugjerime, jo këshillë financiare.
           </p>
         </div>
       </div>
