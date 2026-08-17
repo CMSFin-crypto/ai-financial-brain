@@ -329,6 +329,119 @@ export function getEdgarFilingUrl(cik: number): string {
   return `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikStr}&type=10-Q&dateb=&owner=include&count=8`;
 }
 
+export interface FilingEntry {
+  accessionNumber: string;
+  filingDate: string;
+  form: string;
+  act: string;
+  fileNum?: string;
+  filmNumber?: string;
+  items?: string;
+  size?: number;
+  type: string;
+  primaryDocument?: string;
+  primaryDocDescription?: string;
+}
+
+export interface SubmissionsData {
+  cik: number;
+  ticker: string;
+  companyName: string;
+  filings: {
+    recent: {
+      accessionNumber: string;
+      filingDate: string;
+      form: string;
+      primaryDocument: string;
+      primaryDocDescription: string;
+    }[];
+  };
+}
+
+const submissionsCache = new Map<string, { data: FilingEntry[]; fetchedAt: number }>();
+const SUBMISSIONS_CACHE_TTL = 30 * 60 * 1000;
+
+/**
+ * Fetch recent 8-K filings (board decisions, meeting minutes, material events)
+ * Uses SEC EDGAR Submissions API
+ */
+export async function fetchRecentFilings(ticker: string, formTypes: string[] = ['8-K'], maxFilings = 20): Promise<{ companyName: string; cik: number; filings: FilingEntry[] } | null> {
+  const upper = ticker.toUpperCase().trim();
+  const cacheKey = `${upper}:${formTypes.join(',')}`;
+
+  const cached = submissionsCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < SUBMISSIONS_CACHE_TTL) {
+    const companyName = '';
+    const cik = 0;
+    return { companyName, cik, filings: cached.data };
+  }
+
+  const cik = await getCIK(upper);
+  if (!cik) return null;
+
+  const cikStr = String(cik).padStart(10, '0');
+  const url = `${SEC_BASE}/submissions/CIK${cikStr}.json`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch(url, { headers: SEC_HEADERS, signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const raw = await res.json();
+    const companyName = raw?.name || upper;
+    const recent = raw?.filings?.recent || {};
+
+    const forms = recent.form || [];
+    const dates = recent.filingDate || [];
+    const accessions = recent.accessionNumber || [];
+    const primaryDocs = recent.primaryDocument || [];
+    const descriptions = recent.primaryDocDescription || [];
+    const act = recent.act || [];
+    const fileNums = recent.fileNumber || [];
+    const items = recent.items || [];
+    const sizes = recent.size || [];
+
+    const filings: FilingEntry[] = [];
+    const seen = new Set<string>();
+
+    for (let i = 0; i < forms.length && filings.length < maxFilings; i++) {
+      if (!formTypes.includes(forms[i])) continue;
+      const acc = accessions[i]?.replace(/-/g, '');
+      if (seen.has(acc)) continue;
+      seen.add(acc);
+
+      filings.push({
+        accessionNumber: accessions[i] || '',
+        filingDate: dates[i] || '',
+        form: forms[i] || '',
+        act: act[i] || '',
+        fileNum: fileNums[i] || '',
+        items: items[i] || '',
+        size: sizes[i] || 0,
+        type: forms[i] || '',
+        primaryDocument: primaryDocs[i] || '',
+        primaryDocDescription: descriptions[i] || '',
+      });
+    }
+
+    submissionsCache.set(cacheKey, { data: filings, fetchedAt: Date.now() });
+    return { companyName, cik, filings };
+  } catch (err) {
+    console.error(`[SEC EDGAR] Submissions fetch failed for ${upper}:`, err);
+    return null;
+  }
+}
+
+/** Generate SEC EDGAR URL for a specific filing */
+export function getFilingUrl(cik: number, accessionNumber: string): string {
+  const cikStr = String(cik).padStart(10, '0');
+  const accClean = accessionNumber.replace(/-/g, '');
+  return `https://www.sec.gov/Archives/edgar/data/${cikStr}/${accClean}/${accessionNumber.replace(/-/g, '')}-index.html`;
+}
+
 export function formatCompact(value: number | undefined | null): string {
   if (value === undefined || value === null) return '—';
   const abs = Math.abs(value);

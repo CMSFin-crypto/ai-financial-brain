@@ -18,6 +18,9 @@ import {
   BarChart3,
   Wallet,
   CircleDollarSign,
+  ScrollText,
+  Clock,
+  FileCheck,
 } from 'lucide-react';
 import { formatCompact } from '@/lib/sec-edgar';
 
@@ -66,7 +69,18 @@ type FilingResponse = {
   quarterCount: number;
 };
 
-type SubTab = 'income' | 'balance' | 'cashflow';
+type SubTab = 'income' | 'balance' | 'cashflow' | 'meetings';
+
+type FilingItem = {
+  accessionNumber: string;
+  filingDate: string;
+  form: string;
+  primaryDocDescription: string;
+  act: string;
+  items: string;
+  size: number;
+  edgarUrl: string;
+};
 
 // ═══ Helpers ═══
 function qLabel(q: QuarterData): string {
@@ -154,6 +168,8 @@ export function SecFilings() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<SubTab>('income');
+  const [filings, setFilings] = useState<FilingItem[]>([]);
+  const [filingsLoading, setFilingsLoading] = useState(false);
 
   const fetchFilings = async (symbol?: string) => {
     const sym = (symbol || ticker).trim().toUpperCase();
@@ -171,10 +187,27 @@ export function SecFilings() {
         return;
       }
       setData(json);
+      // Also fetch 8-K filings in background
+      fetch8K(sym);
     } catch {
       setError('Gabim rrjeti. Provo përsëri.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetch8K = async (sym: string) => {
+    setFilingsLoading(true);
+    try {
+      const res = await fetch(`/api/sec-filings?ticker=${encodeURIComponent(sym)}&type=8k&forms=8-K,DEF 14A`);
+      const json = await res.json();
+      if (res.ok && json.filings) {
+        setFilings(json.filings);
+      }
+    } catch {
+      // silent
+    } finally {
+      setFilingsLoading(false);
     }
   };
 
@@ -192,6 +225,7 @@ export function SecFilings() {
     { value: 'income', label: 'Income Statement', icon: DollarSign },
     { value: 'balance', label: 'Balance Sheet', icon: BarChart3 },
     { value: 'cashflow', label: 'Cash Flow', icon: Wallet },
+    { value: 'meetings', label: '8-K / Meetings', icon: ScrollText },
   ];
 
   return (
@@ -353,6 +387,68 @@ export function SecFilings() {
                         <FinRow label="Free Cash Flow" quarters={quarters} field="freeCashFlow" />
                         <FinRow label="Dividendet e Paguara" quarters={quarters} field="dividendsPaid" indent />
                         <FinRow label="Blerjet e Aksioneve" quarters={quarters} field="shareRepurchases" indent />
+                      </>
+                    )}
+                    {subTab === 'meetings' && (
+                      <>
+                        {filingsLoading && (
+                          <div className="space-y-2">
+                            {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                          </div>
+                        )}
+                        {!filingsLoading && filings.length === 0 && (
+                          <div className="text-center py-8">
+                            <ScrollText className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">Nuk u gjetën 8-K filings. Kërko një ticker më sipër.</p>
+                          </div>
+                        )}
+                        {!filingsLoading && filings.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 border-b border-border/30 pb-1.5 mb-2">
+                              <ScrollText className="w-3.5 h-3.5 text-blue-400" />
+                              <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">8-K / DEF 14A — Vendime Bordi & Takime</span>
+                            </div>
+                            {filings.map((f, idx) => (
+                              <a
+                                key={f.accessionNumber}
+                                href={f.edgarUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition-colors group"
+                              >
+                                <div className="flex-shrink-0 mt-0.5">
+                                  <div className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold ${f.form === '8-K' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'}`}>
+                                    {f.form === '8-K' ? '8K' : '14A'}
+                                  </div>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-foreground truncate">{f.primaryDocDescription || f.form}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${f.form === '8-K' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
+                                      {f.form}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <Clock className="w-3 h-3 text-muted-foreground/60" />
+                                    <span className="text-[11px] text-muted-foreground">{f.filingDate}</span>
+                                    {f.act && <span className="text-[10px] text-muted-foreground/60 truncate">{f.act}</span>}
+                                  </div>
+                                </div>
+                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-muted-foreground flex-shrink-0 mt-1" />
+                              </a>
+                            ))}
+                            <div className="mt-3 text-center">
+                              <a
+                                href={data?.edgarUrl?.replace('type=10-Q', 'type=8-K') || '#'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+                              >
+                                Shiko të gjitha filings në SEC EDGAR <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </tbody>
