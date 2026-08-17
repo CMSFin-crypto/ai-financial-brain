@@ -21,6 +21,11 @@ import {
   ScrollText,
   Clock,
   FileCheck,
+  Sparkles,
+  AlertTriangle,
+  ShieldCheck,
+  Banknote,
+  Target,
 } from 'lucide-react';
 import { formatCompact } from '@/lib/sec-edgar';
 
@@ -69,7 +74,7 @@ type FilingResponse = {
   quarterCount: number;
 };
 
-type SubTab = 'income' | 'balance' | 'cashflow' | 'meetings';
+type SubTab = 'income' | 'balance' | 'cashflow' | 'meetings' | 'ai';
 
 type FilingItem = {
   accessionNumber: string;
@@ -226,6 +231,7 @@ export function SecFilings() {
     { value: 'balance', label: 'Balance Sheet', icon: BarChart3 },
     { value: 'cashflow', label: 'Cash Flow', icon: Wallet },
     { value: 'meetings', label: '8-K / Meetings', icon: ScrollText },
+    { value: 'ai', label: 'AI Analysis', icon: Sparkles },
   ];
 
   return (
@@ -459,6 +465,9 @@ export function SecFilings() {
         </>
       )}
 
+      {/* AI Analysis Tab */}
+      {data && subTab === 'ai' && <AIAnalysis quarters={quarters} companyName={data.companyName} ticker={data.ticker} />}
+
       {/* Empty state */}
       {!data && !loading && !error && (
         <Card className="border-blue-500/10">
@@ -473,6 +482,347 @@ export function SecFilings() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// ═══ AI Analysis Engine ═══
+type Signal = 'bullish' | 'bearish' | 'neutral';
+
+interface AnalysisPoint {
+  title: string;
+  icon: React.ElementType;
+  signal: Signal;
+  score: number; // -100 to +100
+  summary: string;
+  details: string[];
+  dataPoints: { label: string; value: string; positive?: boolean }[];
+}
+
+function analyze10Q(quarters: QuarterData[]): { points: AnalysisPoint[]; overall: Signal; overallScore: number; summary: string } {
+  const c = quarters[0]; // latest
+  const p = quarters[1]; // previous
+  const pp = quarters[2]; // 2 quarters ago
+  const points: AnalysisPoint[] = [];
+  let totalScore = 0;
+
+  // ═══ 1. Earnings Surprise (Revenue & EPS) ═══
+  const revGrowth = p?.revenue && c?.revenue ? ((c.revenue - p.revenue) / Math.abs(p.revenue)) * 100 : null;
+  const epsGrowth = p?.epsBasic && c?.epsBasic ? ((c.epsBasic - p.epsBasic) / Math.abs(p.epsBasic)) * 100 : null;
+  const revAccel = pp?.revenue && p?.revenue && c?.revenue
+    ? ((c.revenue - p.revenue) / Math.abs(p.revenue)) - ((p.revenue - pp.revenue) / Math.abs(pp.revenue))
+    : null;
+
+  let earnSignal: Signal = 'neutral';
+  let earnScore = 0;
+  const earnDetails: string[] = [];
+  const earnData: { label: string; value: string; positive?: boolean }[] = [];
+
+  if (revGrowth !== null) {
+    earnData.push({ label: 'Rritja e të Ardhurave (QoQ)', value: `${revGrowth >= 0 ? '+' : ''}${revGrowth.toFixed(1)}%`, positive: revGrowth > 0 });
+    if (revGrowth > 5) { earnScore += 30; earnDetails.push('Të ardhurat rriten mbi 5% — sinjal pozitiv i fortë'); }
+    else if (revGrowth > 0) { earnScore += 15; earnDetails.push('Të ardhurat rriten, por nën 5% — sinjal modest pozitiv'); }
+    else if (revGrowth > -5) { earnScore -= 10; earnDetails.push('Të ardhura ranë lehtë — vëmendje'); }
+    else { earnScore -= 35; earnDetails.push('Rënie e konsiderueshme e të ardhurave — sinjal negativ'); }
+  }
+  if (epsGrowth !== null) {
+    earnData.push({ label: 'Rritja e EPS (QoQ)', value: `${epsGrowth >= 0 ? '+' : ''}${epsGrowth.toFixed(1)}%`, positive: epsGrowth > 0 });
+    if (epsGrowth > 10) { earnScore += 25; earnDetails.push('EPS u rrit mbi 10% — fitimi për aksionarë po rritet'); }
+    else if (epsGrowth > 0) { earnScore += 10; earnDetails.push('EPS u rrit — pozitiv'); }
+    else if (epsGrowth > -10) { earnScore -= 15; earnDetails.push('EPS u ul — vëmendje'); }
+    else { earnScore -= 30; earnDetails.push('Rënie e thellë e EPS — negativ për çmimin'); }
+  }
+  if (revAccel !== null) {
+    earnData.push({ label: 'Accelerimi i të Ardhurave', value: `${revAccel >= 0 ? '+' : ''}${revAccel.toFixed(1)}pp`, positive: revAccel > 0 });
+    if (revAccel > 2) { earnScore += 15; earnDetails.push('Rritja e të ardhurave po përshpejtohet — trend i fortë'); }
+    else if (revAccel < -3) { earnScore -= 15; earnDetails.push('Rritja po ngadalësohet — vërehet degradim'); }
+  }
+  earnSignal = earnScore > 15 ? 'bullish' : earnScore < -15 ? 'bearish' : 'neutral';
+  points.push({ title: '1. Earnings Surprise — Të Ardhura & EPS', icon: Target, signal: earnSignal, score: Math.max(-100, Math.min(100, earnScore)), summary: earnScore > 15 ? 'Të dhënat e fitimit tregojnë momentum pozitiv — çmimi ka potencial rritjeje.' : earnScore < -15 ? 'Të dhënat e fitimit janë në rënie — rrezik uljeje çmimi.' : 'Të dhënat e fitimit janë të përziera — asnjë sinjal i qartë.', details: earnDetails, dataPoints: earnData });
+  totalScore += earnScore;
+
+  // ═══ 2. MD&A Proxy — Revenue + Net Income Trend ═══
+  const niTrend = p?.netIncome && c?.netIncome ? ((c.netIncome - p.netIncome) / Math.abs(p.netIncome)) * 100 : null;
+  const oiTrend = p?.operatingIncome && c?.operatingIncome ? ((c.operatingIncome - p.operatingIncome) / Math.abs(p.operatingIncome)) * 100 : null;
+  let mdaSignal: Signal = 'neutral';
+  let mdaScore = 0;
+  const mdaDetails: string[] = [];
+  const mdaData: { label: string; value: string; positive?: boolean }[] = [];
+
+  if (niTrend !== null) {
+    mdaData.push({ label: 'Trendi i Fitimit Neto', value: `${niTrend >= 0 ? '+' : ''}${niTrend.toFixed(1)}%`, positive: niTrend > 0 });
+    if (niTrend > 10) { mdaScore += 20; mdaDetails.push('Fitimi neto në rritje të fortë — menaxhimi po ekzekuton mirë'); }
+    else if (niTrend > 0) { mdaScore += 10; mdaDetails.push('Fitimi neto po rritet — drejtim i qëndrueshëm'); }
+    else { mdaScore -= 20; mdaDetails.push('Fitimi neto në rënie — mund të tregojë sfida operacionale'); }
+  }
+  if (oiTrend !== null) {
+    mdaData.push({ label: 'Trendi i të Ardhurave Operative', value: `${oiTrend >= 0 ? '+' : ''}${oiTrend.toFixed(1)}%`, positive: oiTrend > 0 });
+    if (oiTrend > 5) { mdaScore += 15; mdaDetails.push('Të ardhura operative në rritje — biznesi bazë është i fortë'); }
+    else if (oiTrend < -5) { mdaScore -= 15; mdaDetails.push('Të ardhura operative në rënie — kostojet ose kërkesa po bëhen probleme'); }
+  }
+  // Revenue consistency over 4 quarters
+  if (quarters.length >= 4) {
+    const revDirs = quarters.slice(0, 4).map((q, i) => {
+      if (i === 0 || !q.revenue || !quarters[i - 1]?.revenue) return 0;
+      return q.revenue > quarters[i - 1].revenue! ? 1 : -1;
+    });
+    const consistent = revDirs.slice(1).every(d => d === revDirs[1]);
+    if (consistent && revDirs[1] > 0) { mdaScore += 10; mdaDetails.push('4 kuartale rradha me rritje të ardhurave — trend shumë pozitiv'); }
+    else if (consistent && revDirs[1] < 0) { mdaScore -= 15; mdaDetails.push('4 kuartale rradha me rënie — alarm për degradim të biznesit'); }
+    mdaData.push({ label: 'Konsistenca (4Q)', value: consistent ? (revDirs[1] > 0 ? 'Rritje rradha' : 'Rënie rradha') : 'Variabel', positive: consistent && revDirs[1] > 0 });
+  }
+  mdaSignal = mdaScore > 15 ? 'bullish' : mdaScore < -15 ? 'bearish' : 'neutral';
+  points.push({ title: '2. MD&A — Trendet e Biznesit', icon: TrendingUp, signal: mdaSignal, score: Math.max(-100, Math.min(100, mdaScore)), summary: mdaScore > 15 ? 'Trendet e biznesit janë pozitive — drejtimi strategjik po funksionon.' : mdaScore < -15 ? 'Biznesi po tregon shenja degradimi — kujdes.' : 'Trendet janë të përziera — nevojitet vëmendje e veçantë.', details: mdaDetails, dataPoints: mdaData });
+  totalScore += mdaScore;
+
+  // ═══ 3. Profit Margins ═══
+  const gmNow = c?.grossProfit && c?.revenue ? (c.grossProfit / c.revenue) * 100 : null;
+  const gmPrev = p?.grossProfit && p?.revenue ? (p.grossProfit / p.revenue) * 100 : null;
+  const omNow = c?.operatingIncome && c?.revenue ? (c.operatingIncome / c.revenue) * 100 : null;
+  const omPrev = p?.operatingIncome && p?.revenue ? (p.operatingIncome / p.revenue) * 100 : null;
+  const nmNow = c?.netIncome && c?.revenue ? (c.netIncome / c.revenue) * 100 : null;
+  const nmPrev = p?.netIncome && p?.revenue ? (p.netIncome / p.revenue) * 100 : null;
+
+  let marginSignal: Signal = 'neutral';
+  let marginScore = 0;
+  const marginDetails: string[] = [];
+  const marginData: { label: string; value: string; positive?: boolean }[] = [];
+
+  if (gmNow !== null) { marginData.push({ label: 'Marzhi Bruto (tani)', value: `${gmNow.toFixed(1)}%` }); }
+  if (gmPrev !== null) { marginData.push({ label: 'Marzhi Bruto (parapr)', value: `${gmPrev.toFixed(1)}%` }); }
+  if (gmNow !== null && gmPrev !== null) {
+    const diff = gmNow - gmPrev;
+    marginData.push({ label: 'Ndryshimi GM', value: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`, positive: diff >= 0 });
+    if (diff > 1) { marginScore += 15; marginDetails.push('Marzhi bruto po zgjerohet — fuqia çmimore apo efikasiteti'); }
+    else if (diff < -1.5) { marginScore -= 20; marginDetails.push('Marzhi bruto po ngushtohet — kosto në rritje ose ulje çmimesh'); }
+  }
+  if (omNow !== null) { marginData.push({ label: 'Marzhi Operativ (tani)', value: `${omNow.toFixed(1)}%` }); }
+  if (omPrev !== null) { marginData.push({ label: 'Marzhi Operativ (parapr)', value: `${omPrev.toFixed(1)}%` }); }
+  if (omNow !== null && omPrev !== null) {
+    const diff = omNow - omPrev;
+    marginData.push({ label: 'Ndryshimi OM', value: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`, positive: diff >= 0 });
+    if (diff > 1) { marginScore += 15; marginDetails.push('Marzhi operativ po përmirësohet — kontroll i mirë i kostove'); }
+    else if (diff < -2) { marginScore -= 25; marginDetails.push('Marzhi operativ po bëhet negativ — sinjal rreziku'); }
+  }
+  if (nmNow !== null && nmPrev !== null) {
+    const diff = nmNow - nmPrev;
+    marginData.push({ label: 'Ndryshimi NM', value: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`, positive: diff >= 0 });
+    if (diff < -3) { marginScore -= 10; marginDetails.push('Marzhi neto në rënie të thellë — kosto tatimore ose interesesh?'); }
+  }
+  marginSignal = marginScore > 10 ? 'bullish' : marginScore < -10 ? 'bearish' : 'neutral';
+  points.push({ title: '3. Profit Margins — Marzhet e Fitimit', icon: BarChart3, signal: marginSignal, score: Math.max(-100, Math.min(100, marginScore)), summary: marginScore > 10 ? 'Marzhet e fitimit po zgjerohen — kompania po bëhet më efikase.' : marginScore < -10 ? 'Marzhet po ngushtohen — rreziku i uljes së çmimit.' : 'Marzhet janë stabile — asnjë sinjal i qartë.', details: marginDetails, dataPoints: marginData });
+  totalScore += marginScore;
+
+  // ═══ 4. Risk Assessment (Debt growth, interest burden) ═══
+  const deNow = c?.totalDebt;
+  const dePrev = p?.totalDebt;
+  const intNow = c?.interestExpense;
+  const intPrev = p?.interestExpense;
+  const debtEquity = c?.totalDebt && c?.totalEquity ? c.totalDebt / c.totalEquity : null;
+  const debtEquityPrev = p?.totalDebt && p?.totalEquity ? p.totalDebt / p.totalEquity : null;
+
+  let riskSignal: Signal = 'neutral';
+  let riskScore = 0;
+  const riskDetails: string[] = [];
+  const riskData: { label: string; value: string; positive?: boolean }[] = [];
+
+  if (deNow !== undefined && dePrev !== undefined && dePrev !== 0) {
+    const debtGrowth = ((deNow - dePrev) / Math.abs(dePrev)) * 100;
+    riskData.push({ label: 'Rritja e Borxhit', value: `${debtGrowth >= 0 ? '+' : ''}${debtGrowth.toFixed(1)}%`, positive: debtGrowth < 0 });
+    if (debtGrowth > 10) { riskScore -= 20; riskDetails.push('Borxhi u rrit mbi 10% në një tremujor — rrezik i lartë'); }
+    else if (debtGrowth < -5) { riskScore += 15; riskDetails.push('Borxhi u ul — kompania po shlyen detyrimet'); }
+  }
+  if (debtEquity !== null) {
+    riskData.push({ label: 'Debt/Equity (tani)', value: debtEquity.toFixed(2), positive: debtEquity < 0.5 });
+    if (debtEquity > 2) { riskScore -= 15; riskDetails.push(`D/E = ${debtEquity.toFixed(2)} — borxhi i lartë në raport me kapitalin`); }
+    else if (debtEquity < 0.3) { riskScore += 10; riskDetails.push('D/E shumë i ulët — bilanc i shëndetshëm'); }
+  }
+  if (debtEquityPrev !== null && debtEquity !== null) {
+    const deDiff = debtEquity - debtEquityPrev;
+    riskData.push({ label: 'Ndryshimi D/E', value: `${deDiff >= 0 ? '+' : ''}${deDiff.toFixed(2)}`, positive: deDiff < 0 });
+    if (deDiff > 0.2) { riskScore -= 10; riskDetails.push('D/E po rritet — kompania po merr më shumë borxhe'); }
+  }
+  if (intNow !== undefined && intPrev !== undefined && intPrev !== 0) {
+    const intGrowth = ((intNow - intPrev) / Math.abs(intPrev)) * 100;
+    riskData.push({ label: 'Ndryshimi i Shpenzimeve te Interesit', value: `${intGrowth >= 0 ? '+' : ''}${intGrowth.toFixed(1)}%`, positive: intGrowth < 0 });
+    if (intGrowth > 15) { riskScore -= 15; riskDetails.push('Shpenzimet e interesit po rriten shpejt — ftohtë mbi fitimin'); }
+  }
+  // Interest coverage
+  if (c?.operatingIncome && c?.interestExpense && c.interestExpense !== 0) {
+    const coverage = c.operatingIncome / Math.abs(c.interestExpense);
+    riskData.push({ label: 'Interest Coverage', value: `${coverage.toFixed(1)}x`, positive: coverage > 5 });
+    if (coverage < 2) { riskScore -= 20; riskDetails.push(`Interest coverage vetëm ${coverage.toFixed(1)}x — rrezik falimentimi`); }
+    else if (coverage > 10) { riskScore += 10; riskDetails.push('Interest coverage shumë i lartë — borxhi nuk është problem'); }
+  }
+  riskSignal = riskScore > 5 ? 'bullish' : riskScore < -10 ? 'bearish' : 'neutral';
+  points.push({ title: '4. Risk Factors — Rreziqet nga 10-Q', icon: AlertTriangle, signal: riskSignal, score: Math.max(-100, Math.min(100, riskScore)), summary: riskScore > 5 ? 'Rreziqet janë të ulëta — bilanci i shëndetshëm.' : riskScore < -10 ? 'Rreziqet janë në rritje — kujdes për pozicionin tuaj.' : 'Rreziqet janë në nivel normal.', details: riskDetails, dataPoints: riskData });
+  totalScore += riskScore;
+
+  // ═══ 5. Liquidity — Cash & Debt ═══
+  const cashNow = c?.cashAndEquivalents;
+  const cashPrev = p?.cashAndEquivalents;
+  const fcfNow = c?.freeCashFlow;
+  const fcfPrev = p?.freeCashFlow;
+  const buybacks = c?.shareRepurchases;
+  const divs = c?.dividendsPaid;
+  const currentR = c?.currentAssets && c?.currentLiabilities ? c.currentAssets / c.currentLiabilities : null;
+
+  let liqSignal: Signal = 'neutral';
+  let liqScore = 0;
+  const liqDetails: string[] = [];
+  const liqData: { label: string; value: string; positive?: boolean }[] = [];
+
+  if (cashNow !== undefined) { liqData.push({ label: 'Kasa & Ekivalentë', value: formatCompact(cashNow) }); }
+  if (cashNow !== undefined && cashPrev !== undefined && cashPrev !== 0) {
+    const cashChg = ((cashNow - cashPrev) / Math.abs(cashPrev)) * 100;
+    liqData.push({ label: 'Ndryshimi i Kasës', value: `${cashChg >= 0 ? '+' : ''}${cashChg.toFixed(1)}%`, positive: cashChg > 0 });
+    if (cashChg > 10) { liqScore += 15; liqDetails.push('Kasa u rrit mbi 10% — likuiditeti po forcohet'); }
+    else if (cashChg < -15) { liqScore -= 15; liqDetails.push('Kasa u pakësua — kontrolli i likuiditetit?'); }
+  }
+  if (fcfNow !== undefined && fcfPrev !== undefined && fcfPrev !== 0) {
+    const fcfChg = ((fcfNow - fcfPrev) / Math.abs(fcfPrev)) * 100;
+    liqData.push({ label: 'Ndryshimi FCF', value: `${fcfChg >= 0 ? '+' : ''}${fcfChg.toFixed(1)}%`, positive: fcfChg > 0 });
+    if (fcfNow > 0 && fcfChg > 0) { liqScore += 20; liqDetails.push('Free Cash Flow pozitiv dhe në rritje — gjeneron para reale'); }
+    else if (fcfNow < 0) { liqScore -= 15; liqDetails.push('FCF negativ — kompania po shpenzon më shumë se fiton'); }
+  }
+  if (currentR !== null) {
+    liqData.push({ label: 'Current Ratio', value: currentR.toFixed(2), positive: currentR > 1.5 });
+    if (currentR < 1) { liqScore -= 25; liqDetails.push(`Current ratio ${currentR.toFixed(2)} — rrezik likuiditeti!`); }
+    else if (currentR > 2) { liqScore += 10; liqDetails.push('Current ratio i lartë — likuiditet i fortë'); }
+  }
+  if (buybacks !== undefined && buybacks < 0) {
+    liqData.push({ label: 'Buybacks', value: formatCompact(Math.abs(buybacks)), positive: true });
+    liqScore += 10;
+    liqDetails.push('Kompania po blejnë mbrapsht aksionet — ul vëllimin, rrit çmimin');
+  }
+  if (divs !== undefined && divs < 0) {
+    liqData.push({ label: 'Dividendet', value: formatCompact(Math.abs(divs)) });
+    if (fcfNow !== undefined && fcfNow > 0 && Math.abs(divs) < fcfNow * 0.5) {
+      liqScore += 5;
+      liqDetails.push('Dividendet mbulohen lehtë nga FCF — e qëndrueshme');
+    }
+  }
+  liqSignal = liqScore > 10 ? 'bullish' : liqScore < -10 ? 'bearish' : 'neutral';
+  points.push({ title: '5. Likuiditeti — Kasa & Borxhi', icon: Banknote, signal: liqSignal, score: Math.max(-100, Math.min(100, liqScore)), summary: liqScore > 10 ? 'Pozicioni i kasës është i fortë — mundësi investimi ose buybacks.' : liqScore < -10 ? 'Likuiditeti po ngushtohet — rrezik për operacionet.' : 'Likuiditeti është adekuat.', details: liqDetails, dataPoints: liqData });
+  totalScore += liqScore;
+
+  const overall: Signal = totalScore > 30 ? 'bullish' : totalScore < -30 ? 'bearish' : 'neutral';
+  const maxPossible = 5 * 100;
+  const normalizedScore = Math.round((totalScore / maxPossible) * 100);
+
+  let summary: string;
+  if (overall === 'bullish') summary = `${quarters[0].companyName || 'Kompania'} tregon sinjale pozitive në shumicën e pikave. Të dhënat 10-Q sugjerojnë rritje të ardhurave, marzhe të qëndrueshme ose në përmirësim, dhe një bilanc të shëndetshëm. Çmimi i aksionit ka potencialisht hapësirë rritjeje.`;
+  else if (overall === 'bearish') summary = `${quarters[0].companyName || 'Kompania'} tregon sinjale negativë në disa pika kyçe. Kujdes: rënia e të ardhurave, ngushtimi i marzheve, ose rritja e borxhit mund të shtypin çmimin e aksionit.`;
+  else summary = `${quarters[0].companyName || 'Kompania'} tregon sinjale të përziera. Disa metrika janë pozitive, të tjera negative. Monitoroni me kujdes — vendosni një pozicion vetëm pas konfirmimit të trendit.`;
+
+  return { points, overall, overallScore: normalizedScore, summary };
+}
+
+function SignalBadge({ signal }: { signal: Signal }) {
+  const cfg = {
+    bullish: { bg: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400', label: 'BULLISH', icon: TrendingUp },
+    bearish: { bg: 'bg-red-500/15 border-red-500/40 text-red-400', label: 'BEARISH', icon: TrendingDown },
+    neutral: { bg: 'bg-amber-500/15 border-amber-500/40 text-amber-400', label: 'NEUTRAL', icon: Minus },
+  }[signal];
+  const Icon = cfg.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${cfg.bg}`}>
+      <Icon className="w-3 h-3" />{cfg.label}
+    </span>
+  );
+}
+
+function AIAnalysis({ quarters, companyName, ticker }: { quarters: QuarterData[]; companyName: string; ticker: string }) {
+  if (quarters.length < 2) return (
+    <Card className="border-blue-500/10">
+      <CardContent className="pt-8 pb-8 text-center">
+        <Sparkles className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+        <p className="text-sm text-muted-foreground"> nevojiten të paktën 2 kuartale për analizë.</p>
+      </CardContent>
+    </Card>
+  );
+
+  const { points, overall, overallScore, summary } = analyze10Q(quarters);
+  const signalCfg = {
+    bullish: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', bar: 'bg-emerald-500', text: 'text-emerald-400', label: 'BULLISH', desc: 'Sinjale pozitive — potencial rritjeje' },
+    bearish: { border: 'border-red-500/30', bg: 'bg-red-500/5', bar: 'bg-red-500', text: 'text-red-400', label: 'BEARISH', desc: 'Sinjale negative — rrezik uljeje' },
+    neutral: { border: 'border-amber-500/30', bg: 'bg-amber-500/5', bar: 'bg-amber-500', text: 'text-amber-400', label: 'NEUTRAL', desc: 'Sinjale të përziera — vërehet me kujdes' },
+  }[overall];
+
+  return (
+    <div className="space-y-4">
+      {/* Overall Score Card */}
+      <Card className={`${signalCfg.border} ${signalCfg.bg}`}>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`${signalCfg.bar}/20 rounded-lg p-2.5`}><Sparkles className={`w-5 h-5 ${signalCfg.text}`} /></div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold">Analiza AI 10-Q</span>
+                <SignalBadge signal={overall} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">{companyName} ({ticker}) — {signalCfg.desc}</p>
+            </div>
+          </div>
+          {/* Score Bar */}
+          <div className="mt-2">
+            <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+              <span>BEARISH</span><span>NEUTRAL</span><span>BULLISH</span>
+            </div>
+            <div className="h-2 bg-muted/30 rounded-full overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500 opacity-30" />
+              <div className="relative h-full w-1/3 bg-muted-foreground/20" style={{ marginLeft: '33.3%' }} />
+              <div className="absolute top-0 h-full w-1 bg-foreground/80 rounded-full transition-all" style={{ left: `${Math.max(0, Math.min(100, 50 + overallScore / 2))}%` }} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 leading-relaxed">{summary}</p>
+        </CardContent>
+      </Card>
+
+      {/* 5 Analysis Points */}
+      {points.map((pt, idx) => {
+        const sCfg = {
+          bullish: { border: 'border-emerald-500/20', dot: 'bg-emerald-400' },
+          bearish: { border: 'border-red-500/20', dot: 'bg-red-400' },
+          neutral: { border: 'border-amber-500/20', dot: 'bg-amber-400' },
+        }[pt.signal];
+        return (
+          <Card key={idx} className={sCfg.border}>
+            <CardContent className="pt-4">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <pt.icon className={`w-4 h-4 ${pt.signal === 'bullish' ? 'text-emerald-400' : pt.signal === 'bearish' ? 'text-red-400' : 'text-amber-400'}`} />
+                  <span className="text-sm font-semibold">{pt.title}</span>
+                </div>
+                <SignalBadge signal={pt.signal} />
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">{pt.summary}</p>
+              {/* Data Points Grid */}
+              {pt.dataPoints.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-3">
+                  {pt.dataPoints.map((dp, di) => (
+                    <div key={di} className="bg-muted/20 rounded px-2 py-1.5">
+                      <div className="text-[10px] text-muted-foreground">{dp.label}</div>
+                      <div className={`text-xs font-medium tabular-nums ${dp.positive === true ? 'text-emerald-400' : dp.positive === false ? 'text-red-400' : ''}`}>{dp.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Details */}
+              {pt.details.length > 0 && (
+                <div className="space-y-1">
+                  {pt.details.map((d, di) => (
+                    <div key={di} className="flex items-start gap-2 text-xs">
+                      <div className={`w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0 ${sCfg.dot}`} />
+                      <span className="text-muted-foreground">{d}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
