@@ -116,7 +116,7 @@ export default function Home() {
               {/* Category: Tregu */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Tregu</span>
-                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+                <TabsList className="flex flex-wrap gap-1 h-auto p-1 flex-1">
                   <TabsTrigger value="watchlist" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Eye className="w-3.5 h-3.5 mr-1.5" />Watchlist
                   </TabsTrigger>
@@ -126,7 +126,7 @@ export default function Home() {
                   <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Flame className="w-3.5 h-3.5 mr-1.5" />Top 5+5
                   </TabsTrigger>
-                  <TabsTrigger value="5-pillars" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <TabsTrigger value="5-pillars" className="text-xs py-2 px-3 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <Zap className="w-3.5 h-3.5 mr-1.5" />5 Pillars
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
@@ -219,7 +219,7 @@ export default function Home() {
                   <TabsTrigger value="top-movers" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Flame className="w-3 h-3 mr-1" />Top 5+5
                   </TabsTrigger>
-                  <TabsTrigger value="5-pillars" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                  <TabsTrigger value="5-pillars" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <Zap className="w-3 h-3 mr-1" />5 Pillars
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
