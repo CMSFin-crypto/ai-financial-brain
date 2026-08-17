@@ -293,7 +293,7 @@ export async function GET() {
       const p = realPrices[t];
       if (!p || p.price <= 0) return false;
       // Must be in plausible price range ($0.5-$25 to have any chance)
-      if (p.price < 0.5 || p.price > 25) return false;
+      if (p.price < 1.5 || p.price > 25) return false;
       // Must have some positive momentum
       return p.change >= 2;
     });

@@ -371,7 +371,7 @@ export default function Home() {
                     <h3 className="text-sm font-semibold">5 Pillars Momentum — Ross Cameron Scanner</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Skanon 500+ aksione small-cap me kriteret e Warrior Trading: RelVol ≥5x, Change ≥10%, News Catalyst, Price $1-$20, Float &lt;10M. ELIGIBLE / WATCH / REJECTED status + buy/sell indikatorë + notifikime.
+                    Skanon 500+ aksione small-cap me kriteret e Warrior Trading: RelVol ≥5x, Change ≥10%, News Catalyst, Price $2-$20, Float &lt;20M. ELIGIBLE / WATCH / REJECTED status + buy/sell indikatorë + notifikime.
                   </p>
                 </CardContent>
               </Card>

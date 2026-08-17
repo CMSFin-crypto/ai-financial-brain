@@ -247,8 +247,8 @@ export function FivePillars() {
     { label: 'Rel Volume ≥5x', rate: summary.pillarPassRates.rvol, color: 'text-blue-400', bg: 'bg-blue-500/10' },
     { label: 'Change ≥10%', rate: summary.pillarPassRates.momentum, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
     { label: 'Catalyst ≥15%', rate: summary.pillarPassRates.catalyst, color: 'text-orange-400', bg: 'bg-orange-500/10' },
-    { label: 'Price $1-20', rate: summary.pillarPassRates.price, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-    { label: 'Float <10M', rate: summary.pillarPassRates.float, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+    { label: 'Price $2-20', rate: summary.pillarPassRates.price, color: 'text-purple-400', bg: 'bg-purple-500/10' },
+    { label: 'Float <20M', rate: summary.pillarPassRates.float, color: 'text-amber-400', bg: 'bg-amber-500/10' },
   ] : [];
 
   const filterOptions: Array<{ key: StatusFilter; label: string; count: number }> = [
@@ -389,7 +389,7 @@ export function FivePillars() {
                   : `Asnjë kandidat me status "${statusFilter}"`}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-1">
-                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $1-20, Float &lt;10M
+                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $2-20, Float &lt;20M
               </p>
             </CardContent>
           </Card>
@@ -433,8 +433,8 @@ export function FivePillars() {
                 <strong>1. Rel Volume ≥5x</strong> •
                 <strong>2. Daily Change ≥10%</strong> •
                 <strong>3. News Catalyst</strong> (auto-flag ≥15%) •
-                <strong>4. Price $1-$20</strong> •
-                <strong>5. Float &lt;10M</strong>
+                <strong>4. Price $2-$20</strong> •
+                <strong>5. Float &lt;20M</strong>
               </p>
               <p className="text-muted-foreground/70">
                 5 Pillars gjen aksione me momentum të fortë; AI Financial Brain vendos nëse ambienti i tregut e lejon trade-in.
@@ -464,8 +464,8 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
     { key: 'rvol', label: 'RVol ≥ 5x', passed: c.passesRvol, detail: c.pillarDetails.rvol, color: 'text-blue-400', icon: Volume2 },
     { key: 'momentum', label: 'Daily gain ≥ 10%', passed: c.passesMomentum, detail: c.pillarDetails.momentum, color: 'text-emerald-400', icon: TrendingUp },
     { key: 'catalyst', label: 'News catalyst', passed: c.passesCatalyst, detail: c.pillarDetails.catalyst, color: 'text-orange-400', icon: Newspaper },
-    { key: 'price', label: 'Price $1–$20', passed: c.passesPrice, detail: c.pillarDetails.price, color: 'text-purple-400', icon: DollarSign },
-    { key: 'float', label: 'Float < 10M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
+    { key: 'price', label: 'Price $2–$20', passed: c.passesPrice, detail: c.pillarDetails.price, color: 'text-purple-400', icon: DollarSign },
+    { key: 'float', label: 'Float < 20M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
   ];
 
   return (
