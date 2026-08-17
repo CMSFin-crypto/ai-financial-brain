@@ -127,7 +127,7 @@ export default function Home() {
                     <Flame className="w-3.5 h-3.5 mr-1.5" />Top 5+5
                   </TabsTrigger>
                   <TabsTrigger value="5-pillars" className="text-xs py-2 px-3 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <Zap className="w-3.5 h-3.5 mr-1.5" />5 Pillars
+                    <Zap className="w-3.5 h-3.5 mr-1.5" />5 Pillars Momentum
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
@@ -220,7 +220,7 @@ export default function Home() {
                     <Flame className="w-3 h-3 mr-1" />Top 5+5
                   </TabsTrigger>
                   <TabsTrigger value="5-pillars" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <Zap className="w-3 h-3 mr-1" />5 Pillars
+                    <Zap className="w-3 h-3 mr-1" />5 Pillars Momentum
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3 h-3 mr-1" />Sektoret
@@ -356,7 +356,7 @@ export default function Home() {
             </motion.div>
           </TabsContent>
 
-          {/* Tab: Ross Cameron 5 Pillars */}
+          {/* Tab: 5 Pillars Momentum (Ross Cameron) */}
           <TabsContent value="5-pillars" className="mt-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -368,10 +368,10 @@ export default function Home() {
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
                     <Zap className="w-4 h-4 text-amber-500" />
-                    <h3 className="text-sm font-semibold">Ross Cameron 5 Pillars Scanner</h3>
+                    <h3 className="text-sm font-semibold">5 Pillars Momentum — Ross Cameron Scanner</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Skanues i bazuar në metodologjinë e Warrior Trading: Rel Volume ≥5x, Float i ulët, Çmimi në zonë, Green Candle, dhe Gap Up. Identifikon aksionet me momentum më të lartë.
+                    Skanon 500+ aksione small-cap me kriteret e Warrior Trading: RelVol ≥5x, Change ≥10%, News Catalyst, Price $1-$20, Float &lt;10M. ELIGIBLE / WATCH / REJECTED status + buy/sell indikatorë + notifikime.
                   </p>
                 </CardContent>
               </Card>

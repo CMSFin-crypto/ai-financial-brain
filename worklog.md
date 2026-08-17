@@ -124,3 +124,32 @@ Stage Summary:
 - API: src/app/api/five-pillars/route.ts (200+ stock universe)
 - UI: src/components/financial-brain/five-pillars.tsx (correct pillars, green bg, flame indicator)
 - Tab exists in page.tsx for both desktop and mobile views
+---
+Task ID: 1-5
+Agent: Main Agent
+Task: Complete rewrite of 5 Pillars Momentum section with new status system, buy/sell indicators, notifications, and small-cap universe
+
+Work Log:
+- Debugged tab visibility — tab was always in page.tsx, the issue was API timeout with 300+ tickers
+- Rewrote src/lib/five-pillars-engine.ts with new FivePillarsCandidate type matching user spec
+- Added status system: ELIGIBLE / WATCH / REJECTED / FLOAT_REVIEW
+- Added setup tags: Gap & Go, VWAP Bounce, HOD Breakout, ABCD Continuation, Float Squeeze, Momentum Run, Parabolic Move
+- Added risk flags: paper-trade warning, extreme rise, climax volume, penny stock, ultra-low float
+- Added buy/sell indicators: entry zone, stop reference, take profit targets (1.5R, 2.5R, 4R)
+- Created src/app/api/momentum/5-pillars/route.ts with 500+ small-cap universe
+- Smart pre-filter: only analyzes stocks $0.5-$25 with ≥2% change
+- Rewrote src/components/financial-brain/five-pillars.tsx with full new UI
+- Added browser notifications for new ELIGIBLE candidates
+- Added notification bell with dropdown panel
+- Added filter tabs: ALL, ELIGIBLE, WATCH, FLOAT_REVIEW, REJECTED
+- Updated page.tsx tab name to "5 Pillars Momentum"
+- Old /api/five-pillars now redirects to /api/momentum/5-pillars
+- Build passes successfully with no new errors
+
+Stage Summary:
+- 5 Pillars Momentum tab fully rewritten with Ross Cameron correct criteria
+- New status system (ELIGIBLE/WATCH/REJECTED/FLOAT_REVIEW) implemented
+- Buy/sell indicators with entry zone, stop reference, take profit targets
+- Browser notification system for ELIGIBLE candidates
+- 500+ small-cap universe for scanning
+- Optimized API: pre-filters to max 80 candidates before deep analysis

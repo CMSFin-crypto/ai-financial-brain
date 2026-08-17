@@ -1,6 +1,5 @@
-﻿
-// ============================================================
-// Ross Cameron 5 Pillars Momentum Scanner — CORRECT VERSION
+﻿// ============================================================
+// Ross Cameron 5 Pillars Momentum Scanner — ENHANCED VERSION
 //
 // Bazuar EXAKTISHT në metodologjinë e Warrior Trading:
 //   1. RELATIVE VOLUME ≥ 5x    — Volumi aktual vs mesatarja 30-ditore
@@ -9,8 +8,11 @@
 //   4. PRICE RANGE $1-$20       — Zona optimale për day trading
 //   5. FLOAT < 10M SHARES       — Supply/demand imbalance
 //
-// 4 prej 5 janë të automatizuara, Pillar 3 është manual check
-// por ne e flagojmë automatikisht nëse çmimi është ≥15% (ka lajm)
+// Status system:
+//   5/5 + catalyst VERIFIED → ELIGIBLE
+//   4/5 + catalyst REVIEW   → WATCH
+//   3/5 ose më pak          → REJECTED
+//   Float mungon             → FLOAT_REVIEW
 // ============================================================
 
 import { fetchHistoricalData, type HistoricalDataPoint } from '@/lib/alpha-vantage';
@@ -24,37 +26,64 @@ export interface PillarResult {
   detail: string;
 }
 
-export interface FivePillarsResult {
-  ticker: string;
-  company: string;
-  sector: string;
-  currentPrice: number;
-  priceChange: number;
-  pillarsPassed: number;       // 4 automated + 1 manual flag
-  automatedPassed: number;      // only 1-4 (excludes catalyst)
-  pillar1_relVolume: PillarResult;
-  pillar2_dailyChange: PillarResult;
-  pillar3_catalyst: PillarResult;    // manual — flagged if ≥15%
-  pillar4_priceRange: PillarResult;
-  pillar5_float: PillarResult;
-  overallGrade: 'PERFECT' | 'STRONG' | 'GOOD' | 'LIMITED' | 'NONE';
-  momentumScore: number; // 0-100 composite
-  reasons: string[];
-  warnings: string[];
-  strongMomentum: boolean;  // ≥15% — likely has news catalyst
+/** Output type matching the user spec exactly */
+export interface FivePillarsCandidate {
+  symbol: string;
+  price: number;
+  prevClose: number;
+  dailyChangePct: number;
+  currentVolume: number;
+  averageVolume30d: number;
+  relativeVolume: number;
+  floatShares: number | null;          // null = unknown
+  catalystStatus: 'VERIFIED' | 'REVIEW' | 'MISSING';
+  catalystHeadline?: string;
+  catalystSource?: string;
+  catalystPublishedAt?: string;
+
+  passesRvol: boolean;
+  passesMomentum: boolean;
+  passesPrice: boolean;
+  passesFloat: boolean;
+  passesCatalyst: boolean;
+
+  pillarCount: number;
+  status: 'ELIGIBLE' | 'WATCH' | 'REJECTED' | 'FLOAT_REVIEW';
+  setupTags: string[];
+  riskFlags: string[];
+
+  // Extra fields for UI enrichment
+  company?: string;
+  sector?: string;
+  momentumScore: number;
+  strongMomentum: boolean;
+  highMomentum: boolean;  // RVol≥5x AND change≥15%
+
+  // Detailed pillar results for expanded view
+  pillarDetails: {
+    rvol: PillarResult;
+    momentum: PillarResult;
+    catalyst: PillarResult;
+    price: PillarResult;
+    float: PillarResult;
+  };
+
+  // Buy / Sell indicator fields
+  entryZone: string;
+  stopReference: string;
+  takeProfitTargets: string[];
 }
 
 // ─── Thresholds (EXACT Ross Cameron defaults) ──────────────
 
-const CONFIG = {
-  relVolumeMin: 5,          // 5x mesatarja (Ross's minimum)
-  dailyChangeMin: 10,       // 10% up from previous close
-  strongMomentumPct: 15,    // ≥15% = likely news-driven (🔥 flag)
+export const PILLAR_CONFIG = {
+  relVolumeMin: 5,
+  dailyChangeMin: 10,
+  strongMomentumPct: 15,
   priceMin: 1,
-  priceMax: 20,             // Ross's sweet spot: $1-$20
-  floatMaxMillions: 10,     // 10M shares (ultra-aggressive use 5M)
-  volumeSpikeMin: 2,        // Volume spike 2x (Warrior Trading standard)
-  volumeLookback: 30,       // 30 ditë për mesataren e volumit
+  priceMax: 20,
+  floatMaxMillions: 10,
+  volumeLookback: 30,
 };
 
 // ─── Individual Pillar Checkers ──────────────────────────────
@@ -62,264 +91,366 @@ const CONFIG = {
 function checkPillar1_RelativeVolume(
   history: HistoricalDataPoint[],
   currentVolume: number
-): PillarResult {
+): { result: PillarResult; avgVolume30d: number } {
   if (history.length < 10) {
-    return { passed: false, value: 0, threshold: `≥ ${CONFIG.relVolumeMin}x`, detail: 'Të dhëna të pamjaftueshme' };
+    return { result: { passed: false, value: 0, threshold: `≥ ${PILLAR_CONFIG.relVolumeMin}x`, detail: 'Të dhëna të pamjaftueshme' }, avgVolume30d: 0 };
   }
 
-  // Calculate 30-day average volume
-  const lookback = Math.min(CONFIG.volumeLookback, history.length - 1);
+  const lookback = Math.min(PILLAR_CONFIG.volumeLookback, history.length - 1);
   const volumes = history.slice(-lookback - 1, -1).map(d => d.volume);
   const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
 
   if (avgVolume === 0) {
-    return { passed: false, value: 0, threshold: `≥ ${CONFIG.relVolumeMin}x`, detail: 'Volumi mesatar = 0' };
+    return { result: { passed: false, value: 0, threshold: `≥ ${PILLAR_CONFIG.relVolumeMin}x`, detail: 'Volumi mesatar = 0' }, avgVolume30d: 0 };
   }
 
   const todayVol = currentVolume > 0 ? currentVolume : history[history.length - 1].volume;
   const relVol = todayVol / avgVolume;
 
   return {
-    passed: relVol >= CONFIG.relVolumeMin,
-    value: parseFloat(relVol.toFixed(1)),
-    threshold: `≥ ${CONFIG.relVolumeMin}x`,
-    detail: `RelVol: ${relVol.toFixed(1)}x (avg 30d: ${(avgVolume / 1e6).toFixed(1)}M, sot: ${(todayVol / 1e6).toFixed(1)}M)`,
+    avgVolume30d: avgVolume,
+    result: {
+      passed: relVol >= PILLAR_CONFIG.relVolumeMin,
+      value: parseFloat(relVol.toFixed(1)),
+      threshold: `≥ ${PILLAR_CONFIG.relVolumeMin}x`,
+      detail: `RelVol: ${relVol.toFixed(1)}x (avg 30d: ${(avgVolume / 1e6).toFixed(1)}M, sot: ${(todayVol / 1e6).toFixed(1)}M)`,
+    },
   };
 }
 
-function checkPillar2_DailyChange(priceChange: number): PillarResult {
+function checkPillar2_DailyChange(dailyChangePct: number): PillarResult {
   return {
-    passed: priceChange >= CONFIG.dailyChangeMin,
-    value: parseFloat(priceChange.toFixed(2)),
-    threshold: `≥ +${CONFIG.dailyChangeMin}%`,
-    detail: priceChange >= CONFIG.dailyChangeMin
-      ? `Momentum: +${priceChange.toFixed(2)}% — konfirmon kërkësen`
-      : `Momentum vetëm +${priceChange.toFixed(2)}% (duhet ≥ +${CONFIG.dailyChangeMin}%)`,
+    passed: dailyChangePct >= PILLAR_CONFIG.dailyChangeMin,
+    value: parseFloat(dailyChangePct.toFixed(2)),
+    threshold: `≥ +${PILLAR_CONFIG.dailyChangeMin}%`,
+    detail: dailyChangePct >= PILLAR_CONFIG.dailyChangeMin
+      ? `Momentum: +${dailyChangePct.toFixed(2)}% — konfirmon kërkësen`
+      : `Momentum vetëm +${dailyChangePct.toFixed(2)}% (duhet ≥ +${PILLAR_CONFIG.dailyChangeMin}%)`,
   };
 }
 
-function checkPillar3_Catalyst(priceChange: number): PillarResult {
-  // Pillar 3 is MANUAL per Ross Cameron, but we auto-flag if ≥15%
-  // because strong momentum almost always = news catalyst
-  const hasStrongMomentum = priceChange >= CONFIG.strongMomentumPct;
+function checkPillar3_Catalyst(dailyChangePct: number): { result: PillarResult; status: 'VERIFIED' | 'REVIEW' | 'MISSING'; headline?: string } {
+  const hasStrongMomentum = dailyChangePct >= PILLAR_CONFIG.strongMomentumPct;
+  const hasModerateMomentum = dailyChangePct >= PILLAR_CONFIG.dailyChangeMin;
+
+  if (hasStrongMomentum) {
+    return {
+      status: 'REVIEW',
+      headline: `+${dailyChangePct.toFixed(1)}% move — probable news catalyst (verify: earnings, FDA, contract, partnership)`,
+      result: {
+        passed: true,
+        value: parseFloat(dailyChangePct.toFixed(2)),
+        threshold: `≥ +${PILLAR_CONFIG.strongMomentumPct}% (lajm i mundshëm)`,
+        detail: `+${dailyChangePct.toFixed(2)}% — auto-flagged: ka gjasë të ketë lajm`,
+      },
+    };
+  }
+
+  if (hasModerateMomentum) {
+    return {
+      status: 'MISSING',
+      result: {
+        passed: false,
+        value: parseFloat(dailyChangePct.toFixed(2)),
+        threshold: `≥ +${PILLAR_CONFIG.strongMomentumPct}% (lajm i mundshëm)`,
+        detail: `+${dailyChangePct.toFixed(2)}% — verifiko manualisht lajmin`,
+      },
+    };
+  }
 
   return {
-    passed: hasStrongMomentum,
-    value: parseFloat(priceChange.toFixed(2)),
-    threshold: `≥ +${CONFIG.strongMomentumPct}% (lajm i mundshëm)`,
-    detail: hasStrongMomentum
-      ? `+${priceChange.toFixed(2)}% — ka gjasë të ketë lajm (earnings, FDA, kontratë)`
-      : priceChange >= 10
-        ? `+${priceChange.toFixed(2)}% — verifiko manualisht lajmin (manual check)`
-        : `+${priceChange.toFixed(2)}% — asnjë sinjal lajmi`,
+    status: 'MISSING',
+    result: {
+      passed: false,
+      value: parseFloat(dailyChangePct.toFixed(2)),
+      threshold: `≥ +${PILLAR_CONFIG.strongMomentumPct}%`,
+      detail: `+${dailyChangePct.toFixed(2)}% — asnjë sinjal lajmi`,
+    },
   };
 }
 
 function checkPillar4_PriceRange(price: number): PillarResult {
-  const inRange = price >= CONFIG.priceMin && price <= CONFIG.priceMax;
-
+  const inRange = price >= PILLAR_CONFIG.priceMin && price <= PILLAR_CONFIG.priceMax;
   return {
     passed: inRange,
     value: price,
-    threshold: `$${CONFIG.priceMin}-$${CONFIG.priceMax}`,
+    threshold: `$${PILLAR_CONFIG.priceMin}-$${PILLAR_CONFIG.priceMax}`,
     detail: inRange
       ? `Çmimi $${price.toFixed(2)} në zonën optimale ($1-$20)`
-      : price > CONFIG.priceMax
-        ? `Çmimi $${price.toFixed(2)} është më i lartë se $${CONFIG.priceMax}`
-        : `Çmimi $${price.toFixed(2)} është më i ulët se $${CONFIG.priceMin}`,
+      : price > PILLAR_CONFIG.priceMax
+        ? `Çmimi $${price.toFixed(2)} është më i lartë se $${PILLAR_CONFIG.priceMax}`
+        : `Çmimi $${price.toFixed(2)} është më i ulët se $${PILLAR_CONFIG.priceMin}`,
   };
 }
 
-function checkPillar5_Float(floatSharesM: number): PillarResult {
-  // floatSharesM is in millions
-  const hasData = floatSharesM > 0;
-  const passed = hasData && floatSharesM <= CONFIG.floatMaxMillions;
+function checkPillar5_Float(floatSharesM: number | null): { result: PillarResult; hasData: boolean } {
+  const hasData = floatSharesM !== null && floatSharesM > 0;
+  const passed = hasData && floatSharesM! <= PILLAR_CONFIG.floatMaxMillions;
 
   return {
-    passed,
-    value: floatSharesM,
-    threshold: `≤ ${CONFIG.floatMaxMillions}M`,
-    detail: hasData
-      ? passed
-        ? `Float: ${floatSharesM.toFixed(1)}M shares — supply/demand imbalance e fortë`
-        : `Float: ${floatSharesM.toFixed(1)}M shares (duhet ≤ ${CONFIG.floatMaxMillions}M)`
-      : 'N/A — verifiko manualisht në Finviz',
+    hasData,
+    result: {
+      passed,
+      value: floatSharesM || 0,
+      threshold: `≤ ${PILLAR_CONFIG.floatMaxMillions}M`,
+      detail: hasData
+        ? passed
+          ? `Float: ${floatSharesM!.toFixed(1)}M shares — supply/demand imbalance e fortë`
+          : `Float: ${floatSharesM!.toFixed(1)}M shares (duhet ≤ ${PILLAR_CONFIG.floatMaxMillions}M)`
+        : 'Float i panjohur — verifiko manualisht në Finviz',
+    },
   };
 }
 
-// ─── Volume Spike Check (additional filter) ─────────────────
+// ─── Status Determination ──────────────────────────────────
 
-function checkVolumeSpike(
-  history: HistoricalDataPoint[],
-  currentVolume: number
-): { isSpike: boolean; spikeRatio: number } {
-  if (history.length < 20) return { isSpike: false, spikeRatio: 0 };
+function computeStatus(
+  passesRvol: boolean,
+  passesMomentum: boolean,
+  passesPrice: boolean,
+  passesFloat: boolean,
+  passesCatalyst: boolean,
+  catalystStatus: 'VERIFIED' | 'REVIEW' | 'MISSING',
+  floatHasData: boolean,
+  pillarCount: number
+): FivePillarsCandidate['status'] {
+  // Float unknown → always FLOAT_REVIEW if other pillars look good
+  if (!floatHasData && pillarCount >= 3) return 'FLOAT_REVIEW';
+  if (!floatHasData && pillarCount >= 2 && (passesRvol || passesMomentum)) return 'FLOAT_REVIEW';
 
-  const recent20 = history.slice(-20).map(d => d.volume);
-  const avg20 = recent20.reduce((a, b) => a + b, 0) / recent20.length;
-  if (avg20 === 0) return { isSpike: false, spikeRatio: 0 };
+  // 5/5 + catalyst VERIFIED → ELIGIBLE
+  if (pillarCount === 5 && catalystStatus === 'VERIFIED') return 'ELIGIBLE';
+  // 5/5 + catalyst REVIEW → ELIGIBLE (auto-flagged, strong signal)
+  if (pillarCount === 5 && catalystStatus === 'REVIEW') return 'ELIGIBLE';
 
-  const todayVol = currentVolume > 0 ? currentVolume : history[history.length - 1].volume;
-  const ratio = todayVol / avg20;
-  return { isSpike: ratio >= CONFIG.volumeSpikeMin, spikeRatio: parseFloat(ratio.toFixed(1)) };
+  // 4/5 + catalyst REVIEW → WATCH
+  if (pillarCount === 4 && catalystStatus === 'REVIEW') return 'WATCH';
+  // 4/5 + catalyst VERIFIED → WATCH (one pillar missing)
+  if (pillarCount === 4 && catalystStatus === 'VERIFIED') return 'WATCH';
+  // 4/5 + catalyst MISSING → WATCH (missing catalyst but strong otherwise)
+  if (pillarCount === 4) return 'WATCH';
+
+  // 3/5 or less → REJECTED
+  return 'REJECTED';
 }
 
-// ─── Compute Overall Grade ──────────────────────────────────
+// ─── Setup Tags ────────────────────────────────────────────
 
-function computeGrade(automatedPassed: number, catalystPassed: boolean): FivePillarsResult['overallGrade'] {
-  // All 4 automated + catalyst = PERFECT
-  if (automatedPassed >= 4 && catalystPassed) return 'PERFECT';
-  // All 4 automated (catalyst manual) = STRONG
-  if (automatedPassed >= 4) return 'STRONG';
-  // 3 automated = GOOD
-  if (automatedPassed >= 3) return 'GOOD';
-  // 2 automated = LIMITED
-  if (automatedPassed >= 2) return 'LIMITED';
-  return 'NONE';
+function generateSetupTags(
+  passesRvol: boolean,
+  passesMomentum: boolean,
+  passesPrice: boolean,
+  passesFloat: boolean,
+  dailyChangePct: number,
+  relativeVolume: number,
+  pillarCount: number
+): string[] {
+  const tags: string[] = [];
+
+  if (dailyChangePct >= 10 && relativeVolume >= 3) {
+    tags.push('Gap & Go');
+  }
+  if (passesRvol && passesPrice) {
+    tags.push('VWAP Bounce');
+  }
+  if (pillarCount >= 4 && relativeVolume >= 5) {
+    tags.push('HOD Breakout');
+  }
+  if (passesRvol && passesMomentum && passesPrice) {
+    tags.push('ABCD Continuation');
+  }
+  if (passesFloat && relativeVolume >= 7) {
+    tags.push('Float Squeeze');
+  }
+  if (dailyChangePct >= 15 && relativeVolume >= 5) {
+    tags.push('Momentum Run');
+  }
+  if (dailyChangePct >= 20) {
+    tags.push('Parabolic Move');
+  }
+
+  return tags;
 }
 
-// ─── Compute Momentum Score (0-100) ─────────────────────────
+// ─── Risk Flags ────────────────────────────────────────────
 
-function computeMomentumScore(
-  pillars: PillarResult[],
-  priceChange: number,
-  isVolumeSpike: boolean
-): number {
-  let score = 0;
+function generateRiskFlags(
+  dailyChangePct: number,
+  relativeVolume: number,
+  price: number,
+  floatShares: number | null,
+  pillarCount: number,
+  status: FivePillarsCandidate['status']
+): string[] {
+  const flags: string[] = [];
 
-  // Each automated pillar contributes up to 20 points
-  // Pillar 1 (RelVol) — up to 20
-  const relVol = pillars[0]?.value || 0;
-  if (pillars[0]?.passed) {
-    score += 15;
-    if (relVol >= 10) score += 5;      // 10x+ = massive
-    else if (relVol >= 7) score += 3;   // 7x+ = very strong
-    else score += 1;                     // 5x = minimum
+  // Always add paper-trade warning
+  flags.push('PAPER-TRADE REVIEW — mos hyni me para reale pa prove');
+
+  // High risk flags
+  if (dailyChangePct >= 20) {
+    flags.push('Rritje ekstreme ≥20% — rrezik i lartë i pullback');
+  }
+  if (relativeVolume >= 15) {
+    flags.push('Volumi shumë i lartë — ka gjasë të jetë climax');
+  }
+  if (price <= 2) {
+    flags.push('Penny stock zone — rrezik shumë i lartë');
+  }
+  if (floatShares !== null && floatShares > 0 && floatShares <= 3) {
+    flags.push('Ultra-low float — volatility ekstrem, slippage i lartë');
+  }
+  if (pillarCount < 3) {
+    flags.push('Setup i dobët — mungojnë shumë kriterë');
+  }
+  if (status === 'REJECTED') {
+    flags.push('Status REJECTED — nuk plotëson kushtet minimale');
   }
 
-  // Pillar 2 (Daily Change) — up to 25
-  if (pillars[1]?.passed) {
-    score += 15;
-    if (priceChange >= 20) score += 10;   // 20%+ = explosive
-    else if (priceChange >= 15) score += 7; // 15%+ = very strong
-    else score += 3;                       // 10%+ = minimum
+  return flags;
+}
+
+// ─── Buy/Sell Indicators ──────────────────────────────────
+
+function computeTradeIndicators(
+  price: number,
+  prevClose: number,
+  dailyChangePct: number,
+  relativeVolume: number,
+  status: FivePillarsCandidate['status'],
+  setupTags: string[],
+  history: HistoricalDataPoint[]
+): { entryZone: string; stopReference: string; takeProfitTargets: string[] } {
+  // Entry zone
+  let entryZone = 'N/A — jo kandidat';
+  if (status === 'ELIGIBLE' || status === 'WATCH') {
+    if (dailyChangePct >= 10 && setupTags.includes('Gap & Go')) {
+      entryZone = `Mbi gap high: $${(price * 1.01).toFixed(2)} (nëse mban mbajtjen)`;
+    } else if (setupTags.includes('VWAP Bounce')) {
+      const vwapEstimate = prevClose * 1.05; // rough estimate
+      entryZone = `VWAP bounce: ~$${vwapEstimate.toFixed(2)}`;
+    } else {
+      entryZone = `$${price.toFixed(2)} (current) — wait for confirmation`;
+    }
+  } else if (status === 'FLOAT_REVIEW') {
+    entryZone = `Monitor: $${price.toFixed(2)} — verifiko float para hyrjes`;
   }
 
-  // Pillar 3 (Catalyst) — bonus 5 if flagged
-  if (pillars[2]?.passed) score += 5;
-
-  // Pillar 4 (Price Range) — 10 if in range
-  if (pillars[3]?.passed) score += 10;
-
-  // Pillar 5 (Float) — up to 15
-  if (pillars[4]?.passed) {
-    score += 10;
-    const floatVal = pillars[4]?.value || 0;
-    if (floatVal > 0 && floatVal <= 5) score += 5; // Ultra-low float bonus
+  // Stop reference
+  let stopReference = 'N/A';
+  if (history.length >= 5) {
+    const recentLows = history.slice(-5).map(d => d.low);
+    const recentLow = Math.min(...recentLows);
+    stopReference = `VWAP / recent pullback low (~$${recentLow.toFixed(2)})`;
+  } else {
+    stopReference = `VWAP / prev close ($${prevClose.toFixed(2)})`;
   }
 
-  // Volume spike bonus
-  if (isVolumeSpike) score += 5;
+  // Take profit targets
+  const targets: string[] = [];
+  if (status === 'ELIGIBLE' || status === 'WATCH') {
+    const risk = price - (prevClose * 0.97); // 3% below prev close as stop
+    if (risk > 0) {
+      targets.push(`TP1: $${(price + risk * 1.5).toFixed(2)} (1.5R)`);
+      targets.push(`TP2: $${(price + risk * 2.5).toFixed(2)} (2.5R)`);
+      targets.push(`TP3: $${(price + risk * 4).toFixed(2)} (4R)`);
+    } else {
+      targets.push(`TP1: $${(price * 1.05).toFixed(2)} (+5%)`);
+      targets.push(`TP2: $${(price * 1.10).toFixed(2)} (+10%)`);
+      targets.push(`TP3: $${(price * 1.15).toFixed(2)} (+15%)`);
+    }
+  }
 
-  return Math.max(0, Math.min(100, score));
+  return { entryZone, stopReference, takeProfitTargets: targets };
 }
 
 // ─── Main Analysis Function ──────────────────────────────────
 
-export async function analyzeFivePillars(
+export async function analyzeFivePillarsCandidate(
   ticker: string,
-  currentPrice: number,
-  priceChange: number,
-  floatSharesM: number,
-  currentVolume?: number
-): Promise<FivePillarsResult | null> {
+  price: number,
+  dailyChangePct: number,
+  floatSharesM: number | null,
+  currentVolume?: number,
+): Promise<FivePillarsCandidate | null> {
   try {
     const history = await fetchHistoricalData(ticker, '3mo');
     if (!history || history.length < 15) {
       return null;
     }
 
+    // Compute prevClose from historical data
+    const prevClose = history.length >= 2 ? history[history.length - 2].close : price / (1 + dailyChangePct / 100);
+
     // Run all 5 pillar checks
-    const pillar1 = checkPillar1_RelativeVolume(history, currentVolume || 0);
-    const pillar2 = checkPillar2_DailyChange(priceChange);
-    const pillar3 = checkPillar3_Catalyst(priceChange);
-    const pillar4 = checkPillar4_PriceRange(currentPrice);
-    const pillar5 = checkPillar5_Float(floatSharesM);
+    const { result: p1, avgVolume30d } = checkPillar1_RelativeVolume(history, currentVolume || 0);
+    const p2 = checkPillar2_DailyChange(dailyChangePct);
+    const { result: p3, status: catalystStatus, headline } = checkPillar3_Catalyst(dailyChangePct);
+    const p4 = checkPillar4_PriceRange(price);
+    const { result: p5, hasData: floatHasData } = checkPillar5_Float(floatSharesM);
 
-    // Volume spike check (additional)
-    const { isSpike } = checkVolumeSpike(history, currentVolume || 0);
+    // Compute relative volume
+    const todayVol = (currentVolume !== undefined && currentVolume > 0) ? currentVolume : history[history.length - 1].volume;
+    const relVol = avgVolume30d > 0 ? todayVol / avgVolume30d : 0;
 
-    const automatedPillars = [pillar1, pillar2, pillar4, pillar5]; // pillars 1,2,4,5
-    const automatedPassed = automatedPillars.filter(p => p.passed).length;
-    const allPillars = [pillar1, pillar2, pillar3, pillar4, pillar5];
-    const pillarsPassed = allPillars.filter(p => p.passed).length;
+    // Boolean flags
+    const passesRvol = p1.passed;
+    const passesMomentum = p2.passed;
+    const passesPrice = p4.passed;
+    const passesFloat = p5.passed;
+    const passesCatalyst = p3.passed;
 
-    const strongMomentum = priceChange >= CONFIG.strongMomentumPct;
+    const pillarCount = [passesRvol, passesMomentum, passesCatalyst, passesPrice, passesFloat].filter(Boolean).length;
+    const strongMomentum = dailyChangePct >= PILLAR_CONFIG.strongMomentumPct;
+    const highMomentum = relVol >= PILLAR_CONFIG.relVolumeMin && dailyChangePct >= PILLAR_CONFIG.strongMomentumPct;
 
-    // Generate reasons
-    const reasons: string[] = [];
-    const warnings: string[] = [];
+    // Status
+    const status = computeStatus(passesRvol, passesMomentum, passesPrice, passesFloat, passesCatalyst, catalystStatus, floatHasData, pillarCount);
 
-    // Pillar 1
-    if (pillar1.passed) {
-      reasons.push(`RelVol ${pillar1.value}x — volumi eksplodiv (${pillar1.value >= 10 ? 'masiv' : 'fortë'})`);
-    } else if (pillar1.value > 0) {
-      warnings.push(`RelVol vetëm ${pillar1.value}x (duhet ≥ ${CONFIG.relVolumeMin}x)`);
-    }
+    // Setup tags & risk flags
+    const setupTags = generateSetupTags(passesRvol, passesMomentum, passesPrice, passesFloat, dailyChangePct, relVol, pillarCount);
+    const riskFlags = generateRiskFlags(dailyChangePct, relVol, price, floatSharesM, pillarCount, status);
 
-    // Pillar 2
-    if (pillar2.passed) {
-      reasons.push(`Momentum +${priceChange.toFixed(2)}% — kërkësa e konfirmuar`);
-    } else if (priceChange > 0) {
-      warnings.push(`Momentum i ulët: +${priceChange.toFixed(2)}% (duhet ≥ +${CONFIG.dailyChangeMin}%)`);
-    }
+    // Trade indicators
+    const { entryZone, stopReference, takeProfitTargets } = computeTradeIndicators(price, prevClose, dailyChangePct, relVol, status, setupTags, history);
 
-    // Pillar 3
-    if (pillar3.passed) {
-      reasons.push(`🔥 +${priceChange.toFixed(2)}% — ka gjasë lajmi (verifiko: earnings, FDA, kontrata)`);
-    } else if (priceChange >= 10) {
-      reasons.push(`Momentum i fortë — verifiko manualisht lajmin`);
-    }
-
-    // Pillar 4
-    if (pillar4.passed) {
-      reasons.push(`Çmimi $${currentPrice.toFixed(2)} në zonën $1-$20`);
-    } else if (currentPrice > 20) {
-      warnings.push(`Çmimi $${currentPrice.toFixed(2)} jashtë zonës (max $${CONFIG.priceMax})`);
-    }
-
-    // Pillar 5
-    if (pillar5.passed) {
-      reasons.push(`Float ${pillar5.value.toFixed(1)}M — supply/demand imbalance`);
-    } else if (floatSharesM > 0) {
-      warnings.push(`Float ${floatSharesM.toFixed(1)}M — shumë i lartë (max ${CONFIG.floatMaxMillions}M)`);
-    } else {
-      warnings.push(`Float N/A — verifiko në Finviz`);
-    }
-
-    // Volume spike
-    if (isSpike) {
-      reasons.push(`Volume spike — konfirmon momentum continuation`);
-    }
+    // Momentum score (0-100)
+    let momentumScore = 0;
+    if (p1.passed) { momentumScore += 20; if (relVol >= 10) momentumScore += 5; }
+    if (p2.passed) { momentumScore += 25; if (dailyChangePct >= 20) momentumScore += 5; }
+    if (p3.passed) momentumScore += 10;
+    if (p4.passed) momentumScore += 10;
+    if (p5.passed) { momentumScore += 15; if (floatSharesM && floatSharesM <= 5) momentumScore += 5; }
+    if (highMomentum) momentumScore += 5;
+    momentumScore = Math.min(100, momentumScore);
 
     return {
-      ticker,
-      company: '',
-      sector: '',
-      currentPrice,
-      priceChange,
-      pillarsPassed,
-      automatedPassed,
-      pillar1_relVolume: pillar1,
-      pillar2_dailyChange: pillar2,
-      pillar3_catalyst: pillar3,
-      pillar4_priceRange: pillar4,
-      pillar5_float: pillar5,
-      overallGrade: computeGrade(automatedPassed, pillar3.passed),
-      momentumScore: computeMomentumScore(allPillars, priceChange, isSpike),
-      reasons: reasons.slice(0, 5),
-      warnings: warnings.slice(0, 3),
+      symbol: ticker,
+      price,
+      prevClose,
+      dailyChangePct: parseFloat(dailyChangePct.toFixed(2)),
+      currentVolume: todayVol,
+      averageVolume30d: avgVolume30d,
+      relativeVolume: parseFloat(relVol.toFixed(1)),
+      floatShares: floatSharesM,
+      catalystStatus,
+      catalystHeadline: headline,
+      passesRvol,
+      passesMomentum,
+      passesPrice,
+      passesFloat,
+      passesCatalyst,
+      pillarCount,
+      status,
+      setupTags,
+      riskFlags,
+      momentumScore,
       strongMomentum,
+      highMomentum,
+      pillarDetails: { rvol: p1, momentum: p2, catalyst: p3, price: p4, float: p5 },
+      entryZone,
+      stopReference,
+      takeProfitTargets,
     };
   } catch (err) {
     console.error(`[5-PILLARS] ${ticker}: Error:`, err);
@@ -332,10 +463,10 @@ export async function analyzeFivePillars(
 export async function analyzeFivePillarsBatch(
   tickers: string[],
   prices: Record<string, { price: number; change: number }>,
-  floatMap: Record<string, number>, // ticker -> float shares in millions
+  floatMap: Record<string, number | null>,
   concurrency = 5
-): Promise<Record<string, FivePillarsResult>> {
-  const results: Record<string, FivePillarsResult> = {};
+): Promise<Record<string, FivePillarsCandidate>> {
+  const results: Record<string, FivePillarsCandidate> = {};
 
   for (let i = 0; i < tickers.length; i += concurrency) {
     const batch = tickers.slice(i, i + concurrency);
@@ -344,11 +475,11 @@ export async function analyzeFivePillarsBatch(
         const priceData = prices[ticker];
         const price = priceData?.price || 0;
         if (price <= 0) return null;
-        return analyzeFivePillars(
+        return analyzeFivePillarsCandidate(
           ticker,
           price,
           priceData?.change || 0,
-          floatMap[ticker] || 0
+          floatMap[ticker] ?? null
         );
       })
     );
@@ -360,9 +491,31 @@ export async function analyzeFivePillarsBatch(
     });
 
     if (i + concurrency < tickers.length) {
-      await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 300));
     }
   }
 
   return results;
+}
+
+// ─── Legacy type for backward compatibility ──────────────────
+
+export interface FivePillarsResult {
+  ticker: string;
+  company: string;
+  sector: string;
+  currentPrice: number;
+  priceChange: number;
+  pillarsPassed: number;
+  automatedPassed: number;
+  pillar1_relVolume: PillarResult;
+  pillar2_dailyChange: PillarResult;
+  pillar3_catalyst: PillarResult;
+  pillar4_priceRange: PillarResult;
+  pillar5_float: PillarResult;
+  overallGrade: 'PERFECT' | 'STRONG' | 'GOOD' | 'LIMITED' | 'NONE';
+  momentumScore: number;
+  reasons: string[];
+  warnings: string[];
+  strongMomentum: boolean;
 }

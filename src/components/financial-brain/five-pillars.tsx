@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -23,302 +23,197 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
-  BarChart3,
+  Bell,
+  BellRing,
+  Eye,
+  Target,
   AlertCircle,
+  SkipForward,
+  BarChart3,
+  TrendingDown,
+  Clock,
+  Search,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
 
-interface PillarResult {
+interface PillarDetail {
   passed: boolean;
   value: number;
   threshold: string;
   detail: string;
 }
 
-interface FivePillarsStock {
-  ticker: string;
-  company: string;
-  sector: string;
-  currentPrice: number;
-  priceChange: number;
-  pillarsPassed: number;
-  automatedPassed: number;
-  pillar1_relVolume: PillarResult;
-  pillar2_dailyChange: PillarResult;
-  pillar3_catalyst: PillarResult;
-  pillar4_priceRange: PillarResult;
-  pillar5_float: PillarResult;
-  overallGrade: string;
+interface Candidate {
+  symbol: string;
+  price: number;
+  prevClose: number;
+  dailyChangePct: number;
+  currentVolume: number;
+  averageVolume30d: number;
+  relativeVolume: number;
+  floatShares: number | null;
+  catalystStatus: 'VERIFIED' | 'REVIEW' | 'MISSING';
+  catalystHeadline?: string;
+  catalystSource?: string;
+  passesRvol: boolean;
+  passesMomentum: boolean;
+  passesPrice: boolean;
+  passesFloat: boolean;
+  passesCatalyst: boolean;
+  pillarCount: number;
+  status: 'ELIGIBLE' | 'WATCH' | 'REJECTED' | 'FLOAT_REVIEW';
+  setupTags: string[];
+  riskFlags: string[];
+  company?: string;
+  sector?: string;
   momentumScore: number;
-  reasons: string[];
-  warnings: string[];
   strongMomentum: boolean;
+  highMomentum: boolean;
+  pillarDetails: {
+    rvol: PillarDetail;
+    momentum: PillarDetail;
+    catalyst: PillarDetail;
+    price: PillarDetail;
+    float: PillarDetail;
+  };
+  entryZone: string;
+  stopReference: string;
+  takeProfitTargets: string[];
 }
 
-interface PillarSummary {
+interface ScanSummary {
   totalAnalyzed: number;
-  withResults: number;
-  perfect: number;
-  strong: number;
-  good: number;
-  limited: number;
-  none: number;
-  pillar1PassRate: number;
-  pillar2PassRate: number;
-  pillar3PassRate: number;
-  pillar4PassRate: number;
-  pillar5PassRate: number;
+  eligible: number;
+  watch: number;
+  rejected: number;
+  floatReview: number;
+  strongMomentum: number;
+  highMomentum: number;
+  pillarPassRates: { rvol: number; momentum: number; catalyst: number; price: number; float: number };
 }
 
-// ─── Constants ──────────────────────────────────────────────
+type StatusFilter = 'ALL' | 'ELIGIBLE' | 'WATCH' | 'FLOAT_REVIEW' | 'REJECTED';
 
-// CORRECT Ross Cameron 5 Pillars
-const PILLAR_META = [
-  { key: 'pillar1_relVolume', label: 'Rel Vol ≥5x', icon: Volume2, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30', desc: 'Volumi aktual vs 30-ditore' },
-  { key: 'pillar2_dailyChange', label: 'Change ≥10%', icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', desc: 'Momentum ditor i konfirmuar' },
-  { key: 'pillar3_catalyst', label: 'Catalyst', icon: Newspaper, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30', desc: '≥15% = ka gjasë lajmi (manual)' },
-  { key: 'pillar4_priceRange', label: 'Price $1-20', icon: DollarSign, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', desc: 'Zona optimale day trading' },
-  { key: 'pillar5_float', label: 'Float <10M', icon: Coins, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', desc: 'Supply/demand imbalance' },
-] as const;
+// ─── Status Config ──────────────────────────────────────────
 
-type FilterGrade = 'ALL' | 'PERFECT' | 'STRONG' | 'GOOD' | 'LIMITED' | 'NONE';
-
-const GRADE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; emoji: string }> = {
-  PERFECT: { label: '5/5 — Setup i Plotë (GO!)', color: 'text-yellow-300', bg: 'bg-yellow-500/15', border: 'border-yellow-500/40', emoji: '👑' },
-  STRONG: { label: '4/5 automated + manual check', color: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/40', emoji: '✅' },
-  GOOD: { label: '3/5 — Setup i Mirë', color: 'text-blue-300', bg: 'bg-blue-500/15', border: 'border-blue-500/40', emoji: '📈' },
-  LIMITED: { label: '2/5 — Potencial i Limituar', color: 'text-orange-300', bg: 'bg-orange-500/15', border: 'border-orange-500/40', emoji: '⚠' },
-  NONE: { label: '0-1/5 — Asnjë Setup', color: 'text-red-300', bg: 'bg-red-500/15', border: 'border-red-500/40', emoji: '✗' },
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: React.ReactNode; desc: string }> = {
+  ELIGIBLE: {
+    label: 'ELIGIBLE',
+    color: 'text-emerald-300',
+    bg: 'bg-emerald-500/12',
+    border: 'border-emerald-500/40',
+    icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
+    desc: '5/5 pillars + catalyst — kandidat i fortë',
+  },
+  WATCH: {
+    label: 'WATCH',
+    color: 'text-amber-300',
+    bg: 'bg-amber-500/12',
+    border: 'border-amber-500/40',
+    icon: <Eye className="w-4 h-4 text-amber-400" />,
+    desc: '4/5 pillars — vëzhro pranë',
+  },
+  FLOAT_REVIEW: {
+    label: 'FLOAT REVIEW',
+    color: 'text-blue-300',
+    bg: 'bg-blue-500/12',
+    border: 'border-blue-500/40',
+    icon: <Search className="w-4 h-4 text-blue-400" />,
+    desc: 'Potencial i mirë — verifiko float',
+  },
+  REJECTED: {
+    label: 'REJECTED',
+    color: 'text-red-300',
+    bg: 'bg-red-500/8',
+    border: 'border-red-500/30',
+    icon: <XCircle className="w-4 h-4 text-red-400" />,
+    desc: 'Nuk plotëson kushtet minimale',
+  },
 };
+
+const PILLAR_LABELS = [
+  { key: 'rvol', label: 'RVol ≥ 5x', icon: Volume2, color: 'text-blue-400' },
+  { key: 'momentum', label: 'Daily gain ≥ 10%', icon: TrendingUp, color: 'text-emerald-400' },
+  { key: 'catalyst', label: 'News catalyst', icon: Newspaper, color: 'text-orange-400' },
+  { key: 'price', label: 'Price $1–$20', icon: DollarSign, color: 'text-purple-400' },
+  { key: 'float', label: 'Float < 10M', icon: Coins, color: 'text-amber-400' },
+] as const;
 
 // ─── Component ──────────────────────────────────────────────
 
 export function FivePillars() {
-  const [stocks, setStocks] = useState<FivePillarsStock[]>([]);
-  const [summary, setSummary] = useState<PillarSummary | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cached, setCached] = useState(false);
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
-  const [filterGrade, setFilterGrade] = useState<FilterGrade>('ALL');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [showAll, setShowAll] = useState(false);
+  const [notifications, setNotifications] = useState<string[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const prevEligibleRef = useRef<string[]>([]);
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/five-pillars');
+      const res = await fetch('/api/momentum/5-pillars');
       if (!res.ok) throw new Error('Gabim');
       const data = await res.json();
-      setStocks(data.stocks || []);
+      const cands: Candidate[] = data.candidates || [];
+      setCandidates(cands);
       setSummary(data.summary || null);
       setCached(data.cached || false);
+
+      // Check for new ELIGIBLE candidates (notifications)
+      const newEligible = cands
+        .filter(c => c.status === 'ELIGIBLE')
+        .map(c => c.symbol);
+      const prevEligible = prevEligibleRef.current;
+      const freshEligible = newEligible.filter(s => !prevEligible.includes(s));
+      if (freshEligible.length > 0 && prevEligible.length > 0) {
+        const msgs = freshEligible.map(s => `🎉 ${s} — ELIGIBLE (5 Pillars Momentum)`);
+        setNotifications(prev => [...msgs, ...prev].slice(0, 20));
+        // Browser notification
+        if (notificationEnabled && typeof window !== 'undefined' && 'Notification' in window) {
+ freshEligible.forEach(s => {
+            new Notification('5 Pillars Momentum — ELIGIBLE', {
+              body: `${s} ka kaluar të gjitha 5 pillarët! Momentum score: ${cands.find(c => c.symbol === s)?.momentumScore}/100`,
+              icon: '/favicon.ico',
+            });
+          });
+        }
+      }
+      prevEligibleRef.current = newEligible;
     } catch {
       setError('Nuk u arrit të ngarkoheshin të dhënat');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [notificationEnabled]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filteredStocks = stocks.filter(s => {
-    if (filterGrade === 'ALL') return true;
-    return s.overallGrade === filterGrade;
+  // Request notification permission
+  const enableNotifications = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      Notification.requestPermission().then(p => {
+        setNotificationEnabled(p === 'granted');
+      });
+    }
+  };
+
+  const filtered = candidates.filter(c => {
+    if (statusFilter === 'ALL') return true;
+    return c.status === statusFilter;
   });
 
-  const displayStocks = showAll ? filteredStocks : filteredStocks.slice(0, 20);
+  const displayList = showAll ? filtered : filtered.slice(0, 25);
 
-  // ─── Pillar Badge ───
-  function PillarBadge({ pillar, meta }: { pillar: PillarResult; meta: typeof PILLAR_META[number] }) {
-    const Icon = meta.icon;
-    return (
-      <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs ${pillar.passed ? meta.bg + ' ' + meta.border + ' border' : 'bg-muted/30 border border-border/50 opacity-50'}`}>
-        {pillar.passed
-          ? <CheckCircle2 className={`w-3.5 h-3.5 ${meta.color}`} />
-          : <XCircle className="w-3.5 h-3.5 text-muted-foreground/50" />
-        }
-        <span className={pillar.passed ? meta.color : 'text-muted-foreground/60'}>{meta.label}</span>
-      </div>
-    );
-  }
-
-  // ─── Stock Card ───
-  function StockRow({ stock }: { stock: FivePillarsStock }) {
-    const isExpanded = expandedTicker === stock.ticker;
-    const grade = GRADE_CONFIG[stock.overallGrade] || GRADE_CONFIG.NONE;
-    const isPositive = stock.priceChange >= 0;
-
-    const pillars: Array<{ p: PillarResult; meta: typeof PILLAR_META[number] }> = [
-      { p: stock.pillar1_relVolume, meta: PILLAR_META[0] },
-      { p: stock.pillar2_dailyChange, meta: PILLAR_META[1] },
-      { p: stock.pillar3_catalyst, meta: PILLAR_META[2] },
-      { p: stock.pillar4_priceRange, meta: PILLAR_META[3] },
-      { p: stock.pillar5_float, meta: PILLAR_META[4] },
-    ];
-
-    // GREEN BACKGROUND for PERFECT or STRONG
-    const isGreenBg = stock.overallGrade === 'PERFECT' || stock.overallGrade === 'STRONG';
-
-    return (
-      <Card className={`${isGreenBg ? 'border-emerald-500/50 bg-emerald-500/8' : isExpanded ? grade.border : 'border-border/50'} ${isExpanded ? grade.bg : 'bg-card/50'} transition-all duration-200 hover:border-border/80`}>
-        <CardContent className="p-3 sm:p-4">
-          {/* Header Row */}
-          <div
-            className="flex items-center gap-3 cursor-pointer"
-            onClick={() => setExpandedTicker(isExpanded ? null : stock.ticker)}
-          >
-            {/* Ticker & Company */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-sm text-foreground">{stock.ticker}</span>
-                {stock.strongMomentum && (
-                  <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-[10px] animate-pulse">
-                    🔥 STRONG
-                  </Badge>
-                )}
-                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${grade.color} ${grade.border} border`}>
-                  {stock.automatedPassed}/4 {grade.emoji}
-                </Badge>
-                <Badge
-                  className={`text-[10px] px-1.5 py-0 font-semibold ${isPositive ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-red-500/15 text-red-400 border-red-500/30'}`}
-                  variant="outline"
-                >
-                  {isPositive ? '+' : ''}{stock.priceChange.toFixed(2)}%
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-muted-foreground truncate">{stock.company}</span>
-                <span className="text-[10px] text-muted-foreground/60">{stock.sector}</span>
-              </div>
-            </div>
-
-            {/* Price & Momentum */}
-            <div className="text-right flex-shrink-0">
-              <div className="font-semibold text-sm">${stock.currentPrice.toFixed(2)}</div>
-              <div className="text-[10px] text-muted-foreground">Score: {stock.momentumScore}/100</div>
-            </div>
-
-            {/* Expand Icon */}
-            <div className="flex-shrink-0 ml-1">
-              {isExpanded
-                ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                : <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              }
-            </div>
-          </div>
-
-          {/* Pillar Badges Row */}
-          <div className="flex flex-wrap gap-1.5 mt-2.5">
-            {pillars.map(({ p, meta }) => (
-              <PillarBadge key={meta.key} pillar={p} meta={meta} />
-            ))}
-          </div>
-
-          {/* Expanded Details */}
-          {isExpanded && (
-            <div className="mt-4 space-y-3 border-t border-border/50 pt-3">
-              {/* Grade Banner */}
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isGreenBg ? 'bg-emerald-500/15 border-emerald-500/30 border' : grade.bg + ' border ' + grade.border}`}>
-                <span className="text-lg">{grade.emoji}</span>
-                <div className="flex-1">
-                  <div className={`text-sm font-semibold ${isGreenBg ? 'text-emerald-300' : grade.color}`}>{grade.label}</div>
-                  <div className="text-xs text-muted-foreground">
-                    Momentum: {stock.momentumScore}/100
-                    {stock.strongMomentum && ' • 🔥 Strong Momentum ≥15% — VERIFIKO LAJMIN'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Individual Pillar Details */}
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-muted-foreground mb-2">ROSS CAMERON 5 PILLARS — Detaje</div>
-                {pillars.map(({ p, meta }, idx) => {
-                  const Icon = meta.icon;
-                  return (
-                    <div key={meta.key} className={`flex items-start gap-2.5 p-2 rounded-md ${p.passed ? meta.bg : 'bg-muted/20'}`}>
-                      <div className="flex-shrink-0 mt-0.5">
-                        <Icon className={`w-4 h-4 ${p.passed ? meta.color : 'text-muted-foreground/40'}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium">{idx + 1}. {meta.label}</span>
-                          <span className="text-[10px] text-muted-foreground">({meta.desc})</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{p.detail}</p>
-                        <div className="text-[10px] text-muted-foreground/60 mt-0.5">Kufiri: {p.threshold}</div>
-                      </div>
-                      <div className="flex-shrink-0 mt-0.5">
-                        {p.passed
-                          ? <CheckCircle2 className={`w-4 h-4 ${meta.color}`} />
-                          : <XCircle className="w-4 h-4 text-muted-foreground/40" />
-                        }
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Reasons & Warnings */}
-              {stock.reasons.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-xs font-medium text-emerald-400 flex items-center gap-1">
-                    <Zap className="w-3 h-3" /> Sinjale Pozitive
-                  </div>
-                  {stock.reasons.map((r, i) => (
-                    <div key={i} className="text-xs text-muted-foreground pl-4 flex items-start gap-1.5">
-                      <ArrowUpRight className="w-3 h-3 text-emerald-500/60 mt-0.5 flex-shrink-0" />
-                      <span>{r}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {stock.warnings.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-xs font-medium text-amber-400 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Shënime / Warnings
-                  </div>
-                  {stock.warnings.map((w, i) => (
-                    <div key={i} className="text-xs text-muted-foreground pl-4 flex items-start gap-1.5">
-                      <MinusCircle className="w-3 h-3 text-amber-500/60 mt-0.5 flex-shrink-0" />
-                      <span>{w}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Strategy Guide */}
-              <div className="bg-muted/20 rounded-md p-2.5 space-y-1.5">
-                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Strategitë e Ross Cameron</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                  <div className="text-[10px] text-muted-foreground flex items-start gap-1">
-                    <span className="text-emerald-400">•</span>
-                    <span><strong>Gap and Go:</strong> Gap up 10%+ on news, enter above gap high</span>
-                  </div>
-                  <div className="text-[10px] text-muted-foreground flex items-start gap-1">
-                    <span className="text-emerald-400">•</span>
-                    <span><strong>VWAP Bounce:</strong> Pullback to VWAP, enter on bounce</span>
-                  </div>
-                  <div className="text-[10px] text-muted-foreground flex items-start gap-1">
-                    <span className="text-emerald-400">•</span>
-                    <span><strong>HOD Breakout:</strong> New high of day with volume surge</span>
-                  </div>
-                  <div className="text-[10px] text-muted-foreground flex items-start gap-1">
-                    <span className="text-emerald-400">•</span>
-                    <span><strong>ABCD Pattern:</strong> Classic reversal, enter at D-point</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // ─── Loading State ───
+  // ─── Loading ───
   if (loading) {
     return (
       <div className="space-y-4">
@@ -328,13 +223,13 @@ export function FivePillars() {
           ))}
         </div>
         {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-lg" />
+          <Skeleton key={i} className="h-32 rounded-lg" />
         ))}
       </div>
     );
   }
 
-  // ─── Error State ───
+  // ─── Error ───
   if (error) {
     return (
       <Card className="border-red-500/20 bg-red-500/5">
@@ -347,95 +242,96 @@ export function FivePillars() {
     );
   }
 
-  // ─── Main Content ───
+  // ─── Pillar Pass Rate Cards ───
   const pillarStats = summary ? [
-    { label: 'Rel Volume ≥5x', passRate: summary.pillar1PassRate, color: 'text-blue-400', bg: 'bg-blue-500/10', icon: Volume2 },
-    { label: 'Change ≥10%', passRate: summary.pillar2PassRate, color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: TrendingUp },
-    { label: 'Catalyst ≥15%', passRate: summary.pillar3PassRate, color: 'text-orange-400', bg: 'bg-orange-500/10', icon: Newspaper },
-    { label: 'Price $1-20', passRate: summary.pillar4PassRate, color: 'text-purple-400', bg: 'bg-purple-500/10', icon: DollarSign },
-    { label: 'Float <10M', passRate: summary.pillar5PassRate, color: 'text-amber-400', bg: 'bg-amber-500/10', icon: Coins },
+    { label: 'Rel Volume ≥5x', rate: summary.pillarPassRates.rvol, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+    { label: 'Change ≥10%', rate: summary.pillarPassRates.momentum, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    { label: 'Catalyst ≥15%', rate: summary.pillarPassRates.catalyst, color: 'text-orange-400', bg: 'bg-orange-500/10' },
+    { label: 'Price $1-20', rate: summary.pillarPassRates.price, color: 'text-purple-400', bg: 'bg-purple-500/10' },
+    { label: 'Float <10M', rate: summary.pillarPassRates.float, color: 'text-amber-400', bg: 'bg-amber-500/10' },
   ] : [];
 
-  const gradeFilterOptions: Array<{ key: FilterGrade; label: string; count: number }> = [
-    { key: 'ALL', label: 'Të Gjitha', count: filteredStocks.length },
-    { key: 'PERFECT', label: '👑 5/5', count: stocks.filter(s => s.overallGrade === 'PERFECT').length },
-    { key: 'STRONG', label: '✅ 4/5', count: stocks.filter(s => s.overallGrade === 'STRONG').length },
-    { key: 'GOOD', label: '📈 3/5', count: stocks.filter(s => s.overallGrade === 'GOOD').length },
-    { key: 'LIMITED', label: '⚠ 2/5', count: stocks.filter(s => s.overallGrade === 'LIMITED').length },
-    { key: 'NONE', label: '✗ 0-1', count: stocks.filter(s => s.overallGrade === 'NONE').length },
+  const filterOptions: Array<{ key: StatusFilter; label: string; count: number }> = [
+    { key: 'ALL', label: 'Të Gjitha', count: filtered.length },
+    { key: 'ELIGIBLE', label: '✅ ELIGIBLE', count: candidates.filter(c => c.status === 'ELIGIBLE').length },
+    { key: 'WATCH', label: '👁 WATCH', count: candidates.filter(c => c.status === 'WATCH').length },
+    { key: 'FLOAT_REVIEW', label: '🔍 FLOAT REVIEW', count: candidates.filter(c => c.status === 'FLOAT_REVIEW').length },
+    { key: 'REJECTED', label: '❌ REJECTED', count: candidates.filter(c => c.status === 'REJECTED').length },
   ];
-
-  const strongCount = stocks.filter(s => s.strongMomentum).length;
 
   return (
     <div className="space-y-4">
-      {/* Summary Bar - 5 Pillar Stats */}
+      {/* ─── Summary Stats ─── */}
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {pillarStats.map((ps, i) => (
             <div key={i} className={`${ps.bg} border border-border/50 rounded-lg p-2.5 text-center`}>
-              <div className={`text-sm font-bold ${ps.color}`}>{ps.passRate.toFixed(0)}%</div>
+              <div className={`text-sm font-bold ${ps.color}`}>{ps.rate.toFixed(0)}%</div>
               <div className="text-[10px] text-muted-foreground">{ps.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Grade Distribution & Strong Momentum */}
+      {/* ─── Status Badges Row ─── */}
       {summary && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">Rezultatet:</span>
-          {summary.perfect > 0 && (
-            <Badge className="bg-yellow-500/15 text-yellow-300 border-yellow-500/30 border text-[10px]">
-              👑 {summary.perfect} Perfect
-            </Badge>
-          )}
-          {summary.strong > 0 && (
+          {summary.eligible > 0 && (
             <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 border text-[10px]">
-              ✅ {summary.strong} të Forta
+              ✅ {summary.eligible} ELIGIBLE
             </Badge>
           )}
-          {summary.good > 0 && (
+          {summary.watch > 0 && (
+            <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 border text-[10px]">
+              👁 {summary.watch} WATCH
+            </Badge>
+          )}
+          {summary.floatReview > 0 && (
             <Badge className="bg-blue-500/15 text-blue-300 border-blue-500/30 border text-[10px]">
-              📈 {summary.good} të Mira
+              🔍 {summary.floatReview} FLOAT REVIEW
             </Badge>
           )}
-          {strongCount > 0 && (
+          {summary.highMomentum > 0 && (
             <Badge className="bg-red-500/15 text-red-400 border-red-500/30 border text-[10px] animate-pulse">
-              🔥 {strongCount} Strong Momentum
+              🔥 {summary.highMomentum} HIGH MOMENTUM
             </Badge>
           )}
           <Badge className="bg-muted/30 text-muted-foreground border border-border/50 text-[10px]">
-            {summary.totalAnalyzed} analizuara
+            {summary.totalAnalyzed} skanuar
           </Badge>
         </div>
       )}
 
-      {/* Interpretation Guide — Green / Red explanation */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {/* ─── Interpretation Guide ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
-          <div className="text-xs font-semibold text-emerald-400 mb-1">✅ GREEN BG = GO!</div>
-          <div className="text-[10px] text-muted-foreground">Të gjitha automated pillars kalojnë. Verifiko lajmin (Pillar 3) para tregtimit.</div>
+          <div className="text-xs font-semibold text-emerald-400 mb-1">✅ ELIGIBLE</div>
+          <div className="text-[10px] text-muted-foreground">5/5 pillars + catalyst — kandidat për analizë të mëtejshme</div>
+        </div>
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5">
+          <div className="text-xs font-semibold text-amber-400 mb-1">👁 WATCH</div>
+          <div className="text-[10px] text-muted-foreground">4/5 pillars — vëzhro, verifiko lajmin</div>
+        </div>
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5">
+          <div className="text-xs font-semibold text-blue-400 mb-1">🔍 FLOAT REVIEW</div>
+          <div className="text-[10px] text-muted-foreground">Potencial i mirë — verifiko float në Finviz</div>
         </div>
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5">
-          <div className="text-xs font-semibold text-red-400 mb-1">❌ NO GREEN = WAIT</div>
-          <div className="text-[10px] text-muted-foreground">Së paku një pillar dështoi. Kontrolloni cilat mungojnë.</div>
-        </div>
-        <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-2.5">
-          <div className="text-xs font-semibold text-orange-400 mb-1">🔥 FLAME = HIGH PRIORITY</div>
-          <div className="text-[10px] text-muted-foreground">≥15% momentum — ka gjasë lajmi. Kërkoni lajmin menjëherë!</div>
+          <div className="text-xs font-semibold text-red-400 mb-1">🔥 HIGH MOMENTUM</div>
+          <div className="text-[10px] text-muted-foreground">RVol ≥5x DHE change ≥15% — sinjal i fortë</div>
         </div>
       </div>
 
-      {/* Filter Buttons */}
+      {/* ─── Filter Buttons + Notifications ─── */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Filter className="w-3.5 h-3.5 text-muted-foreground" />
-        {gradeFilterOptions.filter(o => o.key === 'ALL' || o.count > 0).map(opt => (
+        {filterOptions.filter(o => o.key === 'ALL' || o.count > 0).map(opt => (
           <button
             key={opt.key}
-            onClick={() => { setFilterGrade(opt.key); setShowAll(false); }}
+            onClick={() => { setStatusFilter(opt.key); setShowAll(false); }}
             className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border ${
-              filterGrade === opt.key
+              statusFilter === opt.key
                 ? 'bg-amber-600 text-white border-amber-600'
                 : 'bg-muted/30 text-muted-foreground border-border/50 hover:bg-muted/50'
             }`}
@@ -443,37 +339,73 @@ export function FivePillars() {
             {opt.label} ({opt.count})
           </button>
         ))}
+
+        {/* Notification Bell */}
+        <div className="relative ml-auto">
+          <button
+            onClick={() => {
+              if (!notificationEnabled) {
+                enableNotifications();
+              } else {
+                setShowNotifications(!showNotifications);
+              }
+            }}
+            className="relative p-1.5 rounded-md border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors"
+            title={notificationEnabled ? 'Shfaq notifikimet' : 'Aktivo notifikimet'}
+          >
+            {notificationEnabled ? (
+              <BellRing className="w-3.5 h-3.5 text-amber-400" />
+            ) : (
+              <Bell className="w-3.5 h-3.5 text-muted-foreground" />
+            )}
+            {notifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">
+                {notifications.length > 9 ? '9+' : notifications.length}
+              </span>
+            )}
+          </button>
+
+          {/* Notification Dropdown */}
+          {showNotifications && notifications.length > 0 && (
+            <div className="absolute right-0 top-full mt-1 w-72 max-h-48 overflow-y-auto bg-card border border-border/50 rounded-lg shadow-xl z-50 p-2">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Notifikime</div>
+              {notifications.slice(0, 10).map((n, i) => (
+                <div key={i} className="text-[11px] text-muted-foreground py-1 border-b border-border/30 last:border-0">{n}</div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Stock List */}
+      {/* ─── Candidate Cards ─── */}
       <div className="space-y-2">
-        {displayStocks.length === 0 ? (
+        {displayList.length === 0 ? (
           <Card className="border-border/50">
             <CardContent className="pt-6 pb-6 text-center">
               <Flame className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
-                {filterGrade === 'ALL'
-                  ? 'Asnjë aksion nuk kaloi filtërim — tregu është i qetë sot'
-                  : `Asnjë aksion me grade "${filterGrade}"`}
+                {statusFilter === 'ALL'
+                  ? 'Asnjë kandidat nuk u gjet — tregu i qetë'
+                  : `Asnjë kandidat me status "${statusFilter}"`}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-1">
-                Ross Cameron kërkon: RelVol 5x+, Change 10%+, Price $1-20, Float 10M or less
+                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $1-20, Float &lt;10M
               </p>
             </CardContent>
           </Card>
         ) : (
-          displayStocks.map(stock => <StockRow key={stock.ticker} stock={stock} />)
+          displayList.map(c => <CandidateCard key={c.symbol} candidate={c} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />)
         )}
       </div>
 
-      {/* Show More / Refresh */}
+      {/* ─── Show More / Refresh ─── */}
       <div className="flex items-center justify-between">
-        {filteredStocks.length > 20 && (
+        {filtered.length > 25 && (
           <button
             onClick={() => setShowAll(!showAll)}
             className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1"
           >
-            {showAll ? 'Shfaq më pak' : `Shfaq të gjitha (${filteredStocks.length})`}
+            {showAll ? 'Shfaq më pak' : `Shfaq të gjitha (${filtered.length})`}
             <ChevronDown className={`w-3 h-3 transition-transform ${showAll ? 'rotate-180' : ''}`} />
           </button>
         )}
@@ -488,7 +420,7 @@ export function FivePillars() {
         </button>
       </div>
 
-      {/* Info Footer — Ross Cameron Methodology */}
+      {/* ─── Methodology Footer ─── */}
       <Card className="border-amber-500/20 bg-amber-500/5">
         <CardContent className="pt-3 pb-3">
           <div className="flex items-start gap-2">
@@ -498,14 +430,15 @@ export function FivePillars() {
                 <strong className="text-amber-400">Ross Cameron 5 Pillars — Warrior Trading</strong>
               </p>
               <p>
-                <strong>1. Rel Volume ≥5x</strong> (volumi eksplodiv) •
-                <strong>2. Daily Change ≥10%</strong> (momentum i konfirmuar) •
-                <strong>3. News Catalyst</strong> (manual — flagojmë ≥15%) •
-                <strong>4. Price $1-$20</strong> (zona optimale) •
-                <strong>5. Float 10M or less</strong> (supply/demand imbalance)
+                <strong>1. Rel Volume ≥5x</strong> •
+                <strong>2. Daily Change ≥10%</strong> •
+                <strong>3. News Catalyst</strong> (auto-flag ≥15%) •
+                <strong>4. Price $1-$20</strong> •
+                <strong>5. Float &lt;10M</strong>
               </p>
               <p className="text-muted-foreground/70">
-                Skanon {summary?.totalAnalyzed || 0}+ aksione (main watchlist + low-cap momentum). 4 prej 5 pillarësh janë të automatizuara; Pillar 3 (Catalyst) kërkon verifikim manual të lajmit.
+                5 Pillars gjen aksione me momentum të fortë; AI Financial Brain vendos nëse ambienti i tregut e lejon trade-in.
+                Kriteret identifikojnë kandidatë për analizë, JO trade të garantuar.
               </p>
               <p className="text-amber-400/70">
                 ⚠ DAY TRADING ËSHTË I RREZIKSHËM — Shumica e day traderëve humbasin para. Përdor vetëm për arsim. Nuk është këshillë financiare.
@@ -515,5 +448,282 @@ export function FivePillars() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Candidate Card Component
+// ═══════════════════════════════════════════════════════════════
+
+function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candidate; expanded: boolean; onToggle: () => void }) {
+  const sc = STATUS_CONFIG[c.status];
+  const isGreenBg = c.status === 'ELIGIBLE';
+  const isPositive = c.dailyChangePct >= 0;
+
+  const pillars: Array<{ key: string; label: string; passed: boolean; detail: PillarDetail; color: string; icon: React.ComponentType<{ className?: string }> }> = [
+    { key: 'rvol', label: 'RVol ≥ 5x', passed: c.passesRvol, detail: c.pillarDetails.rvol, color: 'text-blue-400', icon: Volume2 },
+    { key: 'momentum', label: 'Daily gain ≥ 10%', passed: c.passesMomentum, detail: c.pillarDetails.momentum, color: 'text-emerald-400', icon: TrendingUp },
+    { key: 'catalyst', label: 'News catalyst', passed: c.passesCatalyst, detail: c.pillarDetails.catalyst, color: 'text-orange-400', icon: Newspaper },
+    { key: 'price', label: 'Price $1–$20', passed: c.passesPrice, detail: c.pillarDetails.price, color: 'text-purple-400', icon: DollarSign },
+    { key: 'float', label: 'Float < 10M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
+  ];
+
+  return (
+    <Card className={`
+      ${isGreenBg ? 'border-emerald-500/50 bg-emerald-500/8' : expanded ? sc.border : 'border-border/50'}
+      ${expanded ? sc.bg : 'bg-card/50'}
+      transition-all duration-200 hover:border-border/80
+    `}>
+      <CardContent className="p-3 sm:p-4">
+        {/* ─── HEADER: Ticker + Status ─── */}
+        <div className="flex items-center gap-3 cursor-pointer" onClick={onToggle}>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-sm text-foreground">{c.symbol}</span>
+              {c.highMomentum && (
+                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-[10px] animate-pulse">
+                  🔥 HIGH MOMENTUM
+                </Badge>
+              )}
+              {c.strongMomentum && !c.highMomentum && (
+                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 border text-[10px]">
+                  🔥 STRONG
+                </Badge>
+              )}
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-semibold ${sc.color} ${sc.border} border`}>
+                {sc.icon}
+                <span className="ml-1">{sc.label}</span>
+              </Badge>
+              <Badge
+                className={`text-[10px] px-1.5 py-0 font-semibold ${isPositive ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-red-500/15 text-red-400 border-red-500/30'}`}
+                variant="outline"
+              >
+                {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%
+              </Badge>
+              <Badge className="text-[10px] px-1.5 py-0 bg-muted/30 text-muted-foreground border-border/50 border">
+                {c.pillarCount}/5
+              </Badge>
+            </div>
+            {c.company && c.company !== c.symbol && (
+              <div className="text-xs text-muted-foreground mt-0.5 truncate">{c.company} {c.sector && c.sector !== 'Momentum' ? `• ${c.sector}` : ''}</div>
+            )}
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="font-semibold text-sm">${c.price.toFixed(2)}</div>
+            <div className="text-[10px] text-muted-foreground">Score: {c.momentumScore}/100</div>
+          </div>
+          <div className="flex-shrink-0 ml-1">
+            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        </div>
+
+        {/* ─── INFO ROW: Price, Change, RVol, Float, Catalyst ─── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2.5 text-[11px]">
+          <div className="flex justify-between sm:block">
+            <span className="text-muted-foreground">Price:</span>
+            <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}> ${c.price.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between sm:block">
+            <span className="text-muted-foreground">Daily change:</span>
+            <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}> {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%</span>
+          </div>
+          <div className="flex justify-between sm:block">
+            <span className="text-muted-foreground">Relative volume:</span>
+            <span className={`font-medium ${c.passesRvol ? 'text-blue-400' : 'text-muted-foreground'}`}> {c.relativeVolume}x</span>
+          </div>
+          <div className="flex justify-between sm:block">
+            <span className="text-muted-foreground">Float:</span>
+            <span className={`font-medium ${c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground'}`}>
+              {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown' }
+            </span>
+          </div>
+          <div className="col-span-2 flex justify-between sm:col-span-1 sm:block">
+            <span className="text-muted-foreground">Catalyst:</span>
+            <span className={`font-medium ${c.catalystStatus === 'VERIFIED' ? 'text-emerald-400' : c.catalystStatus === 'REVIEW' ? 'text-orange-400' : 'text-muted-foreground'}`}>
+              {c.catalystStatus === 'VERIFIED' ? 'Verified' : c.catalystStatus === 'REVIEW' ? 'Review needed' : 'Missing'}
+            </span>
+          </div>
+          <div className="col-span-2 flex justify-between sm:col-span-1 sm:block">
+            <span className="text-muted-foreground">Source confidence:</span>
+            <span className={`font-medium ${c.catalystStatus === 'VERIFIED' ? 'text-emerald-400' : c.catalystStatus === 'REVIEW' ? 'text-orange-400' : 'text-red-400'}`}>
+              {c.catalystStatus === 'VERIFIED' ? 'HIGH' : c.catalystStatus === 'REVIEW' ? 'MEDIUM' : 'LOW'}
+            </span>
+          </div>
+        </div>
+
+        {/* ─── PILLAR CHECKS: Compact ─── */}
+        <div className="flex flex-wrap gap-1.5 mt-2.5">
+          {pillars.map(p => (
+            <div
+              key={p.key}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border ${
+                p.passed
+                  ? `${p.color.replace('text-', 'bg-').replace('400', '500/10')} border-border/50`
+                  : 'bg-muted/20 border-border/30 opacity-50'
+              }`}
+            >
+              {p.passed
+                ? <CheckCircle2 className={`w-3 h-3 ${p.color}`} />
+                : <XCircle className="w-3 h-3 text-muted-foreground/50" />
+              }
+              <span className={p.passed ? p.color : 'text-muted-foreground/60'}>{p.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ─── EXPANDED DETAILS ─── */}
+        {expanded && (
+          <div className="mt-4 space-y-3 border-t border-border/50 pt-3">
+            {/* Status Banner */}
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isGreenBg ? 'bg-emerald-500/15 border-emerald-500/30 border' : sc.bg + ' border ' + sc.border}`}>
+              {sc.icon}
+              <div className="flex-1">
+                <div className={`text-sm font-semibold ${sc.color}`}>{c.symbol}: {sc.label}</div>
+                <div className="text-xs text-muted-foreground">{sc.desc}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-bold {sc.color}">{c.pillarCount}/5</div>
+                <div className="text-[10px] text-muted-foreground">Momentum: {c.momentumScore}/100</div>
+              </div>
+            </div>
+
+            {/* Detailed Pillar Breakdown */}
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">ROSS CAMERON 5 PILLARS — Detaje</div>
+              {pillars.map((p, idx) => {
+                const Icon = p.icon;
+                return (
+                  <div key={p.key} className={`flex items-start gap-2.5 p-2 rounded-md ${p.passed ? 'bg-muted/10' : 'bg-muted/5'}`}>
+                    <div className="flex-shrink-0 mt-0.5">
+                      {p.passed
+                        ? <CheckCircle2 className={`w-4 h-4 ${p.color}`} />
+                        : <XCircle className="w-4 h-4 text-muted-foreground/40" />
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium">{idx + 1}. {p.label}</span>
+                        <span className="text-[10px] text-muted-foreground">{p.detail.threshold}</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{p.detail.detail}</p>
+                    </div>
+                    <div className="flex-shrink-0 text-right">
+                      <Icon className={`w-4 h-4 ${p.passed ? p.color : 'text-muted-foreground/30'}`} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Catalyst Details */}
+            {c.catalystHeadline && (
+              <div className="bg-orange-500/10 border border-orange-500/30 rounded-md p-2.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+                  <span className="text-xs font-medium text-orange-400">Catalyst Analysis</span>
+                  <Badge className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-300 border-orange-500/30 border ml-auto">
+                    {c.catalystStatus}
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground">{c.catalystHeadline}</p>
+              </div>
+            )}
+
+            {/* Setup Watch Tags */}
+            {c.setupTags.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs font-medium text-emerald-400">Setup watch:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 ml-5">
+                  {c.setupTags.map((tag, i) => (
+                    <Badge key={i} className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 border text-[10px]">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Buy / Sell Indicators */}
+            {(c.status === 'ELIGIBLE' || c.status === 'WATCH' || c.status === 'FLOAT_REVIEW') && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Buy Signal */}
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-xs font-semibold text-emerald-400">BUY Signal</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-[10px] text-muted-foreground">
+                      <span className="text-muted-foreground/60">Entry zone:</span> <span className="text-emerald-300">{c.entryZone}</span>
+                    </div>
+                    {c.takeProfitTargets.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        <span className="text-muted-foreground/60">Targets:</span>
+                        <div className="mt-0.5 space-y-0.5">
+                          {c.takeProfitTargets.map((t, i) => (
+                            <div key={i} className="text-emerald-300">{t}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sell / Risk Signal */}
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Shield className="w-3.5 h-3.5 text-red-400" />
+                    <span className="text-xs font-semibold text-red-400">RISK / STOP</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-[10px] text-muted-foreground">
+                      <span className="text-muted-foreground/60">Stop reference:</span> <span className="text-red-300">{c.stopReference}</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      <span className="text-muted-foreground/60">Status:</span>{' '}
+                      <Badge className="text-[9px] px-1 py-0 bg-yellow-500/20 text-yellow-300 border-yellow-500/30 border">
+                        PAPER-TRADE REVIEW
+                      </Badge>
+                    </div>
+                    {c.riskFlags.slice(0, 3).map((f, i) => (
+                      <div key={i} className="text-[10px] text-red-300/80 flex items-start gap-1">
+                        <AlertTriangle className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" />
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Full Risk Flags */}
+            {c.riskFlags.length > 1 && (
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> Risk Flags
+                </div>
+                {c.riskFlags.map((f, i) => (
+                  <div key={i} className="text-[10px] text-muted-foreground pl-4 flex items-start gap-1.5">
+                    <MinusCircle className="w-2.5 h-2.5 text-amber-500/60 mt-0.5 flex-shrink-0" />
+                    <span>{f}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Volume Details */}
+            <div className="bg-muted/20 rounded-md p-2 text-[10px] text-muted-foreground grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div>Current vol: {(c.currentVolume / 1e6).toFixed(1)}M</div>
+              <div>Avg 30d: {(c.averageVolume30d / 1e6).toFixed(1)}M</div>
+              <div>RelVol: {c.relativeVolume}x</div>
+              <div>Prev close: ${c.prevClose.toFixed(2)}</div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
