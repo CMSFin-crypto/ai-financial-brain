@@ -67,3 +67,22 @@ Stage Summary:
 - Key change: `src/components/financial-brain/technical-analysis.tsx` — warmup offset logic
 - With ~252 bars (1y lookback), warmup = ~33 bars, displaying ~219 bars — all lines 100% width
 - Files modified: `src/components/financial-brain/technical-analysis.tsx`
+---
+Task ID: 1
+Agent: main
+Task: Shto swing trading engine per top 5+5 movers
+
+Work Log:
+- Krijuar src/lib/swing-engine.ts me analize teknike reale (RSI, MACD, Bollinger, SMA/EMA, ATR, Support/Resistance)
+- Modifikuar src/app/api/top-movers/route.ts per te integruar swing analysis
+- Re-ranking: 40% fundamental + 60% swing technical per growth picks
+- Risk picks: 50% risk score + 50% inverse swing score
+- Shtuar SwingPanel komponent ne src/components/financial-brain/top-movers.tsx
+- UI tregon Entry, Stop Loss, Target, Risk/Reward ratio, RSI, MACD, ATR, S/R
+- Build u be me sukses, push ne GitHub
+
+Stage Summary:
+- swing-engine.ts: 290 rreshta, llogarit 7 indikator teknik nga 3 mujore te dhena historike
+- Top-movers tani perdor swing scoring si faktor dominant (60%) per renditjen
+- Çdo karte tregon panelin e swing trading me nivelet e hyrjes/daljes
+- Deploy ne Vercel pas ~2 minuta
