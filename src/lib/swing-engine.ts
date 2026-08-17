@@ -381,7 +381,7 @@ export async function analyzeSwing(ticker: string, currentPrice: number): Promis
       macdSignal,
       macdHistogram: parseFloat(macdHist.toFixed(4)),
       bollingerPosition: parseFloat(bollPosition.toFixed(2)),
-      bollingerSqueeze,
+      bollingerSqueeze: bollSqueeze,
       sma20vs50,
       ema9vs21,
       atrPercent: parseFloat(atrPercent.toFixed(2)),
