@@ -48,6 +48,8 @@ interface SwingData {
   stopLoss: number;
   swingTarget: number;
   riskRewardRatio: number;
+  confluenceCount: number;
+  regime: string;
   swingReasons: string[];
   warningFlags: string[];
 }
@@ -439,11 +441,19 @@ function SwingPanel({ swing, type }: { swing: SwingData; type: 'growth' | 'risk'
           <Badge className={`text-[8px] px-1 py-0 ${swing.swingScore >= 60 ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' : swing.swingScore >= 45 ? 'bg-amber-500/15 text-amber-500 border-amber-500/30' : 'bg-red-500/15 text-red-500 border-red-500/30'}`}>
             {swing.swingScore}/100
           </Badge>
+          {swing.confluenceCount >= 3 && (
+            <Badge className="text-[7px] px-1 py-0 bg-blue-500/15 text-blue-400 border-blue-500/30">
+              {swing.confluenceCount}/8 confluence
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-1.5 text-[9px]">
           <span className={rsiColor}>RSI {swing.rsi.toFixed(0)}</span>
           <span className={macdColor}>{swing.macdSignal}</span>
           <span className="text-muted-foreground">ATR {swing.atrPercent.toFixed(1)}%</span>
+          <Badge className="text-[7px] px-1 py-0 bg-purple-500/10 text-purple-400 border-purple-500/20">
+            {swing.regime === 'TRENDING_UP' ? 'Trend↑' : swing.regime === 'TRENDING_DOWN' ? 'Trend↓' : swing.regime === 'VOLATILE' ? 'Volatil' : 'Range'}
+          </Badge>
         </div>
       </div>
 

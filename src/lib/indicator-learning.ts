@@ -716,6 +716,12 @@ export function getStats(): LearningSnapshot {
   return { ...snapshot };
 }
 
+// Alias for swing engine integration
+export function getLearningSnapshot(): LearningSnapshot {
+  ensureLoaded();
+  return { ...snapshot };
+}
+
 // ─── 10. GET LEARNING CONTEXT FOR AI ───────────────────────
 
 export function getLearningContext(): string {
