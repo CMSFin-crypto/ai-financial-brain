@@ -105,3 +105,22 @@ Stage Summary:
 - Momentum Score 0-100 me bonus per vellime te larta dhe gap forte
 - UI: filter sipas grades, expandable cards me detaje per cdo pillar, summary stats
 - Tab i ri "5 Pillars" me ikone Zap ne kategorine Tregu (mbas Top 5+5)
+---
+Task ID: 3
+Agent: main
+Task: Fix Ross Cameron 5 Pillars to match real criteria + add low-cap stocks
+
+Work Log:
+- Fetched TradingView script page to extract exact 5 Pillars criteria
+- Rewrote five-pillars-engine.ts with CORRECT Ross Cameron pillars: (1) Rel Volume >=5x, (2) Daily Change >=10%, (3) News Catalyst flag >=15%, (4) Price $1-$20, (5) Float <10M
+- Updated API route with 200+ momentum/low-cap tickers (biotech, EV, mining, China ADR, fintech, meme stocks)
+- Priority sorting: stocks with >=15% momentum first, then by pillars passed
+- Rewrote UI component with correct pillar display, green background for PERFECT/STRONG, flame icon for >=15%
+- Fixed multiple JSX parsing issues (< in text content, template literal syntax, extra brackets)
+- Build passes clean
+
+Stage Summary:
+- Engine: src/lib/five-pillars-engine.ts (correct Ross Cameron 5 Pillars)
+- API: src/app/api/five-pillars/route.ts (200+ stock universe)
+- UI: src/components/financial-brain/five-pillars.tsx (correct pillars, green bg, flame indicator)
+- Tab exists in page.tsx for both desktop and mobile views
