@@ -16,6 +16,7 @@
 // ============================================================
 
 import { fetchHistoricalData, type HistoricalDataPoint } from '@/lib/alpha-vantage';
+import { analyzeHistoricalPatterns, computeHistoricalScore, type PatternAnalysis } from '@/lib/historical-pattern-engine';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -72,6 +73,10 @@ export interface FivePillarsCandidate {
   entryZone: string;
   stopReference: string;
   takeProfitTargets: string[];
+
+  // Historical Pattern Learning fields
+  historicalScore: number;            // 0-100 composite score from historical analysis
+  historicalPattern: PatternAnalysis;  // full historical analysis
 }
 
 // ─── Thresholds (EXACT Ross Cameron defaults) ──────────────
@@ -424,6 +429,14 @@ export async function analyzeFivePillarsCandidate(
     if (highMomentum) momentumScore += 5;
     momentumScore = Math.min(100, momentumScore);
 
+    // ── Historical Pattern Learning ──
+    const historicalPattern = analyzeHistoricalPatterns(history, relVol, dailyChangePct);
+    const historicalScore = computeHistoricalScore(historicalPattern);
+
+    // Boost momentum score with historical signal (up to +10 or -10)
+    const historicalAdjustment = (historicalScore - 50) * 0.2;
+    momentumScore = Math.min(100, Math.max(0, Math.round(momentumScore + historicalAdjustment)));
+
     return {
       symbol: ticker,
       price,
@@ -451,6 +464,8 @@ export async function analyzeFivePillarsCandidate(
       entryZone,
       stopReference,
       takeProfitTargets,
+      historicalScore,
+      historicalPattern,
     };
   } catch (err) {
     console.error(`[5-PILLARS] ${ticker}: Error:`, err);

@@ -33,6 +33,7 @@ import {
   TrendingDown,
   Clock,
   Search,
+  GitBranch,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -42,6 +43,40 @@ interface PillarDetail {
   value: number;
   threshold: string;
   detail: string;
+}
+
+interface HistoricalSetup {
+  date: string;
+  dayChangePct: number;
+  dayRelVol: number;
+  return1d: number;
+  return2d: number;
+  return3d: number;
+  return5d: number;
+  maxGain5d: number;
+  maxDrawdown5d: number;
+  setupType: string;
+}
+
+interface PatternAnalysis {
+  winRate1d: number;
+  winRate2d: number;
+  winRate3d: number;
+  winRate5d: number;
+  avgReturn1d: number;
+  avgReturn2d: number;
+  avgReturn3d: number;
+  avgReturn5d: number;
+  bestReturn1d: number;
+  worstReturn1d: number;
+  bestReturn5d: number;
+  avgMaxGain5d: number;
+  avgMaxDrawdown5d: number;
+  setupsFound: number;
+  patternConfidence: number;
+  historicalBias: 'bullish' | 'bearish' | 'neutral';
+  setupBreakdown: { label: string; count: number; winRate5d: number; avgReturn5d: number }[];
+  setups: HistoricalSetup[];
 }
 
 interface Candidate {
@@ -80,6 +115,8 @@ interface Candidate {
   entryZone: string;
   stopReference: string;
   takeProfitTargets: string[];
+  historicalScore: number;
+  historicalPattern: PatternAnalysis;
 }
 
 interface ScanSummary {
@@ -436,6 +473,10 @@ export function FivePillars() {
                 <strong>4. Price $2-$20</strong> •
                 <strong>5. Float &lt;20M</strong>
               </p>
+              <p>
+                <strong>Historical Pattern Learning</strong>: Analizon 90 ditët e fundit të çdo aksioni për të gjetur raste të ngjashme me sotën,
+                matur si performuan në ditët pasuese. Jep win rate (1D/2D/3D/5D), return mesatar, dhe besim (confidence).
+              </p>
               <p className="text-muted-foreground/70">
                 5 Pillars gjen aksione me momentum të fortë; AI Financial Brain vendos nëse ambienti i tregut e lejon trade-in.
                 Kriteret identifikojnë kandidatë për analizë, JO trade të garantuar.
@@ -447,6 +488,22 @@ export function FivePillars() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// Win Rate Card helper (avoids template literals in JSX)
+function WinRateCard({ label, value, ret }: { label: string; value: number; ret: number }) {
+  const bgClass = value >= 60 ? 'bg-emerald-500/10 border-emerald-500/30' : value >= 45 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30';
+  const textClass = value >= 60 ? 'text-emerald-400' : value >= 45 ? 'text-amber-400' : 'text-red-400';
+  const retClass = ret >= 0 ? 'text-emerald-300' : 'text-red-300';
+  return (
+    <div className={"rounded-lg p-2 text-center border " + bgClass}>
+      <div className={"text-sm font-bold " + textClass}>{value}%</div>
+      <div className="text-[9px] text-muted-foreground">{label}</div>
+      <div className={"text-[10px] font-medium " + retClass}>
+        avg {ret >= 0 ? '+' : ''}{ret}%
+      </div>
     </div>
   );
 }
@@ -511,6 +568,11 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
           <div className="text-right flex-shrink-0">
             <div className="font-semibold text-sm">${c.price.toFixed(2)}</div>
             <div className="text-[10px] text-muted-foreground">Score: {c.momentumScore}/100</div>
+            {c.historicalPattern.setupsFound > 0 && (
+              <div className={`text-[10px] font-medium ${c.historicalScore >= 60 ? 'text-emerald-400' : c.historicalScore >= 45 ? 'text-amber-400' : 'text-red-400'}`}>
+                {c.historicalScore >= 60 ? '📈' : c.historicalScore >= 45 ? '➡️' : '📉'} Historia: {c.historicalScore}/100
+              </div>
+            )}
           </div>
           <div className="flex-shrink-0 ml-1">
             {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
@@ -699,6 +761,127 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
               </div>
             )}
 
+            {/* Historical Pattern Analysis */}
+            {c.historicalPattern.setupsFound > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="text-xs font-medium text-cyan-400">Historical Pattern Learning</span>
+                  <span className={
+                    c.historicalPattern.historicalBias === 'bullish'
+                      ? 'text-[9px] px-1 py-0 ml-auto border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 rounded-full'
+                      : c.historicalPattern.historicalBias === 'bearish'
+                        ? 'text-[9px] px-1 py-0 ml-auto border bg-red-500/20 text-red-300 border-red-500/30 rounded-full'
+                        : 'text-[9px] px-1 py-0 ml-auto border bg-muted/30 text-muted-foreground border-border/50 rounded-full'
+                  }>
+                    {c.historicalPattern.historicalBias === 'bullish' ? 'BULLISH BIAS' : c.historicalPattern.historicalBias === 'bearish' ? 'BEARISH BIAS' : 'NEUTRAL'}
+                  </span>
+                </div>
+
+                {/* Win Rate Grid */}
+                <div className="grid grid-cols-4 gap-2">
+                  <WinRateCard label="1D Win Rate" value={c.historicalPattern.winRate1d} ret={c.historicalPattern.avgReturn1d} />
+                  <WinRateCard label="2D Win Rate" value={c.historicalPattern.winRate2d} ret={c.historicalPattern.avgReturn2d} />
+                  <WinRateCard label="3D Win Rate" value={c.historicalPattern.winRate3d} ret={c.historicalPattern.avgReturn3d} />
+                  <WinRateCard label="5D Win Rate" value={c.historicalPattern.winRate5d} ret={c.historicalPattern.avgReturn5d} />
+                </div>
+
+                {/* Key Metrics Row */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-2 text-center">
+                    <div className={c.historicalScore >= 60 ? 'text-sm font-bold text-emerald-400' : c.historicalScore >= 45 ? 'text-sm font-bold text-amber-400' : 'text-sm font-bold text-red-400'}>{c.historicalScore}/100</div>
+                    <div className="text-[9px] text-muted-foreground">History Score</div>
+                  </div>
+                  <div className="bg-muted/20 border border-border/50 rounded-lg p-2 text-center">
+                    <div className="text-sm font-bold text-cyan-400">{c.historicalPattern.setupsFound}</div>
+                    <div className="text-[9px] text-muted-foreground">Similar cases found</div>
+                  </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2 text-center">
+                    <div className="text-sm font-bold text-emerald-400">+{c.historicalPattern.avgMaxGain5d}%</div>
+                    <div className="text-[9px] text-muted-foreground">Avg max gain (5D)</div>
+                  </div>
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-center">
+                    <div className="text-sm font-bold text-red-400">-{c.historicalPattern.avgMaxDrawdown5d}%</div>
+                    <div className="text-[9px] text-muted-foreground">Avg drawdown (5D)</div>
+                  </div>
+                  <div className="bg-muted/20 border border-border/50 rounded-lg p-2 text-center">
+                    <div className="text-sm font-bold text-purple-400">{c.historicalPattern.patternConfidence}/100</div>
+                    <div className="text-[9px] text-muted-foreground">Model confidence</div>
+                  </div>
+                </div>
+
+                {/* Setup Type Breakdown */}
+                {c.historicalPattern.setupBreakdown.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-medium text-muted-foreground">Setup type breakdown:</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {c.historicalPattern.setupBreakdown.map((sb, i) => (
+                        <div key={i} className={
+                          sb.winRate5d >= 60
+                            ? 'px-2 py-0.5 rounded-md text-[10px] border bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : sb.winRate5d >= 45
+                              ? 'px-2 py-0.5 rounded-md text-[10px] border bg-amber-500/10 border-amber-500/30 text-amber-300'
+                              : 'px-2 py-0.5 rounded-md text-[10px] border bg-red-500/10 border-red-500/30 text-red-300'
+                        }>
+                          {sb.label} ({sb.count}x): {sb.winRate5d}% win | avg {sb.avgReturn5d > 0 ? '+' : ''}{sb.avgReturn5d}%
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Historical Setups Table */}
+                {c.historicalPattern.setups.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-medium text-muted-foreground">Recent similar setups:</div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px]">
+                        <thead>
+                          <tr className="text-muted-foreground/70 border-b border-border/30">
+                            <th className="text-left py-1 pr-2">Date</th>
+                            <th className="text-right py-1 px-1">Change</th>
+                            <th className="text-right py-1 px-1">RVol</th>
+                            <th className="text-right py-1 px-1">1D</th>
+                            <th className="text-right py-1 px-1">2D</th>
+                            <th className="text-right py-1 px-1">5D</th>
+                            <th className="text-left py-1 pl-2">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {c.historicalPattern.setups.slice().reverse().map((s, i) => (
+                            <tr key={i} className="border-b border-border/20">
+                              <td className="py-1 pr-2 text-muted-foreground">{s.date}</td>
+                              <td className="text-right py-1 px-1 text-emerald-400">+{s.dayChangePct}%</td>
+                              <td className="text-right py-1 px-1 text-blue-400">{s.dayRelVol}x</td>
+                              <td className={s.return1d >= 0 ? 'text-right py-1 px-1 font-medium text-emerald-400' : 'text-right py-1 px-1 font-medium text-red-400'}>{s.return1d >= 0 ? '+' : ''}{s.return1d}%</td>
+                              <td className={s.return2d >= 0 ? 'text-right py-1 px-1 text-emerald-400' : 'text-right py-1 px-1 text-red-400'}>{s.return2d >= 0 ? '+' : ''}{s.return2d}%</td>
+                              <td className={s.return5d >= 0 ? 'text-right py-1 px-1 font-medium text-emerald-400' : 'text-right py-1 px-1 font-medium text-red-400'}>{s.return5d >= 0 ? '+' : ''}{s.return5d}%</td>
+                              <td className="py-1 pl-2 text-muted-foreground">{s.setupType}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Disclaimer */}
+                <div className="text-[9px] text-muted-foreground/60 flex items-start gap-1">
+                  <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <span>Past performance does not guarantee future results. These are statistical models from the last 90 days of data. Use as an additional factor, not as a final decision.</span>
+                </div>
+              </div>
+            )}
+
+            {/* Historical Pattern: No Data */}
+            {c.historicalPattern.setupsFound === 0 && (
+              <div className="bg-muted/10 border border-border/30 rounded-md p-2.5 flex items-start gap-2">
+                <GitBranch className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+                <div className="text-[10px] text-muted-foreground/60">
+                  <span className="font-medium">Historical Pattern Learning:</span> No similar cases found in the last 90 days. This stock rarely has such momentum (good or bad).
+                </div>
+              </div>
+            )}
             {/* Full Risk Flags */}
             {c.riskFlags.length > 1 && (
               <div className="space-y-1">

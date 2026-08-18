@@ -335,11 +335,13 @@ export async function GET() {
     });
 
     // Sort: ELIGIBLE first, then WATCH, then FLOAT_REVIEW, then REJECTED
-    // Within each group: high momentum first, then pillar count, then score
+    // Within each group: high momentum first, then historical score, then pillar count, then momentum score
     const statusOrder: Record<string, number> = { ELIGIBLE: 0, WATCH: 1, FLOAT_REVIEW: 2, REJECTED: 3 };
     enriched.sort((a, b) => {
       if (statusOrder[a.status] !== statusOrder[b.status]) return statusOrder[a.status] - statusOrder[b.status];
       if (a.highMomentum !== b.highMomentum) return a.highMomentum ? -1 : 1;
+      // Primary differentiator: historical confidence score (higher = more likely to continue)
+      if (b.historicalScore !== a.historicalScore) return b.historicalScore - a.historicalScore;
       if (b.pillarCount !== a.pillarCount) return b.pillarCount - a.pillarCount;
       return b.momentumScore - a.momentumScore;
     });
