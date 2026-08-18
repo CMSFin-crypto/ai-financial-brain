@@ -120,6 +120,8 @@ interface Candidate {
 }
 
 interface ScanSummary {
+  totalUniverse: number;
+  totalPreFiltered: number;
   totalAnalyzed: number;
   eligible: number;
   watch: number;
@@ -334,8 +336,13 @@ export function FivePillars() {
               🔥 {summary.highMomentum} HIGH MOMENTUM
             </Badge>
           )}
+          {(summary.totalUniverse > 0) && (
+            <Badge className="bg-blue-500/15 text-blue-300 border-blue-500/30 border text-[10px]">
+              {summary.totalUniverse.toLocaleString()} US stocks scanned
+            </Badge>
+          )}
           <Badge className="bg-muted/30 text-muted-foreground border border-border/50 text-[10px]">
-            {summary.totalAnalyzed} skanuar
+            {summary.totalPreFiltered || summary.totalAnalyzed} analyzed
           </Badge>
         </div>
       )}
@@ -426,7 +433,7 @@ export function FivePillars() {
                   : `Asnjë kandidat me status "${statusFilter}"`}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-1">
-                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $2-20, Float &lt;20M
+                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $2-20, Float &lt;10M
               </p>
             </CardContent>
           </Card>
@@ -471,7 +478,7 @@ export function FivePillars() {
                 <strong>2. Daily Change ≥10%</strong> •
                 <strong>3. News Catalyst</strong> (auto-flag ≥15%) •
                 <strong>4. Price $2-$20</strong> •
-                <strong>5. Float &lt;20M</strong>
+                <strong>5. Float &lt;10M</strong>
               </p>
               <p>
                 <strong>Historical Pattern Learning</strong>: Analizon 90 ditët e fundit të çdo aksioni për të gjetur raste të ngjashme me sotën,
@@ -522,7 +529,7 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
     { key: 'momentum', label: 'Daily gain ≥ 10%', passed: c.passesMomentum, detail: c.pillarDetails.momentum, color: 'text-emerald-400', icon: TrendingUp },
     { key: 'catalyst', label: 'News catalyst', passed: c.passesCatalyst, detail: c.pillarDetails.catalyst, color: 'text-orange-400', icon: Newspaper },
     { key: 'price', label: 'Price $2–$20', passed: c.passesPrice, detail: c.pillarDetails.price, color: 'text-purple-400', icon: DollarSign },
-    { key: 'float', label: 'Float < 20M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
+    { key: 'float', label: 'Float < 10M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
   ];
 
   return (

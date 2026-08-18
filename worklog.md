@@ -1,19 +1,28 @@
 ---
-Task ID: 1
+Task ID: 2
 Agent: Main
-Task: Add Historical Pattern Learning to 5 Pillars Momentum scanner
+Task: Fix criteria to user spec ($1-$20, Float<10M) and scan ALL US stocks
 
 Work Log:
-- Created `/src/lib/historical-pattern-engine.ts` — analyzes 90 days of a stock's own history to find similar momentum days (RVol≥3x, change≥5%), then measures forward returns over 1/2/3/5 days
-- Updated `FivePillarsCandidate` interface with `historicalScore: number` and `historicalPattern: PatternAnalysis`
-- Modified `analyzeFivePillarsCandidate()` to call historical analysis and boost momentum score with historical signal
-- Updated API route sorting: within ELIGIBLE/WATCH groups, candidates now sort by historicalScore first (higher = historically more likely to continue rising)
-- Added full UI section in expanded card view: Win Rate Grid (1D/2D/3D/5D), Key Metrics (History Score, Similar Cases, Avg Max Gain, Avg Drawdown, Model Confidence), Setup Type Breakdown, Historical Setups Table
-- Added compact History Score badge on each card header (📈/➡️/📉 with score)
-- Build verified: 0 errors in modified files, Next.js build succeeds
+- Fixed PILLAR_CONFIG: priceMin=1 (was 2), floatMaxMillions=10 (was 20)
+- Fixed price/float detail texts to match new thresholds
+- Created `src/lib/us-stock-universe.ts` with 3 methods:
+  - Method 1: NASDAQ Screener API (returns ALL 7,165 US stocks with prices in ONE call)
+  - Method 2: NASDAQ Trader TXT files (fallback for ticker list only)
+  - Method 3: Yahoo Finance gainers (fallback)
+- Fixed parser: field names (lastsale not lastsaleprice), $ and % stripping
+- Tested: NASDAQ API returns 7,165 stocks, 466 in $0.8-$25 with >=2% change, 52 with >=10%
+- Rewrote `src/app/api/momentum/5-pillars/route.ts`:
+  - Removed 500-line hand-picked SMALL_CAP_UNIVERSE
+  - Now calls getAllUSStockSnapshots() to get ALL 7,165 US stocks
+  - Pre-filters using price/change from NASDAQ data (no individual price fetches needed)
+  - Falls back to Yahoo + NASDAQ Trader if primary fails
+  - Summary now includes totalUniverse and totalPreFiltered
+- Updated UI: labels show Price $1-$20, Float <10M, badge shows "X,XXX US stocks scanned"
+- Build verified: 0 TS errors, Next.js build succeeds
 
 Stage Summary:
-- New file: `src/lib/historical-pattern-engine.ts` (345 lines)
-- Modified: `src/lib/five-pillars-engine.ts` (added import, interface fields, analysis call, return fields)
-- Modified: `src/app/api/momentum/5-pillars/route.ts` (sorting by historicalScore)
-- Modified: `src/components/financial-brain/five-pillars.tsx` (types, WinRateCard helper, compact badge, expanded section)
+- New file: `src/lib/us-stock-universe.ts` (3 methods, comprehensive US stock fetching)
+- Modified: `src/lib/five-pillars-engine.ts` (price $1-$20, float <10M)
+- Rewritten: `src/app/api/momentum/5-pillars/route.ts` (scans ALL 7,165 US stocks)
+- Modified: `src/components/financial-brain/five-pillars.tsx` (labels, universe badge)

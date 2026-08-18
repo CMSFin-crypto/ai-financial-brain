@@ -85,9 +85,9 @@ export const PILLAR_CONFIG = {
   relVolumeMin: 5,
   dailyChangeMin: 10,
   strongMomentumPct: 15,
-  priceMin: 2,             // Ross Cameron: $2.00 minimum
-  priceMax: 20,            // Ross Cameron: $20.00 maximum
-  floatMaxMillions: 20,     // Ross Cameron: <20 million shares
+  priceMin: 1,             // User spec: $1.00 minimum
+  priceMax: 20,            // User spec: $20.00 maximum
+  floatMaxMillions: 10,     // User spec: <10 million shares
   volumeLookback: 30,
 };
 
@@ -181,10 +181,10 @@ function checkPillar4_PriceRange(price: number): PillarResult {
     value: price,
     threshold: `$${PILLAR_CONFIG.priceMin}-$${PILLAR_CONFIG.priceMax}`,
     detail: inRange
-      ? `Çmimi $${price.toFixed(2)} në zonën optimale ($2-$20)`
+      ? `Price $${price.toFixed(2)} in optimal zone ($1-$20)`
       : price > PILLAR_CONFIG.priceMax
-        ? `Çmimi $${price.toFixed(2)} është më i lartë se $${PILLAR_CONFIG.priceMax}`
-        : `Çmimi $${price.toFixed(2)} është më i ulët se $${PILLAR_CONFIG.priceMin}`,
+        ? `Price $${price.toFixed(2)} is above $${PILLAR_CONFIG.priceMax}`
+        : `Price $${price.toFixed(2)} is below $${PILLAR_CONFIG.priceMin}`,
   };
 }
 
@@ -200,8 +200,8 @@ function checkPillar5_Float(floatSharesM: number | null): { result: PillarResult
       threshold: `≤ ${PILLAR_CONFIG.floatMaxMillions}M`,
       detail: hasData
         ? passed
-          ? `Float: ${floatSharesM!.toFixed(1)}M shares — supply/demand imbalance (<20M)`
-          : `Float: ${floatSharesM!.toFixed(1)}M shares (duhet ≤ ${PILLAR_CONFIG.floatMaxMillions}M)`
+          ? `Float: ${floatSharesM!.toFixed(1)}M shares — supply/demand imbalance (<10M)`
+          : `Float: ${floatSharesM!.toFixed(1)}M shares (must be ≤ ${PILLAR_CONFIG.floatMaxMillions}M)`
         : 'Float i panjohur — verifiko manualisht në Finviz',
     },
   };
