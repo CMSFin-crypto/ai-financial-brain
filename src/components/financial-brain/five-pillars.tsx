@@ -34,6 +34,8 @@ import {
   Clock,
   Search,
   GitBranch,
+  Trophy,
+  Star,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -421,6 +423,61 @@ export function FivePillars() {
         </div>
       </div>
 
+      {/* ═══ TOP 5 ELIGIBLE + TOP 5 WATCH — Highlighted Section ═══ */}
+      {(() => {
+        const topEligible = candidates.filter(c => c.status === 'ELIGIBLE').slice(0, 5);
+        const topWatch = candidates.filter(c => c.status === 'WATCH').slice(0, 5);
+        const topPicks = [...topEligible, ...topWatch];
+        if (topPicks.length === 0) return null;
+        return (
+          <div className="space-y-3">
+            {/* Section Header */}
+            <div className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-400" />
+              <span className="text-sm font-bold text-foreground">TOP 5 ELIGIBLE + TOP 5 WATCH</span>
+              <span className="text-[10px] text-muted-foreground ml-1">— renditur sipas Historical Score</span>
+            </div>
+
+            {/* TOP ELIGIBLE Row */}
+            {topEligible.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[11px] font-semibold text-emerald-400">TOP ELIGIBLE ({topEligible.length})</span>
+                </div>
+                <div className="grid gap-2">
+                  {topEligible.map((c, idx) => (
+                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"ELIGIBLE"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TOP WATCH Row */}
+            {topWatch.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Eye className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-[11px] font-semibold text-amber-400">TOP WATCH ({topWatch.length})</span>
+                </div>
+                <div className="grid gap-2">
+                  {topWatch.map((c, idx) => (
+                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"WATCH"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ─── Separator ─── */}
+      {candidates.filter(c => c.status === 'ELIGIBLE' || c.status === 'WATCH').length > 0 && (
+        <div className="border-t border-border/50 pt-2">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Të gjitha rezultatet ({filtered.length})</div>
+        </div>
+      )}
+
       {/* ─── Candidate Cards ─── */}
       <div className="space-y-2">
         {displayList.length === 0 ? (
@@ -512,6 +569,208 @@ function WinRateCard({ label, value, ret }: { label: string; value: number; ret:
         avg {ret >= 0 ? '+' : ''}{ret}%
       </div>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TOP PICK Card — Compact card for Top 5 ELIGIBLE + Top 5 WATCH
+// ═══════════════════════════════════════════════════════════════
+
+function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candidate: Candidate; rank: number; type: 'ELIGIBLE' | 'WATCH'; expanded: boolean; onToggle: () => void }) {
+  const isEligible = type === 'ELIGIBLE';
+  const isPositive = c.dailyChangePct >= 0;
+  const borderColor = isEligible ? 'border-emerald-500/50' : 'border-amber-500/50';
+  const bgColor = isEligible ? 'bg-emerald-500/8' : 'bg-amber-500/8';
+  const rankColor = rank === 1 ? 'text-amber-400' : rank === 2 ? 'text-gray-300' : rank === 3 ? 'text-orange-400' : 'text-muted-foreground';
+
+  return (
+    <Card className={borderColor + ' ' + bgColor + ' transition-all duration-200 hover:border-border/80'}>
+      <CardContent className="p-3">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={onToggle}>
+          {/* Rank */}
+          <div className={"flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold " + (rank === 1 ? 'bg-amber-500/20 text-amber-400' : rank === 2 ? 'bg-gray-500/20 text-gray-300' : rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-muted/30 ' + rankColor)}>
+            {rank <= 3 ? <Star className={"w-3.5 h-3.5 " + rankColor} /> : <span className={rankColor}>{rank}</span>}
+          </div>
+
+          {/* Ticker + Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-sm text-foreground">{c.symbol}</span>
+              {c.highMomentum && (
+                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-[9px] animate-pulse px-1 py-0">
+                  HIGH MOMENTUM
+                </Badge>
+              )}
+              <Badge variant="outline" className={"text-[9px] px-1 py-0 font-semibold " + (isEligible ? 'text-emerald-300 border-emerald-500/40' : 'text-amber-300 border-amber-500/40')}>
+                {isEligible ? 'ELIGIBLE' : 'WATCH'}
+              </Badge>
+              <Badge className={"text-[9px] px-1 py-0 " + (isPositive ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-red-500/15 text-red-400 border-red-500/30')} variant="outline">
+                {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%
+              </Badge>
+              <Badge className="text-[9px] px-1 py-0 bg-muted/30 text-muted-foreground border-border/50 border">
+                {c.pillarCount}/5 pillars
+              </Badge>
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              {c.company && c.company !== c.symbol ? c.company + ' ' : ''}
+              <span className={"font-medium " + (isPositive ? 'text-emerald-400' : 'text-red-400')}>
+                ${c.price.toFixed(2)}
+              </span>
+              {' '} RVol: <span className={c.passesRvol ? 'text-blue-400' : ''}>{c.relativeVolume}x</span>
+              {' '} Float: <span className={c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : ''}>{c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}</span>
+            </div>
+          </div>
+
+          {/* Historical Score — PROMINENT */}
+          <div className="text-right flex-shrink-0">
+            <div className={"text-lg font-bold " + (c.historicalScore >= 60 ? 'text-emerald-400' : c.historicalScore >= 45 ? 'text-amber-400' : 'text-red-400')}>
+              {c.historicalScore >= 60 ? '📈' : c.historicalScore >= 45 ? '➡️' : '📉'} {c.historicalScore}
+            </div>
+            <div className="text-[9px] text-muted-foreground">History / 100</div>
+            <div className="text-[9px] text-muted-foreground">Momentum: {c.momentumScore}/100</div>
+          </div>
+
+          <div className="flex-shrink-0 ml-1">
+            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        </div>
+
+        {/* Quick historical stats bar (always visible) */}
+        {c.historicalPattern.setupsFound > 0 && (
+          <div className={"mt-2 flex flex-wrap items-center gap-2 text-[10px] px-2 py-1.5 rounded-md " + (isEligible ? 'bg-emerald-500/8 border-emerald-500/20' : 'bg-amber-500/8 border-amber-500/20') + " border"}>
+            <span className={"font-medium " + (c.historicalPattern.winRate1d >= 60 ? 'text-emerald-400' : 'text-amber-400')}>
+              1D: {c.historicalPattern.winRate1d}% win
+            </span>
+            <span className={"font-medium " + (c.historicalPattern.winRate5d >= 60 ? 'text-emerald-400' : 'text-amber-400')}>
+              5D: {c.historicalPattern.winRate5d}% win
+            </span>
+            <span className={"font-medium " + (c.historicalPattern.avgReturn5d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+              Avg 5D: {c.historicalPattern.avgReturn5d >= 0 ? '+' : ''}{c.historicalPattern.avgReturn5d}%
+            </span>
+            <span className="text-muted-foreground">
+              {c.historicalPattern.setupsFound} raste
+            </span>
+            <Badge className={"text-[8px] px-1 py-0 ml-auto " + (c.historicalPattern.historicalBias === 'bullish' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : c.historicalPattern.historicalBias === 'bearish' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-muted/30 text-muted-foreground border-border/50')} variant="outline">
+              {c.historicalPattern.historicalBias === 'bullish' ? 'BULLISH' : c.historicalPattern.historicalBias === 'bearish' ? 'BEARISH' : 'NEUTRAL'}
+            </Badge>
+          </div>
+        )}
+
+        {/* Reuse the full expanded content from CandidateCard */}
+        {expanded && (
+          <div className="mt-3 border-t border-border/50 pt-3">
+            {/* Pillar Checks */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {[
+                { key: 'rvol', label: 'RVol ≥ 5x', passed: c.passesRvol, color: 'text-blue-400' },
+                { key: 'momentum', label: 'Change ≥ 10%', passed: c.passesMomentum, color: 'text-emerald-400' },
+                { key: 'catalyst', label: 'Catalyst', passed: c.passesCatalyst, color: 'text-orange-400' },
+                { key: 'price', label: 'Price $1-$20', passed: c.passesPrice, color: 'text-purple-400' },
+                { key: 'float', label: 'Float <10M', passed: c.passesFloat, color: 'text-amber-400' },
+              ].map(p => (
+                <div key={p.key} className={"flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border " + (p.passed ? p.color.replace('text-', 'bg-').replace('400', '500/10') + ' border-border/50' : 'bg-muted/20 border-border/30 opacity-50')}>
+                  {p.passed ? <CheckCircle2 className={"w-3 h-3 " + p.color} /> : <XCircle className="w-3 h-3 text-muted-foreground/50" />}
+                  <span className={p.passed ? p.color : 'text-muted-foreground/60'}>{p.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Buy / Sell Indicators */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs font-semibold text-emerald-400">BUY Signal</span>
+                </div>
+                <div className="text-[10px] text-muted-foreground">Entry: <span className="text-emerald-300">{c.entryZone}</span></div>
+                {c.takeProfitTargets.length > 0 && (
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Targets: {c.takeProfitTargets.join(' | ')}</div>
+                )}
+              </div>
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Shield className="w-3.5 h-3.5 text-red-400" />
+                  <span className="text-xs font-semibold text-red-400">RISK / STOP</span>
+                </div>
+                <div className="text-[10px] text-muted-foreground">Stop: <span className="text-red-300">{c.stopReference}</span></div>
+                {c.riskFlags.slice(0, 2).map((f, i) => (
+                  <div key={i} className="text-[10px] text-red-300/80 flex items-start gap-1 mt-0.5">
+                    <AlertTriangle className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" /><span>{f}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Historical Pattern Learning (compact version for top picks) */}
+            {c.historicalPattern.setupsFound > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="text-xs font-medium text-cyan-400">Historical Pattern Learning</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  <WinRateCard label="1D Win Rate" value={c.historicalPattern.winRate1d} ret={c.historicalPattern.avgReturn1d} />
+                  <WinRateCard label="2D Win Rate" value={c.historicalPattern.winRate2d} ret={c.historicalPattern.avgReturn2d} />
+                  <WinRateCard label="3D Win Rate" value={c.historicalPattern.winRate3d} ret={c.historicalPattern.avgReturn3d} />
+                  <WinRateCard label="5D Win Rate" value={c.historicalPattern.winRate5d} ret={c.historicalPattern.avgReturn5d} />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                  <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-1.5 text-center">
+                    <div className={"text-xs font-bold " + (c.historicalScore >= 60 ? 'text-emerald-400' : c.historicalScore >= 45 ? 'text-amber-400' : 'text-red-400')}>{c.historicalScore}/100</div>
+                    <div className="text-[8px] text-muted-foreground">History Score</div>
+                  </div>
+                  <div className="bg-muted/20 border border-border/50 rounded-lg p-1.5 text-center">
+                    <div className="text-xs font-bold text-cyan-400">{c.historicalPattern.setupsFound}</div>
+                    <div className="text-[8px] text-muted-foreground">Cases</div>
+                  </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-1.5 text-center">
+                    <div className="text-xs font-bold text-emerald-400">+{c.historicalPattern.avgMaxGain5d}%</div>
+                    <div className="text-[8px] text-muted-foreground">Avg Max Gain</div>
+                  </div>
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-1.5 text-center">
+                    <div className="text-xs font-bold text-red-400">-{c.historicalPattern.avgMaxDrawdown5d}%</div>
+                    <div className="text-[8px] text-muted-foreground">Avg Drawdown</div>
+                  </div>
+                  <div className="bg-muted/20 border border-border/50 rounded-lg p-1.5 text-center">
+                    <div className="text-xs font-bold text-purple-400">{c.historicalPattern.patternConfidence}/100</div>
+                    <div className="text-[8px] text-muted-foreground">Confidence</div>
+                  </div>
+                </div>
+                {/* Recent Setups Table */}
+                {c.historicalPattern.setups.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[10px]">
+                      <thead>
+                        <tr className="text-muted-foreground/70 border-b border-border/30">
+                          <th className="text-left py-1 pr-2">Date</th>
+                          <th className="text-right py-1 px-1">Change</th>
+                          <th className="text-right py-1 px-1">RVol</th>
+                          <th className="text-right py-1 px-1">1D</th>
+                          <th className="text-right py-1 px-1">5D</th>
+                          <th className="text-left py-1 pl-2">Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {c.historicalPattern.setups.slice().reverse().map((s, i) => (
+                          <tr key={i} className="border-b border-border/20">
+                            <td className="py-1 pr-2 text-muted-foreground">{s.date}</td>
+                            <td className="text-right py-1 px-1 text-emerald-400">+{s.dayChangePct}%</td>
+                            <td className="text-right py-1 px-1 text-blue-400">{s.dayRelVol}x</td>
+                            <td className={"text-right py-1 px-1 font-medium " + (s.return1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>{s.return1d >= 0 ? '+' : ''}{s.return1d}%</td>
+                            <td className={"text-right py-1 px-1 font-medium " + (s.return5d >= 0 ? 'text-emerald-400' : 'text-red-400')}>{s.return5d >= 0 ? '+' : ''}{s.return5d}%</td>
+                            <td className="py-1 pl-2 text-muted-foreground">{s.setupType}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
