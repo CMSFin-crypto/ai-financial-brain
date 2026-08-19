@@ -54,6 +54,24 @@ interface SwingData {
   warningFlags: string[];
 }
 
+interface HistoricalData {
+  historicalScore: number;
+  winRate1d: number;
+  winRate2d: number;
+  winRate3d: number;
+  winRate5d: number;
+  avgReturn1d: number;
+  avgReturn5d: number;
+  bestReturn5d: number;
+  avgMaxGain5d: number;
+  avgMaxDrawdown5d: number;
+  patternConfidence: number;
+  historicalBias: 'bullish' | 'bearish' | 'neutral';
+  setupsFound: number;
+  setupBreakdown: { label: string; count: number; winRate5d: number; avgReturn5d: number; }[];
+  setups: { date: string; dayChangePct: number; dayRelVol: number; return1d: number; return2d: number; return5d: number; setupType: string; }[];
+}
+
 interface MoverStock {
   ticker: string;
   company: string;
@@ -86,6 +104,7 @@ interface MoverStock {
   isLive?: boolean;
   hasFundamentals?: boolean;
   swing?: SwingData | null;
+  historical?: HistoricalData | null;
 }
 
 interface TopMoversData {
@@ -96,6 +115,7 @@ interface TopMoversData {
   liveCount?: number;
   fundCount?: number;
   totalFetched?: number;
+  historyAnalyzed?: number;
   cached?: boolean;
   stale?: boolean;
 }
@@ -516,6 +536,94 @@ function SwingPanel({ swing, type }: { swing: SwingData; type: 'growth' | 'risk'
   );
 }
 
+function HistoricalPanel({ hist, type }: { hist: HistoricalData; type: 'growth' | 'risk' }) {
+  const accentColor = type === 'growth' ? 'rgb(139, 92, 246)' : 'rgb(139, 92, 246)';
+  const biasColor = hist.historicalBias === 'bullish' ? 'text-emerald-500' : hist.historicalBias === 'bearish' ? 'text-red-500' : 'text-amber-500';
+  const biasBg = hist.historicalBias === 'bullish' ? 'bg-emerald-500/15 border-emerald-500/30' : hist.historicalBias === 'bearish' ? 'bg-red-500/15 border-red-500/30' : 'bg-amber-500/15 border-amber-500/30';
+  const biasLabel = hist.historicalBias === 'bullish' ? 'Bullish' : hist.historicalBias === 'bearish' ? 'Bearish' : 'Neutral';
+  const scoreColor = hist.historicalScore >= 60 ? 'text-emerald-500' : hist.historicalScore >= 40 ? 'text-amber-500' : 'text-red-500';
+
+  const wrColor = (wr: number) => wr >= 60 ? 'text-emerald-500' : wr >= 45 ? 'text-amber-500' : 'text-red-500';
+  const wrBg = (wr: number) => wr >= 60 ? 'bg-emerald-500/15' : wr >= 45 ? 'bg-amber-500/15' : 'bg-red-500/15';
+
+  return (
+    <div className="mt-2 rounded-lg border border-purple-500/15 bg-purple-500/[0.03] p-2 space-y-2"
+      style={{ borderLeft: `2px solid ${accentColor}`, background: 'rgba(139, 92, 246, 0.03)' }}>
+      {/* Header: History Score + Bias + Confidence */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <BarChart3 className="w-3 h-3" style={{ color: accentColor }} />
+          <span className="text-[10px] font-bold text-foreground">Historiku (90 ditë)</span>
+          <Badge className={`text-[8px] px-1 py-0 ${scoreColor.replace('text-', 'bg-').replace('500', '500/15')} ${scoreColor} border-current/30`}>
+            {hist.historicalScore}/100
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1.5 text-[9px]">
+          <Badge className={`text-[8px] px-1 py-0 border ${biasBg} ${biasColor}`}>
+            {biasLabel}
+          </Badge>
+          <span className="text-muted-foreground">{hist.setupsFound} raste</span>
+          <span className="text-muted-foreground">Besimi: {hist.patternConfidence}%</span>
+        </div>
+      </div>
+
+      {/* Win Rate Grid */}
+      <div className="grid grid-cols-4 gap-1.5">
+        {[
+          { label: '1D', wr: hist.winRate1d, ret: hist.avgReturn1d },
+          { label: '2D', wr: hist.winRate2d, ret: 0 },
+          { label: '3D', wr: hist.winRate3d, ret: 0 },
+          { label: '5D', wr: hist.winRate5d, ret: hist.avgReturn5d },
+        ].map(d => (
+          <div key={d.label} className={`${wrBg(d.wr)} rounded p-1.5 text-center`}>
+            <p className="text-[8px] text-muted-foreground">Win {d.label}</p>
+            <p className={`text-[12px] font-bold ${wrColor(d.wr)}`}>{d.wr}%</p>
+            {d.ret !== 0 && (
+              <p className={`text-[8px] ${d.ret > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {d.ret > 0 ? '+' : ''}{d.ret.toFixed(1)}% avg
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Extremes Row */}
+      <div className="flex items-center justify-between text-[9px]">
+        <span className="text-muted-foreground">
+          Gain 5D: <span className="text-emerald-500 font-semibold">+{hist.avgMaxGain5d}%</span>
+        </span>
+        <span className="text-muted-foreground">
+          Drawdown 5D: <span className="text-red-500 font-semibold">-{hist.avgMaxDrawdown5d}%</span>
+        </span>
+        <span className="text-muted-foreground">
+          Best 5D: <span className="text-emerald-400 font-semibold">+{hist.bestReturn5d}%</span>
+        </span>
+      </div>
+
+      {/* Setup Type Breakdown */}
+      {hist.setupBreakdown.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[8px] text-muted-foreground font-medium">Llojet e Setup-it</p>
+          <div className="space-y-0.5">
+            {hist.setupBreakdown.slice(0, 3).map((sb, i) => (
+              <div key={i} className="flex items-center justify-between text-[9px]">
+                <span className="text-foreground/80">{sb.label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">x{sb.count}</span>
+                  <span className={wrColor(sb.winRate5d)}>{sb.winRate5d}% WR</span>
+                  <span className={sb.avgReturn5d > 0 ? 'text-emerald-500' : 'text-red-500'}>
+                    {sb.avgReturn5d > 0 ? '+' : ''}{sb.avgReturn5d}%
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -569,6 +677,9 @@ function GrowthCard({ stock, index }: { stock: MoverStock; index: number }) {
 
         {/* Swing Trading Panel */}
         {stock.swing && <SwingPanel swing={stock.swing} type="growth" />}
+
+        {/* Historical Pattern Panel */}
+        {stock.historical && stock.historical.setupsFound > 0 && <HistoricalPanel hist={stock.historical} type="growth" />}
 
         {/* Reasons (expandable) */}
         <button
@@ -656,6 +767,9 @@ function RiskCard({ stock, index }: { stock: MoverStock; index: number }) {
 
         {/* Swing Trading Panel */}
         {stock.swing && <SwingPanel swing={stock.swing} type="risk" />}
+
+        {/* Historical Pattern Panel */}
+        {stock.historical && stock.historical.setupsFound > 0 && <HistoricalPanel hist={stock.historical} type="risk" />}
 
         {/* Reasons (expandable) */}
         <button
@@ -831,7 +945,7 @@ export function TopMovers() {
         <div className="flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
           <p className="text-[10px] text-amber-600/80 leading-relaxed">
-            Kjo analizë përdor teknike reale (RSI, MACD, Bollinger Bands, SMA/EMA, ATR) + 10 faktorë fundamentalë + konsensusin e analistëve.
+            Kjo analizë përdor teknike reale (RSI, MACD, Bollinger Bands, SMA/EMA, ATR) + 10 faktorë fundamentalë + konsensusin e analistëve + historikun e 90 ditëve (Win Rate 1D/2D/3D/5D, Setup Types).
             Swing scoring llogaritet nga 3 muaj të dhëna historike. Çmimet e Entry/Stop/Target janë sugjerime, jo këshillë financiare.
           </p>
         </div>

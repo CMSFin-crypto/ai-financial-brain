@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getRealPrice, getRealPrices, getRealFundamentalsBatch, getBatchQuotesFast, type YahooFundamentals } from '@/lib/alpha-vantage';
+import { getRealPrice, getRealPrices, getRealFundamentalsBatch, getBatchQuotesFast, fetchHistoricalData, type YahooFundamentals } from '@/lib/alpha-vantage';
 import { getAllStocks, StockProfile } from '@/lib/market-data';
 import { analyzeSwingBatch, type SwingAnalysis } from '@/lib/swing-engine';
+import { analyzeHistoricalPatterns, computeHistoricalScore, type PatternAnalysis } from '@/lib/historical-pattern-engine';
 
 export const maxDuration = 60;
 
@@ -23,6 +24,8 @@ interface ScoredStock {
   riskScore: number;
   swingScore: number;
   swingData: SwingAnalysis | null;
+  historicalScore: number;
+  historicalPattern: PatternAnalysis | null;
   profile: StockProfile;
   fund: YahooFundamentals | null;
   growthReasons: string[];
@@ -380,6 +383,10 @@ export async function GET() {
         hasFundamentals,
         growthScore: calculateGrowthScore(profile, priceChange, fund),
         riskScore: calculateRiskScore(profile, priceChange, fund),
+        swingScore: 50,
+        swingData: null,
+        historicalScore: 50,
+        historicalPattern: null,
         profile,
         fund,
         growthReasons: generateGrowthReasons(profile, priceChange, fund),
@@ -416,6 +423,8 @@ export async function GET() {
         s.swingData = null;
         s.swingScore = 50; // neutral
       }
+      s.historicalScore = 50;
+      s.historicalPattern = null;
     }
 
     // ═══ STEP 4: Re-rank with SWING-WEIGHTED scoring ═══
@@ -437,6 +446,42 @@ export async function GET() {
       }))
       .sort((a, b) => b.blendedRisk - a.blendedRisk)
       .slice(0, 5);
+
+    // ═══ STEP 4.5: Historical Pattern Analysis for top 10 ═══
+    const top10Tickers = [...new Set([...growthCandidates2.map(s => s.ticker), ...riskCandidates2.map(s => s.ticker)])];
+    console.log(`[TOP-MOVERS] Running historical pattern analysis for ${top10Tickers.length} top stocks...`);
+    
+    for (const ticker of top10Tickers) {
+      try {
+        const history = await fetchHistoricalData(ticker, '3mo');
+        if (!history || history.length < 40) continue;
+        
+        // Compute today's RVol from the history
+        const lookback = Math.min(30, history.length - 1);
+        const volumes = history.slice(-lookback - 1, -1).map(d => d.volume);
+        const avgVol = volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 1;
+        const todayVol = history[history.length - 1].volume;
+        const rvol = avgVol > 0 ? todayVol / avgVol : 0;
+        
+        // Compute today's change
+        const prevClose = history.length >= 2 ? history[history.length - 2].close : history[history.length - 1].close;
+        const todayClose = history[history.length - 1].close;
+        const changePct = prevClose > 0 ? ((todayClose - prevClose) / prevClose) * 100 : 0;
+        
+        const pattern = analyzeHistoricalPatterns(history, rvol, changePct);
+        const score = computeHistoricalScore(pattern);
+        
+        // Merge into the scored stock
+        const stock = scored.find(s => s.ticker === ticker);
+        if (stock) {
+          stock.historicalPattern = pattern;
+          stock.historicalScore = score;
+        }
+      } catch (err) {
+        console.log(`[TOP-MOVERS] Historical pattern failed for ${ticker}:`, err);
+      }
+    }
+    console.log(`[TOP-MOVERS] Historical pattern analysis complete`);
 
     const topGrowth = growthCandidates2;
     const topRisk = riskCandidates2;
@@ -552,7 +597,27 @@ export async function GET() {
           }
         }
 
-        // Build swing info
+        // Build historical pattern info
+      const histPattern = stock.historicalPattern;
+      const histInfo = histPattern && histPattern.setupsFound > 0 ? {
+        historicalScore: stock.historicalScore,
+        winRate1d: histPattern.winRate1d,
+        winRate2d: histPattern.winRate2d,
+        winRate3d: histPattern.winRate3d,
+        winRate5d: histPattern.winRate5d,
+        avgReturn1d: histPattern.avgReturn1d,
+        avgReturn5d: histPattern.avgReturn5d,
+        bestReturn5d: histPattern.bestReturn5d,
+        avgMaxGain5d: histPattern.avgMaxGain5d,
+        avgMaxDrawdown5d: histPattern.avgMaxDrawdown5d,
+        patternConfidence: histPattern.patternConfidence,
+        historicalBias: histPattern.historicalBias,
+        setupsFound: histPattern.setupsFound,
+        setupBreakdown: histPattern.setupBreakdown,
+        setups: histPattern.setups,
+      } : null;
+
+      // Build swing info
       const swing = stock.swingData;
       const swingInfo = swing ? {
         swingScore: swing.swingScore,
@@ -614,6 +679,7 @@ export async function GET() {
           buyCount,
           sellCount,
           swing: swingInfo,
+          historical: histInfo,
         };
       });
 
