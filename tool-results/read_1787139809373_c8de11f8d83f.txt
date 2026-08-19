@@ -1,0 +1,1330 @@
+   160→interface ScanSummary {
+   161→  totalUniverse: number;
+   162→  totalPreFiltered: number;
+   163→  totalAnalyzed: number;
+   164→  eligible: number;
+   165→  watch: number;
+   166→  rejected: number;
+   167→  floatReview: number;
+   168→  strongMomentum: number;
+   169→  highMomentum: number;
+   170→  pillarPassRates: { rvol: number; momentum: number; catalyst: number; price: number; float: number };
+   171→}
+   172→
+   173→type StatusFilter = 'ALL' | 'ELIGIBLE' | 'WATCH' | 'FLOAT_REVIEW' | 'REJECTED';
+   174→
+   175→// ─── Status Config ──────────────────────────────────────────
+   176→
+   177→const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: React.ReactNode; desc: string }> = {
+   178→  ELIGIBLE: {
+   179→    label: 'ELIGIBLE',
+   180→    color: 'text-emerald-300',
+   181→    bg: 'bg-emerald-500/12',
+   182→    border: 'border-emerald-500/40',
+   183→    icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
+   184→    desc: '5/5 pillars + catalyst — kandidat i fortë',
+   185→  },
+   186→  WATCH: {
+   187→    label: 'WATCH',
+   188→    color: 'text-amber-300',
+   189→    bg: 'bg-amber-500/12',
+   190→    border: 'border-amber-500/40',
+   191→    icon: <Eye className="w-4 h-4 text-amber-400" />,
+   192→    desc: '4/5 pillars — vëzhro pranë',
+   193→  },
+   194→  FLOAT_REVIEW: {
+   195→    label: 'FLOAT REVIEW',
+   196→    color: 'text-blue-300',
+   197→    bg: 'bg-blue-500/12',
+   198→    border: 'border-blue-500/40',
+   199→    icon: <Search className="w-4 h-4 text-blue-400" />,
+   200→    desc: 'Potencial i mirë — verifiko float',
+   201→  },
+   202→  REJECTED: {
+   203→    label: 'REJECTED',
+   204→    color: 'text-red-300',
+   205→    bg: 'bg-red-500/8',
+   206→    border: 'border-red-500/30',
+   207→    icon: <XCircle className="w-4 h-4 text-red-400" />,
+   208→    desc: 'Nuk plotëson kushtet minimale',
+   209→  },
+   210→};
+   211→
+   212→const PILLAR_LABELS = [
+   213→  { key: 'rvol', label: 'RVol ≥ 5x', icon: Volume2, color: 'text-blue-400' },
+   214→  { key: 'momentum', label: 'Daily gain ≥ 10%', icon: TrendingUp, color: 'text-emerald-400' },
+   215→  { key: 'catalyst', label: 'News catalyst', icon: Newspaper, color: 'text-orange-400' },
+   216→  { key: 'price', label: 'Price $1–$20', icon: DollarSign, color: 'text-purple-400' },
+   217→  { key: 'float', label: 'Float < 20M', icon: Coins, color: 'text-amber-400' },
+   218→] as const;
+   219→
+   220→// ─── Component ──────────────────────────────────────────────
+   221→
+   222→export function FivePillars() {
+   223→  const [candidates, setCandidates] = useState<Candidate[]>([]);
+   224→  const [summary, setSummary] = useState<ScanSummary | null>(null);
+   225→  const [loading, setLoading] = useState(true);
+   226→  const [error, setError] = useState<string | null>(null);
+   227→  const [cached, setCached] = useState(false);
+   228→  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+   229→  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+   230→  const [showAll, setShowAll] = useState(false);
+   231→  const [notifications, setNotifications] = useState<string[]>([]);
+   232→  const [showNotifications, setShowNotifications] = useState(false);
+   233→  const prevEligibleRef = useRef<string[]>([]);
+   234→  const [notificationEnabled, setNotificationEnabled] = useState(false);
+   235→
+   236→  const fetchData = useCallback(async () => {
+   237→    setLoading(true);
+   238→    setError(null);
+   239→    try {
+   240→      const res = await fetch('/api/momentum/5-pillars');
+   241→      if (!res.ok) throw new Error('Gabim');
+   242→      const data = await res.json();
+   243→      const cands: Candidate[] = data.candidates || [];
+   244→      setCandidates(cands);
+   245→      setSummary(data.summary || null);
+   246→      setCached(data.cached || false);
+   247→
+   248→      // Check for new ELIGIBLE candidates (notifications)
+   249→      const newEligible = cands
+   250→        .filter(c => c.status === 'ELIGIBLE')
+   251→        .map(c => c.symbol);
+   252→      const prevEligible = prevEligibleRef.current;
+   253→      const freshEligible = newEligible.filter(s => !prevEligible.includes(s));
+   254→      if (freshEligible.length > 0 && prevEligible.length > 0) {
+   255→        const msgs = freshEligible.map(s => `🎉 ${s} — ELIGIBLE (5 Pillars Momentum)`);
+   256→        setNotifications(prev => [...msgs, ...prev].slice(0, 20));
+   257→        // Browser notification
+   258→        if (notificationEnabled && typeof window !== 'undefined' && 'Notification' in window) {
+   259→ freshEligible.forEach(s => {
+   260→            new Notification('5 Pillars Momentum — ELIGIBLE', {
+   261→              body: `${s} ka kaluar të gjitha 5 pillarët! Momentum score: ${cands.find(c => c.symbol === s)?.momentumScore}/100`,
+   262→              icon: '/favicon.ico',
+   263→            });
+   264→          });
+   265→        }
+   266→      }
+   267→      prevEligibleRef.current = newEligible;
+   268→    } catch {
+   269→      setError('Nuk u arrit të ngarkoheshin të dhënat');
+   270→    } finally {
+   271→      setLoading(false);
+   272→    }
+   273→  }, [notificationEnabled]);
+   274→
+   275→  useEffect(() => { fetchData(); }, [fetchData]);
+   276→
+   277→  // Request notification permission
+   278→  const enableNotifications = () => {
+   279→    if (typeof window !== 'undefined' && 'Notification' in window) {
+   280→      Notification.requestPermission().then(p => {
+   281→        setNotificationEnabled(p === 'granted');
+   282→      });
+   283→    }
+   284→  };
+   285→
+   286→  const filtered = candidates.filter(c => {
+   287→    if (statusFilter === 'ALL') return true;
+   288→    return c.status === statusFilter;
+   289→  });
+   290→
+   291→  const displayList = showAll ? filtered : filtered.slice(0, 25);
+   292→
+   293→  // ─── Loading ───
+   294→  if (loading) {
+   295→    return (
+   296→      <div className="space-y-4">
+   297→        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+   298→          {Array.from({ length: 5 }).map((_, i) => (
+   299→            <Skeleton key={i} className="h-20 rounded-lg" />
+   300→          ))}
+   301→        </div>
+   302→        {Array.from({ length: 5 }).map((_, i) => (
+   303→          <Skeleton key={i} className="h-32 rounded-lg" />
+   304→        ))}
+   305→      </div>
+   306→    );
+   307→  }
+   308→
+   309→  // ─── Error ───
+   310→  if (error) {
+   311→    return (
+   312→      <Card className="border-red-500/20 bg-red-500/5">
+   313→        <CardContent className="pt-6 pb-6 text-center">
+   314→          <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+   315→          <p className="text-sm text-red-400">{error}</p>
+   316→          <button onClick={fetchData} className="mt-2 text-xs text-red-400 underline hover:text-red-300">Provo përsëri</button>
+   317→        </CardContent>
+   318→      </Card>
+   319→    );
+   320→  }
+   321→
+   322→  // ─── Pillar Pass Rate Cards ───
+   323→  const pillarStats = summary ? [
+   324→    { label: 'Rel Volume ≥5x', rate: summary.pillarPassRates.rvol, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+   325→    { label: 'Change ≥10%', rate: summary.pillarPassRates.momentum, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+   326→    { label: 'Catalyst ≥15%', rate: summary.pillarPassRates.catalyst, color: 'text-orange-400', bg: 'bg-orange-500/10' },
+   327→    { label: 'Price $2-20', rate: summary.pillarPassRates.price, color: 'text-purple-400', bg: 'bg-purple-500/10' },
+   328→    { label: 'Float <20M', rate: summary.pillarPassRates.float, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+   329→  ] : [];
+   330→
+   331→  const filterOptions: Array<{ key: StatusFilter; label: string; count: number }> = [
+   332→    { key: 'ALL', label: 'Të Gjitha', count: filtered.length },
+   333→    { key: 'ELIGIBLE', label: '✅ ELIGIBLE', count: candidates.filter(c => c.status === 'ELIGIBLE').length },
+   334→    { key: 'WATCH', label: '👁 WATCH', count: candidates.filter(c => c.status === 'WATCH').length },
+   335→    { key: 'FLOAT_REVIEW', label: '🔍 FLOAT REVIEW', count: candidates.filter(c => c.status === 'FLOAT_REVIEW').length },
+   336→    { key: 'REJECTED', label: '❌ REJECTED', count: candidates.filter(c => c.status === 'REJECTED').length },
+   337→  ];
+   338→
+   339→  return (
+   340→    <div className="space-y-4">
+   341→      {/* ─── Summary Stats ─── */}
+   342→      {summary && (
+   343→        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+   344→          {pillarStats.map((ps, i) => (
+   345→            <div key={i} className={`${ps.bg} border border-border/50 rounded-lg p-2.5 text-center`}>
+   346→              <div className={`text-sm font-bold ${ps.color}`}>{ps.rate.toFixed(0)}%</div>
+   347→              <div className="text-[10px] text-muted-foreground">{ps.label}</div>
+   348→            </div>
+   349→          ))}
+   350→        </div>
+   351→      )}
+   352→
+   353→      {/* ─── Status Badges Row ─── */}
+   354→      {summary && (
+   355→        <div className="flex flex-wrap items-center gap-2">
+   356→          <span className="text-xs text-muted-foreground">Rezultatet:</span>
+   357→          {summary.eligible > 0 && (
+   358→            <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 border text-[10px]">
+   359→              ✅ {summary.eligible} ELIGIBLE
+   360→            </Badge>
+   361→          )}
+   362→          {summary.watch > 0 && (
+   363→            <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 border text-[10px]">
+   364→              👁 {summary.watch} WATCH
+   365→            </Badge>
+   366→          )}
+   367→          {summary.floatReview > 0 && (
+   368→            <Badge className="bg-blue-500/15 text-blue-300 border-blue-500/30 border text-[10px]">
+   369→              🔍 {summary.floatReview} FLOAT REVIEW
+   370→            </Badge>
+   371→          )}
+   372→          {summary.highMomentum > 0 && (
+   373→            <Badge className="bg-red-500/15 text-red-400 border-red-500/30 border text-[10px] animate-pulse">
+   374→              🔥 {summary.highMomentum} HIGH MOMENTUM
+   375→            </Badge>
+   376→          )}
+   377→          {(summary.totalUniverse > 0) && (
+   378→            <Badge className="bg-blue-500/15 text-blue-300 border-blue-500/30 border text-[10px]">
+   379→              {summary.totalUniverse.toLocaleString()} US stocks scanned
+   380→            </Badge>
+   381→          )}
+   382→          <Badge className="bg-muted/30 text-muted-foreground border border-border/50 text-[10px]">
+   383→            {summary.totalPreFiltered || summary.totalAnalyzed} analyzed
+   384→          </Badge>
+   385→        </div>
+   386→      )}
+   387→
+   388→      {/* ─── Interpretation Guide ─── */}
+   389→      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+   390→        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
+   391→          <div className="text-xs font-semibold text-emerald-400 mb-1">✅ ELIGIBLE</div>
+   392→          <div className="text-[10px] text-muted-foreground">5/5 pillars + catalyst — kandidat për analizë të mëtejshme</div>
+   393→        </div>
+   394→        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5">
+   395→          <div className="text-xs font-semibold text-amber-400 mb-1">👁 WATCH</div>
+   396→          <div className="text-[10px] text-muted-foreground">4/5 pillars — vëzhro, verifiko lajmin</div>
+   397→        </div>
+   398→        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5">
+   399→          <div className="text-xs font-semibold text-blue-400 mb-1">🔍 FLOAT REVIEW</div>
+   400→          <div className="text-[10px] text-muted-foreground">Potencial i mirë — verifiko float në Finviz</div>
+   401→        </div>
+   402→        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5">
+   403→          <div className="text-xs font-semibold text-red-400 mb-1">🔥 HIGH MOMENTUM</div>
+   404→          <div className="text-[10px] text-muted-foreground">RVol ≥5x DHE change ≥15% — sinjal i fortë</div>
+   405→        </div>
+   406→      </div>
+   407→
+   408→      {/* ─── Filter Buttons + Notifications ─── */}
+   409→      <div className="flex flex-wrap items-center gap-1.5">
+   410→        <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+   411→        {filterOptions.filter(o => o.key === 'ALL' || o.count > 0).map(opt => (
+   412→          <button
+   413→            key={opt.key}
+   414→            onClick={() => { setStatusFilter(opt.key); setShowAll(false); }}
+   415→            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border ${
+   416→              statusFilter === opt.key
+   417→                ? 'bg-amber-600 text-white border-amber-600'
+   418→                : 'bg-muted/30 text-muted-foreground border-border/50 hover:bg-muted/50'
+   419→            }`}
+   420→          >
+   421→            {opt.label} ({opt.count})
+   422→          </button>
+   423→        ))}
+   424→
+   425→        {/* Notification Bell */}
+   426→        <div className="relative ml-auto">
+   427→          <button
+   428→            onClick={() => {
+   429→              if (!notificationEnabled) {
+   430→                enableNotifications();
+   431→              } else {
+   432→                setShowNotifications(!showNotifications);
+   433→              }
+   434→            }}
+   435→            className="relative p-1.5 rounded-md border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors"
+   436→            title={notificationEnabled ? 'Shfaq notifikimet' : 'Aktivo notifikimet'}
+   437→          >
+   438→            {notificationEnabled ? (
+   439→              <BellRing className="w-3.5 h-3.5 text-amber-400" />
+   440→            ) : (
+   441→              <Bell className="w-3.5 h-3.5 text-muted-foreground" />
+   442→            )}
+   443→            {notifications.length > 0 && (
+   444→              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">
+   445→                {notifications.length > 9 ? '9+' : notifications.length}
+   446→              </span>
+   447→            )}
+   448→          </button>
+   449→
+   450→          {/* Notification Dropdown */}
+   451→          {showNotifications && notifications.length > 0 && (
+   452→            <div className="absolute right-0 top-full mt-1 w-72 max-h-48 overflow-y-auto bg-card border border-border/50 rounded-lg shadow-xl z-50 p-2">
+   453→              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Notifikime</div>
+   454→              {notifications.slice(0, 10).map((n, i) => (
+   455→                <div key={i} className="text-[11px] text-muted-foreground py-1 border-b border-border/30 last:border-0">{n}</div>
+   456→              ))}
+   457→            </div>
+   458→          )}
+   459→        </div>
+   460→      </div>
+   461→
+   462→      {/* ═══ TOP 5 ELIGIBLE + TOP 5 WATCH — Highlighted Section ═══ */}
+   463→      {(() => {
+   464→        const topEligible = candidates.filter(c => c.status === 'ELIGIBLE').slice(0, 5);
+   465→        const topWatch = candidates.filter(c => c.status === 'WATCH').slice(0, 5);
+   466→        const topFloatReview = candidates.filter(c => c.status === 'FLOAT_REVIEW').slice(0, 5);
+   467→        const topPicks = [...topEligible, ...topWatch];
+   468→        return (
+   469→          <div className="space-y-3">
+   470→            {/* Section Header — ALWAYS visible */}
+   471→            <div className="flex items-center gap-2">
+   472→              <Trophy className="w-5 h-5 text-amber-400" />
+   473→              <span className="text-sm font-bold text-foreground">TOP 5 ELIGIBLE + TOP 5 WATCH</span>
+   474→              <span className="text-[10px] text-muted-foreground ml-1">— renditur sipas Historical Score</span>
+   475→            </div>
+   476→
+   477→            {/* No ELIGIBLE/WATCH message */}
+   478→            {topPicks.length === 0 && (
+   479→              <div className="bg-muted/10 border border-border/50 rounded-lg p-4 text-center">
+   480→                <Trophy className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+   481→                <p className="text-xs text-muted-foreground">
+   482→                  Asnjë ELIGIBLE ose WATCH nuk u gjet. Tregu mund të jetë i qetë.
+   483→                </p>
+   484→                <p className="text-[10px] text-muted-foreground/60 mt-1">
+   485→                  5 Pillars kërkon: RVol ≥5x, Change ≥10%, Catalyst, Price $1-20, Float &lt;20M
+   486→                </p>
+   487→                {topFloatReview.length > 0 && (
+   488→                  <p className="text-[10px] text-blue-400 mt-2">
+   489→                    Ka {topFloatReview.length} FLOAT_REVIEW — këta mund të bëhen ELIGIBLE pasi të verifikohet float-i
+   490→                  </p>
+   491→                )}
+   492→              </div>
+   493→            )}
+   494→
+   495→            {/* TOP ELIGIBLE Row */}
+   496→            {topEligible.length > 0 && (
+   497→              <div className="space-y-1.5">
+   498→                <div className="flex items-center gap-1.5">
+   499→                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+   500→                  <span className="text-[11px] font-semibold text-emerald-400">TOP ELIGIBLE ({topEligible.length})</span>
+   501→                </div>
+   502→                <div className="grid gap-2">
+   503→                  {topEligible.map((c, idx) => (
+   504→                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"ELIGIBLE"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />
+   505→                  ))}
+   506→                </div>
+   507→              </div>
+   508→            )}
+   509→
+   510→            {/* TOP WATCH Row */}
+   511→            {topWatch.length > 0 && (
+   512→              <div className="space-y-1.5">
+   513→                <div className="flex items-center gap-1.5 mt-1">
+   514→                  <Eye className="w-3.5 h-3.5 text-amber-400" />
+   515→                  <span className="text-[11px] font-semibold text-amber-400">TOP WATCH ({topWatch.length})</span>
+   516→                </div>
+   517→                <div className="grid gap-2">
+   518→                  {topWatch.map((c, idx) => (
+   519→                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"WATCH"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />
+   520→                  ))}
+   521→                </div>
+   522→              </div>
+   523→            )}
+   524→          </div>
+   525→        );
+   526→      })()}
+   527→
+   528→      {/* ─── Separator ─── ALWAYS visible ─── */}
+   529→      <div className="border-t border-border/50 pt-2">
+   530→        <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Të gjitha rezultatet ({filtered.length})</div>
+   531→      </div>
+   532→
+   533→      {/* ─── Candidate Cards ─── */}
+   534→      <div className="space-y-2">
+   535→        {displayList.length === 0 ? (
+   536→          <Card className="border-border/50">
+   537→            <CardContent className="pt-6 pb-6 text-center">
+   538→              <Flame className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+   539→              <p className="text-sm text-muted-foreground">
+   540→                {statusFilter === 'ALL'
+   541→                  ? 'Asnjë kandidat nuk u gjet — tregu i qetë'
+   542→                  : `Asnjë kandidat me status "${statusFilter}"`}
+   543→              </p>
+   544→              <p className="text-xs text-muted-foreground/60 mt-1">
+   545→                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $2-20, Float &lt;20M
+   546→              </p>
+   547→            </CardContent>
+   548→          </Card>
+   549→        ) : (
+   550→          displayList.map(c => <CandidateCard key={c.symbol} candidate={c} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />)
+   551→        )}
+   552→      </div>
+   553→
+   554→      {/* ─── Show More / Refresh ─── */}
+   555→      <div className="flex items-center justify-between">
+   556→        {filtered.length > 25 && (
+   557→          <button
+   558→            onClick={() => setShowAll(!showAll)}
+   559→            className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1"
+   560→          >
+   561→            {showAll ? 'Shfaq më pak' : `Shfaq të gjitha (${filtered.length})`}
+   562→            <ChevronDown className={`w-3 h-3 transition-transform ${showAll ? 'rotate-180' : ''}`} />
+   563→          </button>
+   564→        )}
+   565→        <button
+   566→          onClick={fetchData}
+   567→          disabled={loading}
+   568→          className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 ml-auto"
+   569→        >
+   570→          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+   571→          Rifresko
+   572→          {cached && <span className="text-[10px] text-muted-foreground/60">(cached)</span>}
+   573→        </button>
+   574→      </div>
+   575→
+   576→      {/* ─── Methodology Footer ─── */}
+   577→      <Card className="border-amber-500/20 bg-amber-500/5">
+   578→        <CardContent className="pt-3 pb-3">
+   579→          <div className="flex items-start gap-2">
+   580→            <Info className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+   581→            <div className="text-[11px] text-muted-foreground space-y-1.5">
+   582→              <p>
+   583→                <strong className="text-amber-400">Ross Cameron 5 Pillars — Warrior Trading</strong>
+   584→              </p>
+   585→              <p>
+   586→                <strong>1. Rel Volume ≥5x</strong> •
+   587→                <strong>2. Daily Change ≥10%</strong> •
+   588→                <strong>3. News Catalyst</strong> (auto-flag ≥15%) •
+   589→                <strong>4. Price $2-$20</strong> •
+   590→                <strong>5. Float &lt;20M</strong>
+   591→              </p>
+   592→              <p>
+   593→                <strong>Historical Pattern Learning</strong>: Analizon 90 ditët e fundit të çdo aksioni për të gjetur raste të ngjashme me sotën,
+   594→                matur si performuan në ditët pasuese. Jep win rate (1D/2D/3D/5D), return mesatar, dhe besim (confidence).
+   595→              </p>
+   596→              <p className="text-muted-foreground/70">
+   597→                5 Pillars gjen aksione me momentum të fortë; AI Financial Brain vendos nëse ambienti i tregut e lejon trade-in.
+   598→                Kriteret identifikojnë kandidatë për analizë, JO trade të garantuar.
+   599→              </p>
+   600→              <p className="text-amber-400/70">
+   601→                ⚠ DAY TRADING ËSHTË I RREZIKSHËM — Shumica e day traderëve humbasin para. Përdor vetëm për arsim. Nuk është këshillë financiare.
+   602→              </p>
+   603→            </div>
+   604→          </div>
+   605→        </CardContent>
+   606→      </Card>
+   607→    </div>
+   608→  );
+   609→}
+   610→
+   611→// Win Rate Card helper (avoids template literals in JSX)
+   612→function WinRateCard({ label, value, ret }: { label: string; value: number; ret: number }) {
+   613→  const bgClass = value >= 60 ? 'bg-emerald-500/10 border-emerald-500/30' : value >= 45 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30';
+   614→  const textClass = value >= 60 ? 'text-emerald-400' : value >= 45 ? 'text-amber-400' : 'text-red-400';
+   615→  const retClass = ret >= 0 ? 'text-emerald-300' : 'text-red-300';
+   616→  return (
+   617→    <div className={"rounded-lg p-2 text-center border " + bgClass}>
+   618→      <div className={"text-sm font-bold " + textClass}>{value}%</div>
+   619→      <div className="text-[9px] text-muted-foreground">{label}</div>
+   620→      <div className={"text-[10px] font-medium " + retClass}>
+   621→        avg {ret >= 0 ? '+' : ''}{ret}%
+   622→      </div>
+   623→    </div>
+   624→  );
+   625→}
+   626→
+   627→// ═══════════════════════════════════════════════════════════════
+   628→// TOP PICK Card — Compact card for Top 5 ELIGIBLE + Top 5 WATCH
+   629→// ═══════════════════════════════════════════════════════════════
+   630→
+   631→function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candidate: Candidate; rank: number; type: 'ELIGIBLE' | 'WATCH'; expanded: boolean; onToggle: () => void }) {
+   632→  const isEligible = type === 'ELIGIBLE';
+   633→  const isPositive = c.dailyChangePct >= 0;
+   634→  const borderColor = isEligible ? 'border-emerald-500/50' : 'border-amber-500/50';
+   635→  const bgColor = isEligible ? 'bg-emerald-500/8' : 'bg-amber-500/8';
+   636→  const rankColor = rank === 1 ? 'text-amber-400' : rank === 2 ? 'text-gray-300' : rank === 3 ? 'text-orange-400' : 'text-muted-foreground';
+   637→
+   638→  return (
+   639→    <Card className={borderColor + ' ' + bgColor + ' transition-all duration-200 hover:border-border/80'}>
+   640→      <CardContent className="p-3">
+   641→        <div className="flex items-center gap-3 cursor-pointer" onClick={onToggle}>
+   642→          {/* Rank */}
+   643→          <div className={"flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold " + (rank === 1 ? 'bg-amber-500/20 text-amber-400' : rank === 2 ? 'bg-gray-500/20 text-gray-300' : rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-muted/30 ' + rankColor)}>
+   644→            {rank <= 3 ? <Star className={"w-3.5 h-3.5 " + rankColor} /> : <span className={rankColor}>{rank}</span>}
+   645→          </div>
+   646→
+   647→          {/* Ticker + Info */}
+   648→          <div className="flex-1 min-w-0">
+   649→            <div className="flex items-center gap-2 flex-wrap">
+   650→              <span className="font-bold text-sm text-foreground">{c.symbol}</span>
+   651→              {c.highMomentum && (
+   652→                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-[9px] animate-pulse px-1 py-0">
+   653→                  HIGH MOMENTUM
+   654→                </Badge>
+   655→              )}
+   656→              <Badge variant="outline" className={"text-[9px] px-1 py-0 font-semibold " + (isEligible ? 'text-emerald-300 border-emerald-500/40' : 'text-amber-300 border-amber-500/40')}>
+   657→                {isEligible ? 'ELIGIBLE' : 'WATCH'}
+   658→              </Badge>
+   659→              <Badge className={"text-[9px] px-1 py-0 " + (isPositive ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-red-500/15 text-red-400 border-red-500/30')} variant="outline">
+   660→                {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%
+   661→              </Badge>
+   662→              <Badge className="text-[9px] px-1 py-0 bg-muted/30 text-muted-foreground border-border/50 border">
+   663→                {c.pillarCount}/5 pillars
+   664→              </Badge>
+   665→            </div>
+   666→            <div className="text-[11px] text-muted-foreground mt-0.5">
+   667→              {c.company && c.company !== c.symbol ? c.company + ' ' : ''}
+   668→              {c.sector && c.sector !== 'Momentum' ? <span className="text-muted-foreground/60">{c.sector} • </span> : ''}
+   669→              <span className={"font-medium " + (isPositive ? 'text-emerald-400' : 'text-red-400')}>
+   670→                ${c.price.toFixed(2)}
+   671→              </span>
+   672→              {' '} RVol: <span className={c.passesRvol ? 'text-blue-400' : ''}>{c.relativeVolume}x</span>
+   673→              {' '}
+   674→              {/* FLOAT with verification badge */}
+   675→              <span className={c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : ''}>
+   676→                <Hash className="w-3 h-3 inline mr-0.5 opacity-60" />
+   677→                {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+   678→              </span>
+   679→              {c.floatVerified && (
+   680→                <span className={"inline-flex items-center gap-0.5 text-[9px] ml-0.5 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} title={"Float i verifikuar nga " + (c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz')}>
+   681→                  <CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'yahoo' ? 'Yahoo' : c.floatSource === 'finviz' ? 'Finviz' : 'Verified'}
+   682→                </span>
+   683→              )}
+   684→              {!c.floatVerified && c.floatShares !== null && (
+   685→                <span className="inline-flex items-center gap-0.5 text-[9px] text-yellow-500/60 ml-0.5" title="Float nga te dhena statike — verifiko">
+   686→                  <CircleX className="w-2.5 h-2.5" />static
+   687→                </span>
+   688→              )}
+   689→              {c.shortFloatPct !== null && c.shortFloatPct > 10 && (
+   690→                <span className="inline-flex items-center gap-0.5 text-[9px] text-red-400 ml-1" title="Short % i larte — potential short squeeze">
+   691→                  Short: {c.shortFloatPct.toFixed(1)}%
+   692→                </span>
+   693→              )}
+   694→            </div>
+   695→          </div>
+   696→
+   697→          {/* Historical Score — PROMINENT */}
+   698→          <div className="text-right flex-shrink-0">
+   699→            <div className={"text-lg font-bold " + (c.historicalScore >= 60 ? 'text-emerald-400' : c.historicalScore >= 45 ? 'text-amber-400' : 'text-red-400')}>
+   700→              {c.historicalScore >= 60 ? '📈' : c.historicalScore >= 45 ? '➡️' : '📉'} {c.historicalScore}
+   701→            </div>
+   702→            <div className="text-[9px] text-muted-foreground">History / 100</div>
+   703→            <div className="text-[9px] text-muted-foreground">Momentum: {c.momentumScore}/100</div>
+   704→          </div>
+   705→
+   706→          <div className="flex-shrink-0 ml-1">
+   707→            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+   708→          </div>
+   709→        </div>
+   710→
+   711→        {/* Rise Reason — always visible */}
+   712→        {c.riseReason && (
+   713→          <div className="mt-2 flex items-start gap-2 px-2 py-2 rounded-md bg-blue-500/8 border border-blue-500/20">
+   714→            <Lightbulb className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+   715→            <div className="text-[10px] text-blue-300/90 leading-relaxed">{c.riseReason}</div>
+   716→          </div>
+   717→        )}
+   718→
+   719→        {/* Float Detail Panel — always visible for TOP picks */}
+   720→        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 rounded-md bg-amber-500/8 border border-amber-500/20">
+   721→          <span className="text-[10px] text-amber-300/80 font-medium">Float:</span>
+   722→          {c.floatVerified ? (
+   723→            <span className="flex items-center gap-1">
+   724→              <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} />
+   725→              <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
+   726→                {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+   727→              </span>
+   728→              <span className={"text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
+   729→                ({c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz'})
+   730→              </span>
+   731→            </span>
+   732→          ) : (
+   733→            <span className="flex items-center gap-1">
+   734→              <CircleX className="w-3 h-3 text-yellow-500/60" />
+   735→              <span className={"text-[11px] " + (c.floatShares !== null ? 'text-amber-400' : 'text-blue-400')}>
+   736→                {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : 'Unknown'}
+   737→              </span>
+   738→              <span className="text-[9px] text-yellow-500/60">(static)</span>
+   739→            </span>
+   740→          )}
+   741→          {(c.sharesOutstandingM || c.finvizData?.sharesOutM) && (
+   742→            <span className="text-[10px] text-muted-foreground">
+   743→              Outstanding: {(c.sharesOutstandingM || c.finvizData!.sharesOutM)!.toFixed(1)}M
+   744→            </span>
+   745→          )}
+   746→          {c.shortFloatPct !== null && (
+   747→            <span className={"text-[10px] font-medium " + (c.shortFloatPct >= 15 ? 'text-red-400' : c.shortFloatPct >= 5 ? 'text-orange-400' : 'text-muted-foreground')}>
+   748→              Short: {c.shortFloatPct.toFixed(1)}%{c.shortFloatPct >= 15 ? ' ⚠️ Squeeze risk' : ''}
+   749→            </span>
+   750→          )}
+   751→          {c.shortDaysToCover !== null && (
+   752→            <span className={"text-[10px] " + (c.shortDaysToCover >= 5 ? 'text-red-400 font-medium' : 'text-muted-foreground')}>
+   753→              DTC: {c.shortDaysToCover.toFixed(1)}d{c.shortDaysToCover >= 5 ? ' ⚠️' : ''}
+   754→            </span>
+   755→          )}
+   756→          {c.finvizData?.marketCap && (
+   757→            <span className="text-[10px] text-muted-foreground">MCap: {c.finvizData.marketCap}</span>
+   758→          )}
+   759→        </div>
+   760→
+   761→        {/* Catalyst Analysis — detailed, always visible for TOP picks */}
+   762→        {c.catalystAnalysis && (
+   763→          <div className="mt-2 flex items-start gap-2 px-2 py-2 rounded-md bg-orange-500/8 border border-orange-500/20">
+   764→            <Newspaper className="w-3.5 h-3.5 text-orange-400 mt-0.5 flex-shrink-0" />
+   765→            <div className="flex-1 min-w-0">
+   766→              <div className="flex items-center gap-1.5 mb-1">
+   767→                <span className="text-[11px] font-semibold text-orange-400">{c.catalystAnalysis.label}</span>
+   768→                <Badge className={"text-[8px] px-1 py-0 " + (c.catalystAnalysis.confidence === 'HIGH' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : c.catalystAnalysis.confidence === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30')} variant="outline">
+   769→                  {c.catalystAnalysis.confidence}
+   770→                </Badge>
+   771→                <Badge className={"text-[8px] px-1 py-0 " + (c.catalystAnalysis.impact === 'strong' ? 'bg-red-500/20 text-red-300 border-red-500/30' : c.catalystAnalysis.impact === 'moderate' ? 'bg-orange-500/20 text-orange-300 border-orange-500/30' : 'bg-muted/30 text-muted-foreground border-border/50')} variant="outline">
+   772→                  Impact: {c.catalystAnalysis.impact}
+   773→                </Badge>
+   774→              </div>
+   775→              <p className="text-[10px] text-orange-300/80 leading-relaxed">{c.catalystAnalysis.description}</p>
+   776→            </div>
+   777→          </div>
+   778→        )}
+   779→
+   780→        {/* Quick historical stats bar (always visible) */}
+   781→        {c.historicalPattern.setupsFound > 0 && (
+   782→          <div className={"mt-2 flex flex-wrap items-center gap-2 text-[10px] px-2 py-1.5 rounded-md " + (isEligible ? 'bg-emerald-500/8 border-emerald-500/20' : 'bg-amber-500/8 border-amber-500/20') + " border"}>
+   783→            <span className={"font-medium " + (c.historicalPattern.winRate1d >= 60 ? 'text-emerald-400' : 'text-amber-400')}>
+   784→              1D: {c.historicalPattern.winRate1d}% win
+   785→            </span>
+   786→            <span className={"font-medium " + (c.historicalPattern.winRate5d >= 60 ? 'text-emerald-400' : 'text-amber-400')}>
+   787→              5D: {c.historicalPattern.winRate5d}% win
+   788→            </span>
+   789→            <span className={"font-medium " + (c.historicalPattern.avgReturn5d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+   790→              Avg 5D: {c.historicalPattern.avgReturn5d >= 0 ? '+' : ''}{c.historicalPattern.avgReturn5d}%
+   791→            </span>
+   792→            <span className="text-muted-foreground">
+   793→              {c.historicalPattern.setupsFound} raste
+   794→            </span>
+   795→            <Badge className={"text-[8px] px-1 py-0 ml-auto " + (c.historicalPattern.historicalBias === 'bullish' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : c.historicalPattern.historicalBias === 'bearish' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-muted/30 text-muted-foreground border-border/50')} variant="outline">
+   796→              {c.historicalPattern.historicalBias === 'bullish' ? 'BULLISH' : c.historicalPattern.historicalBias === 'bearish' ? 'BEARISH' : 'NEUTRAL'}
+   797→            </Badge>
+   798→          </div>
+   799→        )}
+   800→
+   801→        {/* Reuse the full expanded content from CandidateCard */}
+   802→        {expanded && (
+   803→          <div className="mt-3 border-t border-border/50 pt-3">
+   804→            {/* Pillar Checks */}
+   805→            <div className="flex flex-wrap gap-1.5 mb-3">
+   806→              {[
+   807→                { key: 'rvol', label: 'RVol ≥ 5x', passed: c.passesRvol, color: 'text-blue-400' },
+   808→                { key: 'momentum', label: 'Change ≥ 10%', passed: c.passesMomentum, color: 'text-emerald-400' },
+   809→                { key: 'catalyst', label: 'Catalyst', passed: c.passesCatalyst, color: 'text-orange-400' },
+   810→                { key: 'price', label: 'Price $1-$20', passed: c.passesPrice, color: 'text-purple-400' },
+   811→                { key: 'float', label: 'Float <20M', passed: c.passesFloat, color: 'text-amber-400' },
+   812→              ].map(p => (
+   813→                <div key={p.key} className={"flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border " + (p.passed ? p.color.replace('text-', 'bg-').replace('400', '500/10') + ' border-border/50' : 'bg-muted/20 border-border/30 opacity-50')}>
+   814→                  {p.passed ? <CheckCircle2 className={"w-3 h-3 " + p.color} /> : <XCircle className="w-3 h-3 text-muted-foreground/50" />}
+   815→                  <span className={p.passed ? p.color : 'text-muted-foreground/60'}>{p.label}</span>
+   816→                </div>
+   817→              ))}
+   818→            </div>
+   819→
+   820→            {/* Buy / Sell Indicators */}
+   821→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+   822→              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
+   823→                <div className="flex items-center gap-1.5 mb-1">
+   824→                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+   825→                  <span className="text-xs font-semibold text-emerald-400">BUY Signal</span>
+   826→                </div>
+   827→                <div className="text-[10px] text-muted-foreground">Entry: <span className="text-emerald-300">{c.entryZone}</span></div>
+   828→                {c.takeProfitTargets.length > 0 && (
+   829→                  <div className="text-[10px] text-muted-foreground mt-0.5">Targets: {c.takeProfitTargets.join(' | ')}</div>
+   830→                )}
+   831→              </div>
+   832→              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5">
+   833→                <div className="flex items-center gap-1.5 mb-1">
+   834→                  <Shield className="w-3.5 h-3.5 text-red-400" />
+   835→                  <span className="text-xs font-semibold text-red-400">RISK / STOP</span>
+   836→                </div>
+   837→                <div className="text-[10px] text-muted-foreground">Stop: <span className="text-red-300">{c.stopReference}</span></div>
+   838→                {c.riskFlags.slice(0, 2).map((f, i) => (
+   839→                  <div key={i} className="text-[10px] text-red-300/80 flex items-start gap-1 mt-0.5">
+   840→                    <AlertTriangle className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" /><span>{f}</span>
+   841→                  </div>
+   842→                ))}
+   843→              </div>
+   844→            </div>
+   845→
+   846→            {/* News Headlines (real news for top picks) — with category badges */}
+   847→            {c.newsHeadlines.length > 0 && (
+   848→              <div className="space-y-1.5">
+   849→                <div className="flex items-center gap-1.5">
+   850→                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+   851→                  <span className="text-xs font-medium text-orange-400">Lajme reale</span>
+   852→                  <span className="text-[9px] text-muted-foreground">({c.newsHeadlines.length} artikuj)</span>
+   853→                </div>
+   854→                {c.newsHeadlines.map((n, i) => (
+   855→                  <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-orange-500/8 border border-orange-500/20 hover:bg-orange-500/15 transition-colors group">
+   856→                    <ExternalLink className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
+   857→                    <div className="flex-1 min-w-0">
+   858→                      <div className="text-[10px] text-orange-300/90 leading-relaxed group-hover:text-orange-200">{n.headline}</div>
+   859→                      <div className="flex items-center gap-1.5 mt-0.5">
+   860→                        <span className="text-[9px] text-muted-foreground">{n.source}</span>
+   861→                        {n.category && n.category !== 'other' && (
+   862→                          <Badge className="text-[8px] px-1 py-0 bg-purple-500/15 text-purple-300 border-purple-500/30 border">
+   863→                            {n.category}
+   864→                          </Badge>
+   865→                        )}
+   866→                        {n.summary && (
+   867→                          <span className="text-[9px] text-muted-foreground/60">{n.summary}</span>
+   868→                        )}
+   869→                      </div>
+   870→                    </div>
+   871→                  </a>
+   872→                ))}
+   873→              </div>
+   874→            )}
+   875→
+   876→            {/* Caution Signals — kur duhet me pas kujdes */}
+   877→            {c.cautionSignals.length > 0 && (
+   878→              <div className="space-y-1.5">
+   879→                <div className="flex items-center gap-1.5">
+   880→                  <AlertOctagon className="w-3.5 h-3.5 text-red-400" />
+   881→                  <span className="text-xs font-medium text-red-400">Kujdes!</span>
+   882→                  <span className="text-[9px] text-muted-foreground">Kur duhet me pas kujdes</span>
+   883→                </div>
+   884→                {c.cautionSignals.slice(0, 6).map((s, i) => (
+   885→                  <div key={i} className="flex items-start gap-1.5 pl-5">
+   886→                    <AlertTriangle className="w-2.5 h-2.5 text-red-400/70 mt-0.5 flex-shrink-0" />
+   887→                    <span className="text-[10px] text-red-300/80 leading-relaxed">{s}</span>
+   888→                  </div>
+   889→                ))}
+   890→              </div>
+   891→            )}
+   892→
+   893→            {/* Historical Pattern Learning (compact version for top picks) */}
+   894→            {c.historicalPattern.setupsFound > 0 && (
+   895→              <div className="space-y-2">
+   896→                <div className="flex items-center gap-1.5">
+   897→                  <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
+   898→                  <span className="text-xs font-medium text-cyan-400">Historical Pattern Learning</span>
+   899→                </div>
+   900→                <div className="grid grid-cols-4 gap-1.5">
+   901→                  <WinRateCard label="1D Win Rate" value={c.historicalPattern.winRate1d} ret={c.historicalPattern.avgReturn1d} />
+   902→                  <WinRateCard label="2D Win Rate" value={c.historicalPattern.winRate2d} ret={c.historicalPattern.avgReturn2d} />
+   903→                  <WinRateCard label="3D Win Rate" value={c.historicalPattern.winRate3d} ret={c.historicalPattern.avgReturn3d} />
+   904→                  <WinRateCard label="5D Win Rate" value={c.historicalPattern.winRate5d} ret={c.historicalPattern.avgReturn5d} />
+   905→                </div>
+   906→                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+   907→                  <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-1.5 text-center">
+   908→                    <div className={"text-xs font-bold " + (c.historicalScore >= 60 ? 'text-emerald-400' : c.historicalScore >= 45 ? 'text-amber-400' : 'text-red-400')}>{c.historicalScore}/100</div>
+   909→                    <div className="text-[8px] text-muted-foreground">History Score</div>
+   910→                  </div>
+   911→                  <div className="bg-muted/20 border border-border/50 rounded-lg p-1.5 text-center">
+   912→                    <div className="text-xs font-bold text-cyan-400">{c.historicalPattern.setupsFound}</div>
+   913→                    <div className="text-[8px] text-muted-foreground">Cases</div>
+   914→                  </div>
+   915→                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-1.5 text-center">
+   916→                    <div className="text-xs font-bold text-emerald-400">+{c.historicalPattern.avgMaxGain5d}%</div>
+   917→                    <div className="text-[8px] text-muted-foreground">Avg Max Gain</div>
+   918→                  </div>
+   919→                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-1.5 text-center">
+   920→                    <div className="text-xs font-bold text-red-400">-{c.historicalPattern.avgMaxDrawdown5d}%</div>
+   921→                    <div className="text-[8px] text-muted-foreground">Avg Drawdown</div>
+   922→                  </div>
+   923→                  <div className="bg-muted/20 border border-border/50 rounded-lg p-1.5 text-center">
+   924→                    <div className="text-xs font-bold text-purple-400">{c.historicalPattern.patternConfidence}/100</div>
+   925→                    <div className="text-[8px] text-muted-foreground">Confidence</div>
+   926→                  </div>
+   927→                </div>
+   928→                {/* Recent Setups Table */}
+   929→                {c.historicalPattern.setups.length > 0 && (
+   930→                  <div className="overflow-x-auto">
+   931→                    <table className="w-full text-[10px]">
+   932→                      <thead>
+   933→                        <tr className="text-muted-foreground/70 border-b border-border/30">
+   934→                          <th className="text-left py-1 pr-2">Date</th>
+   935→                          <th className="text-right py-1 px-1">Change</th>
+   936→                          <th className="text-right py-1 px-1">RVol</th>
+   937→                          <th className="text-right py-1 px-1">1D</th>
+   938→                          <th className="text-right py-1 px-1">5D</th>
+   939→                          <th className="text-left py-1 pl-2">Type</th>
+   940→                        </tr>
+   941→                      </thead>
+   942→                      <tbody>
+   943→                        {c.historicalPattern.setups.slice().reverse().map((s, i) => (
+   944→                          <tr key={i} className="border-b border-border/20">
+   945→                            <td className="py-1 pr-2 text-muted-foreground">{s.date}</td>
+   946→                            <td className="text-right py-1 px-1 text-emerald-400">+{s.dayChangePct}%</td>
+   947→                            <td className="text-right py-1 px-1 text-blue-400">{s.dayRelVol}x</td>
+   948→                            <td className={"text-right py-1 px-1 font-medium " + (s.return1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>{s.return1d >= 0 ? '+' : ''}{s.return1d}%</td>
+   949→                            <td className={"text-right py-1 px-1 font-medium " + (s.return5d >= 0 ? 'text-emerald-400' : 'text-red-400')}>{s.return5d >= 0 ? '+' : ''}{s.return5d}%</td>
+   950→                            <td className="py-1 pl-2 text-muted-foreground">{s.setupType}</td>
+   951→                          </tr>
+   952→                        ))}
+   953→                      </tbody>
+   954→                    </table>
+   955→                  </div>
+   956→                )}
+   957→              </div>
+   958→            )}
+   959→          </div>
+   960→        )}
+   961→      </CardContent>
+   962→    </Card>
+   963→  );
+   964→}
+   965→
+   966→// ═══════════════════════════════════════════════════════════════
+   967→// Candidate Card Component
+   968→// ═══════════════════════════════════════════════════════════════
+   969→
+   970→function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candidate; expanded: boolean; onToggle: () => void }) {
+   971→  const sc = STATUS_CONFIG[c.status];
+   972→  const isGreenBg = c.status === 'ELIGIBLE';
+   973→  const isPositive = c.dailyChangePct >= 0;
+   974→
+   975→  const pillars: Array<{ key: string; label: string; passed: boolean; detail: PillarDetail; color: string; icon: React.ComponentType<{ className?: string }> }> = [
+   976→    { key: 'rvol', label: 'RVol ≥ 5x', passed: c.passesRvol, detail: c.pillarDetails.rvol, color: 'text-blue-400', icon: Volume2 },
+   977→    { key: 'momentum', label: 'Daily gain ≥ 10%', passed: c.passesMomentum, detail: c.pillarDetails.momentum, color: 'text-emerald-400', icon: TrendingUp },
+   978→    { key: 'catalyst', label: 'News catalyst', passed: c.passesCatalyst, detail: c.pillarDetails.catalyst, color: 'text-orange-400', icon: Newspaper },
+   979→    { key: 'price', label: 'Price $2–$20', passed: c.passesPrice, detail: c.pillarDetails.price, color: 'text-purple-400', icon: DollarSign },
+   980→    { key: 'float', label: 'Float < 20M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
+   981→  ];
+   982→
+   983→  return (
+   984→    <Card className={`
+   985→      ${isGreenBg ? 'border-emerald-500/50 bg-emerald-500/8' : expanded ? sc.border : 'border-border/50'}
+   986→      ${expanded ? sc.bg : 'bg-card/50'}
+   987→      transition-all duration-200 hover:border-border/80
+   988→    `}>
+   989→      <CardContent className="p-3 sm:p-4">
+   990→        {/* ─── HEADER: Ticker + Status ─── */}
+   991→        <div className="flex items-center gap-3 cursor-pointer" onClick={onToggle}>
+   992→          <div className="flex-1 min-w-0">
+   993→            <div className="flex items-center gap-2 flex-wrap">
+   994→              <span className="font-bold text-sm text-foreground">{c.symbol}</span>
+   995→              {c.highMomentum && (
+   996→                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-[10px] animate-pulse">
+   997→                  🔥 HIGH MOMENTUM
+   998→                </Badge>
+   999→              )}
+  1000→              {c.strongMomentum && !c.highMomentum && (
+  1001→                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 border text-[10px]">
+  1002→                  🔥 STRONG
+  1003→                </Badge>
+  1004→              )}
+  1005→              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-semibold ${sc.color} ${sc.border} border`}>
+  1006→                {sc.icon}
+  1007→                <span className="ml-1">{sc.label}</span>
+  1008→              </Badge>
+  1009→              <Badge
+  1010→                className={`text-[10px] px-1.5 py-0 font-semibold ${isPositive ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-red-500/15 text-red-400 border-red-500/30'}`}
+  1011→                variant="outline"
+  1012→              >
+  1013→                {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%
+  1014→              </Badge>
+  1015→              <Badge className="text-[10px] px-1.5 py-0 bg-muted/30 text-muted-foreground border-border/50 border">
+  1016→                {c.pillarCount}/5
+  1017→              </Badge>
+  1018→            </div>
+  1019→            {c.company && c.company !== c.symbol && (
+  1020→              <div className="text-xs text-muted-foreground mt-0.5 truncate">{c.company} {c.sector && c.sector !== 'Momentum' ? `• ${c.sector}` : ''}</div>
+  1021→            )}
+  1022→          </div>
+  1023→          <div className="text-right flex-shrink-0">
+  1024→            <div className="font-semibold text-sm">${c.price.toFixed(2)}</div>
+  1025→            <div className="text-[10px] text-muted-foreground">Score: {c.momentumScore}/100</div>
+  1026→            {c.historicalPattern.setupsFound > 0 && (
+  1027→              <div className={`text-[10px] font-medium ${c.historicalScore >= 60 ? 'text-emerald-400' : c.historicalScore >= 45 ? 'text-amber-400' : 'text-red-400'}`}>
+  1028→                {c.historicalScore >= 60 ? '📈' : c.historicalScore >= 45 ? '➡️' : '📉'} Historia: {c.historicalScore}/100
+  1029→              </div>
+  1030→            )}
+  1031→          </div>
+  1032→          <div className="flex-shrink-0 ml-1">
+  1033→            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+  1034→          </div>
+  1035→        </div>
+  1036→
+  1037→        {/* ─── INFO ROW: Price, Change, RVol, Float, Catalyst ─── */}
+  1038→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2.5 text-[11px]">
+  1039→          <div className="flex justify-between sm:block">
+  1040→            <span className="text-muted-foreground">Price:</span>
+  1041→            <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}> ${c.price.toFixed(2)}</span>
+  1042→          </div>
+  1043→          <div className="flex justify-between sm:block">
+  1044→            <span className="text-muted-foreground">Daily change:</span>
+  1045→            <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}> {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%</span>
+  1046→          </div>
+  1047→          <div className="flex justify-between sm:block">
+  1048→            <span className="text-muted-foreground">Relative volume:</span>
+  1049→            <span className={`font-medium ${c.passesRvol ? 'text-blue-400' : 'text-muted-foreground'}`}> {c.relativeVolume}x</span>
+  1050→          </div>
+  1051→          <div className="flex justify-between sm:block">
+  1052→            <span className="text-muted-foreground">Float:</span>
+  1053→            <span className={"font-medium " + (c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground')}>
+  1054→              {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown'}
+  1055→              {c.floatVerified && <span className={"inline-flex items-center gap-0.5 ml-1 text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')}><CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'yahoo' ? 'Yahoo' : 'Finviz'}</span>}
+  1056→              {!c.floatVerified && c.floatShares !== null && <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] text-yellow-500/60"><CircleX className="w-2.5 h-2.5" />static</span>}
+  1057→              {c.shortFloatPct !== null && <span className={"ml-1 text-[9px] " + (c.shortFloatPct >= 15 ? 'text-red-400' : 'text-muted-foreground')}>Short: {c.shortFloatPct.toFixed(1)}%</span>}
+  1058→            </span>
+  1059→          </div>
+  1060→          <div className="col-span-2 flex justify-between sm:col-span-1 sm:block">
+  1061→            <span className="text-muted-foreground">Catalyst:</span>
+  1062→            <span className={`font-medium ${c.catalystStatus === 'VERIFIED' ? 'text-emerald-400' : c.catalystStatus === 'REVIEW' ? 'text-orange-400' : 'text-muted-foreground'}`}>
+  1063→              {c.catalystStatus === 'VERIFIED' ? 'Verified' : c.catalystStatus === 'REVIEW' ? 'Review needed' : 'Missing'}
+  1064→            </span>
+  1065→          </div>
+  1066→          <div className="col-span-2 flex justify-between sm:col-span-1 sm:block">
+  1067→            <span className="text-muted-foreground">Source confidence:</span>
+  1068→            <span className={`font-medium ${c.catalystStatus === 'VERIFIED' ? 'text-emerald-400' : c.catalystStatus === 'REVIEW' ? 'text-orange-400' : 'text-red-400'}`}>
+  1069→              {c.catalystStatus === 'VERIFIED' ? 'HIGH' : c.catalystStatus === 'REVIEW' ? 'MEDIUM' : 'LOW'}
+  1070→            </span>
+  1071→          </div>
+  1072→        </div>
+  1073→
+  1074→        {/* ─── PILLAR CHECKS: Compact ─── */}
+  1075→        <div className="flex flex-wrap gap-1.5 mt-2.5">
+  1076→          {pillars.map(p => (
+  1077→            <div
+  1078→              key={p.key}
+  1079→              className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border ${
+  1080→                p.passed
+  1081→                  ? `${p.color.replace('text-', 'bg-').replace('400', '500/10')} border-border/50`
+  1082→                  : 'bg-muted/20 border-border/30 opacity-50'
+  1083→              }`}
+  1084→            >
+  1085→              {p.passed
+  1086→                ? <CheckCircle2 className={`w-3 h-3 ${p.color}`} />
+  1087→                : <XCircle className="w-3 h-3 text-muted-foreground/50" />
+  1088→              }
+  1089→              <span className={p.passed ? p.color : 'text-muted-foreground/60'}>{p.label}</span>
+  1090→            </div>
+  1091→          ))}
+  1092→        </div>
+  1093→
+  1094→        {/* ─── EXPANDED DETAILS ─── */}
+  1095→        {expanded && (
+  1096→          <div className="mt-4 space-y-3 border-t border-border/50 pt-3">
+  1097→            {/* Status Banner */}
+  1098→            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isGreenBg ? 'bg-emerald-500/15 border-emerald-500/30 border' : sc.bg + ' border ' + sc.border}`}>
+  1099→              {sc.icon}
+  1100→              <div className="flex-1">
+  1101→                <div className={`text-sm font-semibold ${sc.color}`}>{c.symbol}: {sc.label}</div>
+  1102→                <div className="text-xs text-muted-foreground">{sc.desc}</div>
+  1103→              </div>
+  1104→              <div className="text-right">
+  1105→                <div className="text-lg font-bold {sc.color}">{c.pillarCount}/5</div>
+  1106→                <div className="text-[10px] text-muted-foreground">Momentum: {c.momentumScore}/100</div>
+  1107→              </div>
+  1108→            </div>
+  1109→
+  1110→            {/* Detailed Pillar Breakdown */}
+  1111→            <div className="space-y-2">
+  1112→              <div className="text-xs font-medium text-muted-foreground">ROSS CAMERON 5 PILLARS — Detaje</div>
+  1113→              {pillars.map((p, idx) => {
+  1114→                const Icon = p.icon;
+  1115→                return (
+  1116→                  <div key={p.key} className={`flex items-start gap-2.5 p-2 rounded-md ${p.passed ? 'bg-muted/10' : 'bg-muted/5'}`}>
+  1117→                    <div className="flex-shrink-0 mt-0.5">
+  1118→                      {p.passed
+  1119→                        ? <CheckCircle2 className={`w-4 h-4 ${p.color}`} />
+  1120→                        : <XCircle className="w-4 h-4 text-muted-foreground/40" />
+  1121→                      }
+  1122→                    </div>
+  1123→                    <div className="flex-1 min-w-0">
+  1124→                      <div className="flex items-center gap-2">
+  1125→                        <span className="text-xs font-medium">{idx + 1}. {p.label}</span>
+  1126→                        <span className="text-[10px] text-muted-foreground">{p.detail.threshold}</span>
+  1127→                      </div>
+  1128→                      <p className="text-[11px] text-muted-foreground mt-0.5">{p.detail.detail}</p>
+  1129→                    </div>
+  1130→                    <div className="flex-shrink-0 text-right">
+  1131→                      <Icon className={`w-4 h-4 ${p.passed ? p.color : 'text-muted-foreground/30'}`} />
+  1132→                    </div>
+  1133→                  </div>
+  1134→                );
+  1135→              })}
+  1136→            </div>
+  1137→
+  1138→            {/* Float Detail Panel — with source info */}
+  1139→            {(c.floatVerified || c.floatShares !== null) && (
+  1140→              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-2 rounded-md bg-amber-500/10 border border-amber-500/30">
+  1141→                <span className="text-[10px] text-amber-300/80 font-medium">Float Data:</span>
+  1142→                {c.floatVerified ? (
+  1143→                  <span className="flex items-center gap-1">
+  1144→                    <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} />
+  1145→                    <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
+  1146→                      Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+  1147→                    </span>
+  1148→                    <span className={"text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
+  1149→                      ({c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz'})
+  1150→                    </span>
+  1151→                  </span>
+  1152→                ) : (
+  1153→                  <span className="flex items-center gap-1">
+  1154→                    <CircleX className="w-3 h-3 text-yellow-500/60" />
+  1155→                    <span className={"text-[11px] " + (c.floatShares !== null ? 'text-amber-400' : 'text-blue-400')}>
+  1156→                      Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : 'Unknown'}
+  1157→                    </span>
+  1158→                    <span className="text-[9px] text-yellow-500/60">(static — verifiko manualisht)</span>
+  1159→                  </span>
+  1160→                )}
+  1161→                {(c.sharesOutstandingM || c.finvizData?.sharesOutM) && (
+  1162→                  <span className="text-[10px] text-muted-foreground">Outstanding: {(c.sharesOutstandingM || c.finvizData!.sharesOutM)!.toFixed(1)}M</span>
+  1163→                )}
+  1164→                {c.shortFloatPct !== null && (
+  1165→                  <span className={"text-[10px] font-medium " + (c.shortFloatPct >= 15 ? 'text-red-400' : c.shortFloatPct >= 5 ? 'text-orange-400' : 'text-muted-foreground')}>
+  1166→                    Short % of Float: {c.shortFloatPct.toFixed(1)}%{c.shortFloatPct >= 15 ? ' — Short squeeze i mundshem' : ''}
+  1167→                  </span>
+  1168→                )}
+  1169→                {c.shortDaysToCover !== null && (
+  1170→                  <span className={"text-[10px] " + (c.shortDaysToCover >= 5 ? 'text-red-400 font-medium' : 'text-muted-foreground')}>
+  1171→                    Days to Cover: {c.shortDaysToCover.toFixed(1)}d{c.shortDaysToCover >= 5 ? ' — High short interest' : ''}
+  1172→                  </span>
+  1173→                )}
+  1174→                {c.finvizData?.marketCap && (
+  1175→                  <span className="text-[10px] text-muted-foreground">Market Cap: {c.finvizData.marketCap}</span>
+  1176→                )}
+  1177→              </div>
+  1178→            )}
+  1179→
+  1180→            {/* Catalyst Details — Enhanced with news analysis */}
+  1181→            {c.catalystAnalysis ? (
+  1182→              <div className="bg-orange-500/10 border border-orange-500/30 rounded-md p-2.5">
+  1183→                <div className="flex items-center gap-1.5 mb-1.5">
+  1184→                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+  1185→                  <span className="text-xs font-medium text-orange-400">Catalyst Analysis</span>
+  1186→                  <Badge className={"text-[9px] px-1 py-0 ml-1 " + (c.catalystAnalysis.confidence === 'HIGH' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : c.catalystAnalysis.confidence === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30')} variant="outline">
+  1187→                    {c.catalystAnalysis.confidence}
+  1188→                  </Badge>
+  1189→                  <Badge className={"text-[9px] px-1 py-0 " + (c.catalystAnalysis.impact === 'strong' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-muted/30 text-muted-foreground border-border/50')} variant="outline">
+  1190→                    Impact: {c.catalystAnalysis.impact}
+  1191→                  </Badge>
+  1192→                  <Badge className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-300 border-orange-500/30 border ml-auto">
+  1193→                    {c.catalystStatus}
+  1194→                  </Badge>
+  1195→                </div>
+  1196→                <div className="text-xs font-medium text-orange-300 mb-1">{c.catalystAnalysis.label}</div>
+  1197→                <p className="text-[11px] text-muted-foreground leading-relaxed">{c.catalystAnalysis.description}</p>
+  1198→              </div>
+  1199→            ) : c.catalystHeadline ? (
+  1200→              <div className="bg-orange-500/10 border border-orange-500/30 rounded-md p-2.5">
+  1201→                <div className="flex items-center gap-1.5 mb-1">
+  1202→                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+  1203→                  <span className="text-xs font-medium text-orange-400">Catalyst Analysis</span>
+  1204→                  <Badge className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-300 border-orange-500/30 border ml-auto">
+  1205→                    {c.catalystStatus}
+  1206→                  </Badge>
+  1207→                </div>
+  1208→                <p className="text-[11px] text-muted-foreground">{c.catalystHeadline}</p>
+  1209→              </div>
+  1210→            ) : null}
+  1211→
+  1212→            {/* Pse po rritet? */}
+  1213→            {c.riseReason && (
+  1214→              <div className="bg-blue-500/10 border border-blue-500/30 rounded-md p-2.5">
+  1215→                <div className="flex items-center gap-1.5 mb-1">
+  1216→                  <Lightbulb className="w-3.5 h-3.5 text-blue-400" />
+  1217→                  <span className="text-xs font-medium text-blue-400">Pse po rritet?</span>
+  1218→                </div>
+  1219→                <p className="text-[11px] text-blue-300/90 leading-relaxed">{c.riseReason}</p>
+  1220→              </div>
+  1221→            )}
+  1222→
+  1223→            {/* Real News Headlines — with category */}
+  1224→            {c.newsHeadlines.length > 0 && (
+  1225→              <div className="space-y-1.5">
+  1226→                <div className="flex items-center gap-1.5">
+  1227→                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+  1228→                  <span className="text-xs font-medium text-orange-400">Lajme reale</span>
+  1229→                  <span className="text-[9px] text-muted-foreground">({c.newsHeadlines.length} artikuj)</span>
+  1230→                </div>
+  1231→                {c.newsHeadlines.map((n, i) => (
+  1232→                  <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-orange-500/8 border border-orange-500/20 hover:bg-orange-500/15 transition-colors group">
+  1233→                    <ExternalLink className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
+  1234→                    <div className="flex-1 min-w-0">
+  1235→                      <div className="text-[10px] text-orange-300/90 leading-relaxed group-hover:text-orange-200">{n.headline}</div>
+  1236→                      <div className="flex items-center gap-1.5 mt-0.5">
+  1237→                        <span className="text-[9px] text-muted-foreground">{n.source}</span>
+  1238→                        {n.category && n.category !== 'other' && (
+  1239→                          <Badge className="text-[8px] px-1 py-0 bg-purple-500/15 text-purple-300 border-purple-500/30 border">
+  1240→                            {n.category}
+  1241→                          </Badge>
+  1242→                        )}
+  1243→                        {n.summary && (
+  1244→                          <span className="text-[9px] text-muted-foreground/60">{n.summary}</span>
+  1245→                        )}
+  1246→                      </div>
+  1247→                    </div>
+  1248→                  </a>
+  1249→                ))}
+  1250→              </div>
+  1251→            )}
+  1252→
+  1253→            {/* Kujdes! — kur duhet me pas kujdes */}
+  1254→            {c.cautionSignals.length > 0 && (
+  1255→              <div className="space-y-1.5">
+  1256→                <div className="flex items-center gap-1.5">
+  1257→                  <AlertOctagon className="w-3.5 h-3.5 text-red-400" />
+  1258→                  <span className="text-xs font-medium text-red-400">Kujdes!</span>
+  1259→                  <span className="text-[9px] text-muted-foreground">Kur duhet me pas kujdes</span>
+  1260→                </div>
+  1261→                {c.cautionSignals.slice(0, 6).map((s, i) => (
+  1262→                  <div key={i} className="flex items-start gap-1.5 pl-5">
+  1263→                    <AlertTriangle className="w-2.5 h-2.5 text-red-400/70 mt-0.5 flex-shrink-0" />
+  1264→                    <span className="text-[10px] text-red-300/80 leading-relaxed">{s}</span>
+  1265→                  </div>
+  1266→                ))}
+  1267→              </div>
+  1268→            )}
+  1269→
+  1270→            {/* Setup Watch Tags */}
+  1271→            {c.setupTags.length > 0 && (
+  1272→              <div className="space-y-1.5">
+  1273→                <div className="flex items-center gap-1.5">
+  1274→                  <Target className="w-3.5 h-3.5 text-emerald-400" />
+  1275→                  <span className="text-xs font-medium text-emerald-400">Setup watch:</span>
+  1276→                </div>
+  1277→                <div className="flex flex-wrap gap-1.5 ml-5">
+  1278→                  {c.setupTags.map((tag, i) => (
+  1279→                    <Badge key={i} className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 border text-[10px]">
+  1280→                      {tag}
+  1281→                    </Badge>
+  1282→                  ))}
+  1283→                </div>
+  1284→              </div>
+  1285→            )}
+  1286→
+  1287→            {/* Buy / Sell Indicators */}
+  1288→            {(c.status === 'ELIGIBLE' || c.status === 'WATCH' || c.status === 'FLOAT_REVIEW') && (
+  1289→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+  1290→                {/* Buy Signal */}
+  1291→                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
+  1292→                  <div className="flex items-center gap-1.5 mb-1.5">
+  1293→                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+  1294→                    <span className="text-xs font-semibold text-emerald-400">BUY Signal</span>
+  1295→                  </div>
+  1296→                  <div className="space-y-1">
+  1297→                    <div className="text-[10px] text-muted-foreground">
+  1298→                      <span className="text-muted-foreground/60">Entry zone:</span> <span className="text-emerald-300">{c.entryZone}</span>
+  1299→                    </div>
+  1300→                    {c.takeProfitTargets.length > 0 && (
+  1301→                      <div className="text-[10px] text-muted-foreground">
+  1302→                        <span className="text-muted-foreground/60">Targets:</span>
+  1303→                        <div className="mt-0.5 space-y-0.5">
+  1304→                          {c.takeProfitTargets.map((t, i) => (
+  1305→                            <div key={i} className="text-emerald-300">{t}</div>
+  1306→                          ))}
+  1307→                        </div>
+  1308→                      </div>
+  1309→                    )}
+  1310→                  </div>
+  1311→                </div>
+  1312→
+  1313→                {/* Sell / Risk Signal */}
+  1314→                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5">
+  1315→                  <div className="flex items-center gap-1.5 mb-1.5">
+  1316→                    <Shield className="w-3.5 h-3.5 text-red-400" />
+  1317→                    <span className="text-xs font-semibold text-red-400">RISK / STOP</span>
+  1318→                  </div>
+  1319→                  <div className="space-y-1">
+  1320→                    <div className="text-[10px] text-muted-foreground">
+  1321→                      <span className="text-muted-foreground/60">Stop reference:</span> <span className="text-red-300">{c.stopReference}</span>
+  1322→                    </div>
+  1323→                    <div className="text-[10px] text-muted-foreground">
+  1324→                      <span className="text-muted-foreground/60">Status:</span>{' '}
+  1325→                      <Badge className="text-[9px] px-1 py-0 bg-yellow-500/20 text-yellow-300 border-yellow-500/30 border">
+  1326→                        PAPER-TRADE REVIEW
+  1327→                      </Badge>
+  1328→                    </div>
+  1329→                    {c.riskFlags.slice(0, 3).map((f, i) => (
+  1330→                      <div key={i} className="text-[10px] text-red-300/80 flex items-start gap-1">
+  1331→                        <AlertTriangle className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" />
+  1332→                        <span>{f}</span>
+  1333→                      </div>
+  1334→                    ))}
+  1335→                  </div>
+  1336→                </div>
+  1337→              </div>
+  1338→            )}
+  1339→
+  1340→            {/* Historical Pattern Analysis */}
+  1341→            {c.historicalPattern.setupsFound > 0 && (
+  1342→              <div className="space-y-3">
+  1343→                <div className="flex items-center gap-1.5">
+  1344→                  <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
+  1345→                  <span className="text-xs font-medium text-cyan-400">Historical Pattern Learning</span>
+  1346→                  <span className={
+  1347→                    c.historicalPattern.historicalBias === 'bullish'
+  1348→                      ? 'text-[9px] px-1 py-0 ml-auto border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 rounded-full'
+  1349→                      : c.historicalPattern.historicalBias === 'bearish'
+  1350→                        ? 'text-[9px] px-1 py-0 ml-auto border bg-red-500/20 text-red-300 border-red-500/30 rounded-full'
+  1351→                        : 'text-[9px] px-1 py-0 ml-auto border bg-muted/30 text-muted-foreground border-border/50 rounded-full'
+  1352→                  }>
+  1353→                    {c.historicalPattern.historicalBias === 'bullish' ? 'BULLISH BIAS' : c.historicalPattern.historicalBias === 'bearish' ? 'BEARISH BIAS' : 'NEUTRAL'}
+  1354→                  </span>
+  1355→                </div>
+  1356→
+  1357→                {/* Win Rate Grid */}
+  1358→                <div className="grid grid-cols-4 gap-2">
+  1359→                  <WinRateCard label="1D Win Rate" value={c.historicalPattern.winRate1d} ret={c.historicalPattern.avgReturn1d} />
+  1360→                  <WinRateCard label="2D Win Rate" value={c.historicalPattern.winRate2d} ret={c.historicalPattern.avgReturn2d} />
+  1361→                  <WinRateCard label="3D Win Rate" value={c.historicalPattern.winRate3d} ret={c.historicalPattern.avgReturn3d} />
+  1362→                  <WinRateCard label="5D Win Rate" value={c.historicalPattern.winRate5d} ret={c.historicalPattern.avgReturn5d} />
+  1363→                </div>
+  1364→
+  1365→                {/* Key Metrics Row */}
+  1366→                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+  1367→                  <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-2 text-center">
+  1368→                    <div className={c.historicalScore >= 60 ? 'text-sm font-bold text-emerald-400' : c.historicalScore >= 45 ? 'text-sm font-bold text-amber-400' : 'text-sm font-bold text-red-400'}>{c.historicalScore}/100</div>
+  1369→                    <div className="text-[9px] text-muted-foreground">History Score</div>
+  1370→                  </div>
+  1371→                  <div className="bg-muted/20 border border-border/50 rounded-lg p-2 text-center">
+  1372→                    <div className="text-sm font-bold text-cyan-400">{c.historicalPattern.setupsFound}</div>
+  1373→                    <div className="text-[9px] text-muted-foreground">Similar cases found</div>
+  1374→                  </div>
+  1375→                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2 text-center">
+  1376→                    <div className="text-sm font-bold text-emerald-400">+{c.historicalPattern.avgMaxGain5d}%</div>
+  1377→                    <div className="text-[9px] text-muted-foreground">Avg max gain (5D)</div>
+  1378→                  </div>
+  1379→                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-center">
+  1380→                    <div className="text-sm font-bold text-red-400">-{c.historicalPattern.avgMaxDrawdown5d}%</div>
+  1381→                    <div className="text-[9px] text-muted-foreground">Avg drawdown (5D)</div>
+  1382→                  </div>
+  1383→                  <div className="bg-muted/20 border border-border/50 rounded-lg p-2 text-center">
+  1384→                    <div className="text-sm font-bold text-purple-400">{c.historicalPattern.patternConfidence}/100</div>
+  1385→                    <div className="text-[9px] text-muted-foreground">Model confidence</div>
+  1386→                  </div>
+  1387→                </div>
+  1388→
+  1389→                {/* Setup Type Breakdown */}
+  1390→                {c.historicalPattern.setupBreakdown.length > 0 && (
+  1391→                  <div className="space-y-1">
+  1392→                    <div className="text-[10px] font-medium text-muted-foreground">Setup type breakdown:</div>
+  1393→                    <div className="flex flex-wrap gap-1.5">
+  1394→                      {c.historicalPattern.setupBreakdown.map((sb, i) => (
+  1395→                        <div key={i} className={
+  1396→                          sb.winRate5d >= 60
+  1397→                            ? 'px-2 py-0.5 rounded-md text-[10px] border bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+  1398→                            : sb.winRate5d >= 45
+  1399→                              ? 'px-2 py-0.5 rounded-md text-[10px] border bg-amber-500/10 border-amber-500/30 text-amber-300'
+  1400→                              : 'px-2 py-0.5 rounded-md text-[10px] border bg-red-500/10 border-red-500/30 text-red-300'
+  1401→                        }>
+  1402→                          {sb.label} ({sb.count}x): {sb.winRate5d}% win | avg {sb.avgReturn5d > 0 ? '+' : ''}{sb.avgReturn5d}%
+  1403→                        </div>
+  1404→                      ))}
+  1405→                    </div>
+  1406→                  </div>
+  1407→                )}
+  1408→
+  1409→                {/* Recent Historical Setups Table */}
+  1410→                {c.historicalPattern.setups.length > 0 && (
+  1411→                  <div className="space-y-1">
+  1412→                    <div className="text-[10px] font-medium text-muted-foreground">Recent similar setups:</div>
+  1413→                    <div className="overflow-x-auto">
+  1414→                      <table className="w-full text-[10px]">
+  1415→                        <thead>
+  1416→                          <tr className="text-muted-foreground/70 border-b border-border/30">
+  1417→                            <th className="text-left py-1 pr-2">Date</th>
+  1418→                            <th className="text-right py-1 px-1">Change</th>
+  1419→                            <th className="text-right py-1 px-1">RVol</th>
+  1420→                            <th className="text-right py-1 px-1">1D</th>
+  1421→                            <th className="text-right py-1 px-1">2D</th>
+  1422→                            <th className="text-right py-1 px-1">5D</th>
+  1423→                            <th className="text-left py-1 pl-2">Type</th>
+  1424→                          </tr>
+  1425→                        </thead>
+  1426→                        <tbody>
+  1427→                          {c.historicalPattern.setups.slice().reverse().map((s, i) => (
+  1428→                            <tr key={i} className="border-b border-border/20">
+  1429→                              <td className="py-1 pr-2 text-muted-foreground">{s.date}</td>
+  1430→                              <td className="text-right py-1 px-1 text-emerald-400">+{s.dayChangePct}%</td>
+  1431→                              <td className="text-right py-1 px-1 text-blue-400">{s.dayRelVol}x</td>
+  1432→                              <td className={s.return1d >= 0 ? 'text-right py-1 px-1 font-medium text-emerald-400' : 'text-right py-1 px-1 font-medium text-red-400'}>{s.return1d >= 0 ? '+' : ''}{s.return1d}%</td>
+  1433→                              <td className={s.return2d >= 0 ? 'text-right py-1 px-1 text-emerald-400' : 'text-right py-1 px-1 text-red-400'}>{s.return2d >= 0 ? '+' : ''}{s.return2d}%</td>
+  1434→                              <td className={s.return5d >= 0 ? 'text-right py-1 px-1 font-medium text-emerald-400' : 'text-right py-1 px-1 font-medium text-red-400'}>{s.return5d >= 0 ? '+' : ''}{s.return5d}%</td>
+  1435→                              <td className="py-1 pl-2 text-muted-foreground">{s.setupType}</td>
+  1436→                            </tr>
+  1437→                          ))}
+  1438→                        </tbody>
+  1439→                      </table>
+  1440→                    </div>
+  1441→                  </div>
+  1442→                )}
+  1443→
+  1444→                {/* Disclaimer */}
+  1445→                <div className="text-[9px] text-muted-foreground/60 flex items-start gap-1">
+  1446→                  <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+  1447→                  <span>Past performance does not guarantee future results. These are statistical models from the last 90 days of data. Use as an additional factor, not as a final decision.</span>
+  1448→                </div>
+  1449→              </div>
+  1450→            )}
+  1451→
+  1452→            {/* Historical Pattern: No Data */}
+  1453→            {c.historicalPattern.setupsFound === 0 && (
+  1454→              <div className="bg-muted/10 border border-border/30 rounded-md p-2.5 flex items-start gap-2">
+  1455→                <GitBranch className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+  1456→                <div className="text-[10px] text-muted-foreground/60">
+  1457→                  <span className="font-medium">Historical Pattern Learning:</span> No similar cases found in the last 90 days. This stock rarely has such momentum (good or bad).
+  1458→                </div>
+  1459→              </div>
+  1460→            )}
+  1461→            {/* Full Risk Flags */}
+  1462→            {c.riskFlags.length > 1 && (
+  1463→              <div className="space-y-1">
+  1464→                <div className="text-xs font-medium text-amber-400 flex items-center gap-1">
+  1465→                  <AlertTriangle className="w-3 h-3" /> Risk Flags
+  1466→                </div>
+  1467→                {c.riskFlags.map((f, i) => (
+  1468→                  <div key={i} className="text-[10px] text-muted-foreground pl-4 flex items-start gap-1.5">
+  1469→                    <MinusCircle className="w-2.5 h-2.5 text-amber-500/60 mt-0.5 flex-shrink-0" />
+  1470→                    <span>{f}</span>
+  1471→                  </div>
+  1472→                ))}
+  1473→              </div>
+  1474→            )}
+  1475→
+  1476→            {/* Volume Details */}
+  1477→            <div className="bg-muted/20 rounded-md p-2 text-[10px] text-muted-foreground grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1478→              <div>Current vol: {(c.currentVolume / 1e6).toFixed(1)}M</div>
+  1479→              <div>Avg 30d: {(c.averageVolume30d / 1e6).toFixed(1)}M</div>
+  1480→              <div>RelVol: {c.relativeVolume}x</div>
+  1481→              <div>Prev close: ${c.prevClose.toFixed(2)}</div>
+  1482→            </div>
+  1483→          </div>
+  1484→        )}
+  1485→      </CardContent>
+  1486→    </Card>
+  1487→  );
+  1488→}
+  1489→
