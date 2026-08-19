@@ -17,6 +17,7 @@
 
 import { fetchHistoricalData, type HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { analyzeHistoricalPatterns, computeHistoricalScore, type PatternAnalysis } from '@/lib/historical-pattern-engine';
+import { generateRiseReason, generateCautionSignals, type StockNewsItem } from '@/lib/stock-news-fetcher';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -77,6 +78,11 @@ export interface FivePillarsCandidate {
   // Historical Pattern Learning fields
   historicalScore: number;            // 0-100 composite score from historical analysis
   historicalPattern: PatternAnalysis;  // full historical analysis
+
+  // Rise reason + News + Caution fields
+  riseReason: string;                   // AI-style explanation of WHY it's moving
+  cautionSignals: string[];             // When to be careful
+  newsHeadlines: StockNewsItem[];      // Real news headlines (only for top picks)
 }
 
 // ─── Thresholds (EXACT Ross Cameron defaults) ──────────────
@@ -437,6 +443,30 @@ export async function analyzeFivePillarsCandidate(
     const historicalAdjustment = (historicalScore - 50) * 0.2;
     momentumScore = Math.min(100, Math.max(0, Math.round(momentumScore + historicalAdjustment)));
 
+    // ── Rise Reason + Caution Signals ──
+    const riseReason = generateRiseReason({
+      symbol: ticker,
+      dailyChangePct,
+      relativeVolume: relVol,
+      price,
+      prevClose,
+      history,
+    });
+
+    const cautionSignals = generateCautionSignals({
+      symbol: ticker,
+      dailyChangePct,
+      relativeVolume: relVol,
+      price,
+      prevClose,
+      floatShares: floatSharesM,
+      pillarCount,
+      status,
+      highMomentum,
+      historicalScore,
+      historicalPattern,
+    });
+
     return {
       symbol: ticker,
       price,
@@ -466,6 +496,9 @@ export async function analyzeFivePillarsCandidate(
       takeProfitTargets,
       historicalScore,
       historicalPattern,
+      riseReason,
+      cautionSignals,
+      newsHeadlines: [],
     };
   } catch (err) {
     console.error(`[5-PILLARS] ${ticker}: Error:`, err);

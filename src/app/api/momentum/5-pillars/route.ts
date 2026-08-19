@@ -3,6 +3,7 @@ import { getRealPrices } from '@/lib/alpha-vantage';
 import { getAllStocks } from '@/lib/market-data';
 import { analyzeFivePillarsBatch, type FivePillarsCandidate } from '@/lib/five-pillars-engine';
 import { getAllUSStockSnapshots, prefilterCandidates, getAllUSTickers } from '@/lib/us-stock-universe';
+import { fetchStockNewsBatch } from '@/lib/stock-news-fetcher';
 
 export const maxDuration = 300;
 
@@ -171,6 +172,24 @@ export async function GET() {
       if (b.pillarCount !== a.pillarCount) return b.pillarCount - a.pillarCount;
       return b.momentumScore - a.momentumScore;
     });
+
+    // ═══ STEP 4.5: Fetch real news for TOP ELIGIBLE + WATCH (max 10) ═══
+    const topCandidates = enriched.filter(c => c.status === 'ELIGIBLE' || c.status === 'WATCH').slice(0, 10);
+    if (topCandidates.length > 0) {
+      try {
+        console.log(`[5-PILLARS-MOMENTUM] Fetching news for ${topCandidates.length} top candidates...`);
+        const newsMap = await fetchStockNewsBatch(topCandidates.map(c => c.symbol), 3);
+        for (const candidate of enriched) {
+ const headlines = newsMap[candidate.symbol];
+          if (headlines && headlines.length > 0) {
+            candidate.newsHeadlines = headlines;
+          }
+        }
+        console.log(`[5-PILLARS-MOMENTUM] News fetched for ${Object.keys(newsMap).length} stocks`);
+      } catch (err) {
+        console.log('[5-PILLARS-MOMENTUM] News fetch failed (non-critical):', err);
+      }
+    }
 
     // ═══ STEP 5: Compute summary ═══
     const total = enriched.length;

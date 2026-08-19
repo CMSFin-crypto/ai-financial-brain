@@ -36,6 +36,9 @@ import {
   GitBranch,
   Trophy,
   Star,
+  ExternalLink,
+  AlertOctagon,
+  Lightbulb,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -119,6 +122,9 @@ interface Candidate {
   takeProfitTargets: string[];
   historicalScore: number;
   historicalPattern: PatternAnalysis;
+  riseReason: string;
+  cautionSignals: string[];
+  newsHeadlines: { headline: string; source: string; publishedAt: string; url: string }[];
 }
 
 interface ScanSummary {
@@ -651,6 +657,14 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
           </div>
         </div>
 
+        {/* Rise Reason — always visible */}
+        {c.riseReason && (
+          <div className="mt-2 flex items-start gap-2 px-2 py-2 rounded-md bg-blue-500/8 border border-blue-500/20">
+            <Lightbulb className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+            <div className="text-[10px] text-blue-300/90 leading-relaxed">{c.riseReason}</div>
+          </div>
+        )}
+
         {/* Quick historical stats bar (always visible) */}
         {c.historicalPattern.setupsFound > 0 && (
           <div className={"mt-2 flex flex-wrap items-center gap-2 text-[10px] px-2 py-1.5 rounded-md " + (isEligible ? 'bg-emerald-500/8 border-emerald-500/20' : 'bg-amber-500/8 border-amber-500/20') + " border"}>
@@ -716,6 +730,42 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
                 ))}
               </div>
             </div>
+
+            {/* News Headlines (real news for top picks) */}
+            {c.newsHeadlines.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+                  <span className="text-xs font-medium text-orange-400">Lajme reale</span>
+                </div>
+                {c.newsHeadlines.map((n, i) => (
+                  <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-orange-500/8 border border-orange-500/20 hover:bg-orange-500/15 transition-colors group">
+                    <ExternalLink className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] text-orange-300/90 leading-relaxed group-hover:text-orange-200">{n.headline}</div>
+                      <div className="text-[9px] text-muted-foreground mt-0.5">{n.source}</div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {/* Caution Signals — kur duhet me pas kujdes */}
+            {c.cautionSignals.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <AlertOctagon className="w-3.5 h-3.5 text-red-400" />
+                  <span className="text-xs font-medium text-red-400">Kujdes!</span>
+                  <span className="text-[9px] text-muted-foreground">Kur duhet me pas kujdes</span>
+                </div>
+                {c.cautionSignals.slice(0, 6).map((s, i) => (
+                  <div key={i} className="flex items-start gap-1.5 pl-5">
+                    <AlertTriangle className="w-2.5 h-2.5 text-red-400/70 mt-0.5 flex-shrink-0" />
+                    <span className="text-[10px] text-red-300/80 leading-relaxed">{s}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Historical Pattern Learning (compact version for top picks) */}
             {c.historicalPattern.setupsFound > 0 && (
@@ -970,6 +1020,53 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
                   </Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground">{c.catalystHeadline}</p>
+              </div>
+            )}
+
+            {/* Pse po rritet? */}
+            {c.riseReason && (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-md p-2.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Lightbulb className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-xs font-medium text-blue-400">Pse po rritet?</span>
+                </div>
+                <p className="text-[11px] text-blue-300/90 leading-relaxed">{c.riseReason}</p>
+              </div>
+            )}
+
+            {/* Real News Headlines */}
+            {c.newsHeadlines.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+                  <span className="text-xs font-medium text-orange-400">Lajme reale</span>
+                </div>
+                {c.newsHeadlines.map((n, i) => (
+                  <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-orange-500/8 border border-orange-500/20 hover:bg-orange-500/15 transition-colors group">
+                    <ExternalLink className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] text-orange-300/90 leading-relaxed group-hover:text-orange-200">{n.headline}</div>
+                      <div className="text-[9px] text-muted-foreground mt-0.5">{n.source}</div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {/* Kujdes! — kur duhet me pas kujdes */}
+            {c.cautionSignals.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <AlertOctagon className="w-3.5 h-3.5 text-red-400" />
+                  <span className="text-xs font-medium text-red-400">Kujdes!</span>
+                  <span className="text-[9px] text-muted-foreground">Kur duhet me pas kujdes</span>
+                </div>
+                {c.cautionSignals.slice(0, 6).map((s, i) => (
+                  <div key={i} className="flex items-start gap-1.5 pl-5">
+                    <AlertTriangle className="w-2.5 h-2.5 text-red-400/70 mt-0.5 flex-shrink-0" />
+                    <span className="text-[10px] text-red-300/80 leading-relaxed">{s}</span>
+                  </div>
+                ))}
               </div>
             )}
 
