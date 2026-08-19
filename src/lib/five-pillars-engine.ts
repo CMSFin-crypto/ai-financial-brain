@@ -6,7 +6,7 @@
 //   2. DAILY % CHANGE ≥ 10%  — Momentum ditor i konfirmuar
 //   3. NEWS CATALYST           — Flago ≥15% si me gjasë lajm
 //   4. PRICE RANGE $1-$20       — Zona optimale për day trading
-//   5. FLOAT < 10M SHARES       — Supply/demand imbalance
+//   5. FLOAT < 20M SHARES       — Supply/demand imbalance
 //
 // Status system:
 //   5/5 + catalyst VERIFIED → ELIGIBLE
@@ -100,7 +100,7 @@ export const PILLAR_CONFIG = {
   strongMomentumPct: 15,
   priceMin: 1,             // User spec: $1.00 minimum
   priceMax: 20,            // User spec: $20.00 maximum
-  floatMaxMillions: 10,     // User spec: <10 million shares
+  floatMaxMillions: 20,     // User spec: <20 million shares
   volumeLookback: 30,
 };
 
@@ -213,7 +213,7 @@ function checkPillar5_Float(floatSharesM: number | null): { result: PillarResult
       threshold: `≤ ${PILLAR_CONFIG.floatMaxMillions}M`,
       detail: hasData
         ? passed
-          ? `Float: ${floatSharesM!.toFixed(1)}M shares — supply/demand imbalance (<10M)`
+          ? `Float: ${floatSharesM!.toFixed(1)}M shares — supply/demand imbalance (<20M)`
           : `Float: ${floatSharesM!.toFixed(1)}M shares (must be ≤ ${PILLAR_CONFIG.floatMaxMillions}M)`
         : 'Float i panjohur — verifiko manualisht në Finviz',
     },

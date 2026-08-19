@@ -207,12 +207,12 @@ export async function GET() {
               candidate.floatShares = fd.floatM;
               candidate.floatVerified = true;
               // Re-check float pillar
-              candidate.passesFloat = fd.floatM <= 10;
+              candidate.passesFloat = fd.floatM <= 20;
               candidate.pillarDetails.float = {
-                passed: fd.floatM <= 10,
+                passed: fd.floatM <= 20,
                 value: fd.floatM,
-                threshold: '≤ 10M',
-                detail: `Float (Finviz): ${fd.floatM.toFixed(1)}M shares${fd.floatM <= 10 ? ' — supply/demand imbalance' : ` (duhet ≤10M)`}`,
+                threshold: '≤ 20M',
+                detail: `Float (Finviz): ${fd.floatM.toFixed(1)}M shares${fd.floatM <= 20 ? ' — supply/demand imbalance' : ` (duhet ≤20M)`}`,
               };
             }
             if (fd.shortFloat !== null) {

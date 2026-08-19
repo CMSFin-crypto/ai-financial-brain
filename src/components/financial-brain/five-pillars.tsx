@@ -211,7 +211,7 @@ const PILLAR_LABELS = [
   { key: 'momentum', label: 'Daily gain ≥ 10%', icon: TrendingUp, color: 'text-emerald-400' },
   { key: 'catalyst', label: 'News catalyst', icon: Newspaper, color: 'text-orange-400' },
   { key: 'price', label: 'Price $1–$20', icon: DollarSign, color: 'text-purple-400' },
-  { key: 'float', label: 'Float < 10M', icon: Coins, color: 'text-amber-400' },
+  { key: 'float', label: 'Float < 20M', icon: Coins, color: 'text-amber-400' },
 ] as const;
 
 // ─── Component ──────────────────────────────────────────────
@@ -479,7 +479,7 @@ export function FivePillars() {
                   Asnjë ELIGIBLE ose WATCH nuk u gjet. Tregu mund të jetë i qetë.
                 </p>
                 <p className="text-[10px] text-muted-foreground/60 mt-1">
-                  5 Pillars kërkon: RVol ≥5x, Change ≥10%, Catalyst, Price $1-20, Float &lt;10M
+                  5 Pillars kërkon: RVol ≥5x, Change ≥10%, Catalyst, Price $1-20, Float &lt;20M
                 </p>
                 {topFloatReview.length > 0 && (
                   <p className="text-[10px] text-blue-400 mt-2">
@@ -539,7 +539,7 @@ export function FivePillars() {
                   : `Asnjë kandidat me status "${statusFilter}"`}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-1">
-                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $2-20, Float &lt;10M
+                5 Pillars: RelVol 5x+, Change 10%+, Catalyst, Price $2-20, Float &lt;20M
               </p>
             </CardContent>
           </Card>
@@ -584,7 +584,7 @@ export function FivePillars() {
                 <strong>2. Daily Change ≥10%</strong> •
                 <strong>3. News Catalyst</strong> (auto-flag ≥15%) •
                 <strong>4. Price $2-$20</strong> •
-                <strong>5. Float &lt;10M</strong>
+                <strong>5. Float &lt;20M</strong>
               </p>
               <p>
                 <strong>Historical Pattern Learning</strong>: Analizon 90 ditët e fundit të çdo aksioni për të gjetur raste të ngjashme me sotën,
@@ -793,7 +793,7 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
                 { key: 'momentum', label: 'Change ≥ 10%', passed: c.passesMomentum, color: 'text-emerald-400' },
                 { key: 'catalyst', label: 'Catalyst', passed: c.passesCatalyst, color: 'text-orange-400' },
                 { key: 'price', label: 'Price $1-$20', passed: c.passesPrice, color: 'text-purple-400' },
-                { key: 'float', label: 'Float <10M', passed: c.passesFloat, color: 'text-amber-400' },
+                { key: 'float', label: 'Float <20M', passed: c.passesFloat, color: 'text-amber-400' },
               ].map(p => (
                 <div key={p.key} className={"flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border " + (p.passed ? p.color.replace('text-', 'bg-').replace('400', '500/10') + ' border-border/50' : 'bg-muted/20 border-border/30 opacity-50')}>
                   {p.passed ? <CheckCircle2 className={"w-3 h-3 " + p.color} /> : <XCircle className="w-3 h-3 text-muted-foreground/50" />}
@@ -962,7 +962,7 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
     { key: 'momentum', label: 'Daily gain ≥ 10%', passed: c.passesMomentum, detail: c.pillarDetails.momentum, color: 'text-emerald-400', icon: TrendingUp },
     { key: 'catalyst', label: 'News catalyst', passed: c.passesCatalyst, detail: c.pillarDetails.catalyst, color: 'text-orange-400', icon: Newspaper },
     { key: 'price', label: 'Price $2–$20', passed: c.passesPrice, detail: c.pillarDetails.price, color: 'text-purple-400', icon: DollarSign },
-    { key: 'float', label: 'Float < 10M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
+    { key: 'float', label: 'Float < 20M', passed: c.passesFloat, detail: c.pillarDetails.float, color: 'text-amber-400', icon: Coins },
   ];
 
   return (
