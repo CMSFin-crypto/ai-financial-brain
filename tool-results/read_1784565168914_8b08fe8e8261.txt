@@ -1,0 +1,1544 @@
+     1→'use client';
+     2→
+     3→import { useState, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import { Card, CardContent } from '@/components/ui/card';
+     6→import { Badge } from '@/components/ui/badge';
+     7→import { Button } from '@/components/ui/button';
+     8→import { Input } from '@/components/ui/input';
+     9→import {
+    10→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    11→} from '@/components/ui/select';
+    12→import {
+    13→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    14→} from '@/components/ui/table';
+    15→import {
+    16→  Brain, Play, Loader2, TrendingUp, TrendingDown, Minus,
+    17→  Shield, AlertTriangle, Zap, BarChart3, ArrowUp, ArrowDown,
+    18→  Target, Clock, Search, RefreshCw, ChevronDown, ChevronUp,
+    19→  Sparkles, GraduationCap, BookOpen, CheckCircle2, XCircle, Activity,
+    20→} from 'lucide-react';
+    21→
+    22→// ─── Types ──────────────────────────────────────────────────
+    23→
+    24→interface KeyFactor {
+    25→  name: string;
+    26→  signal: string;
+    27→  impact: string;
+    28→  score: number;
+    29→  description: string;
+    30→}
+    31→
+    32→interface TermPrediction {
+    33→  prediction: string;
+    34→  probability: number;
+    35→  expectedMove: number;
+    36→}
+    37→
+    38→interface PredictionResult {
+    39→  symbol: string;
+    40→  score: number;
+    41→  direction: string;
+    42→  confidence: number;
+    43→  shortTerm: TermPrediction;
+    44→  mediumTerm: TermPrediction;
+    45→  riskLevel: string;
+    46→  volatility: string;
+    47→  keyFactors: KeyFactor[];
+    48→  indicatorScores: Record<string, number>;
+    49→  timestamp: string;
+    50→}
+    51→
+    52→interface ScanResult {
+    53→  scannedAt: string;
+    54→  total: number;
+    55→  successful: number;
+    56→  failed: number;
+    57→  errors: string[];
+    58→  topPicks: PredictionResult[];
+    59→  topShorts: PredictionResult[];
+    60→  mostConfident: PredictionResult[];
+    61→  allResults: PredictionResult[];
+    62→}
+    63→
+    64→// ─── Hybrid Types ───────────────────────────────────────
+    65→
+    66→interface FundamentalFactor {
+    67→  score: number;
+    68→  name: string;
+    69→  description: string;
+    70→}
+    71→
+    72→interface FundamentalScore {
+    73→  score: number;
+    74→  signal: string;
+    75→  factors: {
+    76→    valuation: FundamentalFactor;
+    77→    growth: FundamentalFactor;
+    78→    profitability: FundamentalFactor;
+    79→    financialHealth: FundamentalFactor;
+    80→    analystConsensus: FundamentalFactor;
+    81→  };
+    82→  timestamp: string;
+    83→}
+    84→
+    85→interface HybridPredictionResult extends PredictionResult {
+    86→  fundamentalScore: FundamentalScore | null;
+    87→  fundamentalAvailable: boolean;
+    88→  aiInsight: string;
+    89→  totalScore: number;
+    90→  hybridConfidence: number;
+    91→}
+    92→
+    93→interface LearningStatsData {
+    94→  totalRecorded: number;
+    95→  totalEvaluated: number;
+    96→  totalCorrect: number;
+    97→  overallAccuracy: number;
+    98→  overallAccuracyPercent: number;
+    99→  lessons: Array<{ id: string; category: string; message: string; severity: number; createdAt: string }>;
+   100→  indicatorAccuracies: Record<string, {
+   101→    indicator: string;
+   102→    description: string;
+   103→    accuracy: number;
+   104→    totalPredictions: number;
+   105→    correctPredictions: number;
+   106→    weight: number;
+   107→    type: string;
+   108→  }>;
+   109→  tickerAccuracy: Record<string, { total: number; correct: number; accuracy: number }>;
+   110→  weightMultipliers: Record<string, number>;
+   111→  recentPredictions: Array<{
+   112→    ticker: string;
+   113→    timestamp: string;
+   114→    direction: string;
+   115→    totalScore: number;
+   116→    confidence: number;
+   117→    priceAtPrediction: number;
+   118→    actualPrice?: number;
+   119→    actualChangePercent?: number;
+   120→    wasCorrect?: boolean;
+   121→    evaluated: boolean;
+   122→    topWrongIndicators: string[];
+   123→  }>;
+   124→}
+   125→
+   126→interface HybridScanResult {
+   127→  scannedAt: string;
+   128→  total: number;
+   129→  successful: number;
+   130→  failed: number;
+   131→  errors: string[];
+   132→  topPicks: HybridPredictionResult[];
+   133→  topShorts: HybridPredictionResult[];
+   134→  mostConfident: HybridPredictionResult[];
+   135→  allResults: HybridPredictionResult[];
+   136→}
+   137→
+   138→// ─── Helper Functions ───────────────────────────────────────
+   139→
+   140→function directionColor(direction: string): string {
+   141→  switch (direction) {
+   142→    case 'STRONG_BUY': return 'text-emerald-400';
+   143→    case 'BUY': return 'text-emerald-500';
+   144→    case 'NEUTRAL': return 'text-yellow-500';
+   145→    case 'SELL': return 'text-red-500';
+   146→    case 'STRONG_SELL': return 'text-red-400';
+   147→    default: return 'text-muted-foreground';
+   148→  }
+   149→}
+   150→
+   151→function directionBg(direction: string): string {
+   152→  switch (direction) {
+   153→    case 'STRONG_BUY': return 'bg-emerald-500/15 border-emerald-500/30';
+   154→    case 'BUY': return 'bg-emerald-500/10 border-emerald-500/20';
+   155→    case 'NEUTRAL': return 'bg-yellow-500/10 border-yellow-500/20';
+   156→    case 'SELL': return 'bg-red-500/10 border-red-500/20';
+   157→    case 'STRONG_SELL': return 'bg-red-500/15 border-red-500/30';
+   158→    default: return 'bg-muted/50 border-border/50';
+   159→  }
+   160→}
+   161→
+   162→function directionLabel(direction: string): string {
+   163→  switch (direction) {
+   164→    case 'STRONG_BUY': return 'BLERJE E FORTË';
+   165→    case 'BUY': return 'BLERJE';
+   166→    case 'NEUTRAL': return 'NEUTRAL';
+   167→    case 'SELL': return 'SHITJE';
+   168→    case 'STRONG_SELL': return 'SHITJE E FORTË';
+   169→    default: return direction;
+   170→  }
+   171→}
+   172→
+   173→function directionBadgeVariant(direction: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+   174→  if (direction === 'STRONG_BUY' || direction === 'BUY') return 'default';
+   175→  if (direction === 'SELL' || direction === 'STRONG_SELL') return 'destructive';
+   176→  return 'secondary';
+   177→}
+   178→
+   179→function scoreColor(score: number): string {
+   180→  if (score > 60) return 'text-emerald-400';
+   181→  if (score > 25) return 'text-emerald-500';
+   182→  if (score > -25) return 'text-yellow-500';
+   183→  if (score > -60) return 'text-red-500';
+   184→  return 'text-red-400';
+   185→}
+   186→
+   187→function confidenceColor(conf: number): string {
+   188→  if (conf > 70) return 'text-emerald-400';
+   189→  if (conf > 40) return 'text-yellow-400';
+   190→  return 'text-red-400';
+   191→}
+   192→
+   193→function predictionLabel(prediction: string): string {
+   194→  switch (prediction) {
+   195→    case 'UP': return 'Rritje';
+   196→    case 'DOWN': return 'Ulje';
+   197→    case 'SIDEWAYS': return 'Barnë';
+   198→    default: return prediction;
+   199→  }
+   200→}
+   201→
+   202→function predictionIcon(prediction: string) {
+   203→  if (prediction === 'UP') return <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />;
+   204→  if (prediction === 'DOWN') return <TrendingDown className="w-3.5 h-3.5 text-red-400" />;
+   205→  return <Minus className="w-3.5 h-3.5 text-yellow-400" />;
+   206→}
+   207→
+   208→function riskLabel(level: string): string {
+   209→  switch (level) {
+   210→    case 'LOW': return 'Ulët';
+   211→    case 'MEDIUM': return 'Mesatar';
+   212→    case 'HIGH': return 'I Lartë';
+   213→    default: return level;
+   214→  }
+   215→}
+   216→
+   217→function riskVariant(level: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+   218→  if (level === 'LOW') return 'default';
+   219→  if (level === 'HIGH') return 'destructive';
+   220→  return 'secondary';
+   221→}
+   222→
+   223→function volatilityLabel(level: string): string {
+   224→  switch (level) {
+   225→    case 'LOW': return 'Ulët';
+   226→    case 'MEDIUM': return 'Mesatar';
+   227→    case 'HIGH': return 'I Lartë';
+   228→    default: return level;
+   229→  }
+   230→}
+   231→
+   232→function indicatorScoreColor(score: number): string {
+   233→  if (score > 0) return 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5';
+   234→  if (score < 0) return 'text-red-400 border-red-500/20 bg-red-500/5';
+   235→  return 'text-yellow-400 border-yellow-500/20 bg-yellow-500/5';
+   236→}
+   237→
+   238→// ─── Inline Components ──────────────────────────────────────
+   239→
+   240→function PredictionScoreGauge({ score, direction }: { score: number; direction: string }) {
+   241→  const radius = 54;
+   242→  const circumference = 2 * Math.PI * radius;
+   243→  const normalizedScore = ((score + 100) / 200) * 100;
+   244→  const offset = circumference - (normalizedScore / 100) * circumference;
+   245→
+   246→  const ringColor = score > 25
+   247→    ? 'stroke-emerald-500'
+   248→    : score > -25
+   249→      ? 'stroke-yellow-500'
+   250→      : 'stroke-red-500';
+   251→
+   252→  return (
+   253→    <div className="flex flex-col items-center gap-3">
+   254→      <div className="relative w-36 h-36">
+   255→        <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+   256→          <circle
+   257→            cx="60" cy="60" r={radius}
+   258→            fill="none" className="stroke-muted/30" strokeWidth="8"
+   259→          />
+   260→          <motion.circle
+   261→            cx="60" cy="60" r={radius}
+   262→            fill="none" className={ringColor}
+   263→            strokeWidth="8" strokeLinecap="round"
+   264→            strokeDasharray={circumference}
+   265→            initial={{ strokeDashoffset: circumference }}
+   266→            animate={{ strokeDashoffset: offset }}
+   267→            transition={{ duration: 1.2, ease: 'easeOut' }}
+   268→          />
+   269→        </svg>
+   270→        <div className="absolute inset-0 flex flex-col items-center justify-center">
+   271→          <span className={`text-3xl font-bold ${scoreColor(score)}`}>
+   272→            {score > 0 ? '+' : ''}{score}
+   273→          </span>
+   274→          <span className="text-[10px] text-muted-foreground">-100 — +100</span>
+   275→        </div>
+   276→      </div>
+   277→      <Badge
+   278→        variant={directionBadgeVariant(direction)}
+   279→        className="text-sm px-4 py-1.5 font-semibold"
+   280→      >
+   281→        {directionLabel(direction)}
+   282→      </Badge>
+   283→    </div>
+   284→  );
+   285→}
+   286→
+   287→function ConfidenceBar({ confidence }: { confidence: number }) {
+   288→  const barColor = confidence > 70
+   289→    ? 'bg-emerald-500'
+   290→    : confidence > 40
+   291→      ? 'bg-yellow-500'
+   292→      : 'bg-red-500';
+   293→
+   294→  return (
+   295→    <div className="w-full space-y-1.5">
+   296→      <div className="flex items-center justify-between">
+   297→        <span className="text-xs text-muted-foreground">Besimi</span>
+   298→        <span className={`text-xs font-bold ${confidenceColor(confidence)}`}>
+   299→          {confidence.toFixed(1)}%
+   300→        </span>
+   301→      </div>
+   302→      <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden">
+   303→        <motion.div
+   304→          className={`h-full rounded-full ${barColor}`}
+   305→          initial={{ width: 0 }}
+   306→          animate={{ width: `${confidence}%` }}
+   307→          transition={{ duration: 0.8, ease: 'easeOut' }}
+   308→        />
+   309→      </div>
+   310→    </div>
+   311→  );
+   312→}
+   313→
+   314→function TermCard({
+   315→  label,
+   316→  data,
+   317→}: {
+   318→  label: string;
+   319→  data: TermPrediction;
+   320→}) {
+   321→  return (
+   322→    <Card className={`border ${directionBg(data.prediction === 'UP' ? 'BUY' : data.prediction === 'DOWN' ? 'SELL' : 'NEUTRAL')}`}>
+   323→      <CardContent className="p-3 space-y-2">
+   324→        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+   325→          <Clock className="w-3 h-3" />
+   326→          {label}
+   327→        </div>
+   328→        <div className="flex items-center gap-2">
+   329→          {predictionIcon(data.prediction)}
+   330→          <span className={`text-sm font-bold ${directionColor(data.prediction === 'UP' ? 'BUY' : data.prediction === 'DOWN' ? 'SELL' : 'NEUTRAL')}`}>
+   331→            {predictionLabel(data.prediction)}
+   332→          </span>
+   333→        </div>
+   334→        <div className="flex items-center justify-between text-xs text-muted-foreground">
+   335→          <span>Probabiliteti</span>
+   336→          <span className="font-semibold text-foreground">{data.probability.toFixed(1)}%</span>
+   337→        </div>
+   338→        <div className="flex items-center justify-between text-xs text-muted-foreground">
+   339→          <span>Lëvizja e pritur</span>
+   340→          <span className={`font-semibold ${data.expectedMove >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+   341→            {data.expectedMove >= 0 ? '+' : ''}{data.expectedMove.toFixed(2)}%
+   342→          </span>
+   343→        </div>
+   344→      </CardContent>
+   345→    </Card>
+   346→  );
+   347→}
+   348→
+   349→function ScoreBar({ score }: { score: number }) {
+   350→  const normalized = ((score + 100) / 200) * 100;
+   351→
+   352→  return (
+   353→    <div className="relative w-full h-2.5 rounded-full overflow-hidden">
+   354→      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500 opacity-40" />
+   355→      <motion.div
+   356→        className="absolute top-1/2 -translate-y-1/2 w-1.5 h-3.5 rounded-sm bg-white shadow-sm border border-foreground/20"
+   357→        initial={{ left: '50%' }}
+   358→        animate={{ left: `${Math.max(2, Math.min(98, normalized))}%` }}
+   359→        transition={{ duration: 0.6, ease: 'easeOut' }}
+   360→      />
+   361→    </div>
+   362→  );
+   363→}
+   364→
+   365→// ─── Main Component ─────────────────────────────────────────
+   366→
+   367→export function StockPredictor() {
+   368→  // Mode
+   369→  const [mode, setMode] = useState<'single' | 'scan' | 'ai-hybrid'>('scan');
+   370→
+   371→  // Single mode
+   372→  const [ticker, setTicker] = useState('');
+   373→  const [singleResult, setSingleResult] = useState<PredictionResult | null>(null);
+   374→  const [singleLoading, setSingleLoading] = useState(false);
+   375→  const [singleError, setSingleError] = useState('');
+   376→
+   377→  // Scan mode
+   378→  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+   379→  const [scanLoading, setScanLoading] = useState(false);
+   380→  const [scanError, setScanError] = useState('');
+   381→  const [scanProgress, setScanProgress] = useState('');
+   382→  const [viewTab, setViewTab] = useState<'top-picks' | 'top-shorts' | 'most-confident' | 'all'>('top-picks');
+   383→  const [sortField, setSortField] = useState<'score' | 'confidence' | 'symbol' | 'totalScore' | 'hybridConfidence'>('score');
+   384→  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+   385→  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
+   386→
+   387→  // AI Hybrid scan mode
+   388→  const [hybridResult, setHybridResult] = useState<HybridScanResult | null>(null);
+   389→  const [hybridLoading, setHybridLoading] = useState(false);
+   390→  const [hybridError, setHybridError] = useState('');
+   391→  const [hybridViewTab, setHybridViewTab] = useState<'top-picks' | 'top-shorts' | 'most-confident' | 'all'>('top-picks');
+   392→  const [hybridSortField, setHybridSortField] = useState<'totalScore' | 'hybridConfidence' | 'symbol'>('totalScore');
+   393→  const [hybridSortDir, setHybridSortDir] = useState<'asc' | 'desc'>('desc');
+   394→  const [hybridExpandedSymbol, setHybridExpandedSymbol] = useState<string | null>(null);
+   395→
+   396→  // ─── Handlers ─────────────────────────────────────────────
+   397→
+   398→  const handleSinglePredict = useCallback(async () => {
+   399→    if (!ticker.trim()) return;
+   400→    setSingleLoading(true);
+   401→    setSingleError('');
+   402→    setSingleResult(null);
+   403→    try {
+   404→      const res = await fetch(`/api/predict/${ticker.trim().toUpperCase()}`);
+   405→      const data = await res.json();
+   406→      if (!res.ok) throw new Error(data.error || 'Gabim gjatë predikimit');
+   407→      setSingleResult(data);
+   408→    } catch (err: unknown) {
+   409→      setSingleError(err instanceof Error ? err.message : 'Gabim i papritur');
+   410→    } finally {
+   411→      setSingleLoading(false);
+   412→    }
+   413→  }, [ticker]);
+   414→
+   415→  const handleFullScan = useCallback(async () => {
+   416→    setScanLoading(true);
+   417→    setScanError('');
+   418→    setScanResult(null);
+   419→    setScanProgress('Duke filluar skanimin...');
+   420→    setExpandedSymbol(null);
+   421→    try {
+   422→      const res = await fetch('/api/predict-scan', {
+   423→        signal: AbortSignal.timeout(300000),
+   424→      });
+   425→      const data = await res.json();
+   426→      if (!res.ok) throw new Error(data.error || 'Gabim gjatë skanimit');
+   427→      setScanResult(data);
+   428→    } catch (err: unknown) {
+   429→      if (err instanceof DOMException && err.name === 'TimeoutError') {
+   430→        setScanError('Koha i mbaroi. Provoni përsëri.');
+   431→      } else {
+   432→        setScanError(err instanceof Error ? err.message : 'Gabim i papritur');
+   433→      }
+   434→    } finally {
+   435→      setScanLoading(false);
+   436→      setScanProgress('');
+   437→    }
+   438→  }, []);
+   439→
+   440→  const handleSort = useCallback((field: 'score' | 'confidence' | 'symbol' | 'totalScore' | 'hybridConfidence') => {
+   441→    if (sortField === field) {
+   442→      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+   443→    } else {
+   444→      setSortField(field);
+   445→      setSortDir('desc');
+   446→    }
+   447→  }, [sortField]);
+   448→
+   449→  const handleHybridScan = useCallback(async () => {
+   450→    setHybridLoading(true);
+   451→    setHybridError('');
+   452→    setHybridResult(null);
+   453→    setHybridExpandedSymbol(null);
+   454→    try {
+   455→      const res = await fetch('/api/ai-predict-scan', {
+   456→        signal: AbortSignal.timeout(300000),
+   457→      });
+   458→      const data = await res.json();
+   459→      if (!res.ok) throw new Error(data.error || 'Gabim gjatë skanimit hibrid');
+   460→      setHybridResult(data);
+   461→    } catch (err: unknown) {
+   462→      if (err instanceof DOMException && err.name === 'TimeoutError') {
+   463→        setHybridError('Koha i mbaroi. Provoni përsëri.');
+   464→      } else {
+   465→        setHybridError(err instanceof Error ? err.message : 'Gabim i papritur');
+   466→      }
+   467→    } finally {
+   468→      setHybridLoading(false);
+   469→    }
+   470→  }, []);
+   471→
+   472→  const handleHybridSort = useCallback((field: 'totalScore' | 'hybridConfidence' | 'symbol') => {
+   473→    if (hybridSortField === field) {
+   474→      setHybridSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+   475→    } else {
+   476→      setHybridSortField(field);
+   477→      setHybridSortDir('desc');
+   478→    }
+   479→  }, [hybridSortField]);
+   480→
+   481→  // ─── Derived Data ─────────────────────────────────────────
+   482→
+   483→  // Hybrid derived data
+   484→  const currentHybridResults: HybridPredictionResult[] | null = (() => {
+   485→    if (!hybridResult) return null;
+   486→    const src = (() => {
+   487→      switch (hybridViewTab) {
+   488→        case 'top-picks': return hybridResult.topPicks;
+   489→        case 'top-shorts': return hybridResult.topShorts;
+   490→        case 'most-confident': return hybridResult.mostConfident;
+   491→        case 'all': return hybridResult.allResults;
+   492→        default: return null;
+   493→      }
+   494→    })();
+   495→    if (!src) return null;
+   496→    if (hybridViewTab !== 'all') return src;
+   497→    return [...src].sort((a, b) => {
+   498→      if (hybridSortField === 'symbol') {
+   499→        return hybridSortDir === 'asc'
+   500→          ? a.symbol.localeCompare(b.symbol)
+   501→          : b.symbol.localeCompare(a.symbol);
+   502→      }
+   503→      const aVal = a[hybridSortField];
+   504→      const bVal = b[hybridSortField];
+   505→      return hybridSortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+   506→    });
+   507→  })();
+   508→
+   509→  const currentResults: PredictionResult[] | null = (() => {
+   510→    if (!scanResult) return null;
+   511→    switch (viewTab) {
+   512→      case 'top-picks': return scanResult.topPicks;
+   513→      case 'top-shorts': return scanResult.topShorts;
+   514→      case 'most-confident': return scanResult.mostConfident;
+   515→      case 'all': {
+   516→        const sorted = [...scanResult.allResults].sort((a, b) => {
+   517→          if (sortField === 'symbol') {
+   518→            return sortDir === 'asc'
+   519→              ? a.symbol.localeCompare(b.symbol)
+   520→              : b.symbol.localeCompare(a.symbol);
+   521→          }
+   522→          const aVal = sortField === 'score' ? a.score : a.confidence;
+   523→          const bVal = sortField === 'score' ? b.score : b.confidence;
+   524→          return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+   525→        });
+   526→        return sorted;
+   527→      }
+   528→      default: return null;
+   529→    }
+   530→  })();
+   531→
+   532→  // ─── Render ───────────────────────────────────────────────
+   533→
+   534→  return (
+   535→    <div className="space-y-5">
+   536→      {/* ═══════ Title ═══════ */}
+   537→      <div className="flex items-center gap-2.5">
+   538→        <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
+   539→          <Brain className="w-5 h-5 text-violet-400" />
+   540→        </div>
+   541→        <div>
+   542→          <h2 className="text-lg font-bold text-foreground">Predikues i Stoqeve me AI</h2>
+   543→          <p className="text-xs text-muted-foreground">Analizë teknike e avancuar me më shumë se 15 indikatorë</p>
+   544→        </div>
+   545→      </div>
+   546→
+   547→      {/* ═══════ Mode Toggle ═══════ */}
+   548→      <div className="flex flex-wrap gap-2">
+   549→        <Button
+   550→          variant={mode === 'single' ? 'default' : 'outline'}
+   551→          size="sm"
+   552→          onClick={() => setMode('single')}
+   553→          className={mode === 'single' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+   554→        >
+   555→          <Search className="w-3.5 h-3.5 mr-1.5" />
+   556→          Predikim Individual
+   557→        </Button>
+   558→        <Button
+   559→          variant={mode === 'scan' ? 'default' : 'outline'}
+   560→          size="sm"
+   561→          onClick={() => setMode('scan')}
+   562→          className={mode === 'scan' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+   563→        >
+   564→          <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
+   565→          Skanim Teknik
+   566→        </Button>
+   567→        <Button
+   568→          variant={mode === 'ai-hybrid' ? 'default' : 'outline'}
+   569→          size="sm"
+   570→          onClick={() => setMode('ai-hybrid')}
+   571→          className={mode === 'ai-hybrid' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+   572→        >
+   573→          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+   574→          AI Hybrid
+   575→        </Button>
+   576→      </div>
+   577→
+   578→      <AnimatePresence mode="wait">
+   579→        {/* ═══════════════════════════════════════════════════ */}
+   580→        {/* SINGLE STOCK MODE                                 */}
+   581→        {/* ═══════════════════════════════════════════════════ */}
+   582→        {mode === 'single' && (
+   583→          <motion.div
+   584→            key="single"
+   585→            initial={{ opacity: 0, y: 10 }}
+   586→            animate={{ opacity: 1, y: 0 }}
+   587→            exit={{ opacity: 0, y: -10 }}
+   588→            transition={{ duration: 0.3 }}
+   589→            className="space-y-4"
+   590→          >
+   591→            <p className="text-xs text-muted-foreground">
+   592→              Shkruani një ticker për të marrë predikimin e detajuar me indikatorë teknike, sinjale dhe faturët kryesorë.
+   593→            </p>
+   594→
+   595→            {/* Input row */}
+   596→            <div className="flex gap-2">
+   597→              <Input
+   598→                placeholder="Shkruaj ticker (p.sh. AAPL)"
+   599→                value={ticker}
+   600→                onChange={(e) => setTicker(e.target.value.toUpperCase())}
+   601→                onKeyDown={(e) => e.key === 'Enter' && handleSinglePredict()}
+   602→                className="max-w-xs"
+   603→              />
+   604→              <Button
+   605→                onClick={handleSinglePredict}
+   606→                disabled={singleLoading || !ticker.trim()}
+   607→                size="sm"
+   608→              >
+   609→                {singleLoading
+   610→                  ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+   611→                  : <Zap className="w-4 h-4 mr-1.5" />
+   612→                }
+   613→                Analizo
+   614→              </Button>
+   615→            </div>
+   616→
+   617→            {/* Error */}
+   618→            {singleError && (
+   619→              <motion.p
+   620→                initial={{ opacity: 0 }}
+   621→                animate={{ opacity: 1 }}
+   622→                className="text-sm text-red-400 flex items-center gap-1.5"
+   623→              >
+   624→                <AlertTriangle className="w-3.5 h-3.5" />
+   625→                {singleError}
+   626→              </motion.p>
+   627→            )}
+   628→
+   629→            {/* Loading */}
+   630→            {singleLoading && (
+   631→              <motion.div
+   632→                initial={{ opacity: 0 }}
+   633→                animate={{ opacity: 1 }}
+   634→                className="flex items-center justify-center gap-3 py-12 text-muted-foreground"
+   635→              >
+   636→                <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+   637→                <span className="text-sm">Duke analizuar {ticker}...</span>
+   638→              </motion.div>
+   639→            )}
+   640→
+   641→            {/* Result */}
+   642→            {singleResult && (
+   643→              <motion.div
+   644→                initial={{ opacity: 0, scale: 0.97 }}
+   645→                animate={{ opacity: 1, scale: 1 }}
+   646→                transition={{ duration: 0.4 }}
+   647→                className="space-y-4"
+   648→              >
+   649→                <Card className="border-violet-500/20 bg-violet-500/5">
+   650→                  <CardContent className="pt-5 space-y-5">
+   651→                    {/* Top row: Gauge + Meta */}
+   652→                    <div className="flex flex-col sm:flex-row items-center gap-6">
+   653→                      <PredictionScoreGauge
+   654→                        score={singleResult.score}
+   655→                        direction={singleResult.direction}
+   656→                      />
+   657→                      <div className="flex-1 space-y-3 w-full">
+   658→                        <div>
+   659→                          <h3 className="text-xl font-bold">{singleResult.symbol}</h3>
+   660→                          <p className="text-[10px] text-muted-foreground">
+   661→                            {new Date(singleResult.timestamp).toLocaleString('sq-AL')}
+   662→                          </p>
+   663→                        </div>
+   664→                        <ConfidenceBar confidence={singleResult.confidence} />
+   665→                        <div className="flex gap-2 flex-wrap">
+   666→                          <Badge variant={riskVariant(singleResult.riskLevel)} className="text-[10px]">
+   667→                            <Shield className="w-3 h-3 mr-1" />
+   668→                            Rreziku: {riskLabel(singleResult.riskLevel)}
+   669→                          </Badge>
+   670→                          <Badge variant="outline" className="text-[10px]">
+   671→                            <BarChart3 className="w-3 h-3 mr-1" />
+   672→                            Volatiliteti: {volatilityLabel(singleResult.volatility)}
+   673→                          </Badge>
+   674→                        </div>
+   675→                      </div>
+   676→                    </div>
+   677→
+   678→                    {/* Term predictions */}
+   679→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   680→                      <TermCard
+   681→                        label="Afati i Shkurtër (1-3 ditë)"
+   682→                        data={singleResult.shortTerm}
+   683→                      />
+   684→                      <TermCard
+   685→                        label="Afati i Gjatë (1-2 javë)"
+   686→                        data={singleResult.mediumTerm}
+   687→                      />
+   688→                    </div>
+   689→
+   690→                    {/* Key Factors */}
+   691→                    {singleResult.keyFactors.length > 0 && (
+   692→                      <div>
+   693→                        <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+   694→                          <Target className="w-3 h-3" />
+   695→                          Faktorët Kryesorë
+   696→                        </h4>
+   697→                        <div className="overflow-x-auto rounded-md border">
+   698→                          <Table>
+   699→                            <TableHeader>
+   700→                              <TableRow>
+   701→                                <TableHead className="text-[10px]">Emri</TableHead>
+   702→                                <TableHead className="text-[10px]">Sinjali</TableHead>
+   703→                                <TableHead className="text-[10px]">Ndikimi</TableHead>
+   704→                                <TableHead className="text-[10px] text-right">Pikët</TableHead>
+   705→                                <TableHead className="text-[10px]">Përshkrimi</TableHead>
+   706→                              </TableRow>
+   707→                            </TableHeader>
+   708→                            <TableBody>
+   709→                              {singleResult.keyFactors.map((f, i) => (
+   710→                                <TableRow key={i}>
+   711→                                  <TableCell className="text-xs font-medium py-1.5">{f.name}</TableCell>
+   712→                                  <TableCell className="py-1.5">
+   713→                                    <Badge
+   714→                                      variant={directionBadgeVariant(f.signal)}
+   715→                                      className="text-[10px]"
+   716→                                    >
+   717→                                      {directionLabel(f.signal)}
+   718→                                    </Badge>
+   719→                                  </TableCell>
+   720→                                  <TableCell className="text-[10px] py-1.5">{f.impact}</TableCell>
+   721→                                  <TableCell className={`text-xs font-bold text-right py-1.5 ${scoreColor(f.score)}`}>
+   722→                                    {f.score > 0 ? '+' : ''}{f.score}
+   723→                                  </TableCell>
+   724→                                  <TableCell className="text-[10px] text-muted-foreground py-1.5 max-w-[250px] truncate">
+   725→                                    {f.description}
+   726→                                  </TableCell>
+   727→                                </TableRow>
+   728→                              ))}
+   729→                            </TableBody>
+   730→                          </Table>
+   731→                        </div>
+   732→                      </div>
+   733→                    )}
+   734→
+   735→                    {/* All Indicators Grid */}
+   736→                    {Object.keys(singleResult.indicatorScores).length > 0 && (
+   737→                      <div>
+   738→                        <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+   739→                          <BarChart3 className="w-3 h-3" />
+   740→                          Indikatorët
+   741→                        </h4>
+   742→                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+   743→                          {Object.entries(singleResult.indicatorScores).map(([name, score]) => (
+   744→                            <div
+   745→                              key={name}
+   746→                              className={`rounded-md border px-2.5 py-1.5 text-center ${indicatorScoreColor(score)}`}
+   747→                            >
+   748→                              <p className="text-[10px] opacity-70 truncate">{name}</p>
+   749→                              <p className="text-xs font-bold">
+   750→                                {score > 0 ? '+' : ''}{score}
+   751→                              </p>
+   752→                            </div>
+   753→                          ))}
+   754→                        </div>
+   755→                      </div>
+   756→                    )}
+   757→                  </CardContent>
+   758→                </Card>
+   759→              </motion.div>
+   760→            )}
+   761→          </motion.div>
+   762→        )}
+   763→
+   764→        {/* ═══════════════════════════════════════════════════ */}
+   765→        {/* SCAN MODE                                         */}
+   766→        {/* ═══════════════════════════════════════════════════ */}
+   767→        {mode === 'scan' && (
+   768→          <motion.div
+   769→            key="scan"
+   770→            initial={{ opacity: 0, y: 10 }}
+   771→            animate={{ opacity: 1, y: 0 }}
+   772→            exit={{ opacity: 0, y: -10 }}
+   773→            transition={{ duration: 0.3 }}
+   774→            className="space-y-4"
+   775→          >
+   776→            <p className="text-xs text-muted-foreground">
+   777→              Skanoni të gjitha 116 stoqet me një klikim. AI analizon çdo stoqe me indikatorë teknike dhe i rendit sipas pikëve.
+   778→            </p>
+   779→
+   780→            {/* Scan button */}
+   781→            {!scanResult && !scanLoading && (
+   782→              <motion.div
+   783→                initial={{ opacity: 0, scale: 0.97 }}
+   784→                animate={{ opacity: 1, scale: 1 }}
+   785→              >
+   786→                <Button
+   787→                  onClick={handleFullScan}
+   788→                  size="lg"
+   789→                  className="bg-violet-600 hover:bg-violet-700 text-white font-semibold px-8 h-12 text-sm"
+   790→                >
+   791→                  <Zap className="w-5 h-5 mr-2" />
+   792→                  Skanoni 116 Stoqet
+   793→                </Button>
+   794→              </motion.div>
+   795→            )}
+   796→
+   797→            {/* Loading state */}
+   798→            {scanLoading && (
+   799→              <motion.div
+   800→                initial={{ opacity: 0 }}
+   801→                animate={{ opacity: 1 }}
+   802→                className="flex flex-col items-center gap-4 py-16"
+   803→              >
+   804→                <div className="relative">
+   805→                  <motion.div
+   806→                    className="w-20 h-20 rounded-full border-2 border-violet-500/30"
+   807→                    animate={{ scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] }}
+   808→                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+   809→                  />
+   810→                  <motion.div
+   811→                    className="absolute inset-0 rounded-full border-2 border-violet-400/50"
+   812→                    animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.7, 0.3] }}
+   813→                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+   814→                  />
+   815→                  <div className="absolute inset-0 flex items-center justify-center">
+   816→                    <Brain className="w-8 h-8 text-violet-400" />
+   817→                  </div>
+   818→                </div>
+   819→                <div className="text-center space-y-1">
+   820→                  <p className="text-sm font-semibold text-foreground">
+   821→                    Duke skanuar stoqet...
+   822→                  </p>
+   823→                  <p className="text-xs text-muted-foreground">
+   824→                    Kjo mund të zgjasë 2-3 minuta
+   825→                  </p>
+   826→                </div>
+   827→                {scanProgress && (
+   828→                  <p className="text-[10px] text-violet-400">{scanProgress}</p>
+   829→                )}
+   830→                {/* Fake progress bar */}
+   831→                <div className="w-64 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+   832→                  <motion.div
+   833→                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+   834→                    initial={{ width: '0%' }}
+   835→                    animate={{ width: '90%' }}
+   836→                    transition={{ duration: 120, ease: 'linear' }}
+   837→                  />
+   838→                </div>
+   839→              </motion.div>
+   840→            )}
+   841→
+   842→            {/* Error */}
+   843→            {scanError && (
+   844→              <motion.div
+   845→                initial={{ opacity: 0 }}
+   846→                animate={{ opacity: 1 }}
+   847→                className="flex items-center gap-2 text-sm text-red-400"
+   848→              >
+   849→                <AlertTriangle className="w-4 h-4" />
+   850→                {scanError}
+   851→                <Button
+   852→                  variant="outline"
+   853→                  size="sm"
+   854→                  onClick={handleFullScan}
+   855→                  className="ml-2"
+   856→                >
+   857→                  <RefreshCw className="w-3 h-3 mr-1" />
+   858→                  Provo përsëri
+   859→                </Button>
+   860→              </motion.div>
+   861→            )}
+   862→
+   863→            {/* Scan Results */}
+   864→            {scanResult && !scanLoading && (
+   865→              <motion.div
+   866→                initial={{ opacity: 0, y: 10 }}
+   867→                animate={{ opacity: 1, y: 0 }}
+   868→                transition={{ duration: 0.4 }}
+   869→                className="space-y-4"
+   870→              >
+   871→                {/* Stats bar */}
+   872→                <div className="flex flex-wrap items-center gap-3">
+   873→                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+   874→                    <BarChart3 className="w-3.5 h-3.5" />
+   875→                    <span className="font-semibold text-foreground">{scanResult.total}</span> skanuar
+   876→                  </div>
+   877→                  <div className="text-xs text-muted-foreground">|</div>
+   878→                  <div className="flex items-center gap-1.5 text-xs">
+   879→                    <span className="text-emerald-400 font-semibold">{scanResult.successful}</span>
+   880→                    <span className="text-muted-foreground">me sukses</span>
+   881→                  </div>
+   882→                  <div className="text-xs text-muted-foreground">|</div>
+   883→                  <div className="flex items-center gap-1.5 text-xs">
+   884→                    <span className="text-red-400 font-semibold">{scanResult.failed}</span>
+   885→                    <span className="text-muted-foreground">dështuan</span>
+   886→                  </div>
+   887→                  {scanResult.scannedAt && (
+   888→                    <>
+   889→                      <div className="text-xs text-muted-foreground">|</div>
+   890→                      <div className="text-[10px] text-muted-foreground">
+   891→                        {new Date(scanResult.scannedAt).toLocaleString('sq-AL')}
+   892→                      </div>
+   893→                    </>
+   894→                  )}
+   895→                  <Button
+   896→                    variant="ghost"
+   897→                    size="sm"
+   898→                    onClick={handleFullScan}
+   899→                    className="ml-auto h-7 text-[10px]"
+   900→                  >
+   901→                    <RefreshCw className="w-3 h-3 mr-1" />
+   902→                    Rifresko
+   903→                  </Button>
+   904→                </div>
+   905→
+   906→                {/* Sub-tabs */}
+   907→                <div className="flex gap-1.5 flex-wrap">
+   908→                  {([
+   909→                    { key: 'top-picks' as const, label: '🎯 Top Picks (Blerje)', count: scanResult.topPicks.length },
+   910→                    { key: 'top-shorts' as const, label: '📉 Top Shorts (Shitje)', count: scanResult.topShorts.length },
+   911→                    { key: 'most-confident' as const, label: '✅ Më të Sigurtat', count: scanResult.mostConfident.length },
+   912→                    { key: 'all' as const, label: '📊 Të Gjitha', count: scanResult.allResults.length },
+   913→                  ]).map((tab) => (
+   914→                    <Button
+   915→                      key={tab.key}
+   916→                      variant={viewTab === tab.key ? 'default' : 'outline'}
+   917→                      size="sm"
+   918→                      onClick={() => { setViewTab(tab.key); setExpandedSymbol(null); }}
+   919→                      className={`text-[10px] h-7 ${viewTab === tab.key ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
+   920→                    >
+   921→                      {tab.label}
+   922→                      <Badge variant="outline" className="ml-1.5 text-[9px] px-1.5 py-0 h-4">
+   923→                        {tab.count}
+   924→                      </Badge>
+   925→                    </Button>
+   926→                  ))}
+   927→                </div>
+   928→
+   929→                {/* Table */}
+   930→                <div className="max-h-[70vh] overflow-y-auto rounded-md border">
+   931→                  {currentResults && currentResults.length > 0 ? (
+   932→                    <Table>
+   933→                      <TableHeader className="sticky top-0 bg-card z-10">
+   934→                        <TableRow>
+   935→                          <TableHead className="text-[10px] w-8 text-center">#</TableHead>
+   936→                          <TableHead className="text-[10px]">Ticker</TableHead>
+   937→                          <TableHead
+   938→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+   939→                            onClick={() => handleSort('score')}
+   940→                          >
+   941→                            <div className="flex items-center gap-1">
+   942→                              Pikët
+   943→                              {sortField === 'score' && (
+   944→                                sortDir === 'desc'
+   945→                                  ? <ChevronDown className="w-3 h-3" />
+   946→                                  : <ChevronUp className="w-3 h-3" />
+   947→                              )}
+   948→                            </div>
+   949→                          </TableHead>
+   950→                          <TableHead className="text-[10px]">Sinjali</TableHead>
+   951→                          <TableHead
+   952→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+   953→                            onClick={() => handleSort('confidence')}
+   954→                          >
+   955→                            <div className="flex items-center gap-1">
+   956→                              Besimi %
+   957→                              {sortField === 'confidence' && (
+   958→                                sortDir === 'desc'
+   959→                                  ? <ChevronDown className="w-3 h-3" />
+   960→                                  : <ChevronUp className="w-3 h-3" />
+   961→                              )}
+   962→                            </div>
+   963→                          </TableHead>
+   964→                          <TableHead className="text-[10px]">Afatshkurtër</TableHead>
+   965→                          <TableHead className="text-[10px]">Afatgjatë</TableHead>
+   966→                          <TableHead className="text-[10px]">Rreziku</TableHead>
+   967→                          <TableHead className="text-[10px]">Volatiliteti</TableHead>
+   968→                        </TableRow>
+   969→                      </TableHeader>
+   970→                      <TableBody>
+   971→                        {currentResults.map((r, idx) => {
+   972→                          const isExpanded = expandedSymbol === r.symbol;
+   973→                          return (
+   974→                            <motion.tr
+   975→                              key={r.symbol}
+   976→                              initial={{ opacity: 0, y: 5 }}
+   977→                              animate={{ opacity: 1, y: 0 }}
+   978→                              transition={{ duration: 0.2, delay: idx * 0.03 }}
+   979→                              className="group"
+   980→                            >
+   981→                              {/* Regular row */}
+   982→                              <TableCell className="text-[10px] text-muted-foreground text-center py-1.5">
+   983→                                {idx + 1}
+   984→                              </TableCell>
+   985→                              <TableCell className="py-1.5">
+   986→                                <button
+   987→                                  onClick={() => setExpandedSymbol(isExpanded ? null : r.symbol)}
+   988→                                  className="flex items-center gap-1 font-bold text-xs hover:text-violet-400 transition-colors"
+   989→                                >
+   990→                                  {r.symbol}
+   991→                                  {isExpanded
+   992→                                    ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
+   993→                                    : <ChevronDown className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+   994→                                  }
+   995→                                </button>
+   996→                              </TableCell>
+   997→                              <TableCell className="py-1.5">
+   998→                                <div className="space-y-0.5">
+   999→                                  <span className={`text-xs font-bold ${scoreColor(r.score)}`}>
+  1000→                                    {r.score > 0 ? '+' : ''}{r.score}
+  1001→                                  </span>
+  1002→                                  <ScoreBar score={r.score} />
+  1003→                                </div>
+  1004→                              </TableCell>
+  1005→                              <TableCell className="py-1.5">
+  1006→                                <Badge
+  1007→                                  variant={directionBadgeVariant(r.direction)}
+  1008→                                  className="text-[9px] px-1.5 py-0"
+  1009→                                >
+  1010→                                  {directionLabel(r.direction)}
+  1011→                                </Badge>
+  1012→                              </TableCell>
+  1013→                              <TableCell className="py-1.5">
+  1014→                                <div className="flex items-center gap-1.5">
+  1015→                                  <div className="w-12 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+  1016→                                    <div
+  1017→                                      className={`h-full rounded-full ${
+  1018→                                        r.confidence > 70
+  1019→                                          ? 'bg-emerald-500'
+  1020→                                          : r.confidence > 40
+  1021→                                            ? 'bg-yellow-500'
+  1022→                                            : 'bg-red-500'
+  1023→                                      }`}
+  1024→                                      style={{ width: `${r.confidence}%` }}
+  1025→                                    />
+  1026→                                  </div>
+  1027→                                  <span className={`text-[10px] font-semibold ${confidenceColor(r.confidence)}`}>
+  1028→                                    {r.confidence.toFixed(0)}%
+  1029→                                  </span>
+  1030→                                </div>
+  1031→                              </TableCell>
+  1032→                              <TableCell className="py-1.5">
+  1033→                                <div className="flex items-center gap-1 text-[10px]">
+  1034→                                  {predictionIcon(r.shortTerm.prediction)}
+  1035→                                  <span className="font-medium">{predictionLabel(r.shortTerm.prediction)}</span>
+  1036→                                  <span className="text-muted-foreground">({r.shortTerm.probability.toFixed(0)}%)</span>
+  1037→                                </div>
+  1038→                              </TableCell>
+  1039→                              <TableCell className="py-1.5">
+  1040→                                <div className="flex items-center gap-1 text-[10px]">
+  1041→                                  {predictionIcon(r.mediumTerm.prediction)}
+  1042→                                  <span className="font-medium">{predictionLabel(r.mediumTerm.prediction)}</span>
+  1043→                                  <span className="text-muted-foreground">({r.mediumTerm.probability.toFixed(0)}%)</span>
+  1044→                                </div>
+  1045→                              </TableCell>
+  1046→                              <TableCell className="py-1.5">
+  1047→                                <Badge variant={riskVariant(r.riskLevel)} className="text-[9px] px-1.5 py-0">
+  1048→                                  {riskLabel(r.riskLevel)}
+  1049→                                </Badge>
+  1050→                              </TableCell>
+  1051→                              <TableCell className="text-[10px] text-muted-foreground py-1.5">
+  1052→                                {volatilityLabel(r.volatility)}
+  1053→                              </TableCell>
+  1054→
+  1055→                              {/* Expanded detail row */}
+  1056→                              {isExpanded && (
+  1057→                                <TableCell colSpan={9} className="p-0">
+  1058→                                  <motion.div
+  1059→                                    initial={{ opacity: 0, height: 0 }}
+  1060→                                    animate={{ opacity: 1, height: 'auto' }}
+  1061→                                    exit={{ opacity: 0, height: 0 }}
+  1062→                                    transition={{ duration: 0.3 }}
+  1063→                                    className="border-t border-border/50 bg-muted/20 px-4 py-3"
+  1064→                                  >
+  1065→                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  1066→                                      {/* Key Factors */}
+  1067→                                      {r.keyFactors.length > 0 && (
+  1068→                                        <div>
+  1069→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">
+  1070→                                            Faktorët Kryesorë
+  1071→                                          </p>
+  1072→                                          <div className="space-y-1">
+  1073→                                            {r.keyFactors.map((f, fi) => (
+  1074→                                              <div
+  1075→                                                key={fi}
+  1076→                                                className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1"
+  1077→                                              >
+  1078→                                                <div className="flex-1">
+  1079→                                                  <span className="font-medium">{f.name}</span>
+  1080→                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+  1081→                                                </div>
+  1082→                                                <Badge
+  1083→                                                  variant={directionBadgeVariant(f.signal)}
+  1084→                                                  className="text-[9px] px-1.5 py-0 shrink-0"
+  1085→                                                >
+  1086→                                                  {directionLabel(f.signal)}
+  1087→                                                </Badge>
+  1088→                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>
+  1089→                                                  {f.score > 0 ? '+' : ''}{f.score}
+  1090→                                                </span>
+  1091→                                              </div>
+  1092→                                            ))}
+  1093→                                          </div>
+  1094→                                        </div>
+  1095→                                      )}
+  1096→
+  1097→                                      {/* Indicator Scores */}
+  1098→                                      {Object.keys(r.indicatorScores).length > 0 && (
+  1099→                                        <div>
+  1100→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">
+  1101→                                            Indikatorët
+  1102→                                          </p>
+  1103→                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+  1104→                                            {Object.entries(r.indicatorScores).map(([name, score]) => (
+  1105→                                              <div
+  1106→                                                key={name}
+  1107→                                                className={`rounded-md border px-2 py-1 text-center ${indicatorScoreColor(score)}`}
+  1108→                                              >
+  1109→                                                <p className="text-[9px] opacity-70 truncate">{name}</p>
+  1110→                                                <p className="text-[10px] font-bold">
+  1111→                                                  {score > 0 ? '+' : ''}{score}
+  1112→                                                </p>
+  1113→                                              </div>
+  1114→                                            ))}
+  1115→                                          </div>
+  1116→                                        </div>
+  1117→                                      )}
+  1118→                                    </div>
+  1119→                                  </motion.div>
+  1120→                                </TableCell>
+  1121→                              )}
+  1122→                            </motion.tr>
+  1123→                          );
+  1124→                        })}
+  1125→                      </TableBody>
+  1126→                    </Table>
+  1127→                  ) : (
+  1128→                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+  1129→                      <BarChart3 className="w-8 h-8 mb-2 opacity-40" />
+  1130→                      <p className="text-sm">Nuk u gjetën predikime</p>
+  1131→                    </div>
+  1132→                  )}
+  1133→                </div>
+  1134→
+  1135→                {/* Errors */}
+  1136→                {scanResult.errors.length > 0 && (
+  1137→                  <details className="text-xs">
+  1138→                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
+  1139→                      {scanResult.errors.length} gabime
+  1140→                    </summary>
+  1141→                    <ul className="mt-1 space-y-0.5 pl-4 text-red-400/80 list-disc">
+  1142→                      {scanResult.errors.map((err, i) => (
+  1143→                        <li key={i}>{err}</li>
+  1144→                      ))}
+  1145→                    </ul>
+  1146→                  </details>
+  1147→                )}
+  1148→              </motion.div>
+  1149→            )}
+  1150→          </motion.div>
+  1151→        )}
+  1152→        {/* ═══════════════════════════════════════════════════ */}
+  1153→        {/* AI HYBRID MODE                                   */}
+  1154→        {/* ═══════════════════════════════════════════════════ */}
+  1155→        {mode === 'ai-hybrid' && (
+  1156→          <motion.div
+  1157→            key="ai-hybrid"
+  1158→            initial={{ opacity: 0, y: 10 }}
+  1159→            animate={{ opacity: 1, y: 0 }}
+  1160→            exit={{ opacity: 0, y: -10 }}
+  1161→            transition={{ duration: 0.3 }}
+  1162→            className="space-y-4"
+  1163→          >
+  1164→            <p className="text-xs text-muted-foreground">
+  1165→              Predikim hibrid që kombinon analizën teknike (60%) me analizën themelore (40%) për rezultate më të sakta.
+  1166→            </p>
+  1167→
+  1168→            {/* Scan button */}
+  1169→            {!hybridResult && !hybridLoading && (
+  1170→              <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}>
+  1171→                <Button
+  1172→                  onClick={handleHybridScan}
+  1173→                  size="lg"
+  1174→                  className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white font-semibold px-8 h-12 text-sm"
+  1175→                >
+  1176→                  <Sparkles className="w-5 h-5 mr-2" />
+  1177→                  Skanim Hibrid AI (116 stoqe)
+  1178→                </Button>
+  1179→              </motion.div>
+  1180→            )}
+  1181→
+  1182→            {/* Loading state */}
+  1183→            {hybridLoading && (
+  1184→              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4 py-16">
+  1185→                <div className="relative">
+  1186→                  <motion.div className="w-20 h-20 rounded-full border-2 border-violet-500/30" animate={{ scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
+  1187→                  <motion.div className="absolute inset-0 rounded-full border-2 border-fuchsia-400/50" animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} />
+  1188→                  <div className="absolute inset-0 flex items-center justify-center">
+  1189→                    <Sparkles className="w-8 h-8 text-fuchsia-400" />
+  1190→                  </div>
+  1191→                </div>
+  1192→                <div className="text-center space-y-1">
+  1193→                  <p className="text-sm font-semibold text-foreground">Duke skanuar me AI Hybrid...</p>
+  1194→                  <p className="text-xs text-muted-foreground">Teknikë + Fundamente — kjo mund të zgjasë 3-5 minuta</p>
+  1195→                </div>
+  1196→                <div className="w-64 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+  1197→                  <motion.div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" initial={{ width: '0%' }} animate={{ width: '90%' }} transition={{ duration: 180, ease: 'linear' }} />
+  1198→                </div>
+  1199→              </motion.div>
+  1200→            )}
+  1201→
+  1202→            {/* Error */}
+  1203→            {hybridError && (
+  1204→              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm text-red-400">
+  1205→                <AlertTriangle className="w-4 h-4" />
+  1206→                {hybridError}
+  1207→                <Button variant="outline" size="sm" onClick={handleHybridScan} className="ml-2">
+  1208→                  <RefreshCw className="w-3 h-3 mr-1" />
+  1209→                  Provo përsëri
+  1210→                </Button>
+  1211→              </motion.div>
+  1212→            )}
+  1213→
+  1214→            {/* Scan Results */}
+  1215→            {hybridResult && !hybridLoading && (
+  1216→              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-4">
+  1217→                {/* Stats bar */}
+  1218→                <div className="flex flex-wrap items-center gap-3">
+  1219→                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  1220→                    <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
+  1221→                    <span className="font-semibold text-foreground">{hybridResult.total}</span> skanuar hibrid
+  1222→                  </div>
+  1223→                  <div className="text-xs text-muted-foreground">|</div>
+  1224→                  <div className="flex items-center gap-1.5 text-xs">
+  1225→                    <span className="text-emerald-400 font-semibold">{hybridResult.successful}</span>
+  1226→                    <span className="text-muted-foreground">me sukses</span>
+  1227→                  </div>
+  1228→                  <div className="text-xs text-muted-foreground">|</div>
+  1229→                  <div className="flex items-center gap-1.5 text-xs">
+  1230→                    <span className="text-red-400 font-semibold">{hybridResult.failed}</span>
+  1231→                    <span className="text-muted-foreground">dështuan</span>
+  1232→                  </div>
+  1233→                  {hybridResult.scannedAt && (
+  1234→                    <>
+  1235→                      <div className="text-xs text-muted-foreground">|</div>
+  1236→                      <div className="text-[10px] text-muted-foreground">{new Date(hybridResult.scannedAt).toLocaleString('sq-AL')}</div>
+  1237→                    </>
+  1238→                  )}
+  1239→                  <Button variant="ghost" size="sm" onClick={handleHybridScan} className="ml-auto h-7 text-[10px]">
+  1240→                    <RefreshCw className="w-3 h-3 mr-1" />
+  1241→                    Rifresko
+  1242→                  </Button>
+  1243→                </div>
+  1244→
+  1245→                {/* Sub-tabs */}
+  1246→                <div className="flex gap-1.5 flex-wrap">
+  1247→                  {([
+  1248→                    { key: 'top-picks' as const, label: '🎯 Top Picks', count: hybridResult.topPicks.length },
+  1249→                    { key: 'top-shorts' as const, label: '📉 Top Shorts', count: hybridResult.topShorts.length },
+  1250→                    { key: 'most-confident' as const, label: '✅ Më të Sigurtat', count: hybridResult.mostConfident.length },
+  1251→                    { key: 'all' as const, label: '📊 Të Gjitha', count: hybridResult.allResults.length },
+  1252→                  ]).map((tab) => (
+  1253→                    <Button
+  1254→                      key={tab.key}
+  1255→                      variant={hybridViewTab === tab.key ? 'default' : 'outline'}
+  1256→                      size="sm"
+  1257→                      onClick={() => { setHybridViewTab(tab.key); setHybridExpandedSymbol(null); }}
+  1258→                      className={`text-[10px] h-7 ${hybridViewTab === tab.key ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
+  1259→                    >
+  1260→                      {tab.label}
+  1261→                      <Badge variant="outline" className="ml-1.5 text-[9px] px-1.5 py-0 h-4">{tab.count}</Badge>
+  1262→                    </Button>
+  1263→                  ))}
+  1264→                </div>
+  1265→
+  1266→                {/* Hybrid Table */}
+  1267→                <div className="max-h-[70vh] overflow-y-auto rounded-md border">
+  1268→                  {currentHybridResults && currentHybridResults.length > 0 ? (
+  1269→                    <Table>
+  1270→                      <TableHeader className="sticky top-0 bg-card z-10">
+  1271→                        <TableRow>
+  1272→                          <TableHead className="text-[10px] w-8 text-center">#</TableHead>
+  1273→                          <TableHead className="text-[10px]">Ticker</TableHead>
+  1274→                          <TableHead
+  1275→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+  1276→                            onClick={() => handleHybridSort('totalScore')}
+  1277→                          >
+  1278→                            <div className="flex items-center gap-1">
+  1279→                              Total
+  1280→                              {hybridSortField === 'totalScore' && (
+  1281→                                hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
+  1282→                              )}
+  1283→                            </div>
+  1284→                          </TableHead>
+  1285→                          <TableHead className="text-[10px]">Teknik</TableHead>
+  1286→                          <TableHead className="text-[10px]">Fundamentet</TableHead>
+  1287→                          <TableHead className="text-[10px]">Sinjali</TableHead>
+  1288→                          <TableHead
+  1289→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+  1290→                            onClick={() => handleHybridSort('hybridConfidence')}
+  1291→                          >
+  1292→                            <div className="flex items-center gap-1">
+  1293→                              Besim H.
+  1294→                              {hybridSortField === 'hybridConfidence' && (
+  1295→                                hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
+  1296→                              )}
+  1297→                            </div>
+  1298→                          </TableHead>
+  1299→                          <TableHead className="text-[10px]">AI Insight</TableHead>
+  1300→                        </TableRow>
+  1301→                      </TableHeader>
+  1302→                      <TableBody>
+  1303→                        {currentHybridResults.map((r, idx) => {
+  1304→                          const isExpanded = hybridExpandedSymbol === r.symbol;
+  1305→                          return (
+  1306→                            <motion.tr
+  1307→                              key={r.symbol}
+  1308→                              initial={{ opacity: 0, y: 5 }}
+  1309→                              animate={{ opacity: 1, y: 0 }}
+  1310→                              transition={{ duration: 0.2, delay: Math.min(idx * 0.02, 0.5) }}
+  1311→                              className="group"
+  1312→                            >
+  1313→                              <TableCell className="text-[10px] text-muted-foreground text-center py-1.5">{idx + 1}</TableCell>
+  1314→                              <TableCell className="py-1.5">
+  1315→                                <button
+  1316→                                  onClick={() => setHybridExpandedSymbol(isExpanded ? null : r.symbol)}
+  1317→                                  className="flex items-center gap-1 font-bold text-xs hover:text-violet-400 transition-colors"
+  1318→                                >
+  1319→                                  {r.symbol}
+  1320→                                  {isExpanded
+  1321→                                    ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
+  1322→                                    : <ChevronDown className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+  1323→                                  }
+  1324→                                </button>
+  1325→                              </TableCell>
+  1326→                              <TableCell className="py-1.5">
+  1327→                                <div className="space-y-0.5">
+  1328→                                  <span className={`text-xs font-bold ${scoreColor(r.totalScore)}`}>
+  1329→                                    {r.totalScore > 0 ? '+' : ''}{r.totalScore}
+  1330→                                  </span>
+  1331→                                  <ScoreBar score={r.totalScore} />
+  1332→                                </div>
+  1333→                              </TableCell>
+  1334→                              <TableCell className="py-1.5">
+  1335→                                <span className={`text-[10px] font-semibold ${scoreColor(r.score)}`}>
+  1336→                                  {r.score > 0 ? '+' : ''}{r.score}
+  1337→                                </span>
+  1338→                              </TableCell>
+  1339→                              <TableCell className="py-1.5">
+  1340→                                {r.fundamentalAvailable && r.fundamentalScore ? (
+  1341→                                  <span className={`text-[10px] font-semibold ${scoreColor(r.fundamentalScore.score)}`}>
+  1342→                                    {r.fundamentalScore.score > 0 ? '+' : ''}{r.fundamentalScore.score}
+  1343→                                  </span>
+  1344→                                ) : (
+  1345→                                  <span className="text-[10px] text-muted-foreground">—</span>
+  1346→                                )}
+  1347→                              </TableCell>
+  1348→                              <TableCell className="py-1.5">
+  1349→                                <Badge variant={directionBadgeVariant(r.direction)} className="text-[9px] px-1.5 py-0">
+  1350→                                  {directionLabel(r.direction)}
+  1351→                                </Badge>
+  1352→                              </TableCell>
+  1353→                              <TableCell className="py-1.5">
+  1354→                                <div className="flex items-center gap-1.5">
+  1355→                                  <div className="w-12 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+  1356→                                    <div
+  1357→                                      className={`h-full rounded-full ${
+  1358→                                r.hybridConfidence > 70
+  1359→                                  ? 'bg-emerald-500'
+  1360→                                  : r.hybridConfidence > 40
+  1361→                                    ? 'bg-yellow-500'
+  1362→                                    : 'bg-red-500'
+  1363→                              }`}
+  1364→                                      style={{ width: `${r.hybridConfidence}%` }}
+  1365→                                    />
+  1366→                                  </div>
+  1367→                                  <span className={`text-[10px] font-semibold ${confidenceColor(r.hybridConfidence)}`}>
+  1368→                                    {r.hybridConfidence.toFixed(0)}%
+  1369→                                  </span>
+  1370→                                </div>
+  1371→                              </TableCell>
+  1372→                              <TableCell className="py-1.5 max-w-[220px]">
+  1373→                                <p className="text-[9px] text-muted-foreground leading-tight line-clamp-2">{r.aiInsight}</p>
+  1374→                              </TableCell>
+  1375→
+  1376→                              {/* Expanded detail */}
+  1377→                              {isExpanded && (
+  1378→                                <TableCell colSpan={8} className="p-0">
+  1379→                                  <motion.div
+  1380→                                    initial={{ opacity: 0, height: 0 }}
+  1381→                                    animate={{ opacity: 1, height: 'auto' }}
+  1382→                                    exit={{ opacity: 0, height: 0 }}
+  1383→                                    transition={{ duration: 0.3 }}
+  1384→                                    className="border-t border-border/50 bg-muted/20 px-4 py-3"
+  1385→                                  >
+  1386→                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  1387→                                      {/* Technical Key Factors */}
+  1388→                                      {r.keyFactors.length > 0 && (
+  1389→                                        <div>
+  1390→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">Faktorët Teknikë</p>
+  1391→                                          <div className="space-y-1">
+  1392→                                            {r.keyFactors.slice(0, 5).map((f, fi) => (
+  1393→                                              <div key={fi} className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1">
+  1394→                                                <div className="flex-1">
+  1395→                                                  <span className="font-medium">{f.name}</span>
+  1396→                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+  1397→                                                </div>
+  1398→                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>{f.score > 0 ? '+' : ''}{f.score}</span>
+  1399→                                              </div>
+  1400→                                            ))}
+  1401→                                          </div>
+  1402→                                        </div>
+  1403→                                      )}
+  1404→
+  1405→                                      {/* Fundamental Factors */}
+  1406→                                      {r.fundamentalAvailable && r.fundamentalScore && (
+  1407→                                        <div>
+  1408→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">Faktorët Themelorë</p>
+  1409→                                          <div className="space-y-1">
+  1410→                                            {Object.entries(r.fundamentalScore.factors).map(([key, f]) => (
+  1411→                                              <div key={key} className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1">
+  1412→                                                <div className="flex-1">
+  1413→                                                  <span className="font-medium">{f.name}</span>
+  1414→                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+  1415→                                                </div>
+  1416→                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>{f.score > 0 ? '+' : ''}{f.score}</span>
+  1417→                                              </div>
+  1418→                                            ))}
+  1419→                                          </div>
+  1420→                                        </div>
+  1421→                                      )}
+  1422→
+  1423→                                      {/* No fundamentals notice */}
+  1424→                                      {!r.fundamentalAvailable && (
+  1425→                                        <div className="col-span-2">
+  1426→                                          <p className="text-[10px] text-muted-foreground italic">Të dhëna themelore nuk janë të disponueshme për {r.symbol}. Predikimi bazohet vetëm në analizën teknike.</p>
+  1427→                                        </div>
+  1428→                                      )}
+  1429→                                    </div>
+  1430→                                  </motion.div>
+  1431→                                </TableCell>
+  1432→                              )}
+  1433→                            </motion.tr>
+  1434→                          );
+  1435→                        })}
+  1436→                      </TableBody>
+  1437→                    </Table>
+  1438→                  ) : (
+  1439→                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+  1440→                      <Sparkles className="w-8 h-8 mb-2 opacity-40" />
+  1441→                      <p className="text-sm">Nuk u gjetën predikime hibride</p>
+  1442→                    </div>
+  1443→                  )}
+  1444→                </div>
+  1445→
+  1446→                {/* Errors */}
+  1447→                {hybridResult.errors.length > 0 && (
+  1448→                  <details className="text-xs">
+  1449→                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">{hybridResult.errors.length} gabime</summary>
+  1450→                    <ul className="mt-1 space-y-0.5 pl-4 text-red-400/80 list-disc">
+  1451→                      {hybridResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+  1452→                    </ul>
+  1453→                  </details>
+  1454→                )}
+  1455→
+  1456→                {/* ─── LEARNING STATS ─────────────────────────── */}
+  1457→                {hybridResult.learning && hybridResult.learning.totalRecorded > 0 && (
+  1458→                  <motion.div
+  1459→                    initial={{ opacity: 0, height: 0 }}
+  1460→                    animate={{ opacity: 1, height: 'auto' }}
+  1461→                    transition={{ duration: 0.4 }}
+  1462→                    className="mt-4"
+  1463→                  >
+  1464→                    <Card className="border-blue-500/20 bg-blue-500/5">
+  1465→                      <CardContent className="p-4">
+  1466→                        <div className="flex items-center gap-2 mb-3">
+  1467→                          <GraduationCap className="w-4 h-4 text-blue-400" />
+  1468→                          <h3 className="text-sm font-bold">Sistemi i Mesimit nga Historia</h3>
+  1469→                          <Badge variant="outline" className="text-[10px] ml-auto">
+  1470→                            <Brain className="w-3 h-3 mr-1" />
+  1471→                            AI Learning
+  1472→                          </Badge>
+  1473→                        </div>
+  1474→
+  1475→                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+  1476→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1477→                            <p className="text-[10px] text-muted-foreground">Të Regjistruara</p>
+  1478→                            <p className="text-lg font-bold">{hybridResult.learning.totalRecorded}</p>
+  1479→                          </div>
+  1480→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1481→                            <p className="text-[10px] text-muted-foreground">Të Vlerësuara</p>
+  1482→                            <p className="text-lg font-bold">{hybridResult.learning.totalEvaluated}</p>
+  1483→                          </div>
+  1484→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1485→                            <p className="text-[10px] text-muted-foreground">Saktesia</p>
+  1486→                            <p className={`text-lg font-bold ${hybridResult.learning.overallAccuracy > 55 ? 'text-emerald-400' : hybridResult.learning.overallAccuracy > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+  1487→                              {hybridResult.learning.overallAccuracy}%
+  1488→                            </p>
+  1489→                          </div>
+  1490→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1491→                            <p className="text-[10px] text-muted-foreground">Mësime</p>
+  1492→                            <p className="text-lg font-bold">{hybridResult.learning.lessonsCount}</p>
+  1493→                          </div>
+  1494→                        </div>
+  1495→
+  1496→                        {/* Evaluation result from this scan */}
+  1497→                        {hybridResult.learning.evaluationResult && hybridResult.learning.evaluationResult.evaluated > 0 && (
+  1498→                          <div className="mb-3 p-2.5 rounded-lg border bg-muted/20">
+  1499→                            <div className="flex items-center gap-2 mb-1">
+  1500→                              <Activity className="w-3.5 h-3.5 text-blue-400" />
+  1501→                              <span className="text-xs font-semibold">Vlerësim i fundit nga kjo skanë</span>
+  1502→                            </div>
+  1503→                            <div className="text-[11px] text-muted-foreground">
+  1504→                              Vlerësuan {hybridResult.learning.evaluationResult.evaluated} parashikime të kaluara:{' '}
+  1505→                              <span className={hybridResult.learning.evaluationResult.correct > 0 ? 'text-emerald-400' : 'text-red-400'}>
+  1506→                                {hybridResult.learning.evaluationResult.correct} ({hybridResult.learning.evaluationResult.accuracy}%) ishin
+  1507→                              </span>
+  1508→                              {hybridResult.learning.evaluationResult.newLessons > 0 && (
+  1509→                                <span className="text-yellow-400">• {hybridResult.learning.evaluationResult.newLessons} mësime të reja</span>
+  1510→                              )}
+  1511→                            </div>
+  1512→                          </div>
+  1513→                        )}
+  1514→
+  1515→                        {/* No data yet message */}
+  1516→                        {hybridResult.learning.totalEvaluated < 5 && (
+  1517→                          <div className="text-center py-4">
+  1518→                            <BookOpen className="w-6 h-6 text-blue-400/40 mx-auto mb-2" />
+  1519→                            <p className="text-xs text-muted-foreground">
+  1520→                              Sistemi po mëson. Pas {5 - 10} skane, do të fillojë të tregojë saktesinë
+  1521→                              per indikatorë dhe të rregullojë peshat automatikisht.
+  1522→                            </p>
+  1523→                            <p className="text-[10px] text-muted-foreground/60 mt-1">
+  1524→                              Çdo skanë regjistron parashikimet dhe i vlerëson më pas me çmimet aktuale.
+  1525→                            </p>
+  1526→                          </div>
+  1527→                        )}
+  1528→
+  1529→                        {/* Recent evaluated predictions */}
+  1530→                        {hybridResult.learning.totalEvaluated >= 5 && (
+  1531→                          <LearningPreview learning={hybridResult.learning} />
+  1532→                        )}
+  1533→                      </CardContent>
+  1534→                    </Card>
+  1535→                  </motion.div>
+  1536→                )}
+  1537→              </motion.div>
+  1538→            )}
+  1539→          </motion.div>
+  1540→        )}
+  1541→      </AnimatePresence>
+  1542→    </div>
+  1543→  );
+  1544→}

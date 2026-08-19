@@ -1,0 +1,729 @@
+    40→    40→  CalendarDays,
+    41→    41→  Filter,
+    42→    42→  BarChart3,
+    43→    43→  Landmark,
+    44→    44→  Gauge,
+    45→    45→  BrainCircuit,
+    46→    46→  Activity,
+    47→    47→  Shield,
+    48→    48→  Trophy,
+    49→    49→  ExternalLink,
+    50→    50→  FileText,
+    51→    51→  ArrowRight,
+    52→    52→  Zap,
+    53→    53→} from 'lucide-react';
+    54→    54→import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
+    55→    55→import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
+    56→    56→import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
+    57→    57→import { StockPredictor } from '@/components/financial-brain/stock-predictor';
+    58→    58→import Link from 'next/link';
+    59→    59→
+    60→    60→function KontrolTab({ icon, title, desc, pageUrl }: { icon: React.ReactNode; title: string; desc: string; pageUrl: string }) {
+    61→    61→  return (
+    62→    62→    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+    63→    63→      <Card className="border-orange-500/20 bg-orange-500/5">
+    64→    64→        <CardContent className="pt-5 pb-5">
+    65→    65→          <div className="flex items-start gap-4">
+    66→    66→            <div className="bg-orange-500/15 rounded-lg p-2.5 text-orange-400 flex-shrink-0">{icon}</div>
+    67→    67→            <div className="flex-1 min-w-0">
+    68→    68→              <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    69→    69→              <p className="text-sm text-muted-foreground mt-1">{desc}</p>
+    70→    70→              <div className="mt-3 flex items-center gap-2">
+    71→    71→                <Link href={pageUrl} className="inline-flex items-center gap-1.5 rounded-md bg-orange-500/10 border border-orange-500/30 px-3 py-1.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
+    72→    72→                  Hape faqen e plotë <ExternalLink className="w-3 h-3" />
+    73→    73→                </Link>
+    74→    74→              </div>
+    75→    75→            </div>
+    76→    76→          </div>
+    77→    77→          <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2.5">
+    78→    78→            <p className="text-xs text-yellow-400/90">
+    79→    79→              <strong>Shënim:</strong> Këto funksione kanë nevojë për database PostgreSQL. Për t&apos;i aktivizuar, shto variablin <code className="bg-yellow-500/15 px-1 rounded text-yellow-300">DATABASE_URL</code> në Vercel Environment Variables.
+    80→    80→            </p>
+    81→    81→          </div>
+    82→    82→        </CardContent>
+    83→    83→      </Card>
+    84→    84→    </motion.div>
+    85→    85→  );
+    86→    86→}
+    87→    87→
+    88→    88→export default function Home() {
+    89→    89→  const [activeTab, setActiveTab] = useState('top-movers');
+    90→    90→  const [quantTicker, setQuantTicker] = useState('');
+    91→    91→
+    92→    92→  return (
+    93→    93→    <div className="min-h-screen flex flex-col bg-background" suppressHydrationWarning>
+    94→    94→      <Header />
+    95→    95→      <MarketTickerBar />
+    96→    96→      <GlobalSearch onSelectStock={(ticker) => { setQuantTicker(ticker); setActiveTab('quant'); }} />
+    97→    97→
+    98→    98→      {/* 10-Q Direct Access Banner */}
+    99→    99→      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6">
+   100→   100→        <Link href="/sec-q" className="flex items-center gap-2 bg-amber-600/15 hover:bg-amber-600/25 border border-amber-500/30 rounded-lg px-4 py-2.5 transition-colors group">
+   101→   101→          <FileText className="w-5 h-5 text-amber-400 flex-shrink-0" />
+   102→   102→          <div className="flex-1 min-w-0">
+   103→   103→            <span className="text-sm font-semibold text-amber-400">10-Q SEC Filings</span>
+   104→   104→            <span className="text-xs text-amber-400/70 ml-2 hidden sm:inline">Raportet financiare tremujore nga SEC EDGAR</span>
+   105→   105→          </div>
+   106→   106→          <ArrowRight className="w-4 h-4 text-amber-400/60 group-hover:translate-x-1 transition-transform flex-shrink-0" />
+   107→   107→        </Link>
+   108→   108→      </div>
+   109→   109→
+   110→   110→      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
+   111→   111→        {/* Main Tabs */}
+   112→   112→        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+   113→   113→          <div className="space-y-2">
+   114→   114→          {/* Desktop: grouped tabs with category labels */}
+   115→   115→          <div className="hidden lg:flex flex-col gap-2">
+   116→   116→              {/* Category: Tregu */}
+   117→   117→              <div className="flex items-center gap-2">
+   118→   118→                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Tregu</span>
+   119→   119→                <TabsList className="flex flex-wrap gap-1 h-auto p-1 flex-1">
+   120→   120→                  <TabsTrigger value="watchlist" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   121→   121→                    <Eye className="w-3.5 h-3.5 mr-1.5" />Watchlist
+   122→   122→                  </TabsTrigger>
+   123→   123→                  <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   124→   124→                    <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
+   125→   125→                  </TabsTrigger>
+   126→   126→                  <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   127→   127→                    <Flame className="w-3.5 h-3.5 mr-1.5" />Top 5+5
+   128→   128→                  </TabsTrigger>
+   129→   129→                  <TabsTrigger value="5-pillars" className="text-xs py-2 px-3 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+   130→   130→                    <Zap className="w-3.5 h-3.5 mr-1.5" />5 Pillars
+   131→   131→                  </TabsTrigger>
+   132→   132→                  <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   133→   133→                    <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
+   134→   134→                  </TabsTrigger>
+   135→   135→                  <TabsTrigger value="fear-greed" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   136→   136→                    <Gauge className="w-3.5 h-3.5 mr-1.5" />Fear & Greed
+   137→   137→                  </TabsTrigger>
+   138→   138→                </TabsList>
+   139→   139→              </div>
+   140→   140→              {/* Category: Analizë */}
+   141→   141→              <div className="flex items-center gap-2">
+   142→   142→                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Analizë</span>
+   143→   143→                <TabsList className="flex gap-1 h-auto p-1 flex-1 overflow-x-auto scrollbar-none">
+   144→   144→                  <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   145→   145→                    <Target className="w-3.5 h-3.5 mr-1.5" />Pikat Ditore
+   146→   146→                  </TabsTrigger>
+   147→   147→                  <TabsTrigger value="quant" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   148→   148→                    <Crosshair className="w-3.5 h-3.5 mr-1.5" />Quant
+   149→   149→                  </TabsTrigger>
+   150→   150→                  <TabsTrigger value="technical" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   151→   151→                    <LineChart className="w-3.5 h-3.5 mr-1.5" />Teknike
+   152→   152→                  </TabsTrigger>
+   153→   153→                  <TabsTrigger value="fundamental" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   154→   154→                    <Building2 className="w-3.5 h-3.5 mr-1.5" />Fundamentale
+   155→   155→                  </TabsTrigger>
+   156→   156→                  <TabsTrigger value="earnings" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   157→   157→                    <CalendarDays className="w-3.5 h-3.5 mr-1.5" />Fitimet
+   158→   158→                  </TabsTrigger>
+   159→   159→                  <TabsTrigger value="screener" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   160→   160→                    <Filter className="w-3.5 h-3.5 mr-1.5" />Screener
+   161→   161→                  </TabsTrigger>
+   162→   162→                  <TabsTrigger value="sec-filings" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+   163→   163→                    <FileText className="w-3.5 h-3.5 mr-1.5" />10-Q
+   164→   164→                  </TabsTrigger>
+   165→   165→                </TabsList>
+   166→   166→              </div>
+   167→   167→              {/* Category: AI & Trading */}
+   168→   168→              <div className="flex items-center gap-2">
+   169→   169→                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">AI &</span>
+   170→   170→                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+   171→   171→                  <TabsTrigger value="trading" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   172→   172→                    <ShoppingCart className="w-3.5 h-3.5 mr-1.5" />Trading
+   173→   173→                  </TabsTrigger>
+   174→   174→                  <TabsTrigger value="chat" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   175→   175→                    <MessageSquare className="w-3.5 h-3.5 mr-1.5" />AI Chat
+   176→   176→                  </TabsTrigger>
+   177→   177→                  <TabsTrigger value="analytics" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   178→   178→                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Statistikat
+   179→   179→                  </TabsTrigger>
+   180→   180→                  <TabsTrigger value="advanced" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   181→   181→                    <Brain className="w-3.5 h-3.5 mr-1.5" />Analiza
+   182→   182→                  </TabsTrigger>
+   183→   183→                  <TabsTrigger value="predictor" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   184→   184→                    <BrainCircuit className="w-3.5 h-3.5 mr-1.5" />Predikues
+   185→   185→                  </TabsTrigger>
+   186→   186→                </TabsList>
+   187→   187→              </div>
+   188→   188→              {/* Category: Kontroll */}
+   189→   189→              <div className="flex items-center gap-2">
+   190→   190→                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Kontrol</span>
+   191→   191→                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+   192→   192→                  <TabsTrigger value="drift" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   193→   193→                    <Activity className="w-3.5 h-3.5 mr-1.5" />Drift
+   194→   194→                  </TabsTrigger>
+   195→   195→                  <TabsTrigger value="overrides" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   196→   196→                    <Shield className="w-3.5 h-3.5 mr-1.5" />Override
+   197→   197→                  </TabsTrigger>
+   198→   198→                  <TabsTrigger value="edge" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   199→   199→                    <Trophy className="w-3.5 h-3.5 mr-1.5" />Edge
+   200→   200→                  </TabsTrigger>
+   201→   201→                  <TabsTrigger value="metrics" className="text-xs py-2 px-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   202→   202→                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />Metrics
+   203→   203→                  </TabsTrigger>
+   204→   204→                </TabsList>
+   205→   205→              </div>
+   206→   206→            </div>
+   207→   207→          {/* Mobile/Tablet: scrollable horizontal tabs by category */}
+   208→   208→          <div className="lg:hidden space-y-2">
+   209→   209→              {/* Tregu */}
+   210→   210→              <div className="flex items-center gap-1">
+   211→   211→                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
+   212→   212→                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+   213→   213→                  <TabsTrigger value="watchlist" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   214→   214→                    <Eye className="w-3 h-3 mr-1" />Watchlist
+   215→   215→                  </TabsTrigger>
+   216→   216→                  <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   217→   217→                    <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
+   218→   218→                  </TabsTrigger>
+   219→   219→                  <TabsTrigger value="top-movers" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   220→   220→                    <Flame className="w-3 h-3 mr-1" />Top 5+5
+   221→   221→                  </TabsTrigger>
+   222→   222→                  <TabsTrigger value="5-pillars" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+   223→   223→                    <Zap className="w-3 h-3 mr-1" />5 Pillars
+   224→   224→                  </TabsTrigger>
+   225→   225→                  <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   226→   226→                    <Radar className="w-3 h-3 mr-1" />Sektoret
+   227→   227→                  </TabsTrigger>
+   228→   228→                  <TabsTrigger value="fear-greed" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+   229→   229→                    <Gauge className="w-3 h-3 mr-1" />F&G
+   230→   230→                  </TabsTrigger>
+   231→   231→                </TabsList>
+   232→   232→              </div>
+   233→   233→              {/* Analizë */}
+   234→   234→              <div className="flex items-center gap-1">
+   235→   235→                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
+   236→   236→                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+   237→   237→                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+   238→   238→                    <FileText className="w-3 h-3 mr-1" />10-Q
+   239→   239→                  </TabsTrigger>
+   240→   240→                  <TabsTrigger value="daily-picks" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   241→   241→                    <Target className="w-3 h-3 mr-1" />Pikat
+   242→   242→                  </TabsTrigger>
+   243→   243→                  <TabsTrigger value="quant" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   244→   244→                    <Crosshair className="w-3 h-3 mr-1" />Quant
+   245→   245→                  </TabsTrigger>
+   246→   246→                  <TabsTrigger value="technical" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   247→   247→                    <LineChart className="w-3 h-3 mr-1" />Teknike
+   248→   248→                  </TabsTrigger>
+   249→   249→                  <TabsTrigger value="fundamental" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   250→   250→                    <Building2 className="w-3 h-3 mr-1" />Fund.
+   251→   251→                  </TabsTrigger>
+   252→   252→                  <TabsTrigger value="earnings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   253→   253→                    <CalendarDays className="w-3 h-3 mr-1" />Fitimet
+   254→   254→                  </TabsTrigger>
+   255→   255→                  <TabsTrigger value="screener" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+   256→   256→                    <Filter className="w-3 h-3 mr-1" />Screener
+   257→   257→                  </TabsTrigger>
+   258→   258→                </TabsList>
+   259→   259→              </div>
+   260→   260→              {/* AI & Trading */}
+   261→   261→              <div className="flex items-center gap-1">
+   262→   262→                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">AI &</span>
+   263→   263→                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+   264→   264→                  <TabsTrigger value="trading" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   265→   265→                    <ShoppingCart className="w-3 h-3 mr-1" />Trading
+   266→   266→                  </TabsTrigger>
+   267→   267→                  <TabsTrigger value="chat" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   268→   268→                    <MessageSquare className="w-3 h-3 mr-1" />AI Chat
+   269→   269→                  </TabsTrigger>
+   270→   270→                  <TabsTrigger value="analytics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   271→   271→                    <BarChart3 className="w-3 h-3 mr-1" />Statistikat
+   272→   272→                  </TabsTrigger>
+   273→   273→                  <TabsTrigger value="advanced" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   274→   274→                    <Brain className="w-3 h-3 mr-1" />Analiza
+   275→   275→                  </TabsTrigger>
+   276→   276→                  <TabsTrigger value="predictor" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+   277→   277→                    <BrainCircuit className="w-3 h-3 mr-1" />Predikues
+   278→   278→                  </TabsTrigger>
+   279→   279→                </TabsList>
+   280→   280→              </div>
+   281→   281→              {/* Kontrol */}
+   282→   282→              <div className="flex items-center gap-1">
+   283→   283→                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Kontrol</span>
+   284→   284→                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+   285→   285→                  <TabsTrigger value="drift" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   286→   286→                    <Activity className="w-3 h-3 mr-1" />Drift
+   287→   287→                  </TabsTrigger>
+   288→   288→                  <TabsTrigger value="overrides" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   289→   289→                    <Shield className="w-3 h-3 mr-1" />Override
+   290→   290→                  </TabsTrigger>
+   291→   291→                  <TabsTrigger value="edge" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   292→   292→                    <Trophy className="w-3 h-3 mr-1" />Edge
+   293→   293→                  </TabsTrigger>
+   294→   294→                  <TabsTrigger value="metrics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+   295→   295→                    <BarChart3 className="w-3 h-3 mr-1" />Metrics
+   296→   296→                  </TabsTrigger>
+   297→   297→                </TabsList>
+   298→   298→              </div>
+   299→   299→            </div>
+   300→   300→          </div>
+   301→   301→
+   302→   302→          <TabsContent value="watchlist" className="mt-4">
+   303→   303→            <motion.div
+   304→   304→              initial={{ opacity: 0, y: 10 }}
+   305→   305→              animate={{ opacity: 1, y: 0 }}
+   306→   306→              transition={{ duration: 0.3 }}
+   307→   307→              className="space-y-4"
+   308→   308→            >
+   309→   309→              <Watchlist />
+   310→   310→            </motion.div>
+   311→   311→          </TabsContent>
+   312→   312→
+   313→   313→          {/* Tab: Market Dashboard */}
+   314→   314→          <TabsContent value="dashboard" className="mt-4">
+   315→   315→            <motion.div
+   316→   316→              initial={{ opacity: 0, y: 10 }}
+   317→   317→              animate={{ opacity: 1, y: 0 }}
+   318→   318→              transition={{ duration: 0.3 }}
+   319→   319→              className="space-y-4"
+   320→   320→            >
+   321→   321→              <Card className="border-emerald-500/20 bg-emerald-500/5">
+   322→   322→                <CardContent className="pt-4">
+   323→   323→                  <div className="flex items-center gap-2 mb-1">
+   324→   324→                    <LayoutDashboard className="w-4 h-4 text-emerald-500" />
+   325→   325→                    <h3 className="text-sm font-semibold">Dashboard Kryesor i Tregut</h3>
+   326→   326→                  </div>
+   327→   327→                  <p className="text-sm text-muted-foreground">
+   328→   328→                    Përmbledhje e tregut: indekset kryesore, sektorët, dhe gjendja e përgjithshme. Çmimet përditësohen në kohë reale.
+   329→   329→                  </p>
+   330→   330→                </CardContent>
+   331→   331→              </Card>
+   332→   332→              <MarketDashboard />
+   333→   333→            </motion.div>
+   334→   334→          </TabsContent>
+   335→   335→
+   336→   336→          {/* Tab: Top Movers */}
+   337→   337→          <TabsContent value="top-movers" className="mt-4">
+   338→   338→            <motion.div
+   339→   339→              initial={{ opacity: 0, y: 10 }}
+   340→   340→              animate={{ opacity: 1, y: 0 }}
+   341→   341→              transition={{ duration: 0.3 }}
+   342→   342→              className="space-y-4"
+   343→   343→            >
+   344→   344→              <Card className="border-emerald-500/20 bg-emerald-500/5">
+   345→   345→                <CardContent className="pt-4">
+   346→   346→                  <div className="flex items-center gap-2 mb-1">
+   347→   347→                    <Flame className="w-4 h-4 text-emerald-500" />
+   348→   348→                    <h3 className="text-sm font-semibold">Aksionet me Performancën Më Të Mirë dhe Më të Keqe</h3>
+   349→   349→                  </div>
+   350→   350→                  <p className="text-sm text-muted-foreground">
+   351→   351→                    10 aksione me rritje më të lartë dhe 10 me rrezik më të madh, të vlerësuara sipas shumë faktorëve. Çmimet përditësohen në kohë reale.
+   352→   352→                  </p>
+   353→   353→                </CardContent>
+   354→   354→              </Card>
+   355→   355→              <TopMovers />
+   356→   356→            </motion.div>
+   357→   357→          </TabsContent>
+   358→   358→
+   359→   359→          {/* Tab: Ross Cameron 5 Pillars */}
+   360→   360→          <TabsContent value="5-pillars" className="mt-4">
+   361→   361→            <motion.div
+   362→   362→              initial={{ opacity: 0, y: 10 }}
+   363→   363→              animate={{ opacity: 1, y: 0 }}
+   364→   364→              transition={{ duration: 0.3 }}
+   365→   365→              className="space-y-4"
+   366→   366→            >
+   367→   367→              <Card className="border-amber-500/20 bg-amber-500/5">
+   368→   368→                <CardContent className="pt-4">
+   369→   369→                  <div className="flex items-center gap-2 mb-1">
+   370→   370→                    <Zap className="w-4 h-4 text-amber-500" />
+   371→   371→                    <h3 className="text-sm font-semibold">Ross Cameron 5 Pillars Scanner</h3>
+   372→   372→                  </div>
+   373→   373→                  <p className="text-sm text-muted-foreground">
+   374→   374→                    Skanues i bazuar në metodologjinë e Warrior Trading: Rel Volume ≥5x, Float i ulët, Çmimi në zonë, Green Candle, dhe Gap Up. Identifikon aksionet me momentum më të lartë.
+   375→   375→                  </p>
+   376→   376→                </CardContent>
+   377→   377→              </Card>
+   378→   378→              <FivePillars />
+   379→   379→            </motion.div>
+   380→   380→          </TabsContent>
+   381→   381→
+   382→   382→          {/* Tab: Quant Analysis */}
+   383→   383→          <TabsContent value="quant" className="mt-4">
+   384→   384→            <motion.div
+   385→   385→              initial={{ opacity: 0, y: 10 }}
+   386→   386→              animate={{ opacity: 1, y: 0 }}
+   387→   387→              transition={{ duration: 0.3 }}
+   388→   388→              className="space-y-4"
+   389→   389→            >
+   390→   390→              <Card className="border-blue-500/20 bg-blue-500/5">
+   391→   391→                <CardContent className="pt-4">
+   392→   392→                  <div className="flex items-center gap-2 mb-1">
+   393→   393→                    <Crosshair className="w-4 h-4 text-blue-500" />
+   394→   394→                    <h3 className="text-sm font-semibold">Analizë e Thellë me AI</h3>
+   395→   395→                  </div>
+   396→   396→                  <p className="text-sm text-muted-foreground">
+   397→   397→                    4 ekspertë AI analizojnë çdo aksion: teknika, fundamentet, makroekonomia, dhe lajmet. Merrin sinjal vetëm kur 3+ ekspertë bien dakord.
+   398→   398→                  </p>
+   399→   399→                </CardContent>
+   400→   400→              </Card>
+   401→   401→              <QuantDashboard initialTicker={quantTicker} />
+   402→   402→            </motion.div>
+   403→   403→          </TabsContent>
+   404→   404→
+   405→   405→          {/* Tab: Fear & Greed Index */}
+   406→   406→          <TabsContent value="fear-greed" className="mt-4">
+   407→   407→            <motion.div
+   408→   408→              initial={{ opacity: 0, y: 10 }}
+   409→   409→              animate={{ opacity: 1, y: 0 }}
+   410→   410→              transition={{ duration: 0.3 }}
+   411→   411→              className="space-y-4"
+   412→   412→            >
+   413→   413→              <Card className="border-emerald-500/20 bg-emerald-500/5">
+   414→   414→                <CardContent className="pt-4">
+   415→   415→                  <div className="flex items-center gap-2 mb-1">
+   416→   416→                    <Gauge className="w-4 h-4 text-emerald-500" />
+   417→   417→                    <h3 className="text-sm font-semibold">Indeksi i Frikës & Grykesisë (Fear & Greed)</h3>
+   418→   418→                  </div>
+   419→   419→                  <p className="text-sm text-muted-foreground">
+   420→   420→                    Tregon gjendjen psikologjike të tregut amerikan — nga frika ekstreme deri te grykesia ekstreme. Një treg me frikë është mundësi blerjeje.
+   421→   421→                  </p>
+   422→   422→                </CardContent>
+   423→   423→              </Card>
+   424→   424→              <FearGreedIndex />
+   425→   425→            </motion.div>
+   426→   426→          </TabsContent>
+   427→   427→
+   428→   428→          {/* Tab: Sector Scanner */}
+   429→   429→          <TabsContent value="sector" className="mt-4">
+   430→   430→            <motion.div
+   431→   431→              initial={{ opacity: 0, y: 10 }}
+   432→   432→              animate={{ opacity: 1, y: 0 }}
+   433→   433→              transition={{ duration: 0.3 }}
+   434→   434→              className="space-y-4"
+   435→   435→            >
+   436→   436→              <Card className="border-emerald-500/20 bg-emerald-500/5">
+   437→   437→                <CardContent className="pt-4">
+   438→   438→                  <div className="flex items-center gap-2 mb-1">
+   439→   439→                    <Radar className="w-4 h-4 text-emerald-500" />
+   440→   440→                    <h3 className="text-sm font-semibold">Skaner Sektorësh — 9 Sektorë, 10 Aksionet Më Të Mira</h3>
+   441→   441→                  </div>
+   442→   442→                  <p className="text-sm text-muted-foreground">
+   443→   443→                    Shfleto 9 sektorë kryesorë: Teknologji, AI, Shëndetësi, Financa, Energji, dhe të tjera. Gjen 10 aksionet më të forta në çdo sektor.
+   444→   444→                  </p>
+   445→   445→                </CardContent>
+   446→   446→              </Card>
+   447→   447→              <SectorScanner onSelectStock={(t) => { setQuantTicker(t); setActiveTab('quant'); }} />
+   448→   448→            </motion.div>
+   449→   449→          </TabsContent>
+   450→   450→
+   451→   451→          {/* Tab 3: Daily Picks */}
+   452→   452→          <TabsContent value="daily-picks" className="mt-4">
+   453→   453→            <motion.div
+   454→   454→              initial={{ opacity: 0, y: 10 }}
+   455→   455→              animate={{ opacity: 1, y: 0 }}
+   456→   456→              transition={{ duration: 0.3 }}
+   457→   457→            >
+   458→   458→              <Card className="border-border/50 bg-card/50 mb-4">
+   459→   459→                <CardContent className="pt-4">
+   460→   460→                  <div className="flex items-center gap-2 mb-1">
+   461→   461→                    <Sparkles className="w-4 h-4 text-emerald-500" />
+   462→   462→                    <h3 className="text-sm font-semibold">Parashikime Ditore — Cilat aksione mund të rriten sot?</h3>
+   463→   463→                  </div>
+   464→   464→                  <p className="text-xs text-muted-foreground">
+   465→   465→                    AI analizojë tregun dhe zgjedh aksionet me potencialin më të lartë për rritje. Secila përfshin çmime hyrjeje, objektiva, stop-loss, dhe arsyetime.
+   466→   466→                  </p>
+   467→   467→                </CardContent>
+   468→   468→              </Card>
+   469→   469→              <DailyPicks />
+   470→   470→            </motion.div>
+   471→   471→          </TabsContent>
+   472→   472→
+   473→   473→
+   474→   474→
+   475→   475→          {/* Tab 3: Technical Analysis */}
+   476→   476→          <TabsContent value="technical" className="mt-4">
+   477→   477→            <motion.div
+   478→   478→              initial={{ opacity: 0, y: 10 }}
+   479→   479→              animate={{ opacity: 1, y: 0 }}
+   480→   480→              transition={{ duration: 0.3 }}
+   481→   481→              className="space-y-4"
+   482→   482→            >
+   483→   483→              <Card className="border-blue-500/20 bg-blue-500/5 mb-4">
+   484→   484→                <CardContent className="pt-4">
+   485→   485→                  <div className="flex items-center gap-2 mb-1">
+   486→   486→                    <LineChart className="w-4 h-4 text-blue-500" />
+   487→   487→                    <h3 className="text-sm font-semibold">Analiza Teknike</h3>
+   488→   488→                  </div>
+   489→   489→                  <p className="text-sm text-muted-foreground">
+   490→   490→                    Shkruaj ticker-in (p.sh. AAPL) për të parë grafikun, RSI, MACD, mesataret, dhe sinjalet blerje/shitje.
+   491→   491→                  </p>
+   492→   492→                </CardContent>
+   493→   493→              </Card>
+   494→   494→              <TechnicalAnalysis />
+   495→   495→            </motion.div>
+   496→   496→          </TabsContent>
+   497→   497→
+   498→   498→          {/* Tab 4: Fundamental Analysis */}
+   499→   499→          <TabsContent value="fundamental" className="mt-4">
+   500→   500→            <motion.div
+   501→   501→              initial={{ opacity: 0, y: 10 }}
+   502→   502→              animate={{ opacity: 1, y: 0 }}
+   503→   503→              transition={{ duration: 0.3 }}
+   504→   504→              className="space-y-4"
+   505→   505→            >
+   506→   506→              <Card className="border-blue-500/20 bg-blue-500/5 mb-4">
+   507→   507→                <CardContent className="pt-4">
+   508→   508→                  <div className="flex items-center gap-2 mb-1">
+   509→   509→                    <Building2 className="w-4 h-4 text-blue-500" />
+   510→   510→                    <h3 className="text-sm font-semibold">Analiza Fundamentale</h3>
+   511→   511→                  </div>
+   512→   512→                  <p className="text-sm text-muted-foreground">
+   513→   513→                    Shkruaj ticker-in për të parë sa vlen aksioni, fitueshmërinë, rritjen, dhe cilësitë konkurruese të kompanisë.
+   514→   514→                  </p>
+   515→   515→                </CardContent>
+   516→   516→              </Card>
+   517→   517→              <FundamentalAnalysis />
+   518→   518→            </motion.div>
+   519→   519→          </TabsContent>
+   520→   520→
+   521→   521→          {/* Tab: Earnings Calendar */}
+   522→   522→          <TabsContent value="earnings" className="mt-4">
+   523→   523→            <motion.div
+   524→   524→              initial={{ opacity: 0, y: 10 }}
+   525→   525→              animate={{ opacity: 1, y: 0 }}
+   526→   526→              transition={{ duration: 0.3 }}
+   527→   527→              className="space-y-4"
+   528→   528→            >
+   529→   529→              <Card className="border-blue-500/20 bg-blue-500/5">
+   530→   530→                <CardContent className="pt-4">
+   531→   531→                  <div className="flex items-center gap-2 mb-1">
+   532→   532→                    <CalendarDays className="w-4 h-4 text-blue-500" />
+   533→   533→                    <h3 className="text-sm font-semibold">Kalendar i Fitimeve & Ekonomik</h3>
+   534→   534→                  </div>
+   535→   535→                  <p className="text-sm text-muted-foreground">
+   536→   536→                    Datat e raportimit të ardhurave dhe ngjarjet makroekonomike. Zgjidh tab-in për të parë detaje.
+   537→   537→                  </p>
+   538→   538→                </CardContent>
+   539→   539→              </Card>
+   540→   540→              <Tabs defaultValue="earnings-sub" className="w-full">
+   541→   541→                <TabsList className="w-full justify-start mb-3">
+   542→   542→                  <TabsTrigger value="earnings-sub" className="text-xs py-2 px-3 gap-1.5 data-[state=active]:bg-blue-500/10 data-[state=active]:border-blue-500/30 data-[state=active]:text-blue-600">
+   543→   543→                    <CalendarDays className="w-3.5 h-3.5" />
+   544→   544→                    Kalendar Fitimesh
+   545→   545→                  </TabsTrigger>
+   546→   546→                  <TabsTrigger value="economic-sub" className="text-xs py-2 px-3 gap-1.5 data-[state=active]:bg-blue-500/10 data-[state=active]:border-blue-500/30 data-[state=active]:text-blue-600">
+   547→   547→                    <Landmark className="w-3.5 h-3.5" />
+   548→   548→                    Kalendar Ekonomik
+   549→   549→                  </TabsTrigger>
+   550→   550→                </TabsList>
+   551→   551→                <TabsContent value="earnings-sub">
+   552→   552→                  <EarningsCalendar />
+   553→   553→                </TabsContent>
+   554→   554→                <TabsContent value="economic-sub">
+   555→   555→                  <EconomicCalendar />
+   556→   556→                </TabsContent>
+   557→   557→              </Tabs>
+   558→   558→            </motion.div>
+   559→   559→          </TabsContent>
+   560→   560→
+   561→   561→          {/* Tab: SEC Filings (10-Q) */}
+   562→   562→          <TabsContent value="sec-filings" className="mt-4">
+   563→   563→            <motion.div
+   564→   564→              initial={{ opacity: 0, y: 10 }}
+   565→   565→              animate={{ opacity: 1, y: 0 }}
+   566→   566→              transition={{ duration: 0.3 }}
+   567→   567→              className="space-y-4"
+   568→   568→            >
+   569→   569→              <Card className="border-blue-500/20 bg-blue-500/5">
+   570→   570→                <CardContent className="pt-4">
+   571→   571→                  <div className="flex items-center gap-2 mb-1">
+   572→   572→                    <FileText className="w-4 h-4 text-blue-500" />
+   573→   573→                    <h3 className="text-sm font-semibold">Raportet 10-Q (SEC EDGAR)</h3>
+   574→   574→                  </div>
+   575→   575→                  <p className="text-sm text-muted-foreground">
+   576→   576→                    Të dhëna financiare tremujore direkt nga SEC — Income Statement, Balance Sheet, Cash Flow për çdo kuartal.
+   577→   577→                  </p>
+   578→   578→                </CardContent>
+   579→   579→              </Card>
+   580→   580→              <SecFilings />
+   581→   581→            </motion.div>
+   582→   582→          </TabsContent>
+   583→   583→
+   584→   584→          {/* Tab: Stock Screener */}
+   585→   585→          <TabsContent value="screener" className="mt-4">
+   586→   586→            <motion.div
+   587→   587→              initial={{ opacity: 0, y: 10 }}
+   588→   588→              animate={{ opacity: 1, y: 0 }}
+   589→   589→              transition={{ duration: 0.3 }}
+   590→   590→              className="space-y-4"
+   591→   591→            >
+   592→   592→              <Card className="border-blue-500/20 bg-blue-500/5">
+   593→   593→                <CardContent className="pt-4">
+   594→   594→                  <div className="flex items-center gap-2 mb-1">
+   595→   595→                    <Filter className="w-4 h-4 text-blue-500" />
+   596→   596→                    <h3 className="text-sm font-semibold">Skaner Aksionesh</h3>
+   597→   597→                  </div>
+   598→   598→                  <p className="text-sm text-muted-foreground">
+   599→   599→                    Filtron aksione sipas sektorit, kapitalizimit, P/E, ndryshimit, sinjalit. Kliko në një aksion për detaje.
+   600→   600→                  </p>
+   601→   601→                </CardContent>
+   602→   602→              </Card>
+   603→   603→              <StockScreener />
+   604→   604→            </motion.div>
+   605→   605→          </TabsContent>
+   606→   606→
+   607→   607→          {/* Tab 5: Paper Trading */}
+   608→   608→          <TabsContent value="trading" className="mt-4">
+   609→   609→            <motion.div
+   610→   610→              initial={{ opacity: 0, y: 10 }}
+   611→   611→              animate={{ opacity: 1, y: 0 }}
+   612→   612→              transition={{ duration: 0.3 }}
+   613→   613→              className="space-y-4"
+   614→   614→            >
+   615→   615→              <Card className="border-violet-500/20 bg-violet-500/5 mb-4">
+   616→   616→                <CardContent className="pt-4">
+   617→   617→                  <div className="flex items-center gap-2 mb-1">
+   618→   618→                    <ShoppingCart className="w-4 h-4 text-violet-500" />
+   619→   619→                    <h3 className="text-sm font-semibold">Tregtim Virtual (Paper Trading)</h3>
+   620→   620→                  </div>
+   621→   621→                  <p className="text-sm text-muted-foreground">
+   622→   622→                    Provo tregtim me $100,000 virtuale — bli, shit, dhe ndërto portofolin tënde pa rrezik. Mëso pa humbur para të vërteta.
+   623→   623→                  </p>
+   624→   624→                </CardContent>
+   625→   625→              </Card>
+   626→   626→              <PaperTrading />
+   627→   627→            </motion.div>
+   628→   628→          </TabsContent>
+   629→   629→
+   630→   630→          {/* Tab: AI Chat */}
+   631→   631→          <TabsContent value="chat" className="mt-4">
+   632→   632→            <motion.div
+   633→   633→              initial={{ opacity: 0, y: 10 }}
+   634→   634→              animate={{ opacity: 1, y: 0 }}
+   635→   635→              transition={{ duration: 0.3 }}
+   636→   636→              className="space-y-4"
+   637→   637→            >
+   638→   638→              <Card className="border-violet-500/20 bg-violet-500/5">
+   639→   639→                <CardContent className="pt-4">
+   640→   640→                  <div className="flex items-center gap-2 mb-1">
+   641→   641→                    <MessageSquare className="w-4 h-4 text-violet-500" />
+   642→   642→                    <h3 className="text-sm font-semibold">Biseda me AI</h3>
+   643→   643→                  </div>
+   644→   644→                  <p className="text-sm text-muted-foreground">
+   645→   645→                    Pyet çdo gjë për aksione, tregjet, ose koncepte financiare. AI-u ju përgjigjet me kontekst të plotë.
+   646→   646→                  </p>
+   647→   647→                </CardContent>
+   648→   648→              </Card>
+   649→   649→              <AIChat />
+   650→   650→            </motion.div>
+   651→   651→          </TabsContent>
+   652→   652→
+   653→   653→          {/* Tab: Analytics Dashboard */}
+   654→   654→          <TabsContent value="analytics" className="mt-4">
+   655→   655→            <motion.div
+   656→   656→              initial={{ opacity: 0, y: 10 }}
+   657→   657→              animate={{ opacity: 1, y: 0 }}
+   658→   658→              transition={{ duration: 0.3 }}
+   659→   659→              className="space-y-4"
+   660→   660→            >
+   661→   661→              <Card className="border-violet-500/20 bg-violet-500/5">
+   662→   662→                <CardContent className="pt-4">
+   663→   663→                  <div className="flex items-center gap-2 mb-1">
+   664→   664→                    <BarChart3 className="w-4 h-4 text-violet-500" />
+   665→   665→                    <h3 className="text-sm font-semibold">Statistikat e Vizitorëve</h3>
+   666→   666→                  </div>
+   667→   667→                  <p className="text-sm text-muted-foreground">
+   668→   668→                    Shiko vizitorët e faqes: sa kanë vizituar sot, nga vijnë, çfarë pajisje dhe shfletues përdorin.
+   669→   669→                  </p>
+   670→   670→                </CardContent>
+   671→   671→              </Card>
+   672→   672→              <AnalyticsDashboard />
+   673→   673→            </motion.div>
+   674→   674→          </TabsContent>
+   675→   675→
+   676→   676→          {/* Tab: Advanced Analysis */}
+   677→   677→          <TabsContent value="advanced" className="mt-4">
+   678→   678→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+   679→   679→              <Card className="border-violet-500/20 bg-violet-500/5">
+   680→   680→                <CardContent className="pt-4">
+   681→   681→                  <div className="flex items-center gap-2 mb-1">
+   682→   682→                    <Brain className="w-4 h-4 text-violet-500" />
+   683→   683→                    <h3 className="text-sm font-semibold">Analiza e Avancuar</h3>
+   684→   684→                  </div>
+   685→   685→                  <p className="text-sm text-muted-foreground">
+   686→   686→                    Confidence Score 0-100, Backtesting me 3 strategji, Sentiment AI, dhe Matrica e Korrelacionit.
+   687→   687→                  </p>
+   688→   688→                </CardContent>
+   689→   689→              </Card>
+   690→   690→              <AdvancedAnalysis />
+   691→   691→            </motion.div>
+   692→   692→          </TabsContent>
+   693→   693→
+   694→   694→          {/* Tab: AI Stock Predictor */}
+   695→   695→          <TabsContent value="predictor" className="mt-4">
+   696→   696→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
+   697→   697→              <Card className="border-violet-500/20 bg-violet-500/5">
+   698→   698→                <CardContent className="pt-4">
+   699→   699→                  <div className="flex items-center gap-2 mb-1">
+   700→   700→                    <BrainCircuit className="w-4 h-4 text-violet-500" />
+   701→   701→                    <h3 className="text-sm font-semibold">Predikues i Stoqeve me 15 Indikatorë Teknikë</h3>
+   702→   702→                  </div>
+   703→   703→                  <p className="text-sm text-muted-foreground">
+   704→   704→                    Modeli analizon 15 indikatorë (RSI, MACD, Bollinger, MA, Stochastic, ADX, OBV, etj.) dhe prodhon predikime afatshkurtra dhe afatgjata. Skanon 116 stoqe dhe i rendit sipas potencialit.
+   705→   705→                  </p>
+   706→   706→                </CardContent>
+   707→   707→              </Card>
+   708→   708→              <StockPredictor />
+   709→   709→            </motion.div>
+   710→   710→          </TabsContent>
+   711→   711→
+   712→   712→          {/* Tab: Drift Review */}
+   713→   713→          <TabsContent value="drift" className="mt-4">
+   714→   714→            <KontrolTab
+   715→   715→              icon={<Activity className="w-5 h-5" />}
+   716→   716→              title="Drift Review"
+   717→   717→              desc="Gjurmon shëndetin e modelit: preciziteti sipas afatit, kalibrimi (Brier/ECE), degradimi i regjimit dhe sektorit."
+   718→   718→              pageUrl="/drift-review"
+   719→   719→            />
+   720→   720→          </TabsContent>
+   721→   721→
+   722→   722→          {/* Tab: Override Journal */}
+   723→   723→          <TabsContent value="overrides" className="mt-4">
+   724→   724→            <KontrolTab
+   725→   725→              icon={<Shield className="w-5 h-5" />}
+   726→   726→              title="Override Journal"
+   727→   727→              desc="Gjurmon çdo ndërhyrje njerëzore: a ndihmoi apo dëmtoi? Modeli vs njeriu, shkaku i override."
+   728→   728→              pageUrl="/override-journal"
+   729→   729→            />
+   730→   730→          </TabsContent>
+   731→   731→
+   732→   732→          {/* Tab: Edge Leaderboard */}
+   733→   733→          <TabsContent value="edge" className="mt-4">
+   734→   734→            <KontrolTab
+   735→   735→              icon={<Trophy className="w-5 h-5" />}
+   736→   736→              title="Edge Leaderboard"
+   737→   737→              desc="Ku ka sistemi avantazhin e vërtetë? Sektorët dhe regjimet me performancën më të mirë."
+   738→   738→              pageUrl="/edge-leaderboard"
+   739→   739→            />
+   740→   740→          </TabsContent>
+   741→   741→
+   742→   742→          {/* Tab: Model Metrics */}
+   743→   743→          <TabsContent value="metrics" className="mt-4">
+   744→   744→            <KontrolTab
+   745→   745→              icon={<BarChart3 className="w-5 h-5" />}
+   746→   746→              title="Model Metrics"
+   747→   747→              desc="Brier score, ECE, precision/recall, alpha, drawdown — metrikat e plotë të kalibrit dhe performancës."
+   748→   748→              pageUrl="/model-metrics"
+   749→   749→            />
+   750→   750→          </TabsContent>
+   751→   751→        </Tabs>
+   752→   752→      </main>
+   753→   753→
+   754→   754→      {/* Footer */}
+   755→   755→      <footer className="border-t border-border/50 bg-card/30 py-4 mt-auto">
+   756→   756→        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+   757→   757→          <p className="text-xs text-muted-foreground">
+   758→   758→            AI Financial Brain — Analizë inteligjente e tregut financiar
+   759→   759→          </p>
+   760→   760→          <p className="text-xs text-muted-foreground">
+   761→   761→            Nuk përbën këshillë financiare
+   762→   762→          </p>
+   763→   763→        </div>
+   764→   764→      </footer>
+   765→   765→    </div>
+   766→   766→  );
+   767→   767→}
+   768→   768→

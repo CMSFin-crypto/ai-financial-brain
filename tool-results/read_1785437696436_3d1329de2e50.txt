@@ -1,0 +1,804 @@
+     1→// ═══════════════════════════════════════════════════════════════
+     2→// INDICATOR LEARNING ENGINE — Mëson nga historia e parashikimeve
+     3→// Funksionon në Vercel pa database (in-memory + JSON file)
+     4→//
+     5→// Çfarë bën:
+     6→// 1. Regjistron çdo parashikim me pikët e TË GJITHË indikatorëve
+     7→// 2. Vlerëson saktesinë duke krahasuar me çmimet aktuale
+     8→// 3. Llogarit saktesinë PER INDIKATOR — cilit i beson më shumë
+     9→// 4. Rregullon peshat bazuar në historinë e saktesisë
+    10→// ═══════════════════════════════════════════════════════════════
+    11→
+    12→import fs from 'fs';
+    13→import path from 'path';
+    14→import { fetchHistoricalData } from '@/lib/alpha-vantage';
+    15→
+    16→// ─── Types ───────────────────────────────────────────────────
+    17→
+    18→export interface IndicatorPredictionRecord {
+    19→  id: string;
+    20→  ticker: string;
+    21→  timestamp: string;
+    22→  priceAtPrediction: number;
+    23→  // Technical indicator scores (-100 to +100)
+    24→  technicalScores: Record<string, number>;
+    25→  technicalDirection: string;  // UP/DOWN/SIDEWAYS
+    26→  technicalScore: number;
+    27→  // Fundamental factor scores
+    28→  fundamentalScores: Record<string, number> | null;
+    29→  fundamentalDirection: string; // BULLISH/BEARISH/NEUTRAL
+    30→  fundamentalScore: number;
+    31→  // Combined
+    32→  totalScore: number;
+    33→  direction: string;
+    34→  confidence: number;
+    35→  // Evaluation (filled later)
+    36→  actualPrice?: number;
+    37→  actualChangePercent?: number;
+    38→  evaluatedAt?: string;
+    39→  wasCorrect?: boolean;
+    40→  perIndicatorCorrect?: Record<string, boolean>;
+    41→}
+    42→
+    43→export interface IndicatorAccuracy {
+    44→  indicator: string;
+    45→  totalPredictions: number;
+    46→  correctPredictions: number;
+    47→  accuracy: number;          // 0-1
+    48→  avgScoreWhenCorrect: number;
+    49→  avgScoreWhenWrong: number;
+    50→  weight: number;            // adjusted weight (0-1, relative)
+    51→  type: 'technical' | 'fundamental';
+    52→  description: string;       // Albanian description
+    53→}
+    54→
+    55→export interface LearningSnapshot {
+    56→  // Per-indicator accuracy
+    57→  indicatorAccuracies: Record<string, IndicatorAccuracy>;
+    58→  // Global stats
+    59→  totalRecorded: number;
+    60→  totalEvaluated: number;
+    61→  totalCorrect: number;
+    62→  overallAccuracy: number;
+    63→  // Per-ticker stats
+    64→  tickerAccuracy: Record<string, { total: number; correct: number; accuracy: number }>;
+    65→  // Learned weight multipliers (applied to base weights)
+    66→  weightMultipliers: Record<string, number>;
+    67→  // Lessons
+    68→  lessons: Array<{
+    69→    id: string;
+    70→    category: string;
+    71→    message: string;
+    72→    severity: number;
+    73→    createdAt: string;
+    74→  }>;
+    75→  // Metadata
+    76→  lastEvaluatedAt: string;
+    77→  lastUpdatedAt: string;
+    78→  version: number;
+    79→}
+    80→
+    81→// ─── Constants ──────────────────────────────────────────────
+    82→
+    83→const DATA_DIR = '/tmp/ai-financial-brain';
+    84→const DATA_FILE = path.join(DATA_DIR, 'indicator-learning.json');
+    85→const MAX_RECORDS = 2000; // Keep last 2000 predictions in memory
+    86→const EVALUATION_MIN_DAYS = 1; // Min days before evaluating
+    87→const EVALUATION_MAX_DAYS = 10; // Max days to look back
+    88→
+    89→// Albanian names for indicators
+    90→const INDICATOR_NAMES: Record<string, string> = {
+    91→  rsi: 'RSI (Indeksi i Forcës Relative)',
+    92→  macdHistogram: 'Histogrami MACD',
+    93→  bollinger: 'Bollinger Bands',
+    94→  maTrend: 'Trendi i Mesatareve Mobile',
+    95→  stochastic: 'Stokastiku',
+    96→  adx: 'ADX (Indeksi i Drejtimit Mesatar)',
+    97→  atr: 'ATR (Rreziku i Volatilitetit)',
+    98→  roc: 'ROC (Shkalla e Ndryshimit)',
+    99→  obv: 'OBV (Volumi në Balancë)',
+   100→  volumeConfirm: 'Konfirmimi i Volumit',
+   101→  macdCrossover: 'Kryqëzimi MACD',
+   102→  priceChannel: 'Kanali i Çmimeve',
+   103→  divergence: 'Divergjenca',
+   104→  vwap: 'VWAP (Çmimi Mesatar i Ponderuar)',
+   105→  pattern: 'Modeli i Qirinjëve',
+   106→  // Fundamental
+   107→  valuation: 'Vlerësimi (PE, PEG, P/B)',
+   108→  growth: 'Rritja (Të ardhura, Fitimet)',
+   109→  profitability: 'Rentabiliteti (Marzha, ROE)',
+   110→  financialHealth: 'Shëndeti Financiar (D/E)',
+   111→  analystConsensus: 'Konsensusi i Analistëve',
+   112→};
+   113→
+   114→// ─── In-Memory Store ────────────────────────────────────────
+   115→
+   116→let records: IndicatorPredictionRecord[] = [];
+   117→let snapshot: LearningSnapshot = createEmptySnapshot();
+   118→let isLoaded = false;
+   119→
+   120→function createEmptySnapshot(): LearningSnapshot {
+   121→  return {
+   122→    indicatorAccuracies: {},
+   123→    totalRecorded: 0,
+   124→    totalEvaluated: 0,
+   125→    totalCorrect: 0,
+   126→    overallAccuracy: 0,
+   127→    tickerAccuracy: {},
+   128→    weightMultipliers: {},
+   129→    lessons: [],
+   130→    lastEvaluatedAt: '',
+   131→    lastUpdatedAt: new Date().toISOString(),
+   132→    version: 1,
+   133→  };
+   134→}
+   135→
+   136→// ─── Persistence ────────────────────────────────────────────
+   137→
+   138→function ensureDataDir(): void {
+   139→  try {
+   140→    if (!fs.existsSync(DATA_DIR)) {
+   141→      fs.mkdirSync(DATA_DIR, { recursive: true });
+   142→    }
+   143→  } catch {
+   144→    // /tmp should always be writable
+   145→  }
+   146→}
+   147→
+   148→function loadFromDisk(): void {
+   149→  try {
+   150→    ensureDataDir();
+   151→    if (fs.existsSync(DATA_FILE)) {
+   152→      const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+   153→      const data = JSON.parse(raw);
+   154→      if (data.snapshot) {
+   155→        snapshot = data.snapshot;
+   156→      }
+   157→      if (data.records && Array.isArray(data.records)) {
+   158→        records = data.records.slice(-MAX_RECORDS);
+   159→      }
+   160→      console.log(`[LEARN] Loaded ${records.length} records and ${Object.keys(snapshot.indicatorAccuracies).length} indicator accuracies from disk`);
+   161→    }
+   162→  } catch (err: any) {
+   163→    console.log(`[LEARN] Could not load from disk: ${err.message}`);
+   164→    snapshot = createEmptySnapshot();
+   165→    records = [];
+   166→  }
+   167→  isLoaded = true;
+   168→}
+   169→
+   170→function saveToDisk(): void {
+   171→  try {
+   172→    ensureDataDir();
+   173→    const data = {
+   174→      snapshot,
+   175→      records: records.slice(-MAX_RECORDS),
+   176→    };
+   177→    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+   178→  } catch (err: any) {
+   179→    console.log(`[LEARN] Could not save to disk: ${err.message}`);
+   180→  }
+   181→}
+   182→
+   183→// Initialize on first use
+   184→function ensureLoaded(): void {
+   185→  if (!isLoaded) {
+   186→    loadFromDisk();
+   187→  }
+   188→}
+   189→
+   190→// ─── 1. RECORD PREDICTION ───────────────────────────────────
+   191→
+   192→export function recordPrediction(data: {
+   193→  ticker: string;
+   194→  priceAtPrediction: number;
+   195→  technicalScores: Record<string, number>;
+   196→  technicalDirection: string;
+   197→  technicalScore: number;
+   198→  fundamentalScores?: Record<string, number> | null;
+   199→  fundamentalDirection?: string;
+   200→  fundamentalScore?: number;
+   201→  totalScore: number;
+   202→  direction: string;
+   203→  confidence: number;
+   204→}): void {
+   205→  ensureLoaded();
+   206→
+   207→  const record: IndicatorPredictionRecord = {
+   208→    id: `${data.ticker}_${Date.now()}`,
+   209→    ticker: data.ticker,
+   210→    timestamp: new Date().toISOString(),
+   211→    priceAtPrediction: data.priceAtPrediction,
+   212→    technicalScores: data.technicalScores,
+   213→    technicalDirection: data.technicalDirection,
+   214→    technicalScore: data.technicalScore,
+   215→    fundamentalScores: data.fundamentalScores || null,
+   216→    fundamentalDirection: data.fundamentalDirection || 'NEUTRAL',
+   217→    fundamentalScore: data.fundamentalScore || 0,
+   218→    totalScore: data.totalScore,
+   219→    direction: data.direction,
+   220→    confidence: data.confidence,
+   221→  };
+   222→
+   223→  records.push(record);
+   224→
+   225→  // Trim to max
+   226→  if (records.length > MAX_RECORDS) {
+   227→    records = records.slice(-MAX_RECORDS);
+   228→  }
+   229→
+   230→  snapshot.totalRecorded++;
+   231→  snapshot.lastUpdatedAt = new Date().toISOString();
+   232→
+   233→  // Save periodically (every 10 records)
+   234→  if (snapshot.totalRecorded % 10 === 0) {
+   235→    saveToDisk();
+   236→  }
+   237→
+   238→  console.log(`[LEARN] Recorded prediction: ${data.ticker} ${data.direction} (score: ${data.totalScore}, price: $${data.priceAtPrediction})`);
+   239→}
+   240→
+   241→// ─── 2. RECORD FROM HYBRID RESULT ───────────────────────────
+   242→
+   243→export function recordFromHybridResult(
+   244→  ticker: string,
+   245→  result: {
+   246→    score: number;
+   247→    direction: string;
+   248→    confidence: number;
+   249→    indicatorScores: Record<string, number>;
+   250→    fundamentalScore?: { score: number; signal: string; factors: Record<string, { score: number }> } | null;
+   251→    fundamentalAvailable?: boolean;
+   252→    totalScore?: number;
+   253→    shortTerm?: { prediction: string };
+   254→    mediumTerm?: { prediction: string };
+   255→  }
+   256→): void {
+   257→  const predPrice = 0; // Will be filled during evaluation
+   258→
+   259→  // Determine technical direction
+   260→  let techDir = 'SIDEWAYS';
+   261→  if (result.shortTerm?.prediction === 'UP' || result.mediumTerm?.prediction === 'UP') techDir = 'UP';
+   262→  else if (result.shortTerm?.prediction === 'DOWN' || result.mediumTerm?.prediction === 'DOWN') techDir = 'DOWN';
+   263→
+   264→  // Extract fundamental factor scores
+   265→  let fundScores: Record<string, number> | null = null;
+   266→  let fundDir = 'NEUTRAL';
+   267→  let fundTotalScore = 0;
+   268→
+   269→  if (result.fundamentalScore && result.fundamentalAvailable) {
+   270→    fundScores = {};
+   271→    fundDir = result.fundamentalScore.signal;
+   272→    fundTotalScore = result.fundamentalScore.score;
+   273→    for (const [key, factor] of Object.entries(result.fundamentalScore.factors)) {
+   274→      fundScores[key] = factor.score;
+   275→    }
+   276→  }
+   277→
+   278→  recordPrediction({
+   279→    ticker,
+   280→    priceAtPrediction: 0, // Will be updated when we have price data
+   281→    technicalScores: result.indicatorScores,
+   282→    technicalDirection: techDir,
+   283→    technicalScore: result.score,
+   284→    fundamentalScores: fundScores,
+   285→    fundamentalDirection: fundDir,
+   286→    fundamentalScore: fundTotalScore,
+   287→    totalScore: result.totalScore ?? result.score,
+   288→    direction: result.direction,
+   289→    confidence: result.confidence,
+   290→  });
+   291→}
+   292→
+   293→// ─── 3. EVALUATE PREDICTIONS ────────────────────────────────
+   294→
+   295→export async function evaluatePredictions(): Promise<{
+   296→  evaluated: number;
+   297→  correct: number;
+   298→  newLessons: number;
+   299→  indicatorAccuracyUpdated: boolean;
+   300→}> {
+   301→  ensureLoaded();
+   302→
+   303→  // Find unevaluated records that are old enough
+   304→  const now = Date.now();
+   305→  const minAge = EVALUATION_MIN_DAYS * 24 * 60 * 60 * 1000;
+   306→  const maxAge = EVALUATION_MAX_DAYS * 24 * 60 * 60 * 1000;
+   307→
+   308→  const toEvaluate = records.filter(r => {
+   309→    if (r.evaluatedAt) return false;
+   310→    if (r.priceAtPrediction <= 0) return false;
+   311→    const age = now - new Date(r.timestamp).getTime();
+   312→    return age >= minAge && age <= maxAge;
+   313→  });
+   314→
+   315→  if (toEvaluate.length === 0) {
+   316→    return { evaluated: 0, correct: 0, newLessons: 0, indicatorAccuracyUpdated: false };
+   317→  }
+   318→
+   319→  // Get unique tickers
+   320→  const tickers = [...new Set(toEvaluate.map(r => r.ticker))];
+   321→  console.log(`[LEARN] Evaluating ${toEvaluate.length} predictions for ${tickers.length} tickers...`);
+   322→
+   323→  // Fetch current prices
+   324→  const actualPrices: Record<string, number> = {};
+   325→  for (let i = 0; i < tickers.length; i += 6) {
+   326→    const batch = tickers.slice(i, i + 6);
+   327→    const promises = batch.map(async (t) => {
+   328→      try {
+   329→        // Fetch 1-day data to get latest close
+   330→        const data = await fetchHistoricalData(t, '5d');
+   331→        if (data && data.length > 0) {
+   332→          return { ticker: t, price: data[data.length - 1].close };
+   333→        }
+   334→      } catch {
+   335→        // ignore
+   336→      }
+   337→      return null;
+   338→    });
+   339→    const results = await Promise.allSettled(promises);
+   340→    for (const r of results) {
+   341→      if (r.status === 'fulfilled' && r.value) {
+   342→        actualPrices[r.value.ticker] = r.value.price;
+   343→      }
+   344→    }
+   345→    if (i + 6 < tickers.length) {
+   346→      await new Promise(resolve => setTimeout(resolve, 500));
+   347→    }
+   348→  }
+   349→
+   350→  // Evaluate each prediction
+   351→  let evaluated = 0;
+   352→  let correct = 0;
+   353→  let newLessons = 0;
+   354→
+   355→  for (const record of toEvaluate) {
+   356→    const actual = actualPrices[record.ticker];
+   357→    if (!actual) continue;
+   358→
+   359→    const change = ((actual - record.priceAtPrediction) / record.priceAtPrediction) * 100;
+   360→    record.actualPrice = actual;
+   361→    record.actualChangePercent = Math.round(change * 100) / 100;
+   362→    record.evaluatedAt = new Date().toISOString();
+   363→
+   364→    // Was the overall prediction correct?
+   365→    const predictedUp = record.direction === 'STRONG_BUY' || record.direction === 'BUY' ||
+   366→                       record.totalScore > 15;
+   367→    const predictedDown = record.direction === 'STRONG_SELL' || record.direction === 'SELL' ||
+   368→                         record.totalScore < -15;
+   369→    const actualUp = change > 0.5;
+   370→    const actualDown = change < -0.5;
+   371→
+   372→    record.wasCorrect = (predictedUp && actualUp) || (predictedDown && actualDown) ||
+   373→                        (!predictedUp && !predictedDown && Math.abs(change) <= 0.5);
+   374→
+   375→    if (record.wasCorrect) correct++;
+   376→
+   377→    // Per-indicator correctness
+   378→    record.perIndicatorCorrect = {};
+   379→
+   380→    // Technical indicators
+   381→    for (const [indicator, score] of Object.entries(record.technicalScores)) {
+   382→      const predictedBullish = score > 10;
+   383→      const predictedBearish = score < -10;
+   384→      const indicatorCorrect = (predictedBullish && actualUp) || (predictedBearish && actualDown) ||
+   385→                               (!predictedBullish && !predictedBearish);
+   386→      record.perIndicatorCorrect[indicator] = indicatorCorrect;
+   387→    }
+   388→
+   389→    // Fundamental factors
+   390→    if (record.fundamentalScores) {
+   391→      for (const [factor, score] of Object.entries(record.fundamentalScores)) {
+   392→        const predictedBullish = score > 10;
+   393→        const predictedBearish = score < -10;
+   394→        const factorCorrect = (predictedBullish && actualUp) || (predictedBearish && actualDown) ||
+   395→                              (!predictedBullish && !predictedBearish);
+   396→        record.perIndicatorCorrect[`fund_${factor}`] = factorCorrect;
+   397→      }
+   398→    }
+   399→
+   400→    evaluated++;
+   401→  }
+   402→
+   403→  // Recalculate indicator accuracies
+   404→  recalculateIndicatorAccuracies();
+   405→
+   406→  // Extract lessons
+   407→  newLessons = extractLessons();
+   408→
+   409→  // Update snapshot
+   410→  snapshot.totalEvaluated = records.filter(r => r.evaluatedAt).length;
+   411→  snapshot.totalCorrect = records.filter(r => r.wasCorrect).length;
+   412→  snapshot.overallAccuracy = snapshot.totalEvaluated > 0
+   413→    ? snapshot.totalCorrect / snapshot.totalEvaluated
+   414→    : 0;
+   415→  snapshot.lastEvaluatedAt = new Date().toISOString();
+   416→  snapshot.lastUpdatedAt = new Date().toISOString();
+   417→
+   418→  // Calculate weight multipliers
+   419→  calculateWeightMultipliers();
+   420→
+   421→  // Save
+   422→  saveToDisk();
+   423→
+   424→  console.log(`[LEARN] Evaluation complete: ${evaluated} evaluated, ${correct} correct (${((correct/evaluated)*100).toFixed(1)}%), ${newLessons} lessons`);
+   425→
+   426→  return { evaluated, correct, newLessons, indicatorAccuracyUpdated: true };
+   427→}
+   428→
+   429→// ─── 4. RECALCULATE INDICATOR ACCURACIES ────────────────────
+   430→
+   431→function recalculateIndicatorAccuracies(): void {
+   432→  const evaluated = records.filter(r => r.evaluatedAt && r.perIndicatorCorrect);
+   433→  if (evaluated.length < 5) {
+   434→    console.log(`[LEARN] Not enough evaluated records (${evaluated.length}) to calculate accuracies`);
+   435→    return;
+   436→  }
+   437→
+   438→  // Technical indicators
+   439→  const techIndicators = [
+   440→    'rsi', 'macdHistogram', 'bollinger', 'maTrend', 'stochastic',
+   441→    'adx', 'atr', 'roc', 'obv', 'volumeConfirm',
+   442→    'macdCrossover', 'priceChannel', 'divergence', 'vwap', 'pattern',
+   443→  ];
+   444→
+   445→  for (const ind of techIndicators) {
+   446→    const relevantRecords = evaluated.filter(r => r.technicalScores[ind] !== undefined && r.perIndicatorCorrect[ind] !== undefined);
+   447→    if (relevantRecords.length < 3) continue;
+   448→
+   449→    const correctCount = relevantRecords.filter(r => r.perIndicatorCorrect![ind]).length;
+   450→    const correctRecords = relevantRecords.filter(r => r.perIndicatorCorrect![ind]);
+   451→    const wrongRecords = relevantRecords.filter(r => !r.perIndicatorCorrect![ind]);
+   452→
+   453→    const avgScoreCorrect = correctRecords.length > 0
+   454→      ? correctRecords.reduce((s, r) => s + (r.technicalScores[ind] || 0), 0) / correctRecords.length
+   455→      : 0;
+   456→    const avgScoreWrong = wrongRecords.length > 0
+   457→      ? wrongRecords.reduce((s, r) => s + (r.technicalScores[ind] || 0), 0) / wrongRecords.length
+   458→      : 0;
+   459→
+   460→    snapshot.indicatorAccuracies[ind] = {
+   461→      indicator: ind,
+   462→      totalPredictions: relevantRecords.length,
+   463→      correctPredictions: correctCount,
+   464→      accuracy: correctCount / relevantRecords.length,
+   465→      avgScoreWhenCorrect: Math.round(avgScoreCorrect * 100) / 100,
+   466→      avgScoreWhenWrong: Math.round(avgScoreWrong * 100) / 100,
+   467→      weight: 0, // Will be calculated in calculateWeightMultipliers
+   468→      type: 'technical',
+   469→      description: INDICATOR_NAMES[ind] || ind,
+   470→    };
+   471→  }
+   472→
+   473→  // Fundamental factors
+   474→  const fundFactors = ['valuation', 'growth', 'profitability', 'financialHealth', 'analystConsensus'];
+   475→  for (const factor of fundFactors) {
+   476→    const key = `fund_${factor}`;
+   477→    const relevantRecords = evaluated.filter(r => r.fundamentalScores?.[factor] !== undefined && r.perIndicatorCorrect[key] !== undefined);
+   478→    if (relevantRecords.length < 3) continue;
+   479→
+   480→    const correctCount = relevantRecords.filter(r => r.perIndicatorCorrect![key]).length;
+   481→    const correctRecords = relevantRecords.filter(r => r.perIndicatorCorrect![key]);
+   482→    const wrongRecords = relevantRecords.filter(r => !r.perIndicatorCorrect![key]);
+   483→
+   484→    const avgScoreCorrect = correctRecords.length > 0
+   485→      ? correctRecords.reduce((s, r) => s + (r.fundamentalScores?.[factor] || 0), 0) / correctRecords.length
+   486→      : 0;
+   487→    const avgScoreWrong = wrongRecords.length > 0
+   488→      ? wrongRecords.reduce((s, r) => s + (r.fundamentalScores?.[factor] || 0), 0) / wrongRecords.length
+   489→      : 0;
+   490→
+   491→    snapshot.indicatorAccuracies[key] = {
+   492→      indicator: factor,
+   493→      totalPredictions: relevantRecords.length,
+   494→      correctPredictions: correctCount,
+   495→      accuracy: correctCount / relevantRecords.length,
+   496→      avgScoreWhenCorrect: Math.round(avgScoreCorrect * 100) / 100,
+   497→      avgScoreWhenWrong: Math.round(avgScoreWrong * 100) / 100,
+   498→      weight: 0,
+   499→      type: 'fundamental',
+   500→      description: INDICATOR_NAMES[factor] || factor,
+   501→    };
+   502→  }
+   503→
+   504→  // Per-ticker accuracy
+   505→  const tickerGroups: Record<string, { total: number; correct: number }> = {};
+   506→  for (const r of evaluated) {
+   507→    if (!tickerGroups[r.ticker]) tickerGroups[r.ticker] = { total: 0, correct: 0 };
+   508→    tickerGroups[r.ticker].total++;
+   509→    if (r.wasCorrect) tickerGroups[r.ticker].correct++;
+   510→  }
+   511→  for (const [ticker, stats] of Object.entries(tickerGroups)) {
+   512→    snapshot.tickerAccuracy[ticker] = {
+   513→      total: stats.total,
+   514→      correct: stats.correct,
+   515→      accuracy: stats.total > 0 ? stats.correct / stats.total : 0,
+   516→    };
+   517→  }
+   518→}
+   519→
+   520→// ─── 5. CALCULATE WEIGHT MULTIPLIERS ───────────────────────
+   521→
+   522→function calculateWeightMultipliers(): void {
+   523→  const accuracies = snapshot.indicatorAccuracies;
+   524→  const entries = Object.values(accuracies);
+   525→
+   526→  if (entries.length === 0) return;
+   527→
+   528→  // Calculate multipliers based on accuracy
+   529→  // Formula: multiplier = 0.5 + accuracy (so range is 0.5 to 1.5)
+   530→  // If accuracy < 0.4, reduce weight (multiplier < 0.9)
+   531→  // If accuracy > 0.6, increase weight (multiplier > 1.1)
+   532→  // If accuracy = 0.5, keep same (multiplier = 1.0)
+   533→
+   534→  for (const entry of entries) {
+   535→    const acc = entry.accuracy;
+   536→    // Sigmoid-like adjustment centered at 0.5
+   537→    const multiplier = 0.5 + acc;
+   538→    // Clamp between 0.3 (very unreliable) and 1.7 (very reliable)
+   539→    entry.weight = Math.round(Math.max(0.3, Math.min(1.7, multiplier)) * 100) / 100;
+   540→    snapshot.weightMultipliers[entry.indicator] = entry.weight;
+   541→  }
+   542→
+   543→  // Normalize weights so average is 1.0
+   544→  const avgMultiplier = entries.reduce((s, e) => s + e.weight, 0) / entries.length;
+   545→  if (avgMultiplier > 0) {
+   546→    for (const entry of entries) {
+   547→      entry.weight = Math.round((entry.weight / avgMultiplier) * 100) / 100;
+   548→      snapshot.weightMultipliers[entry.indicator] = entry.weight;
+   549→    }
+   550→  }
+   551→
+   552→  console.log(`[LEARN] Weight multipliers calculated for ${entries.length} indicators (avg accuracy: ${(entries.reduce((s,e) => s + e.accuracy, 0) / entries.length * 100).toFixed(1)}%)`);
+   553→}
+   554→
+   555→// ─── 6. GET ADJUSTED WEIGHTS ────────────────────────────────
+   556→
+   557→export function getAdjustedWeights(): Record<string, number> {
+   558→  ensureLoaded();
+   559→
+   560→  // Base weights for technical indicators
+   561→  const baseWeights: Record<string, number> = {
+   562→    rsi: 0.10,
+   563→    macdHistogram: 0.08,
+   564→    bollinger: 0.08,
+   565→    maTrend: 0.12,
+   566→    stochastic: 0.06,
+   567→    adx: 0.06,
+   568→    atr: 0.03,
+   569→    roc: 0.08,
+   570→    obv: 0.07,
+   571→    volumeConfirm: 0.07,
+   572→    macdCrossover: 0.05,
+   573→    priceChannel: 0.05,
+   574→    divergence: 0.06,
+   575→    vwap: 0.04,
+   576→    pattern: 0.05,
+   577→  };
+   578→
+   579→  // If no learning data yet, return base weights
+   580→  if (Object.keys(snapshot.weightMultipliers).length === 0) {
+   581→    return baseWeights;
+   582→  }
+   583→
+   584→  // Apply multipliers
+   585→  const adjusted: Record<string, number> = {};
+   586→  for (const [key, baseWeight] of Object.entries(baseWeights)) {
+   587→    const multiplier = snapshot.weightMultipliers[key] ?? 1.0;
+   588→    adjusted[key] = baseWeight * multiplier;
+   589→  }
+   590→
+   591→  // Normalize so total = 1.0
+   592→  const total = Object.values(adjusted).reduce((s, w) => s + w, 0);
+   593→  if (total > 0) {
+   594→    for (const key of Object.keys(adjusted)) {
+   595→      adjusted[key] = Math.round((adjusted[key] / total) * 1000) / 1000;
+   596→    }
+   597→  }
+   598→
+   599→  return adjusted;
+   600→}
+   601→
+   602→// ─── 7. GET FUNDAMENTAL WEIGHT ADJUSTMENTS ──────────────────
+   603→
+   604→export function getFundamentalWeightAdjustments(): Record<string, number> {
+   605→  ensureLoaded();
+   606→
+   607→  const baseFundWeights: Record<string, number> = {
+   608→    valuation: 0.25,
+   609→    growth: 0.25,
+   610→    profitability: 0.20,
+   611→    financialHealth: 0.15,
+   612→    analystConsensus: 0.15,
+   613→  };
+   614→
+   615→  if (Object.keys(snapshot.weightMultipliers).length === 0) {
+   616→    return baseFundWeights;
+   617→  }
+   618→
+   619→  const adjusted: Record<string, number> = {};
+   620→  for (const [key, baseWeight] of Object.entries(baseFundWeights)) {
+   621→    const fundKey = `fund_${key}`;
+   622→    const multiplier = snapshot.weightMultipliers[fundKey] ?? 1.0;
+   623→    adjusted[key] = baseWeight * multiplier;
+   624→  }
+   625→
+   626→  // Normalize
+   627→  const total = Object.values(adjusted).reduce((s, w) => s + w, 0);
+   628→  if (total > 0) {
+   629→    for (const key of Object.keys(adjusted)) {
+   630→      adjusted[key] = Math.round((adjusted[key] / total) * 1000) / 1000;
+   631→    }
+   632→  }
+   633→
+   634→  return adjusted;
+   635→}
+   636→
+   637→// ─── 8. EXTRACT LESSONS ────────────────────────────────────
+   638→
+   639→function extractLessons(): number {
+   640→  const recentEvaluated = records
+   641→    .filter(r => r.evaluatedAt && !r.wasCorrect && Math.abs(r.actualChangePercent || 0) > 2)
+   642→    .slice(-20);
+   643→
+   644→  let newLessons = 0;
+   645→
+   646→  for (const record of recentEvaluated) {
+   647→    if (!record.perIndicatorCorrect || !record.actualChangePercent) continue;
+   648→
+   649→    // Find which indicators were most wrong
+   650→    const wrongIndicators: Array<{ name: string; score: number; wasPredicted: string; actual: string }> = [];
+   651→
+   652→    for (const [ind, correct] of Object.entries(record.perIndicatorCorrect)) {
+   653→      if (correct) continue;
+   654→
+   655→      const isFund = ind.startsWith('fund_');
+   656→      const indKey = isFund ? ind.replace('fund_', '') : ind;
+   657→      const scores = isFund ? record.fundamentalScores : record.technicalScores;
+   658→      const score = scores?.[indKey] ?? 0;
+   659→
+   660→      const predicted = score > 10 ? 'LARTË' : score < -10 ? 'POSHTË' : 'NEUTRAL';
+   661→      const actual = (record.actualChangePercent || 0) > 0 ? 'LARTË' : 'POSHTË';
+   662→
+   663→      wrongIndicators.push({
+   664→        name: INDICATOR_NAMES[indKey] || indKey,
+   665→        score: Math.round(score * 10) / 10,
+   666→        wasPredicted: predicted,
+   667→        actual,
+   668→      });
+   669→    }
+   670→
+   671→    if (wrongIndicators.length === 0) continue;
+   672→
+   673→    // Sort by absolute score (most confident wrong indicators first)
+   674→    wrongIndicators.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+   675→
+   676→    // Find if similar lesson exists
+   677→    const topWrong = wrongIndicators[0];
+   678→    const category = record.actualChangePercent < -3 ? 'wrong_direction' :
+   679→                     record.actualChangePercent > 3 ? 'volatility' : 'timing';
+   680→
+   681→    const lessonMessage = `${record.ticker}: ${topWrong.name} parashikoi ${topWrong.wasPredicted} (pikë: ${topWrong.score}) por çmimi shkoi ${topWrong.actual} me ${Math.abs(record.actualChangePercent).toFixed(1)}%. ${wrongIndicators.length} indikatorë gabuan.`;
+   682→
+   683→    const severity = Math.min(Math.ceil(Math.abs(record.actualChangePercent) / 3), 5);
+   684→
+   685→    // Check for duplicate
+   686→    const isDuplicate = snapshot.lessons.some(l =>
+   687→      l.category === category &&
+   688→      l.message.includes(record.ticker) &&
+   689→      (Date.now() - new Date(l.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000
+   690→    );
+   691→
+   692→    if (!isDuplicate) {
+   693→      snapshot.lessons.unshift({
+   694→        id: `lesson_${Date.now()}_${record.ticker}`,
+   695→        category,
+   696→        message: lessonMessage,
+   697→        severity,
+   698→        createdAt: new Date().toISOString(),
+   699→      });
+   700→      newLessons++;
+   701→
+   702→      // Keep max 50 lessons
+   703→      if (snapshot.lessons.length > 50) {
+   704→        snapshot.lessons = snapshot.lessons.slice(0, 50);
+   705→      }
+   706→    }
+   707→  }
+   708→
+   709→  return newLessons;
+   710→}
+   711→
+   712→// ─── 9. GET STATS ──────────────────────────────────────────
+   713→
+   714→export function getStats(): LearningSnapshot {
+   715→  ensureLoaded();
+   716→  return { ...snapshot };
+   717→}
+   718→
+   719→// ─── 10. GET LEARNING CONTEXT FOR AI ───────────────────────
+   720→
+   721→export function getLearningContext(): string {
+   722→  ensureLoaded();
+   723→
+   724→  if (snapshot.totalEvaluated < 5) {
+   725→    return '';
+   726→  }
+   727→
+   728→  const parts: string[] = [];
+   729→
+   730→  parts.push(`═══ MËSIME NGA HISTORIA E PARASHIKIMEVE (${snapshot.totalEvaluated} të vlerësuara, saktesia: ${(snapshot.overallAccuracy * 100).toFixed(1)}%) ═══`);
+   731→
+   732→  // Top 5 most accurate indicators
+   733→  const sortedByAccuracy = Object.values(snapshot.indicatorAccuracies)
+   734→    .filter(a => a.totalPredictions >= 3)
+   735→    .sort((a, b) => b.accuracy - a.accuracy);
+   736→
+   737→  if (sortedByAccuracy.length > 0) {
+   738→    const topIndicators = sortedByAccuracy.slice(0, 5)
+   739→      .map(a => `  ${a.description}: ${(a.accuracy * 100).toFixed(0)}% saktesi (pesha e rregulluar: x${a.weight.toFixed(2)})`)
+   740→      .join('\n');
+   741→
+   742→    const worstIndicators = sortedByAccuracy.slice(-3).reverse()
+   743→      .map(a => `  ${a.description}: ${(a.accuracy * 100).toFixed(0)}% saktesi (pesha e ulët: x${a.weight.toFixed(2)})`)
+   744→      .join('\n');
+   745→
+   746→    parts.push(`Indikatorët më të saktë:\n${topIndicators}`);
+   747→    parts.push(`Indikatorët më të paktë të saktë:\n${worstIndicators}`);
+   748→  }
+   749→
+   750→  // Recent lessons
+   751→  if (snapshot.lessons.length > 0) {
+   752→    const recentLessons = snapshot.lessons.slice(0, 5)
+   753→      .map(l => `  [${l.category}] ${l.message}`)
+   754→      .join('\n');
+   755→
+   756→    parts.push(`Mësimet e fundit:\n${recentLessons}`);
+   757→  }
+   758→
+   759→  // Ticker performance
+   760→  const sortedTickers = Object.entries(snapshot.tickerAccuracy)
+   761→    .filter(([_, s]) => s.total >= 2)
+   762→    .sort((a, b) => b[1].accuracy - a[1].accuracy);
+   763→
+   764→  if (sortedTickers.length > 0) {
+   765→    const best = sortedTickers.slice(0, 3).map(([t, s]) => `${t}: ${(s.accuracy*100).toFixed(0)}%`).join(', ');
+   766→    const worst = sortedTickers.slice(-3).reverse().map(([t, s]) => `${t}: ${(s.accuracy*100).toFixed(0)}%`).join(', ');
+   767→    parts.push(`Saktësia per aksion: Më të mirat — ${best}. Më të këqijat — ${worst}.`);
+   768→  }
+   769→
+   770→  parts.push(`RREGULLA: Përdor indikatorët me saktesi të lartë më shumë. Zvogëlo peshën e indikatorëve që gabojnë shpesh. Mos u mbështet vetëm në një indikator.`);
+   771→  parts.push(`═══ FUND I MËSIMEVE ═══`);
+   772→
+   773→  return parts.join('\n');
+   774→}
+   775→
+   776→// ─── 11. GET INDICATOR RANKING ─────────────────────────────
+   777→
+   778→export function getIndicatorRanking(): {
+   779→  technical: IndicatorAccuracy[];
+   780→  fundamental: IndicatorAccuracy[];
+   781→} {
+   782→  ensureLoaded();
+   783→
+   784→  const all = Object.values(snapshot.indicatorAccuracies);
+   785→  return {
+   786→    technical: all.filter(a => a.type === 'technical').sort((a, b) => b.accuracy - a.accuracy),
+   787→    fundamental: all.filter(a => a.type === 'fundamental').sort((a, b) => b.accuracy - a.accuracy),
+   788→  };
+   789→}
+   790→
+   791→// ─── 12. GET RECENT PREDICTIONS ────────────────────────────
+   792→
+   793→export function getRecentPredictions(limit = 20): IndicatorPredictionRecord[] {
+   794→  ensureLoaded();
+   795→  return records.slice(-limit).reverse();
+   796→}
+   797→
+   798→// ─── 13. FORCE SAVE ────────────────────────────────────────
+   799→
+   800→export function forceSave(): void {
+   801→  ensureLoaded();
+   802→  saveToDisk();
+   803→  console.log(`[LEARN] Force saved ${records.length} records to disk`);
+   804→}

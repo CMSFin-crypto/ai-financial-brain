@@ -1,0 +1,617 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback } from 'react';
+     4→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+     5→import { Badge } from '@/components/ui/badge';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+     8→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+     9→import { Skeleton } from '@/components/ui/skeleton';
+    10→import {
+    11→  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
+    12→  Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
+    13→  ScatterChart, Scatter, ReferenceLine,
+    14→} from 'recharts';
+    15→import {
+    16→  Target, TrendingUp, TrendingDown, Activity, Gauge, Shield,
+    17→  BarChart3, RefreshCw, AlertTriangle, CheckCircle2, Clock, Zap,
+    18→  Thermometer, Crosshair,
+    19→} from 'lucide-react';
+    20→
+    21→// --- Types ---
+    22→
+    23→type ModelMetrics = {
+    24→  sampleSize: number;
+    25→  accuracy: number | null;
+    26→  avgReturn: number | null;
+    27→  benchmarkReturn: number | null;
+    28→  alpha: number | null;
+    29→  winRate: number | null;
+    30→  brierScore: number | null;
+    31→  precisionBuy: number | null;
+    32→  recallBuy: number | null;
+    33→  noTradeRate: number | null;
+    34→  maxDrawdown: number | null;
+    35→};
+    36→
+    37→type MetricSnapshot = {
+    38→  id: string;
+    39→  modelVersion: string;
+    40→  horizonDays: number;
+    41→  sampleSize: number;
+    42→  accuracy: number | null;
+    43→  avgReturn: number | null;
+    44→  benchmarkReturn: number | null;
+    45→  alpha: number | null;
+    46→  winRate: number | null;
+    47→  brierScore: number | null;
+    48→  precisionBuy: number | null;
+    49→  recallBuy: number | null;
+    50→  noTradeRate: number | null;
+    51→  maxDrawdown: number | null;
+    52→  createdAt: string;
+    53→};
+    54→
+    55→// --- Helpers ---
+    56→
+    57→function pct(v: number | null, decimals = 1): string {
+    58→  if (v === null || v === undefined) return 'N/A';
+    59→  return `${(v * 100).toFixed(decimals)}%`;
+    60→}
+    61→
+    62→function brierColor(v: number | null): string {
+    63→  if (v === null) return 'text-muted-foreground';
+    64→  if (v < 0.15) return 'text-emerald-500';
+    65→  if (v < 0.25) return 'text-amber-500';
+    66→  return 'text-red-500';
+    67→}
+    68→
+    69→function brierLabel(v: number | null): string {
+    70→  if (v === null) return 'No data';
+    71→  if (v < 0.15) return 'Well calibrated';
+    72→  if (v < 0.25) return 'Slightly overconfident';
+    73→  return 'Poorly calibrated';
+    74→}
+    75→
+    76→// --- Stat Card ---
+    77→
+    78→function StatCard({ title, value, subtitle, icon: Icon, color = 'text-foreground' }: {
+    79→  title: string;
+    80→  value: string;
+    81→  subtitle?: string;
+    82→  icon: React.ElementType;
+    83→  color?: string;
+    84→}) {
+    85→  return (
+    86→    <Card className="border-border/50">
+    87→      <CardContent className="p-4">
+    88→        <div className="flex items-center justify-between">
+    89→          <div className="space-y-1">
+    90→            <p className="text-xs text-muted-foreground font-medium">{title}</p>
+    91→            <p className={`text-2xl font-bold tabular-nums ${color}`}>{value}</p>
+    92→            {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+    93→          </div>
+    94→          <div className="p-2 rounded-lg bg-muted/50">
+    95→            <Icon className="h-4 w-4 text-muted-foreground" />
+    96→          </div>
+    97→        </div>
+    98→      </CardContent>
+    99→    </Card>
+   100→  );
+   101→}
+   102→
+   103→// --- Calibration Types ---
+   104→
+   105→type ReliabilityBin = {
+   106→  rangeStart: number;
+   107→  rangeEnd: number;
+   108→  avgProbability: number;
+   109→  observedFrequency: number;
+   110→  count: number;
+   111→  calibrationError: number;
+   112→};
+   113→
+   114→type CalibrationData = {
+   115→  sampleSize: number;
+   116→  brier: number | null;
+   117→  ece: number | null;
+   118→  mce: number | null;
+   119→  reliability: ReliabilityBin[];
+   120→  diagnosis: string;
+   121→  calibrator: {
+   122→    method: string;
+   123→    trainedAt: string | null;
+   124→    sampleSize: number;
+   125→    preBrier: number | null;
+   126→    postBrier: number | null;
+   127→  } | null;
+   128→};
+   129→
+   130→// --- Main Page ---
+   131→
+   132→export default function ModelMetricsDashboard() {
+   133→  const [metrics, setMetrics] = useState<ModelMetrics | null>(null);
+   134→  const [history, setHistory] = useState<MetricSnapshot[]>([]);
+   135→  const [calibration, setCalibration] = useState<CalibrationData | null>(null);
+   136→  const [calLoading, setCalLoading] = useState(false);
+   137→  const [loading, setLoading] = useState(true);
+   138→  const [snapshotting, setSnapshotting] = useState(false);
+   139→  const [horizonFilter, setHorizonFilter] = useState<string>('all');
+   140→  const [regimeFilter, setRegimeFilter] = useState<string>('');
+   141→  const [error, setError] = useState<string | null>(null);
+   142→
+   143→  const fetchMetrics = useCallback(async () => {
+   144→    setLoading(true);
+   145→    setError(null);
+   146→    try {
+   147→      const params = new URLSearchParams();
+   148→      if (horizonFilter !== 'all') params.set('horizonDays', horizonFilter);
+   149→      if (regimeFilter) params.set('regime', regimeFilter);
+   150→      params.set('modelVersion', 'predict-v3-regime-spillover');
+   151→      const [metricsRes, historyRes] = await Promise.all([
+   152→        fetch(`/api/model-metrics?${params}`),
+   153→        fetch(`/api/model-metrics?history=true&days=90&modelVersion=predict-v3-regime-spillover`),
+   154→      ]);
+   155→      const metricsData = await metricsRes.json();
+   156→      const historyData = await historyRes.json();
+   157→      setMetrics(metricsData);
+   158→      setHistory(historyData.snapshots || []);
+   159→    } catch (e) {
+   160→      setError(e instanceof Error ? e.message : 'Failed to load metrics');
+   161→    } finally {
+   162→      setLoading(false);
+   163→    }
+   164→  }, [horizonFilter, regimeFilter]);
+   165→
+   166→  const fetchCalibration = useCallback(async () => {
+   167→    setCalLoading(true);
+   168→    try {
+   169→      const params = new URLSearchParams({ modelVersion: 'predict-v3-regime-spillover' });
+   170→      if (horizonFilter !== 'all') params.set('horizonDays', horizonFilter);
+   171→      if (regimeFilter) params.set('regime', regimeFilter);
+   172→      const res = await fetch(`/api/model-calibration?${params}`);
+   173→      const data = await res.json();
+   174→      setCalibration(data);
+   175→    } catch {
+   176→      // calibration fetch failure is non-critical
+   177→    } finally {
+   178→      setCalLoading(false);
+   179→    }
+   180→  }, [horizonFilter, regimeFilter]);
+   181→
+   182→  useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
+   183→  useEffect(() => { fetchCalibration(); }, [fetchCalibration]);
+   184→
+   185→  const handleSnapshot = async () => {
+   186→    setSnapshotting(true);
+   187→    try {
+   188→      const res = await fetch('/api/model-metrics', {
+   189→        method: 'POST',
+   190→        headers: { 'Content-Type': 'application/json' },
+   191→        body: JSON.stringify({ modelVersion: 'predict-v3-regime-spillover', horizonDays: 1 }),
+   192→      });
+   193→      const data = await res.json();
+   194→      if (data.error) throw new Error(data.error);
+   195→      await fetchMetrics();
+   196→    } catch (e) {
+   197→      setError(e instanceof Error ? e.message : 'Snapshot failed');
+   198→    } finally {
+   199→      setSnapshotting(false);
+   200→    }
+   201→  };
+   202→
+   203→  const historyChartData = history.map(s => ({
+   204→    date: new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+   205→    accuracy: s.accuracy ? +(s.accuracy * 100).toFixed(1) : null,
+   206→    brierScore: s.brierScore ? +(s.brierScore * 100).toFixed(2) : null,
+   207→    alpha: s.alpha != null ? +s.alpha.toFixed(2) : null,
+   208→    sampleSize: s.sampleSize,
+   209→  }));
+   210→
+   211→  const gateData = metrics ? [
+   212→    { name: 'Traded', value: Math.round((1 - (metrics.noTradeRate ?? 0)) * metrics.sampleSize), fill: '#22c55e' },
+   213→    { name: 'No Trade', value: Math.round((metrics.noTradeRate ?? 0) * metrics.sampleSize), fill: '#6b7280' },
+   214→  ].filter(d => d.value > 0) : [];
+   215→
+   216→  if (loading) {
+   217→    return (
+   218→      <div className="min-h-screen bg-background p-4 md:p-8">
+   219→        <div className="max-w-7xl mx-auto space-y-6">
+   220→          <Skeleton className="h-10 w-64" />
+   221→          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+   222→            {Array.from({ length: 10 }).map((_, i) => (
+   223→              <Skeleton key={i} className="h-24 rounded-xl" />
+   224→            ))}
+   225→          </div>
+   226→          <Skeleton className="h-96 rounded-xl" />
+   227→        </div>
+   228→      </div>
+   229→    );
+   230→  }
+   231→
+   232→  return (
+   233→    <div className="min-h-screen bg-background p-4 md:p-8">
+   234→      <div className="max-w-7xl mx-auto space-y-6">
+   235→        {/* Header */}
+   236→        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+   237→          <div>
+   238→            <h1 className="text-2xl font-bold tracking-tight">Model Calibration</h1>
+   239→            <p className="text-sm text-muted-foreground">
+   240→              Brier score, accuracy, alpha, and benchmark-aware metrics
+   241→            </p>
+   242→          </div>
+   243→          <div className="flex items-center gap-2 flex-wrap">
+   244→            <Select value={regimeFilter} onValueChange={setRegimeFilter}>
+   245→              <SelectTrigger className="w-[160px] h-9">
+   246→                <SelectValue placeholder="All Regimes" />
+   247→              </SelectTrigger>
+   248→              <SelectContent>
+   249→                <SelectItem value="">All Regimes</SelectItem>
+   250→                <SelectItem value="BULL_LOW_VOL">Bull Low Vol</SelectItem>
+   251→                <SelectItem value="BULL_HIGH_VOL">Bull High Vol</SelectItem>
+   252→                <SelectItem value="BEAR_LOW_VOL">Bear Low Vol</SelectItem>
+   253→                <SelectItem value="BEAR_HIGH_VOL">Bear High Vol</SelectItem>
+   254→                <SelectItem value="PANIC_CAPITULATION">Panic</SelectItem>
+   255→                <SelectItem value="RELIEF_RALLY">Relief Rally</SelectItem>
+   256→                <SelectItem value="RANGE_NEUTRAL">Range Neutral</SelectItem>
+   257→              </SelectContent>
+   258→            </Select>
+   259→            <Select value={horizonFilter} onValueChange={setHorizonFilter}>
+   260→              <SelectTrigger className="w-[120px] h-9">
+   261→                <SelectValue placeholder="Horizon" />
+   262→              </SelectTrigger>
+   263→              <SelectContent>
+   264→                <SelectItem value="all">All</SelectItem>
+   265→                <SelectItem value="1">1D</SelectItem>
+   266→                <SelectItem value="5">5D</SelectItem>
+   267→                <SelectItem value="20">20D</SelectItem>
+   268→              </SelectContent>
+   269→            </Select>
+   270→            <Button variant="outline" size="sm" onClick={fetchMetrics}>
+   271→              <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
+   272→            </Button>
+   273→            <Button size="sm" onClick={handleSnapshot} disabled={snapshotting}>
+   274→              {snapshotting ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Gauge className="h-3.5 w-3.5 mr-1.5" />}
+   275→              Snapshot
+   276→            </Button>
+   277→          </div>
+   278→        </div>
+   279→
+   280→        {error && (
+   281→          <Card className="border-red-500/50 bg-red-500/5">
+   282→            <CardContent className="p-3 flex items-center gap-2 text-sm text-red-500">
+   283→              <AlertTriangle className="h-4 w-4" /> {error}
+   284→            </CardContent>
+   285→          </Card>
+   286→        )}
+   287→
+   288→        {/* Primary KPI Cards */}
+   289→        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+   290→          <StatCard
+   291→            title="Sample Size"
+   292→            value={metrics?.sampleSize?.toLocaleString() ?? '0'}
+   293→            subtitle={metrics ? `${Math.round((metrics.noTradeRate ?? 0) * 100)}% no-trade` : undefined}
+   294→            icon={BarChart3}
+   295→          />
+   296→          <StatCard
+   297→            title="Accuracy"
+   298→            value={pct(metrics?.accuracy ?? null)}
+   299→            subtitle={metrics && metrics.accuracy !== null ? `${metrics.sampleSize} evaluated` : 'No data'}
+   300→            icon={metrics && metrics.accuracy !== null && metrics.accuracy >= 0.5 ? CheckCircle2 : Target}
+   301→            color={metrics && metrics.accuracy !== null && metrics.accuracy >= 0.55 ? 'text-emerald-500' : metrics && metrics.accuracy !== null && metrics.accuracy < 0.45 ? 'text-red-500' : ''}
+   302→          />
+   303→          <StatCard
+   304→            title="Brier Score"
+   305→            value={metrics?.brierScore != null ? metrics.brierScore.toFixed(4) : 'N/A'}
+   306→            subtitle={brierLabel(metrics?.brierScore ?? null)}
+   307→            icon={Gauge}
+   308→            color={brierColor(metrics?.brierScore ?? null)}
+   309→          />
+   310→          <StatCard
+   311→            title="Alpha"
+   312→            value={metrics?.alpha != null ? `${metrics.alpha > 0 ? '+' : ''}${metrics.alpha.toFixed(2)}%` : 'N/A'}
+   313→            subtitle="Excess return vs SPY"
+   314→            icon={Zap}
+   315→            color={metrics && metrics.alpha != null && metrics.alpha > 0 ? 'text-emerald-500' : metrics && metrics.alpha != null && metrics.alpha < 0 ? 'text-red-500' : ''}
+   316→          />
+   317→          <StatCard
+   318→            title="Avg Return"
+   319→            value={metrics?.avgReturn != null ? `${metrics.avgReturn > 0 ? '+' : ''}${metrics.avgReturn.toFixed(2)}%` : 'N/A'}
+   320→            subtitle={metrics?.benchmarkReturn != null ? `SPY: ${metrics.benchmarkReturn > 0 ? '+' : ''}${metrics.benchmarkReturn.toFixed(2)}%` : undefined}
+   321→            icon={metrics && metrics.avgReturn != null && metrics.avgReturn > 0 ? TrendingUp : TrendingDown}
+   322→            color={metrics && metrics.avgReturn != null && metrics.avgReturn > 0 ? 'text-emerald-500' : metrics && metrics.avgReturn != null && metrics.avgReturn < 0 ? 'text-red-500' : ''}
+   323→          />
+   324→        </div>
+   325→
+   326→        {/* Secondary KPIs */}
+   327→        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+   328→          <StatCard title="Win Rate" value={pct(metrics?.winRate ?? null)} icon={Activity} />
+   329→          <StatCard title="Precision (BUY)" value={pct(metrics?.precisionBuy ?? null)} subtitle="Of BUYs, % correct" icon={Target} />
+   330→          <StatCard title="Recall (BUY)" value={pct(metrics?.recallBuy ?? null)} subtitle="Of all ups, % caught" icon={Activity} />
+   331→          <StatCard title="No-Trade Rate" value={pct(metrics?.noTradeRate ?? null)} subtitle="Regime-filtered" icon={Shield} />
+   332→          <StatCard
+   333→            title="Max Drawdown"
+   334→            value={metrics?.maxDrawdown != null ? `-${metrics.maxDrawdown.toFixed(2)}%` : 'N/A'}
+   335→            subtitle="Cumulative peak-to-trough"
+   336→            icon={TrendingDown}
+   337→            color={metrics && metrics.maxDrawdown != null && metrics.maxDrawdown > 10 ? 'text-red-500' : ''}
+   338→          />
+   339→        </div>
+   340→
+   341→        {/* Charts */}
+   342→        <Tabs defaultValue="reliability" className="space-y-4">
+   343→          <TabsList>
+   344→            <TabsTrigger value="reliability">Model Reliability</TabsTrigger>
+   345→            <TabsTrigger value="timeline">Metrics Timeline</TabsTrigger>
+   346→            <TabsTrigger value="alpha">Alpha & Returns</TabsTrigger>
+   347→            <TabsTrigger value="gates">Gate Analysis</TabsTrigger>
+   348→          </TabsList>
+   349→
+   350→          {/* ── RELIABILITY TAB ── */}
+   351→          <TabsContent value="reliability" className="space-y-4">
+   352→            {/* Reliability KPIs */}
+   353→            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+   354→              <StatCard
+   355→                title="ECE"
+   356→                value={calibration?.ece != null ? calibration.ece.toFixed(4) : 'N/A'}
+   357→                subtitle={calibration?.ece != null ? (calibration.ece < 0.03 ? 'Well calibrated' : calibration.ece < 0.08 ? 'Acceptable' : 'Needs recalibration') : 'No data'}
+   358→                icon={Thermometer}
+   359→                color={calibration?.ece != null ? (calibration.ece < 0.03 ? 'text-emerald-500' : calibration.ece < 0.08 ? 'text-amber-500' : 'text-red-500') : ''}
+   360→              />
+   361→              <StatCard
+   362→                title="Brier Score"
+   363→                value={calibration?.brier != null ? calibration.brier.toFixed(4) : 'N/A'}
+   364→                subtitle={calibration?.calibrator ? `Calibrator: ${calibration.calibrator.method}` : 'No calibrator'}
+   365→                icon={Gauge}
+   366→                color={calibration?.brier != null ? (calibration.brier < 0.15 ? 'text-emerald-500' : calibration.brier < 0.25 ? 'text-amber-500' : 'text-red-500') : ''}
+   367→              />
+   368→              <StatCard
+   369→                title="MCE"
+   370→                value={calibration?.mce != null ? calibration.mce.toFixed(4) : 'N/A'}
+   371→                subtitle="Worst bucket error"
+   372→                icon={AlertTriangle}
+   373→                color={calibration?.mce != null && calibration.mce > 0.20 ? 'text-red-500' : ''}
+   374→              />
+   375→              <StatCard
+   376→                title="Diagnosis"
+   377→                value={calibration?.diagnosis ? calibration.diagnosis.replace(/_/g, ' ') : 'N/A'}
+   378→                subtitle={calibration ? `${calibration.sampleSize} samples` : 'No data'}
+   379→                icon={Crosshair}
+   380→                color={calibration?.diagnosis === 'WELL_CALIBRATED' ? 'text-emerald-500' : calibration?.diagnosis === 'OVERCONFIDENT' ? 'text-amber-500' : calibration?.diagnosis === 'UNDERCONFIDENT' ? 'text-blue-500' : ''}
+   381→              />
+   382→              <StatCard
+   383→                title="Calibrator"
+   384→                value={calibration?.calibrator?.method?.toUpperCase() ?? 'NONE'}
+   385→                subtitle={calibration?.calibrator ? `Trained: ${calibration.calibrator.trainedAt ? new Date(calibration.calibrator.trainedAt).toLocaleDateString() : 'never'}` : 'Run ?train=true'}
+   386→                icon={Zap}
+   387→              />
+   388→            </div>
+   389→
+   390→            {/* Reliability Diagram + Table */}
+   391→            <div className="grid md:grid-cols-2 gap-4">
+   392→              {/* Reliability Diagram */}
+   393→              <Card>
+   394→                <CardHeader>
+   395→                  <CardTitle className="text-base">Reliability Diagram</CardTitle>
+   396→                  <CardDescription>X = predicted probability, Y = observed frequency. Below diagonal = overconfident. Above = underconfident.</CardDescription>
+   397→                </CardHeader>
+   398→                <CardContent>
+   399→                  {calLoading ? (
+   400→                    <Skeleton className="h-72" />
+   401→                  ) : !calibration?.reliability?.filter(b => b.count > 0).length ? (
+   402→                    <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">
+   403→                      <Clock className="h-4 w-4 mr-2" /> Need evaluated predictions
+   404→                    </div>
+   405→                  ) : (
+   406→                    <ResponsiveContainer width="100%" height={300}>
+   407→                      <ScatterChart>
+   408→                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+   409→                        <XAxis
+   410→                          type="number"
+   411→                          dataKey="avgProbability"
+   412→                          name="Predicted"
+   413→                          domain={[0, 1]}
+   414→                          tickFormatter={(v: number) => v.toFixed(1)}
+   415→                          tick={{ fontSize: 11 }}
+   416→                          label={{ value: 'Predicted Probability', position: 'insideBottom', offset: -5, fontSize: 11 }}
+   417→                        />
+   418→                        <YAxis
+   419→                          type="number"
+   420→                          dataKey="observedFrequency"
+   421→                          name="Observed"
+   422→                          domain={[0, 1]}
+   423→                          tickFormatter={(v: number) => v.toFixed(1)}
+   424→                          tick={{ fontSize: 11 }}
+   425→                          label={{ value: 'Observed Frequency', angle: -90, position: 'insideLeft', offset: 5, fontSize: 11 }}
+   426→                        />
+   427→                        <Tooltip
+   428→                          contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }}
+   429→                          formatter={(value: number, name: string) => [value.toFixed(3), name]}
+   430→                          labelFormatter={(_, payload) => {
+   431→                            const d = payload?.[0]?.payload as ReliabilityBin | undefined;
+   432→                            return d ? `Bucket [${d.rangeStart.toFixed(1)}, ${d.rangeEnd.toFixed(1)}] — n=${d.count}` : '';
+   433→                          }}
+   434→                        />
+   435→                        <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="hsl(var(--muted-foreground))" strokeDasharray="5 5" />
+   436→                        <Scatter
+   437→                          data={calibration.reliability.filter(b => b.count > 0)}
+   438→                          fill={calibration.diagnosis === 'WELL_CALIBRATED' ? '#22c55e' : calibration.diagnosis === 'OVERCONFIDENT' ? '#f97316' : '#3b82f6'}
+   439→                        />
+   440→                      </ScatterChart>
+   441→                    </ResponsiveContainer>
+   442→                  )}
+   443→                </CardContent>
+   444→              </Card>
+   445→
+   446→              {/* Reliability Table */}
+   447→              <Card>
+   448→                <CardHeader>
+   449→                  <CardTitle className="text-base">Reliability Table</CardTitle>
+   450→                  <CardDescription>Per-bucket calibration detail. |Pred - Obs| = calibration error.</CardDescription>
+   451→                </CardHeader>
+   452→                <CardContent>
+   453→                  {calLoading ? (
+   454→                    <Skeleton className="h-72" />
+   455→                  ) : !calibration?.reliability?.length ? (
+   456→                    <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">
+   457→                      <Clock className="h-4 w-4 mr-2" /> No data
+   458→                    </div>
+   459→                  ) : (
+   460→                    <div className="overflow-auto max-h-[300px]">
+   461→                      <table className="w-full text-xs">
+   462→                        <thead className="sticky top-0 bg-muted/80">
+   463→                          <tr className="text-left">
+   464→                            <th className="pb-2 pr-3 font-medium">Bucket</th>
+   465→                            <th className="pb-2 pr-3 font-medium text-right">Predicted</th>
+   466→                            <th className="pb-2 pr-3 font-medium text-right">Observed</th>
+   467→                            <th className="pb-2 pr-3 font-medium text-right">Error</th>
+   468→                            <th className="pb-2 font-medium text-right">n</th>
+   469→                          </tr>
+   470→                        </thead>
+   471→                        <tbody className="divide-y divide-border/30">
+   472→                          {calibration.reliability.map((b, i) => (
+   473→                            <tr key={i} className={b.count === 0 ? 'opacity-30' : ''}>
+   474→                              <td className="py-1.5 pr-3 font-mono">[{b.rangeStart.toFixed(1)}, {b.rangeEnd.toFixed(1)})</td>
+   475→                              <td className={`py-1.5 pr-3 text-right font-mono ${b.count > 0 ? '' : 'text-muted-foreground'}`}>{b.count > 0 ? b.avgProbability.toFixed(3) : '-'}</td>
+   476→                              <td className={`py-1.5 pr-3 text-right font-mono ${b.count > 0 ? '' : 'text-muted-foreground'}`}>{b.count > 0 ? b.observedFrequency.toFixed(3) : '-'}</td>
+   477→                              <td className={`py-1.5 pr-3 text-right font-mono ${b.count > 0 ? (b.calibrationError > 0.10 ? 'text-red-500' : b.calibrationError > 0.05 ? 'text-amber-500' : 'text-emerald-500') : ''}`}>{b.count > 0 ? b.calibrationError.toFixed(3) : '-'}</td>
+   478→                              <td className="py-1.5 text-right font-mono tabular-nums">{b.count}</td>
+   479→                            </tr>
+   480→                          ))}
+   481→                        </tbody>
+   482→                      </table>
+   483→                    </div>
+   484→                  )}
+   485→                </CardContent>
+   486→              </Card>
+   487→            </div>
+   488→
+   489→            {/* Calibrator Info */}
+   490→            {calibration?.calibrator && (
+   491→              <Card className="bg-muted/30">
+   492→                <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
+   493→                  <p><strong>Calibrator</strong>: {calibration.calibrator.method.toUpperCase()} trained on {calibration.calibrator.sampleSize} samples at {calibration.calibrator.trainedAt ? new Date(calibration.calibrator.trainedAt).toLocaleString() : 'N/A'}.</p>
+   494→                  {calibration.calibrator.preBrier != null && calibration.calibrator.postBrier != null && (
+   495→                    <p><strong>Brier improvement</strong>: {calibration.calibrator.preBrier.toFixed(4)} → {calibration.calibrator.postBrier.toFixed(4)} (delta = {(calibration.calibrator.postBrier - calibration.calibrator.preBrier > 0 ? '+' : '')}{(calibration.calibrator.postBrier - calibration.calibrator.preBrier).toFixed(4)})</p>
+   496→                  )}
+   497→                  <p><strong>Endpoints</strong>: <code className="bg-muted px-1 rounded">GET /api/model-calibration</code> | <code className="bg-muted px-1 rounded">GET /api/model-calibration?train=true</code> | <code className="bg-muted px-1 rounded">GET /api/conformal/[symbol]?probability=0.7</code></p>
+   498→                </CardContent>
+   499→              </Card>
+   500→            )}
+   501→          </TabsContent>
+   502→
+   503→          <TabsContent value="timeline">
+   504→            <Card>
+   505→              <CardHeader>
+   506→                <CardTitle className="text-base">Metrics Over Time</CardTitle>
+   507→                <CardDescription>Accuracy, Brier score, and alpha evolution across snapshots.</CardDescription>
+   508→              </CardHeader>
+   509→              <CardContent>
+   510→                {historyChartData.length < 2 ? (
+   511→                  <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+   512→                    <Clock className="h-4 w-4 mr-2" /> Need at least 2 snapshots
+   513→                  </div>
+   514→                ) : (
+   515→                  <ResponsiveContainer width="100%" height={380}>
+   516→                    <LineChart data={historyChartData}>
+   517→                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+   518→                      <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+   519→                      <YAxis yAxisId="left" domain={[0, 100]} tick={{ fontSize: 11 }} />
+   520→                      <YAxis yAxisId="right" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 11 }} />
+   521→                      <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }} />
+   522→                      <Legend />
+   523→                      <Line yAxisId="left" type="monotone" dataKey="accuracy" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} name="Accuracy %" />
+   524→                      <Line yAxisId="left" type="monotone" dataKey="brierScore" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name="Brier Score" />
+   525→                      <Line yAxisId="right" type="monotone" dataKey="alpha" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} name="Alpha %" />
+   526→                    </LineChart>
+   527→                  </ResponsiveContainer>
+   528→                )}
+   529→              </CardContent>
+   530→            </Card>
+   531→          </TabsContent>
+   532→
+   533→          <TabsContent value="alpha">
+   534→            <Card>
+   535→              <CardHeader>
+   536→                <CardTitle className="text-base">Alpha vs Benchmark</CardTitle>
+   537→                <CardDescription>Cumulative alpha (excess return over SPY) per snapshot.</CardDescription>
+   538→              </CardHeader>
+   539→              <CardContent>
+   540→                {historyChartData.length < 2 ? (
+   541→                  <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+   542→                    <Clock className="h-4 w-4 mr-2" /> Need at least 2 snapshots
+   543→                  </div>
+   544→                ) : (
+   545→                  <ResponsiveContainer width="100%" height={380}>
+   546→                    <BarChart data={historyChartData}>
+   547→                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+   548→                      <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+   549→                      <YAxis tick={{ fontSize: 11 }} />
+   550→                      <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }} />
+   551→                      <Bar dataKey="alpha" name="Alpha %" radius={[4, 4, 0, 0]}>
+   552→                        {historyChartData.map((entry, idx) => (
+   553→                          <Cell key={idx} fill={(entry.alpha ?? 0) >= 0 ? '#22c55e' : '#ef4444'} />
+   554→                        ))}
+   555→                      </Bar>
+   556→                    </BarChart>
+   557→                  </ResponsiveContainer>
+   558→                )}
+   559→              </CardContent>
+   560→            </Card>
+   561→          </TabsContent>
+   562→
+   563→          <TabsContent value="gates">
+   564→            <div className="grid md:grid-cols-2 gap-4">
+   565→              <Card>
+   566→                <CardHeader>
+   567→                  <CardTitle className="text-base">Trade vs No-Trade</CardTitle>
+   568→                  <CardDescription>How often the regime gate filters predictions.</CardDescription>
+   569→                </CardHeader>
+   570→                <CardContent>
+   571→                  {gateData.length === 0 ? (
+   572→                    <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+   573→                      <Clock className="h-4 w-4 mr-2" /> No data
+   574→                    </div>
+   575→                  ) : (
+   576→                    <ResponsiveContainer width="100%" height={250}>
+   577→                      <PieChart>
+   578→                        <Pie data={gateData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+   579→                          {gateData.map((entry, idx) => (
+   580→                            <Cell key={idx} fill={entry.fill} />
+   581→                          ))}
+   582→                        </Pie>
+   583→                        <Tooltip />
+   584→                      </PieChart>
+   585→                    </ResponsiveContainer>
+   586→                  )}
+   587→                </CardContent>
+   588→              </Card>
+   589→              <Card>
+   590→                <CardHeader>
+   591→                  <CardTitle className="text-base">Model Version</CardTitle>
+   592→                  <CardDescription>predict-v3-regime-spillover</CardDescription>
+   593→                </CardHeader>
+   594→                <CardContent className="space-y-3 mt-4">
+   595→                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Evaluation Status</span><Badge variant="outline">PENDING / EVALUATED</Badge></div>
+   596→                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Benchmarks</span><Badge variant="outline">SPY</Badge></div>
+   597→                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Brier Target</span><span className="text-sm font-mono">{'<'} 0.15</span></div>
+   598→                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Cron Schedule</span><span className="text-sm font-mono">05:00 UTC daily</span></div>
+   599→                </CardContent>
+   600→              </Card>
+   601→            </div>
+   602→          </TabsContent>
+   603→        </Tabs>
+   604→
+   605→        <Card className="bg-muted/30">
+   606→          <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
+   607→            <p><strong>Brier Score</strong> = mean((f - o)^2) where f = predicted probability, o = actual binary outcome. Lower is better. Perfect = 0. Random = 0.25.</p>
+   608→            <p><strong>Alpha</strong> = avgReturn - benchmarkReturn. Positive alpha means the model outperforms SPY.</p>
+   609→            <p><strong>Lifecycle</strong>: generate {'->'} save (regime + transition risk + entry price + benchmark) {'->'} evaluate (cron at dueAt) {'->'} compute Brier + alpha {'->'} snapshot {'->'} recalibrate.</p>
+   610→            <p>Endpoints: <code className="bg-muted px-1 rounded">GET /api/model-metrics</code> | <code className="bg-muted px-1 rounded">POST /api/model-metrics</code> | <code className="bg-muted px-1 rounded">GET /api/cron/evaluate-predictions</code></p>
+   611→          </CardContent>
+   612→        </Card>
+   613→      </div>
+   614→    </div>
+   615→  );
+   616→}
+   617→

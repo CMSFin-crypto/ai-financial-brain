@@ -1,0 +1,1015 @@
+     1→"use client"
+     2→
+     3→import { useState, useEffect, useCallback } from "react"
+     4→import {
+     5→  Card,
+     6→  CardHeader,
+     7→  CardTitle,
+     8→  CardContent,
+     9→  CardDescription,
+    10→  CardAction,
+    11→} from "@/components/ui/card"
+    12→import { Badge } from "@/components/ui/badge"
+    13→import { Skeleton } from "@/components/ui/skeleton"
+    14→import {
+    15→  Table,
+    16→  TableHeader,
+    17→  TableBody,
+    18→  TableHead,
+    19→  TableRow,
+    20→  TableCell,
+    21→} from "@/components/ui/table"
+    22→import {
+    23→  LineChart,
+    24→  Line,
+    25→  XAxis,
+    26→  YAxis,
+    27→  Tooltip,
+    28→  ResponsiveContainer,
+    29→  CartesianGrid,
+    30→  Legend,
+    31→} from "recharts"
+    32→import {
+    33→  Activity,
+    34→  TrendingUp,
+    35→  TrendingDown,
+    36→  AlertTriangle,
+    37→  Shield,
+    38→  Clock,
+    39→  RefreshCw,
+    40→  BarChart3,
+    41→  Gauge,
+    42→  AlertCircle,
+    43→  CheckCircle2,
+    44→  Info,
+    45→} from "lucide-react"
+    46→import { Button } from "@/components/ui/button"
+    47→import { Separator } from "@/components/ui/separator"
+    48→
+    49→// ─── Types ───────────────────────────────────────────────────────────────────
+    50→
+    51→interface OverallStats {
+    52→  totalEvaluated: number
+    53→  totalPending: number
+    54→  overallAccuracy: number
+    55→  streakCorrect: number
+    56→  streakWrong: number
+    57→}
+    58→
+    59→interface HorizonData {
+    60→  horizonDays: number
+    61→  accuracy: number
+    62→  sampleSize: number
+    63→  accuracy7d: number
+    64→  accuracy30d: number
+    65→  driftVsBaseline: number
+    66→  trend: string
+    67→}
+    68→
+    69→interface CalibrationData {
+    70→  brierScore: number
+    71→  ece: number
+    72→  mce: number
+    73→  sampleSize: number
+    74→  diagnosis: string
+    75→  brierTrend7d: string
+    76→  eceTrend7d: string
+    77→}
+    78→
+    79→interface NoTradeData {
+    80→  currentRate: number
+    81→  rate7d: number
+    82→  rate30d: number
+    83→  trend: string
+    84→  interpretation: string
+    85→}
+    86→
+    87→interface RegimeSlice {
+    88→  name: string
+    89→  accuracy: number
+    90→  sampleSize: number
+    91→  accuracy7d: number
+    92→  driftVsOverall: number
+    93→  warning: string | null
+    94→}
+    95→
+    96→interface SectorSlice {
+    97→  name: string
+    98→  accuracy: number
+    99→  sampleSize: number
+   100→  accuracy7d: number
+   101→  driftVsOverall: number
+   102→  warning: string | null
+   103→}
+   104→
+   105→interface Warning {
+   106→  level: string
+   107→  category: string
+   108→  message: string
+   109→  detail: string
+   110→}
+   111→
+   112→interface CalibrationTimeSeriesPoint {
+   113→  date: string
+   114→  brierScore: number
+   115→  ece: number
+   116→  sampleSize: number
+   117→}
+   118→
+   119→interface DriftHistoryPoint {
+   120→  date: string
+   121→  accuracy1d: number
+   122→  accuracy5d: number
+   123→  accuracy20d: number
+   124→  brierScore: number
+   125→  ece: number
+   126→  noTradeRate: number
+   127→  warnings: Warning[]
+   128→}
+   129→
+   130→interface DriftData {
+   131→  computedAt: string
+   132→  overall: OverallStats
+   133→  horizons: HorizonData[]
+   134→  calibration: CalibrationData
+   135→  noTrade: NoTradeData
+   136→  regimeSlices: RegimeSlice[]
+   137→  sectorSlices: SectorSlice[]
+   138→  warnings: Warning[]
+   139→  calibrationTimeSeries: CalibrationTimeSeriesPoint[]
+   140→}
+   141→
+   142→interface ApiResponse {
+   143→  ok: boolean
+   144→  recorded: boolean
+   145→  data: DriftData
+   146→  history: DriftHistoryPoint[]
+   147→}
+   148→
+   149→// ─── Helpers ─────────────────────────────────────────────────────────────────
+   150→
+   151→function formatPct(v: number | null | undefined, decimals = 1): string {
+   152→  if (v == null) return "—"
+   153→  return v.toFixed(decimals) + "%"
+   154→}
+   155→
+   156→function formatNum(v: number | null | undefined): string {
+   157→  if (v == null) return "—"
+   158→  return v.toLocaleString("sq-AL")
+   159→}
+   160→
+   161→function trendIcon(trend: string) {
+   162→  switch (trend) {
+   163→    case "improving":
+   164→      return <TrendingUp className="size-4 text-emerald-500" />
+   165→    case "degrading":
+   166→      return <TrendingDown className="size-4 text-red-500" />
+   167→    default:
+   168→      return <Activity className="size-4 text-muted-foreground" />
+   169→  }
+   170→}
+   171→
+   172→function trendBadge(trend: string) {
+   173→  const map: Record<string, { label: string; cls: string }> = {
+   174→    improving: {
+   175→      label: "Duke përmirësuar",
+   176→      cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+   177→    },
+   178→    stable: {
+   179→      label: "Stabil",
+   180→      cls: "bg-muted/50 text-muted-foreground border-border",
+   181→    },
+   182→    degrading: {
+   183→      label: "Duke u dobësuar",
+   184→      cls: "bg-red-500/15 text-red-400 border-red-500/30",
+   185→    },
+   186→  }
+   187→  const { label, cls } = map[trend] ?? map.stable
+   188→  return (
+   189→    <Badge variant="outline" className={cls}>
+   190→      {trendIcon(trend)}
+   191→      <span className="ml-1">{label}</span>
+   192→    </Badge>
+   193→  )
+   194→}
+   195→
+   196→function driftValue(v: number) {
+   197→  const color = v > 0 ? "text-emerald-400" : v < 0 ? "text-red-400" : "text-muted-foreground"
+   198→  const sign = v > 0 ? "+" : ""
+   199→  return (
+   200→    <span className={color}>
+   201→      {sign}
+   202→      {formatPct(v)}
+   203→    </span>
+   204→  )
+   205→}
+   206→
+   207→function warningLevelIcon(level: string) {
+   208→  switch (level) {
+   209→    case "CRITICAL":
+   210→      return <AlertCircle className="size-4 text-red-500" />
+   211→    case "WARNING":
+   212→      return <AlertTriangle className="size-4 text-amber-500" />
+   213→    default:
+   214→      return <Info className="size-4 text-blue-500" />
+   215→  }
+   216→}
+   217→
+   218→function warningLevelColor(level: string) {
+   219→  switch (level) {
+   220→    case "CRITICAL":
+   221→      return "border-red-500/40 bg-red-500/10"
+   222→    case "WARNING":
+   223→      return "border-amber-500/40 bg-amber-500/10"
+   224→    default:
+   225→      return "border-blue-500/40 bg-blue-500/10"
+   226→  }
+   227→}
+   228→
+   229→// ─── Loading Skeleton ────────────────────────────────────────────────────────
+   230→
+   231→function DashboardSkeleton() {
+   232→  return (
+   233→    <div className="space-y-6">
+   234→      {/* Summary Cards Skeleton */}
+   235→      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+   236→        {Array.from({ length: 4 }).map((_, i) => (
+   237→          <Card key={i} className="gap-4">
+   238→            <CardHeader>
+   239→              <Skeleton className="h-4 w-36" />
+   240→            </CardHeader>
+   241→            <CardContent>
+   242→              <Skeleton className="h-8 w-24 mb-2" />
+   243→              <Skeleton className="h-4 w-20" />
+   244→            </CardContent>
+   245→          </Card>
+   246→        ))}
+   247→      </div>
+   248→      {/* Warnings Skeleton */}
+   249→      <Skeleton className="h-24 w-full rounded-xl" />
+   250→      {/* Horizon Cards Skeleton */}
+   251→      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+   252→        {Array.from({ length: 3 }).map((_, i) => (
+   253→          <Card key={i} className="gap-4">
+   254→            <CardHeader>
+   255→              <Skeleton className="h-4 w-16" />
+   256→            </CardHeader>
+   257→            <CardContent className="space-y-3">
+   258→              <Skeleton className="h-10 w-20" />
+   259→              <Skeleton className="h-4 w-full" />
+   260→              <Skeleton className="h-4 w-full" />
+   261→              <Skeleton className="h-4 w-full" />
+   262→            </CardContent>
+   263→          </Card>
+   264→        ))}
+   265→      </div>
+   266→      {/* Calibration Skeleton */}
+   267→      <Skeleton className="h-64 w-full rounded-xl" />
+   268→      {/* No-Trade Skeleton */}
+   269→      <Skeleton className="h-32 w-full rounded-xl" />
+   270→      {/* Tables Skeleton */}
+   271→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   272→        <Skeleton className="h-48 w-full rounded-xl" />
+   273→        <Skeleton className="h-48 w-full rounded-xl" />
+   274→      </div>
+   275→      {/* History Chart Skeleton */}
+   276→      <Skeleton className="h-72 w-full rounded-xl" />
+   277→    </div>
+   278→  )
+   279→}
+   280→
+   281→// ─── Custom Tooltip ──────────────────────────────────────────────────────────
+   282→
+   283→interface CustomTooltipProps {
+   284→  active?: boolean
+   285→  payload?: Array<{ name: string; value: number; color: string }>
+   286→  label?: string
+   287→}
+   288→
+   289→function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
+   290→  if (!active || !payload || payload.length === 0) return null
+   291→  return (
+   292→    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-xl">
+   293→      <p className="mb-1 text-xs text-muted-foreground">{label}</p>
+   294→      {payload.map((entry, i) => (
+   295→        <div key={i} className="flex items-center gap-2 text-sm">
+   296→          <span
+   297→            className="inline-block size-2 rounded-full"
+   298→            style={{ backgroundColor: entry.color }}
+   299→          />
+   300→          <span className="text-muted-foreground">{entry.name}:</span>
+   301→          <span className="font-medium text-foreground">
+   302→            {typeof entry.value === "number" ? entry.value.toFixed(4) : entry.value}
+   303→          </span>
+   304→        </div>
+   305→      ))}
+   306→    </div>
+   307→  )
+   308→}
+   309→
+   310→interface AccuracyTooltipProps {
+   311→  active?: boolean
+   312→  payload?: Array<{ name: string; value: number; color: string }>
+   313→  label?: string
+   314→}
+   315→
+   316→function AccuracyTooltip({ active, payload, label }: AccuracyTooltipProps) {
+   317→  if (!active || !payload || payload.length === 0) return null
+   318→  return (
+   319→    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-xl">
+   320→      <p className="mb-1 text-xs text-muted-foreground">{label}</p>
+   321→      {payload.map((entry, i) => (
+   322→        <div key={i} className="flex items-center gap-2 text-sm">
+   323→          <span
+   324→            className="inline-block size-2 rounded-full"
+   325→            style={{ backgroundColor: entry.color }}
+   326→          />
+   327→          <span className="text-muted-foreground">{entry.name}:</span>
+   328→          <span className="font-medium text-foreground">
+   329→            {typeof entry.value === "number" ? formatPct(entry.value) : entry.value}
+   330→          </span>
+   331→        </div>
+   332→      ))}
+   333→    </div>
+   334→  )
+   335→}
+   336→
+   337→// ─── Main Dashboard ──────────────────────────────────────────────────────────
+   338→
+   339→export default function DriftReviewPage() {
+   340→  const [data, setData] = useState<ApiResponse | null>(null)
+   341→  const [loading, setLoading] = useState(true)
+   342→  const [error, setError] = useState<string | null>(null)
+   343→
+   344→  const fetchData = useCallback(async () => {
+   345→    setLoading(true)
+   346→    setError(null)
+   347→    try {
+   348→      const res = await fetch("/api/drift-review?record=true&history=30")
+   349→      if (!res.ok) throw new Error(`Gabim: ${res.status} ${res.statusText}`)
+   350→      const json: ApiResponse = await res.json()
+   351→      if (!json.ok) throw new Error("Përgjigja nuk ishte e suksesshme")
+   352→      setData(json)
+   353→    } catch (err) {
+   354→      setError(err instanceof Error ? err.message : "Gabim i panjohur")
+   355→    } finally {
+   356→      setLoading(false)
+   357→    }
+   358→  }, [])
+   359→
+   360→  useEffect(() => {
+   361→    fetchData()
+   362→  }, [fetchData])
+   363→
+   364→  const d = data?.data
+   365→  const history = data?.history ?? []
+   366→
+   367→  return (
+   368→    <main className="min-h-screen bg-background text-foreground">
+   369→      <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
+   370→        {/* ── Header ── */}
+   371→        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+   372→          <div className="flex items-center gap-3">
+   373→            <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
+   374→              <Activity className="size-5 text-primary" />
+   375→            </div>
+   376→            <div>
+   377→              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+   378→                Rishikimi i Parashikimeve &amp; Monitorimi i Drift
+   379→              </h1>
+   380→              <p className="text-sm text-muted-foreground">
+   381→                {loading
+   382→                  ? "Duke ngarkuar..."
+   383→                  : d
+   384→                    ? `Përditësuar më ${new Date(d.computedAt).toLocaleString("sq-AL", { dateStyle: "medium", timeStyle: "short" })}`
+   385→                    : ""}
+   386→              </p>
+   387→            </div>
+   388→          </div>
+   389→          <Button
+   390→            variant="outline"
+   391→            size="sm"
+   392→            onClick={fetchData}
+   393→            disabled={loading}
+   394→            className="w-fit"
+   395→          >
+   396→            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+   397→            <span className="ml-2">Rifresko</span>
+   398→          </Button>
+   399→        </div>
+   400→
+   401→        {/* ── Error State ── */}
+   402→        {error && !loading && (
+   403→          <Card className="border-red-500/50 bg-red-500/10 gap-4">
+   404→            <CardContent className="flex items-center gap-3">
+   405→              <AlertCircle className="size-5 text-red-500 shrink-0" />
+   406→              <p className="text-sm text-red-400">{error}</p>
+   407→            </CardContent>
+   408→          </Card>
+   409→        )}
+   410→
+   411→        {/* ── Loading ── */}
+   412→        {loading && !data && <DashboardSkeleton />}
+   413→
+   414→        {/* ── Dashboard Content ── */}
+   415→        {!loading && d && (
+   416→          <div className="space-y-6">
+   417→            {/* ═══ Summary Cards ═══ */}
+   418→            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+   419→              {/* 1 — Total Prediktime */}
+   420→              <Card className="gap-4">
+   421→                <CardHeader className="pb-0">
+   422→                  <CardDescription className="flex items-center gap-2">
+   423→                    <BarChart3 className="size-4 text-primary" />
+   424→                    Prediktime të Vlerësuara
+   425→                  </CardDescription>
+   426→                </CardHeader>
+   427→                <CardContent>
+   428→                  <div className="flex items-baseline gap-2">
+   429→                    <span className="text-3xl font-bold">
+   430→                      {formatNum(d.overall.totalEvaluated)}
+   431→                    </span>
+   432→                    {d.overall.totalPending > 0 && (
+   433→                      <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30">
+   434→                        <Clock className="size-3" />
+   435→                        <span className="ml-1">{d.overall.totalPending} në pritje</span>
+   436→                      </Badge>
+   437→                    )}
+   438→                  </div>
+   439→                </CardContent>
+   440→              </Card>
+   441→
+   442→              {/* 2 — Overall Accuracy */}
+   443→              <Card className="gap-4">
+   444→                <CardHeader className="pb-0">
+   445→                  <CardDescription className="flex items-center gap-2">
+   446→                    <Gauge className="size-4 text-primary" />
+   447→                    Preciziteti i Përgjithshëm
+   448→                  </CardDescription>
+   449→                </CardHeader>
+   450→                <CardContent>
+   451→                  <div className="flex items-baseline gap-3">
+   452→                    <span className="text-3xl font-bold">
+   453→                      {formatPct(d.overall.overallAccuracy)}
+   454→                    </span>
+   455→                    {d.overall.streakCorrect > 0 && (
+   456→                      <span className="flex items-center gap-1 text-xs text-emerald-400">
+   457→                        <CheckCircle2 className="size-3" />
+   458→                        {d.overall.streakCorrect} i saktë
+   459→                      </span>
+   460→                    )}
+   461→                    {d.overall.streakWrong > 0 && (
+   462→                      <span className="flex items-center gap-1 text-xs text-red-400">
+   463→                        <AlertCircle className="size-3" />
+   464→                        {d.overall.streakWrong} i gabuar
+   465→                      </span>
+   466→                    )}
+   467→                  </div>
+   468→                </CardContent>
+   469→              </Card>
+   470→
+   471→              {/* 3 — Brier Score */}
+   472→              <Card className="gap-4">
+   473→                <CardHeader className="pb-0">
+   474→                  <CardDescription className="flex items-center gap-2">
+   475→                    <Shield className="size-4 text-primary" />
+   476→                    Brier Score
+   477→                  </CardDescription>
+   478→                </CardHeader>
+   479→                <CardContent>
+   480→                  <div className="flex items-baseline gap-3">
+   481→                    <span className="text-3xl font-bold">
+   482→                      {d.calibration.brierScore.toFixed(4)}
+   483→                    </span>
+   484→                    {trendIcon(d.calibration.brierTrend7d)}
+   485→                  </div>
+   486→                  <p className="mt-1 text-xs text-muted-foreground">
+   487→                    ECE: {d.calibration.ece.toFixed(4)} · MCE: {d.calibration.mce.toFixed(4)}
+   488→                  </p>
+   489→                </CardContent>
+   490→              </Card>
+   491→
+   492→              {/* 4 — No-Trade Rate */}
+   493→              <Card className="gap-4">
+   494→                <CardHeader className="pb-0">
+   495→                  <CardDescription className="flex items-center gap-2">
+   496→                    <Clock className="size-4 text-primary" />
+   497→                    Shkalla No-Trade
+   498→                  </CardDescription>
+   499→                </CardHeader>
+   500→                <CardContent>
+   501→                  <div className="flex items-baseline gap-3">
+   502→                    <span className="text-3xl font-bold">
+   503→                      {formatPct(d.noTrade.currentRate)}
+   504→                    </span>
+   505→                    {trendIcon(d.noTrade.trend)}
+   506→                  </div>
+   507→                  <p className="mt-1 text-xs text-muted-foreground">
+   508→                    7d: {formatPct(d.noTrade.rate7d)} · 30d: {formatPct(d.noTrade.rate30d)}
+   509→                  </p>
+   510→                </CardContent>
+   511→              </Card>
+   512→            </div>
+   513→
+   514→            {/* ═══ Warnings Panel ═══ */}
+   515→            {d.warnings.length > 0 && (
+   516→              <Card className="gap-4">
+   517→                <CardHeader>
+   518→                  <CardTitle className="flex items-center gap-2 text-base">
+   519→                    <AlertTriangle className="size-4 text-amber-500" />
+   520→                    Sinjalizime
+   521→                    <Badge variant="secondary" className="ml-auto">
+   522→                      {d.warnings.length}
+   523→                    </Badge>
+   524→                  </CardTitle>
+   525→                </CardHeader>
+   526→                <CardContent className="space-y-3">
+   527→                  {d.warnings.map((w, i) => (
+   528→                    <div
+   529→                      key={i}
+   530→                      className={`rounded-lg border p-3 ${warningLevelColor(w.level)}`}
+   531→                    >
+   532→                      <div className="flex items-start gap-3">
+   533→                        <div className="mt-0.5 shrink-0">
+   534→                          {warningLevelIcon(w.level)}
+   535→                        </div>
+   536→                        <div className="min-w-0 flex-1">
+   537→                          <div className="flex flex-wrap items-center gap-2">
+   538→                            <Badge
+   539→                              variant="outline"
+   540→                              className={
+   541→                                w.level === "CRITICAL"
+   542→                                  ? "border-red-500/40 text-red-400"
+   543→                                  : w.level === "WARNING"
+   544→                                    ? "border-amber-500/40 text-amber-400"
+   545→                                    : "border-blue-500/40 text-blue-400"
+   546→                              }
+   547→                            >
+   548→                              {w.level}
+   549→                            </Badge>
+   550→                            <Badge variant="outline" className="text-muted-foreground">
+   551→                              {w.category}
+   552→                            </Badge>
+   553→                            <span className="text-sm font-medium text-foreground">
+   554→                              {w.message}
+   555→                            </span>
+   556→                          </div>
+   557→                          {w.detail && (
+   558→                            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+   559→                              {w.detail}
+   560→                            </p>
+   561→                          )}
+   562→                        </div>
+   563→                      </div>
+   564→                    </div>
+   565→                  ))}
+   566→                </CardContent>
+   567→              </Card>
+   568→            )}
+   569→
+   570→            {/* ═══ Horizon Accuracy Cards ═══ */}
+   571→            <section>
+   572→              <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
+   573→                <Activity className="size-5 text-primary" />
+   574→                Preciziteti sipas Horizontit
+   575→              </h2>
+   576→              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+   577→                {d.horizons.map((h) => {
+   578→                  const horizonLabel =
+   579→                    h.horizonDays === 1
+   580→                      ? "1D"
+   581→                      : h.horizonDays === 5
+   582→                        ? "5D"
+   583→                        : h.horizonDays === 20
+   584→                          ? "20D"
+   585→                          : `${h.horizonDays}D`
+   586→                  return (
+   587→                    <Card key={h.horizonDays} className="gap-4">
+   588→                      <CardHeader>
+   589→                        <CardTitle className="text-base">Horizonti {horizonLabel}</CardTitle>
+   590→                      </CardHeader>
+   591→                      <CardContent className="space-y-3">
+   592→                        {/* Big accuracy number */}
+   593→                        <div className="flex items-baseline gap-2">
+   594→                          <span className="text-4xl font-bold tabular-nums">
+   595→                            {formatPct(h.accuracy, 1)}
+   596→                          </span>
+   597→                          {trendBadge(h.trend)}
+   598→                        </div>
+   599→
+   600→                        <div className="space-y-2 text-sm">
+   601→                          <div className="flex justify-between">
+   602→                            <span className="text-muted-foreground">Mostër</span>
+   603→                            <span className="font-medium">{formatNum(h.sampleSize)}</span>
+   604→                          </div>
+   605→                          <Separator className="bg-border" />
+   606→                          <div className="flex justify-between">
+   607→                            <span className="text-muted-foreground">7 ditë (rolling)</span>
+   608→                            <span className="font-medium">{formatPct(h.accuracy7d)}</span>
+   609→                          </div>
+   610→                          <div className="flex justify-between">
+   611→                            <span className="text-muted-foreground">30 ditë (rolling)</span>
+   612→                            <span className="font-medium">{formatPct(h.accuracy30d)}</span>
+   613→                          </div>
+   614→                          <Separator className="bg-border" />
+   615→                          <div className="flex justify-between">
+   616→                            <span className="text-muted-foreground">Drift vs Bazal</span>
+   617→                            {driftValue(h.driftVsBaseline)}
+   618→                          </div>
+   619→                        </div>
+   620→                      </CardContent>
+   621→                    </Card>
+   622→                  )
+   623→                })}
+   624→              </div>
+   625→            </section>
+   626→
+   627→            {/* ═══ Calibration Section ═══ */}
+   628→            <section>
+   629→              <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
+   630→                <Shield className="size-5 text-primary" />
+   631→                Kalibrimi
+   632→              </h2>
+   633→              <div className="space-y-4">
+   634→                {/* Metric cards */}
+   635→                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   636→                  <Card className="gap-3">
+   637→                    <CardHeader>
+   638→                      <CardDescription>Brier Score</CardDescription>
+   639→                    </CardHeader>
+   640→                    <CardContent>
+   641→                      <div className="flex items-baseline gap-2">
+   642→                        <span className="text-2xl font-bold tabular-nums">
+   643→                          {d.calibration.brierScore.toFixed(4)}
+   644→                        </span>
+   645→                        {trendIcon(d.calibration.brierTrend7d)}
+   646→                      </div>
+   647→                      <p className="mt-1 text-xs text-muted-foreground">
+   648→                        Sa më i ulët, aq më mirë (0 = perfekt)
+   649→                      </p>
+   650→                    </CardContent>
+   651→                  </Card>
+   652→                  <Card className="gap-3">
+   653→                    <CardHeader>
+   654→                      <CardDescription>ECE (Kalibrimi i Pritet)</CardDescription>
+   655→                    </CardHeader>
+   656→                    <CardContent>
+   657→                      <div className="flex items-baseline gap-2">
+   658→                        <span className="text-2xl font-bold tabular-nums">
+   659→                          {d.calibration.ece.toFixed(4)}
+   660→                        </span>
+   661→                        {trendIcon(d.calibration.eceTrend7d)}
+   662→                      </div>
+   663→                      <p className="mt-1 text-xs text-muted-foreground">
+   664→                        Gabimi mesatar i kalibrimit
+   665→                      </p>
+   666→                    </CardContent>
+   667→                  </Card>
+   668→                  <Card className="gap-3">
+   669→                    <CardHeader>
+   670→                      <CardDescription>MCE (Kalibrimi Maksimal)</CardDescription>
+   671→                    </CardHeader>
+   672→                    <CardContent>
+   673→                      <div className="flex items-baseline gap-2">
+   674→                        <span className="text-2xl font-bold tabular-nums">
+   675→                          {d.calibration.mce.toFixed(4)}
+   676→                        </span>
+   677→                      </div>
+   678→                      <p className="mt-1 text-xs text-muted-foreground">
+   679→                        Gabimi maksimal i kalibrimit
+   680→                      </p>
+   681→                    </CardContent>
+   682→                  </Card>
+   683→                </div>
+   684→
+   685→                {/* Diagnosis */}
+   686→                <Card className="gap-4">
+   687→                  <CardHeader>
+   688→                    <CardTitle className="text-base flex items-center gap-2">
+   689→                      <Info className="size-4 text-blue-400" />
+   690→                      Diagnoza e Kalibrimitt
+   691→                    </CardTitle>
+   692→                  </CardHeader>
+   693→                  <CardContent>
+   694→                    <p className="text-sm text-muted-foreground leading-relaxed">
+   695→                      {d.calibration.diagnosis}
+   696→                    </p>
+   697→                  </CardContent>
+   698→                </Card>
+   699→
+   700→                {/* Calibration Time Series Chart */}
+   701→                {d.calibrationTimeSeries.length > 0 && (
+   702→                  <Card className="gap-4">
+   703→                    <CardHeader>
+   704→                      <CardTitle className="text-base">
+   705→                        Seria Kohore e Kalibrimitt
+   706→                      </CardTitle>
+   707→                      <CardDescription>
+   708→                        Brier Score &amp; ECE gjatë kohës
+   709→                      </CardDescription>
+   710→                    </CardHeader>
+   711→                    <CardContent>
+   712→                      <div className="h-72 w-full">
+   713→                        <ResponsiveContainer width="100%" height="100%">
+   714→                          <LineChart data={d.calibrationTimeSeries}>
+   715→                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+   716→                            <XAxis
+   717→                              dataKey="date"
+   718→                              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+   719→                              tickLine={false}
+   720→                              axisLine={{ stroke: "hsl(var(--border))" }}
+   721→                            />
+   722→                            <YAxis
+   723→                              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+   724→                              tickLine={false}
+   725→                              axisLine={{ stroke: "hsl(var(--border))" }}
+   726→                              domain={["auto", "auto"]}
+   727→                            />
+   728→                            <Tooltip content={<ChartTooltip />} />
+   729→                            <Legend
+   730→                              wrapperStyle={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}
+   731→                            />
+   732→                            <Line
+   733→                              type="monotone"
+   734→                              dataKey="brierScore"
+   735→                              name="Brier Score"
+   736→                              stroke="#10b981"
+   737→                              strokeWidth={2}
+   738→                              dot={{ r: 3 }}
+   739→                              activeDot={{ r: 5 }}
+   740→                            />
+   741→                            <Line
+   742→                              type="monotone"
+   743→                              dataKey="ece"
+   744→                              name="ECE"
+   745→                              stroke="#f59e0b"
+   746→                              strokeWidth={2}
+   747→                              dot={{ r: 3 }}
+   748→                              activeDot={{ r: 5 }}
+   749→                            />
+   750→                          </LineChart>
+   751→                        </ResponsiveContainer>
+   752→                      </div>
+   753→                    </CardContent>
+   754→                  </Card>
+   755→                )}
+   756→              </div>
+   757→            </section>
+   758→
+   759→            {/* ═══ No-Trade Rate Section ═══ */}
+   760→            <section>
+   761→              <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
+   762→                <Clock className="size-5 text-primary" />
+   763→                Shkalla No-Trade
+   764→              </h2>
+   765→              <Card className="gap-4">
+   766→                <CardHeader>
+   767→                  <CardDescription className="flex items-center gap-2">
+   768→                    Përqindja e rasteve pa rekomandim tregtimi
+   769→                  </CardDescription>
+   770→                  <CardAction>
+   771→                    {trendBadge(d.noTrade.trend)}
+   772→                  </CardAction>
+   773→                </CardHeader>
+   774→                <CardContent>
+   775→                  <div className="grid grid-cols-3 gap-4">
+   776→                    <div className="text-center">
+   777→                      <p className="text-xs text-muted-foreground mb-1">Aktuale</p>
+   778→                      <p className="text-2xl font-bold tabular-nums">
+   779→                        {formatPct(d.noTrade.currentRate)}
+   780→                      </p>
+   781→                    </div>
+   782→                    <div className="text-center">
+   783→                      <p className="text-xs text-muted-foreground mb-1">7 Ditë</p>
+   784→                      <p className="text-2xl font-bold tabular-nums">
+   785→                        {formatPct(d.noTrade.rate7d)}
+   786→                      </p>
+   787→                    </div>
+   788→                    <div className="text-center">
+   789→                      <p className="text-xs text-muted-foreground mb-1">30 Ditë</p>
+   790→                      <p className="text-2xl font-bold tabular-nums">
+   791→                        {formatPct(d.noTrade.rate30d)}
+   792→                      </p>
+   793→                    </div>
+   794→                  </div>
+   795→                  <Separator className="my-4 bg-border" />
+   796→                  <p className="text-sm text-muted-foreground leading-relaxed">
+   797→                    {d.noTrade.interpretation}
+   798→                  </p>
+   799→                </CardContent>
+   800→              </Card>
+   801→            </section>
+   802→
+   803→            {/* ═══ Regime & Sector Tables ═══ */}
+   804→            <section>
+   805→              <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
+   806→                <BarChart3 className="size-5 text-primary" />
+   807→                Preciziteti sipas Regjimit &amp; Sektorit
+   808→              </h2>
+   809→              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   810→                {/* Regime Table */}
+   811→                <Card className="gap-4">
+   812→                  <CardHeader>
+   813→                    <CardTitle className="text-base">Regjimi</CardTitle>
+   814→                    <CardDescription>
+   815→                      {d.regimeSlices.length} regjime
+   816→                    </CardDescription>
+   817→                  </CardHeader>
+   818→                  <CardContent>
+   819→                    <Table>
+   820→                      <TableHeader>
+   821→                        <TableRow>
+   822→                          <TableHead>Emri</TableHead>
+   823→                          <TableHead className="text-right">Preciziteti</TableHead>
+   824→                          <TableHead className="text-right">Mostër</TableHead>
+   825→                          <TableHead className="text-right">7d</TableHead>
+   826→                          <TableHead className="text-right">Drift</TableHead>
+   827→                          <TableHead className="text-center">Sinjalizim</TableHead>
+   828→                        </TableRow>
+   829→                      </TableHeader>
+   830→                      <TableBody>
+   831→                        {[...d.regimeSlices]
+   832→                          .sort((a, b) => b.accuracy - a.accuracy)
+   833→                          .map((r) => (
+   834→                            <TableRow key={r.name}>
+   835→                              <TableCell className="font-medium">
+   836→                                <Badge variant="outline" className="font-mono text-xs">
+   837→                                  {r.name}
+   838→                                </Badge>
+   839→                              </TableCell>
+   840→                              <TableCell className="text-right tabular-nums">
+   841→                                {formatPct(r.accuracy)}
+   842→                              </TableCell>
+   843→                              <TableCell className="text-right tabular-nums text-muted-foreground">
+   844→                                {formatNum(r.sampleSize)}
+   845→                              </TableCell>
+   846→                              <TableCell className="text-right tabular-nums">
+   847→                                {formatPct(r.accuracy7d)}
+   848→                              </TableCell>
+   849→                              <TableCell className="text-right tabular-nums">
+   850→                                {driftValue(r.driftVsOverall)}
+   851→                              </TableCell>
+   852→                              <TableCell className="text-center">
+   853→                                {r.warning ? (
+   854→                                  <Badge variant="outline" className="border-amber-500/40 text-amber-400">
+   855→                                    <AlertTriangle className="size-3" />
+   856→                                    <span className="ml-1">!</span>
+   857→                                  </Badge>
+   858→                                ) : (
+   859→                                  <CheckCircle2 className="size-4 text-emerald-500 mx-auto" />
+   860→                                )}
+   861→                              </TableCell>
+   862→                            </TableRow>
+   863→                          ))}
+   864→                      </TableBody>
+   865→                    </Table>
+   866→                  </CardContent>
+   867→                </Card>
+   868→
+   869→                {/* Sector Table */}
+   870→                <Card className="gap-4">
+   871→                  <CardHeader>
+   872→                    <CardTitle className="text-base">Sektori</CardTitle>
+   873→                    <CardDescription>
+   874→                      {d.sectorSlices.length} sektorë
+   875→                    </CardDescription>
+   876→                  </CardHeader>
+   877→                  <CardContent>
+   878→                    <Table>
+   879→                      <TableHeader>
+   880→                        <TableRow>
+   881→                          <TableHead>Emri</TableHead>
+   882→                          <TableHead className="text-right">Preciziteti</TableHead>
+   883→                          <TableHead className="text-right">Mostër</TableHead>
+   884→                          <TableHead className="text-right">7d</TableHead>
+   885→                          <TableHead className="text-right">Drift</TableHead>
+   886→                          <TableHead className="text-center">Sinjalizim</TableHead>
+   887→                        </TableRow>
+   888→                      </TableHeader>
+   889→                      <TableBody>
+   890→                        {[...d.sectorSlices]
+   891→                          .sort((a, b) => b.accuracy - a.accuracy)
+   892→                          .map((s) => (
+   893→                            <TableRow key={s.name}>
+   894→                              <TableCell className="font-medium">
+   895→                                <Badge variant="outline" className="font-mono text-xs">
+   896→                                  {s.name}
+   897→                                </Badge>
+   898→                              </TableCell>
+   899→                              <TableCell className="text-right tabular-nums">
+   900→                                {formatPct(s.accuracy)}
+   901→                              </TableCell>
+   902→                              <TableCell className="text-right tabular-nums text-muted-foreground">
+   903→                                {formatNum(s.sampleSize)}
+   904→                              </TableCell>
+   905→                              <TableCell className="text-right tabular-nums">
+   906→                                {formatPct(s.accuracy7d)}
+   907→                              </TableCell>
+   908→                              <TableCell className="text-right tabular-nums">
+   909→                                {driftValue(s.driftVsOverall)}
+   910→                              </TableCell>
+   911→                              <TableCell className="text-center">
+   912→                                {s.warning ? (
+   913→                                  <Badge variant="outline" className="border-amber-500/40 text-amber-400">
+   914→                                    <AlertTriangle className="size-3" />
+   915→                                    <span className="ml-1">!</span>
+   916→                                  </Badge>
+   917→                                ) : (
+   918→                                  <CheckCircle2 className="size-4 text-emerald-500 mx-auto" />
+   919→                                )}
+   920→                              </TableCell>
+   921→                            </TableRow>
+   922→                          ))}
+   923→                      </TableBody>
+   924→                    </Table>
+   925→                  </CardContent>
+   926→                </Card>
+   927→              </div>
+   928→            </section>
+   929→
+   930→            {/* ═══ Drift History Chart ═══ */}
+   931→            {history.length > 0 && (
+   932→              <section>
+   933→                <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
+   934→                  <Activity className="size-5 text-primary" />
+   935→                  Historia e Drift — Preciziteti
+   936→                </h2>
+   937→                <Card className="gap-4">
+   938→                  <CardHeader>
+   939→                    <CardTitle className="text-base">
+   940→                      Preciziteti sipas Horizontit gjatë kohës
+   941→                    </CardTitle>
+   942→                    <CardDescription>
+   943→                      30 ditë të fundit — 1D, 5D, 20D
+   944→                    </CardDescription>
+   945→                  </CardHeader>
+   946→                  <CardContent>
+   947→                    <div className="h-80 w-full">
+   948→                      <ResponsiveContainer width="100%" height="100%">
+   949→                        <LineChart data={history}>
+   950→                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+   951→                          <XAxis
+   952→                            dataKey="date"
+   953→                            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+   954→                            tickLine={false}
+   955→                            axisLine={{ stroke: "hsl(var(--border))" }}
+   956→                            tickFormatter={(v: string) => {
+   957→                              const parts = v.split("-")
+   958→                              if (parts.length === 3) {
+   959→                                return `${parts[2]}/${parts[1]}`
+   960→                              }
+   961→                              return v
+   962→                            }}
+   963→                          />
+   964→                          <YAxis
+   965→                            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+   966→                            tickLine={false}
+   967→                            axisLine={{ stroke: "hsl(var(--border))" }}
+   968→                            domain={[0, 100]}
+   969→                            tickFormatter={(v: number) => `${v}%`}
+   970→                          />
+   971→                          <Tooltip content={<AccuracyTooltip />} />
+   972→                          <Legend
+   973→                            wrapperStyle={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}
+   974→                          />
+   975→                          <Line
+   976→                            type="monotone"
+   977→                            dataKey="accuracy1d"
+   978→                            name="1D"
+   979→                            stroke="#10b981"
+   980→                            strokeWidth={2}
+   981→                            dot={{ r: 3 }}
+   982→                            activeDot={{ r: 5 }}
+   983→                          />
+   984→                          <Line
+   985→                            type="monotone"
+   986→                            dataKey="accuracy5d"
+   987→                            name="5D"
+   988→                            stroke="#f59e0b"
+   989→                            strokeWidth={2}
+   990→                            dot={{ r: 3 }}
+   991→                            activeDot={{ r: 5 }}
+   992→                          />
+   993→                          <Line
+   994→                            type="monotone"
+   995→                            dataKey="accuracy20d"
+   996→                            name="20D"
+   997→                            stroke="#ef4444"
+   998→                            strokeWidth={2}
+   999→                            dot={{ r: 3 }}
+  1000→                            activeDot={{ r: 5 }}
+  1001→                          />
+  1002→                        </LineChart>
+  1003→                      </ResponsiveContainer>
+  1004→                    </div>
+  1005→                  </CardContent>
+  1006→                </Card>
+  1007→              </section>
+  1008→            )}
+  1009→          </div>
+  1010→        )}
+  1011→      </div>
+  1012→    </main>
+  1013→  )
+  1014→}
+  1015→
