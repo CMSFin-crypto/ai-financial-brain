@@ -9,6 +9,31 @@ export interface StockNewsItem {
   source: string;
   publishedAt: string;
   url: string;
+  category?: CatalystCategory;
+  summary?: string;
+}
+
+export type CatalystCategory =
+  | 'earnings'       // Zerbatim financiare
+  | 'fda'            // Miratime FDA/biotech
+  | 'contract'       // Kontrata, partneritete
+  | 'regulatory'     // Miratime rregullatore
+  | 'merger'         // Bashkim, blerje
+  | 'product'        // Lanzim produktesh
+  | 'sector'         // Lajme sektori (AI, crypto, etj)
+  | 'analyst'        // Rekomandime analistësh
+  | 'insider'        // Blerje/shitje insider
+  | 'short-squeeze'  // Short squeeze
+  | 'legal'          // Çështje ligjore
+  | 'macro'          // Lajme makroekonomike
+  | 'other';
+
+export interface CatalystAnalysis {
+  category: CatalystCategory;
+  label: string;           // e.g. "Earnings Beat"
+  description: string;     // Detailed explanation in Albanian
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  impact: 'strong' | 'moderate' | 'mild';
 }
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
@@ -22,6 +47,14 @@ const NEWS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
  * Uses Google News RSS — no API key required.
  */
 export async function fetchStockNews(ticker: string, maxItems = 5): Promise<StockNewsItem[]> {
+  const allItems = await fetchStockNewsRaw(ticker, maxItems + 5); // fetch extra for filtering
+  return categorizeNews(allItems, ticker).slice(0, maxItems);
+}
+
+/**
+ * Raw fetch — returns more items for categorization.
+ */
+async function fetchStockNewsRaw(ticker: string, maxItems = 10): Promise<StockNewsItem[]> {
   const cacheKey = ticker.toUpperCase();
   const cached = newsCache.get(cacheKey);
   if (cached && Date.now() - cached.time < NEWS_CACHE_TTL) {
@@ -56,7 +89,7 @@ export async function fetchStockNews(ticker: string, maxItems = 5): Promise<Stoc
 /**
  * Fetch news for multiple tickers in parallel (for top candidates only).
  */
-export async function fetchStockNewsBatch(tickers: string[], maxPerTicker = 3): Promise<Record<string, StockNewsItem[]>> {
+export async function fetchStockNewsBatch(tickers: string[], maxPerTicker = 5): Promise<Record<string, StockNewsItem[]>> {
   const results: Record<string, StockNewsItem[]> = {};
 
   // Fetch in parallel (max 5 at a time to avoid rate limits)
@@ -116,6 +149,144 @@ function decodeEntities(str: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'");
+}
+
+// ═══ CATALYST CATEGORIZATION ═══
+
+const CATEGORY_KEYWORDS: Record<CatalystCategory, string[]> = {
+  earnings: ['earnings', 'revenue', 'profit', 'loss', 'eps', 'quarterly', 'q1 ', 'q2 ', 'q3 ', 'q4 ', 'fiscal', 'beat estimates', 'missed', 'topped', 'guided', 'outlook', 'guidance'],
+  fda: ['fda', 'clinical', 'trial', 'phase ', 'drug', 'approval', 'treatment', 'therapy', 'biotech', 'pipeline', 'ndc', 'blades', 'cder'],
+  contract: ['contract', 'deal', 'partnership', 'agreement', 'collaboration', 'joint venture', 'signed', 'awarded', 'win ', 'supply', 'customer'],
+  regulatory: ['sec ', 'regulation', 'regulatory', 'compliance', 'approved', 'clearance', 'certification', 'permit', 'license', 'sanction'],
+  merger: ['merger', 'acquisition', 'buyout', 'takeover', 'buy ', 'acquires', 'acquired', 'combines', 'spinoff', 'ipo', 'spac'],
+  product: ['launch', 'product', 'release', 'unveiled', 'introduces', 'new version', 'update', 'upgrade', 'feature', 'innovation'],
+  sector: ['ai ', 'artificial intelligence', 'semiconductor', 'chip ', 'crypto ', 'bitcoin', 'ev ', 'electric vehicle', 'solar', 'battery', 'hydrogen', 'green energy', 'oil ', 'gas ', 'mining'],
+  analyst: ['analyst', 'upgrade', 'downgrade', 'price target', 'rating', 'bullish', 'bearish', 'initiates', 'maintains', 'reiterates'],
+  insider: ['insider', 'ceo ', 'cfo ', 'director', 'officer', 'bought', 'sold', 'purchased', 'filing', 'form 4', 'ownership'],
+  'short-squeeze': ['short squeeze', 'short interest', 'shorts ', 'borrowed shares', 'short covering', 'short sellers', 'si '],
+  legal: ['lawsuit', 'settlement', 'patent', 'litigation', 'court', 'guilty', 'investigation', 'subpoena'],
+  macro: ['fed ', 'interest rate', 'inflation', 'gdp', 'employment', 'tariff', 'recession', 'market rally', 'selloff'],
+  other: [],
+};
+
+/**
+ * Categorize news headlines and add summary.
+ */
+function categorizeNews(items: StockNewsItem[], ticker: string): StockNewsItem[] {
+  return items.map(item => {
+    const headlineLower = item.headline.toLowerCase();
+    const companyRef = ticker.toLowerCase();
+
+    let bestCategory: CatalystCategory = 'other';
+    let bestScore = 0;
+
+    for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [CatalystCategory, string[]][]) {
+      if (cat === 'other') continue;
+      let score = 0;
+      for (const kw of keywords) {
+        if (headlineLower.includes(kw)) score += 1;
+      }
+      // Bonus if ticker is mentioned in the headline (more relevant)
+      if (headlineLower.includes(companyRef)) score += 2;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCategory = cat;
+      }
+    }
+
+    const summary = generateNewsSummary(item.headline, bestCategory);
+
+    return { ...item, category: bestCategory, summary };
+  });
+}
+
+/**
+ * Generate a short Albanian summary of a news headline based on its category.
+ */
+function generateNewsSummary(headline: string, category: CatalystCategory): string {
+  switch (category) {
+    case 'earnings': return 'Lajm financiar — rezultatet e fitimeve ndikuan ne cmim';
+    case 'fda': return 'Lajm biotech/FDA —进展i klinik ose miratim i mundshem';
+    case 'contract': return 'Kontrate ose partneritet i ri — rrit besimin per te ardhmen';
+    case 'regulatory': return 'Lajm rregullator — miratim ose ndryshim rregullash';
+    case 'merger': return 'Lajm M&A — bashkim, blerje ose ndryshim korporativ';
+    case 'product': return 'Lanzim ose perditesim produktesh — innovacion';
+    case 'sector': return 'Lajm sektorial — trend i industrise ndikon ne cmim';
+    case 'analyst': return 'Analiste — ndryshim ne rekomandime ose price target';
+    case 'insider': return 'Insider — blemtje ose shitje nga drejtuesit';
+    case 'short-squeeze': return 'Short squeeze —Short sellers ne presion';
+    case 'legal': return 'Lajm ligjor — çeshtje gjyqesore ose patentash';
+    case 'macro': return 'Lajm makroekonomik — politika monetare ose tregu i gjerë';
+    default: return 'Lajm i fundit per kete aksion';
+  }
+}
+
+/**
+ * Analyze news headlines to produce a detailed catalyst analysis.
+ */
+export function analyzeCatalystFromNews(headlines: StockNewsItem[], dailyChangePct: number): CatalystAnalysis {
+  if (!headlines || headlines.length === 0) {
+    return {
+      category: 'other',
+      label: 'Pa lajm te verifiquar',
+      description: `Rritja ${dailyChangePct.toFixed(1)}% pa lajm te qarte. Verifikoni manualisht Finviz, Benzinga, apo Twitter per lajmin e fundit.`,
+      confidence: 'LOW',
+      impact: 'mild',
+    };
+  }
+
+  // Find the most relevant headline (highest category match)
+  const categorized = headlines.map(h => ({
+    ...h,
+    score: (h.category !== 'other' ? 3 : 0) + (h.headline.length > 40 ? 1 : 0),
+  }));
+  categorized.sort((a, b) => b.score - a.score);
+  const top = categorized[0];
+  const category = top.category || 'other';
+
+  // Build detailed description
+  const descriptions: Record<CatalystCategory, string> = {
+    earnings: `Rezultatet financiare jane bote here positive. Kompania ka raportuar fitime ose te ardhura me te larta se priteshit, duke shkaktuar reagim pozitiv nga investoret. Kjo tregon se biznesi po performon mire.`,
+    fda: `Ka进展ne procesin klinik ose miratim rregullator. Për kompanite biotech, kjo eshte katalizatori me i forte dhe shpesh shkakton levizje 20-100%+. Verifikoni ne faqen zyrtare te FDA.`,
+    contract: `Nje kontrate ose partneritet i ri ka rritur besimin e investitoreve. Kontratat e medha sigurojne te ardhura te ardhshme dhe vërtetojne kompetencen e kompanise ne treg.`,
+    regulatory: `Nje miratim rregullator ka hapur deren per rritje. Kjo mund te jete leje per nje produkt te ri, ose heqje e nje kufizimi qe pengonte biznesin.`,
+    merger: 'Aktiviteti M&A tregon qe kompania ka vlere strategjike. Bashkimet dhe blerjet mund te krijojne sinergie dhe te rrisin cmimin e aksioneve.',
+    product: 'Lanzimi i nje produkti te ri tregon inovacion. Investoret shmangen kursin e parapaguesit duke pare potencialin e tregut te ri.',
+    sector: `Trendi pozitiv i sektorit po ndikon ne kete aksion. Kur i gjithe sektori leviz, aksionet individualne barten shtyse. Verifikoni nese eshte lag ose themelor.`,
+    analyst: `Nje analiste i njohur ka ndryshuar opinionin per kete aksion. Rekomandimet e analisteve jane sinjale ndermjetëse — tregon vëmendje institucionale.`,
+    insider: `Drejtuesit e kompanise jane duke blere aksione. Insider buying eshte nje sinjal pozitiv sepse ata kane me shume informacion se tregu.`,
+    'short-squeeze': `Short interest i larte po krijoje presion per blerje te detyruar. Kur cmimi rritet, short seller-et duhet te mbulojne pozicionet, duke shtyre cmimin me larte.`,
+    legal: `Nje çeshtje ligjore po ndikone ne cmim. Kjo mund te jete pozitive (fitore ne gjyq) ose negative (gjykim). Verifikoni detajet.`,
+    macro: `Ngjarje makroekonomike po ndikojne ne treg. Normat e interesit, inflacioni, ose politikat qeveritare jane duke levizur tregun e gjerë.`,
+    other: `Lajmet e fundit per kete kompani po ndikojne ne cmim. Lexoni titujne me poshte per me shume detaje.`,
+  };
+
+  const labels: Record<CatalystCategory, string> = {
+    earnings: 'Rezultate Financiare',
+    fda: 'Proces Klinik / FDA',
+    contract: 'Kontrate / Partneritet',
+    regulatory: 'Miratim Rregullator',
+    merger: 'Bashkim / Blerje (M&A)',
+    product: 'Lanzim Produktesh',
+    sector: 'Trend Sektoral',
+    analyst: 'Rekomandim Analisti',
+    insider: 'Insider Activity',
+    'short-squeeze': 'Short Squeeze',
+    legal: 'Çeshtje Ligjore',
+    macro: 'Faktor Makroekonomik',
+    other: 'Lajm i Pergjithshem',
+  };
+
+  const hasMultipleHeadlines = headlines.length >= 2;
+  const hasStrongCategory = category !== 'other';
+
+  return {
+    category,
+    label: labels[category],
+    description: descriptions[category],
+    confidence: hasStrongCategory && hasMultipleHeadlines ? 'HIGH' : hasStrongCategory ? 'MEDIUM' : 'LOW',
+    impact: dailyChangePct >= 20 ? 'strong' : dailyChangePct >= 10 ? 'moderate' : 'mild',
+  };
 }
 
 /**

@@ -17,7 +17,8 @@
 
 import { fetchHistoricalData, type HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { analyzeHistoricalPatterns, computeHistoricalScore, type PatternAnalysis } from '@/lib/historical-pattern-engine';
-import { generateRiseReason, generateCautionSignals, type StockNewsItem } from '@/lib/stock-news-fetcher';
+import { generateRiseReason, generateCautionSignals, analyzeCatalystFromNews, type StockNewsItem, type CatalystAnalysis } from '@/lib/stock-news-fetcher';
+import type { FinvizData } from '@/lib/finviz-float-fetcher';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -83,6 +84,12 @@ export interface FivePillarsCandidate {
   riseReason: string;                   // AI-style explanation of WHY it's moving
   cautionSignals: string[];             // When to be careful
   newsHeadlines: StockNewsItem[];      // Real news headlines (only for top picks)
+  catalystAnalysis: CatalystAnalysis | null; // Detailed catalyst categorization
+
+  // Verified float data from Finviz
+  finvizData: FinvizData | null;
+  floatVerified: boolean;               // Whether float came from Finviz (real) vs static list
+  shortFloatPct: number | null;         // Short % of float from Finviz
 }
 
 // ─── Thresholds (EXACT Ross Cameron defaults) ──────────────
@@ -499,6 +506,10 @@ export async function analyzeFivePillarsCandidate(
       riseReason,
       cautionSignals,
       newsHeadlines: [],
+      catalystAnalysis: null,
+      finvizData: null,
+      floatVerified: false,
+      shortFloatPct: null,
     };
   } catch (err) {
     console.error(`[5-PILLARS] ${ticker}: Error:`, err);

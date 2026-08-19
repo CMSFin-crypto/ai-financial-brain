@@ -3,7 +3,8 @@ import { getRealPrices } from '@/lib/alpha-vantage';
 import { getAllStocks } from '@/lib/market-data';
 import { analyzeFivePillarsBatch, type FivePillarsCandidate } from '@/lib/five-pillars-engine';
 import { getAllUSStockSnapshots, prefilterCandidates, getAllUSTickers } from '@/lib/us-stock-universe';
-import { fetchStockNewsBatch } from '@/lib/stock-news-fetcher';
+import { fetchStockNewsBatch, analyzeCatalystFromNews } from '@/lib/stock-news-fetcher';
+import { fetchFinvizFloatBatch } from '@/lib/finviz-float-fetcher';
 
 export const maxDuration = 300;
 
@@ -173,21 +174,76 @@ export async function GET() {
       return b.momentumScore - a.momentumScore;
     });
 
-    // ═══ STEP 4.5: Fetch real news for TOP ELIGIBLE + WATCH (max 10) ═══
-    const topCandidates = enriched.filter(c => c.status === 'ELIGIBLE' || c.status === 'WATCH').slice(0, 10);
+    // ═══ STEP 4.5: Fetch real news + Finviz float for TOP candidates ═══
+    const topCandidates = enriched.filter(c => c.status === 'ELIGIBLE' || c.status === 'WATCH' || c.status === 'FLOAT_REVIEW').slice(0, 15);
     if (topCandidates.length > 0) {
+      // Fetch news (more headlines now: 5 per ticker)
       try {
         console.log(`[5-PILLARS-MOMENTUM] Fetching news for ${topCandidates.length} top candidates...`);
-        const newsMap = await fetchStockNewsBatch(topCandidates.map(c => c.symbol), 3);
+        const newsMap = await fetchStockNewsBatch(topCandidates.map(c => c.symbol), 5);
         for (const candidate of enriched) {
- const headlines = newsMap[candidate.symbol];
+          const headlines = newsMap[candidate.symbol];
           if (headlines && headlines.length > 0) {
             candidate.newsHeadlines = headlines;
+            // Generate detailed catalyst analysis from news
+            candidate.catalystAnalysis = analyzeCatalystFromNews(headlines, candidate.dailyChangePct);
           }
         }
         console.log(`[5-PILLARS-MOMENTUM] News fetched for ${Object.keys(newsMap).length} stocks`);
       } catch (err) {
         console.log('[5-PILLARS-MOMENTUM] News fetch failed (non-critical):', err);
+      }
+
+      // Fetch Finviz float data for verification
+      try {
+        console.log(`[5-PILLARS-MOMENTUM] Fetching Finviz float for ${topCandidates.length} candidates...`);
+        const finvizMap = await fetchFinvizFloatBatch(topCandidates.map(c => c.symbol));
+        for (const candidate of enriched) {
+          const fd = finvizMap[candidate.symbol];
+          if (fd) {
+            candidate.finvizData = fd;
+            // Update float with verified Finviz data
+            if (fd.floatM !== null) {
+              candidate.floatShares = fd.floatM;
+              candidate.floatVerified = true;
+              // Re-check float pillar
+              candidate.passesFloat = fd.floatM <= 10;
+              candidate.pillarDetails.float = {
+                passed: fd.floatM <= 10,
+                value: fd.floatM,
+                threshold: '≤ 10M',
+                detail: `Float (Finviz): ${fd.floatM.toFixed(1)}M shares${fd.floatM <= 10 ? ' — supply/demand imbalance' : ` (duhet ≤10M)`}`,
+              };
+            }
+            if (fd.shortFloat !== null) {
+              candidate.shortFloatPct = fd.shortFloat;
+            }
+            // Update company name from Finviz if better
+            if (fd.name && (!candidate.company || candidate.company === candidate.symbol)) {
+              candidate.company = fd.name;
+            }
+            if (fd.sector && (!candidate.sector || candidate.sector === 'Momentum')) {
+              candidate.sector = fd.sector;
+            }
+            // Re-compute status with new float data
+            const pillarCount = [candidate.passesRvol, candidate.passesMomentum, candidate.passesCatalyst, candidate.passesPrice, candidate.passesFloat].filter(Boolean).length;
+            candidate.pillarCount = pillarCount;
+            if (candidate.floatVerified && fd.floatM !== null) {
+              if (pillarCount === 5 && candidate.catalystStatus !== 'MISSING') {
+                candidate.status = 'ELIGIBLE';
+              } else if (pillarCount >= 4) {
+                candidate.status = 'WATCH';
+              } else if (pillarCount >= 3 && (candidate.passesRvol || candidate.passesMomentum)) {
+                candidate.status = 'FLOAT_REVIEW';
+              } else {
+                candidate.status = 'REJECTED';
+              }
+            }
+          }
+        }
+        console.log(`[5-PILLARS-MOMENTUM] Finviz float fetched for ${Object.keys(finvizMap).length} stocks`);
+      } catch (err) {
+        console.log('[5-PILLARS-MOMENTUM] Finviz fetch failed (non-critical):', err);
       }
     }
 

@@ -39,6 +39,9 @@ import {
   ExternalLink,
   AlertOctagon,
   Lightbulb,
+  CircleCheck,
+  CircleX,
+  Hash,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -84,6 +87,26 @@ interface PatternAnalysis {
   setups: HistoricalSetup[];
 }
 
+interface CatalystAnalysis {
+  category: string;
+  label: string;
+  description: string;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  impact: 'strong' | 'moderate' | 'mild';
+}
+
+interface FinvizData {
+  floatM: number | null;
+  sharesOutM: number | null;
+  shortFloat: number | null;
+  name: string;
+  sector: string;
+  industry: string;
+  marketCap: string;
+  avgVolume: string;
+  relVolume: number;
+}
+
 interface Candidate {
   symbol: string;
   price: number;
@@ -124,7 +147,11 @@ interface Candidate {
   historicalPattern: PatternAnalysis;
   riseReason: string;
   cautionSignals: string[];
-  newsHeadlines: { headline: string; source: string; publishedAt: string; url: string }[];
+  newsHeadlines: { headline: string; source: string; publishedAt: string; url: string; category?: string; summary?: string }[];
+  catalystAnalysis: CatalystAnalysis | null;
+  finvizData: FinvizData | null;
+  floatVerified: boolean;
+  shortFloatPct: number | null;
 }
 
 interface ScanSummary {
@@ -635,11 +662,27 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
             </div>
             <div className="text-[11px] text-muted-foreground mt-0.5">
               {c.company && c.company !== c.symbol ? c.company + ' ' : ''}
+              {c.sector && c.sector !== 'Momentum' ? <span className="text-muted-foreground/60">{c.sector} • </span> : ''}
               <span className={"font-medium " + (isPositive ? 'text-emerald-400' : 'text-red-400')}>
                 ${c.price.toFixed(2)}
               </span>
               {' '} RVol: <span className={c.passesRvol ? 'text-blue-400' : ''}>{c.relativeVolume}x</span>
-              {' '} Float: <span className={c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : ''}>{c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}</span>
+              {' '}
+              {/* FLOAT with verification badge */}
+              <span className={c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : ''}>
+                <Hash className="w-3 h-3 inline mr-0.5 opacity-60" />
+                {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+              </span>
+              {c.floatVerified && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-400 ml-0.5" title="Float i verifikuar nga Finviz">
+                  <CircleCheck className="w-2.5 h-2.5" />Verified
+                </span>
+              )}
+              {c.shortFloatPct !== null && c.shortFloatPct > 10 && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-red-400 ml-1" title="Short % i larte — potential short squeeze">
+                  Short: {c.shortFloatPct.toFixed(1)}%
+                </span>
+              )}
             </div>
           </div>
 
@@ -662,6 +705,60 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
           <div className="mt-2 flex items-start gap-2 px-2 py-2 rounded-md bg-blue-500/8 border border-blue-500/20">
             <Lightbulb className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
             <div className="text-[10px] text-blue-300/90 leading-relaxed">{c.riseReason}</div>
+          </div>
+        )}
+
+        {/* Float Detail Panel — always visible for TOP picks */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 rounded-md bg-amber-500/8 border border-amber-500/20">
+          <span className="text-[10px] text-amber-300/80 font-medium">Float:</span>
+          {c.floatVerified ? (
+            <span className="flex items-center gap-1">
+              <CircleCheck className="w-3 h-3 text-emerald-400" />
+              <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
+                {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+              </span>
+              <span className="text-[9px] text-emerald-400/60">(Finviz)</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <CircleX className="w-3 h-3 text-blue-400/60" />
+              <span className={"text-[11px] " + (c.floatShares !== null ? 'text-amber-400' : 'text-blue-400')}>
+                {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : 'Unknown'}
+              </span>
+              <span className="text-[9px] text-muted-foreground">(static)</span>
+            </span>
+          )}
+          {c.finvizData?.sharesOutM && (
+            <span className="text-[10px] text-muted-foreground">
+              Outstanding: {c.finvizData.sharesOutM.toFixed(1)}M
+            </span>
+          )}
+          {c.shortFloatPct !== null && (
+            <span className={"text-[10px] font-medium " + (c.shortFloatPct >= 15 ? 'text-red-400' : c.shortFloatPct >= 5 ? 'text-orange-400' : 'text-muted-foreground')}>
+              Short: {c.shortFloatPct.toFixed(1)}%{c.shortFloatPct >= 15 ? ' ⚠️ Squeeze risk' : ''}
+            </span>
+          )}
+          {c.finvizData?.marketCap && (
+            <span className="text-[10px] text-muted-foreground">MCap: {c.finvizData.marketCap}</span>
+          )}
+        </div>
+
+        {/* Catalyst Analysis — detailed, always visible for TOP picks */}
+        {c.catalystAnalysis && (
+          <div className="mt-2 flex items-start gap-2 px-2 py-2 rounded-md bg-orange-500/8 border border-orange-500/20">
+            <Newspaper className="w-3.5 h-3.5 text-orange-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[11px] font-semibold text-orange-400">{c.catalystAnalysis.label}</span>
+                <Badge className={"text-[8px] px-1 py-0 " + (c.catalystAnalysis.confidence === 'HIGH' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : c.catalystAnalysis.confidence === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30')} variant="outline">
+                  {c.catalystAnalysis.confidence}
+                </Badge>
+                <Badge className={"text-[8px] px-1 py-0 " + (c.catalystAnalysis.impact === 'strong' ? 'bg-red-500/20 text-red-300 border-red-500/30' : c.catalystAnalysis.impact === 'moderate' ? 'bg-orange-500/20 text-orange-300 border-orange-500/30' : 'bg-muted/30 text-muted-foreground border-border/50')} variant="outline">
+                  Impact: {c.catalystAnalysis.impact}
+                </Badge>
+              </div>
+              <p className="text-[10px] text-orange-300/80 leading-relaxed">{c.catalystAnalysis.description}</p>
+            </div>
           </div>
         )}
 
@@ -731,19 +828,30 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
               </div>
             </div>
 
-            {/* News Headlines (real news for top picks) */}
+            {/* News Headlines (real news for top picks) — with category badges */}
             {c.newsHeadlines.length > 0 && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <Newspaper className="w-3.5 h-3.5 text-orange-400" />
                   <span className="text-xs font-medium text-orange-400">Lajme reale</span>
+                  <span className="text-[9px] text-muted-foreground">({c.newsHeadlines.length} artikuj)</span>
                 </div>
                 {c.newsHeadlines.map((n, i) => (
                   <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-orange-500/8 border border-orange-500/20 hover:bg-orange-500/15 transition-colors group">
                     <ExternalLink className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-[10px] text-orange-300/90 leading-relaxed group-hover:text-orange-200">{n.headline}</div>
-                      <div className="text-[9px] text-muted-foreground mt-0.5">{n.source}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[9px] text-muted-foreground">{n.source}</span>
+                        {n.category && n.category !== 'other' && (
+                          <Badge className="text-[8px] px-1 py-0 bg-purple-500/15 text-purple-300 border-purple-500/30 border">
+                            {n.category}
+                          </Badge>
+                        )}
+                        {n.summary && (
+                          <span className="text-[9px] text-muted-foreground/60">{n.summary}</span>
+                        )}
+                      </div>
                     </div>
                   </a>
                 ))}
@@ -927,8 +1035,10 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
           </div>
           <div className="flex justify-between sm:block">
             <span className="text-muted-foreground">Float:</span>
-            <span className={`font-medium ${c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground'}`}>
-              {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown' }
+            <span className={"font-medium " + (c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground')}>
+              {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown'}
+              {c.floatVerified && <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] text-emerald-400"><CircleCheck className="w-2.5 h-2.5" />Finviz</span>}
+              {c.shortFloatPct !== null && <span className={"ml-1 text-[9px] " + (c.shortFloatPct >= 15 ? 'text-red-400' : 'text-muted-foreground')}>Short: {c.shortFloatPct.toFixed(1)}%</span>}
             </span>
           </div>
           <div className="col-span-2 flex justify-between sm:col-span-1 sm:block">
@@ -1009,8 +1119,50 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
               })}
             </div>
 
-            {/* Catalyst Details */}
-            {c.catalystHeadline && (
+            {/* Float Detail Panel — from Finviz */}
+            {c.floatVerified && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-2 rounded-md bg-amber-500/10 border border-amber-500/30">
+                <span className="text-[10px] text-amber-300/80 font-medium">Float Data (Finviz):</span>
+                <span className="flex items-center gap-1">
+                  <CircleCheck className="w-3 h-3 text-emerald-400" />
+                  <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
+                    Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+                  </span>
+                </span>
+                {c.finvizData?.sharesOutM && (
+                  <span className="text-[10px] text-muted-foreground">Outstanding: {c.finvizData.sharesOutM.toFixed(1)}M</span>
+                )}
+                {c.shortFloatPct !== null && (
+                  <span className={"text-[10px] font-medium " + (c.shortFloatPct >= 15 ? 'text-red-400' : c.shortFloatPct >= 5 ? 'text-orange-400' : 'text-muted-foreground')}>
+                    Short % of Float: {c.shortFloatPct.toFixed(1)}%{c.shortFloatPct >= 15 ? ' — Short squeeze i mundshem' : ''}
+                  </span>
+                )}
+                {c.finvizData?.marketCap && (
+                  <span className="text-[10px] text-muted-foreground">Market Cap: {c.finvizData.marketCap}</span>
+                )}
+              </div>
+            )}
+
+            {/* Catalyst Details — Enhanced with news analysis */}
+            {c.catalystAnalysis ? (
+              <div className="bg-orange-500/10 border border-orange-500/30 rounded-md p-2.5">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Newspaper className="w-3.5 h-3.5 text-orange-400" />
+                  <span className="text-xs font-medium text-orange-400">Catalyst Analysis</span>
+                  <Badge className={"text-[9px] px-1 py-0 ml-1 " + (c.catalystAnalysis.confidence === 'HIGH' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : c.catalystAnalysis.confidence === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30')} variant="outline">
+                    {c.catalystAnalysis.confidence}
+                  </Badge>
+                  <Badge className={"text-[9px] px-1 py-0 " + (c.catalystAnalysis.impact === 'strong' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-muted/30 text-muted-foreground border-border/50')} variant="outline">
+                    Impact: {c.catalystAnalysis.impact}
+                  </Badge>
+                  <Badge className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-300 border-orange-500/30 border ml-auto">
+                    {c.catalystStatus}
+                  </Badge>
+                </div>
+                <div className="text-xs font-medium text-orange-300 mb-1">{c.catalystAnalysis.label}</div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">{c.catalystAnalysis.description}</p>
+              </div>
+            ) : c.catalystHeadline ? (
               <div className="bg-orange-500/10 border border-orange-500/30 rounded-md p-2.5">
                 <div className="flex items-center gap-1.5 mb-1">
                   <Newspaper className="w-3.5 h-3.5 text-orange-400" />
@@ -1021,7 +1173,7 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
                 </div>
                 <p className="text-[11px] text-muted-foreground">{c.catalystHeadline}</p>
               </div>
-            )}
+            ) : null}
 
             {/* Pse po rritet? */}
             {c.riseReason && (
@@ -1034,19 +1186,30 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
               </div>
             )}
 
-            {/* Real News Headlines */}
+            {/* Real News Headlines — with category */}
             {c.newsHeadlines.length > 0 && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <Newspaper className="w-3.5 h-3.5 text-orange-400" />
                   <span className="text-xs font-medium text-orange-400">Lajme reale</span>
+                  <span className="text-[9px] text-muted-foreground">({c.newsHeadlines.length} artikuj)</span>
                 </div>
                 {c.newsHeadlines.map((n, i) => (
                   <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-orange-500/8 border border-orange-500/20 hover:bg-orange-500/15 transition-colors group">
                     <ExternalLink className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-[10px] text-orange-300/90 leading-relaxed group-hover:text-orange-200">{n.headline}</div>
-                      <div className="text-[9px] text-muted-foreground mt-0.5">{n.source}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[9px] text-muted-foreground">{n.source}</span>
+                        {n.category && n.category !== 'other' && (
+                          <Badge className="text-[8px] px-1 py-0 bg-purple-500/15 text-purple-300 border-purple-500/30 border">
+                            {n.category}
+                          </Badge>
+                        )}
+                        {n.summary && (
+                          <span className="text-[9px] text-muted-foreground/60">{n.summary}</span>
+                        )}
+                      </div>
                     </div>
                   </a>
                 ))}
