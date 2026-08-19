@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRealPrices } from '@/lib/alpha-vantage';
+import { getRealPrices, fetchPreMarketVolumeBatch, isPreMarketHours } from '@/lib/alpha-vantage';
 import { getAllStocks } from '@/lib/market-data';
 import { analyzeFivePillarsBatch, type FivePillarsCandidate } from '@/lib/five-pillars-engine';
 import { getAllUSStockSnapshots, prefilterCandidates, getAllUSTickers } from '@/lib/us-stock-universe';
@@ -27,6 +27,8 @@ interface ScanSummary {
   floatSACount: number;
   floatFinvizCount: number;
   pillarPassRates: { rvol: number; momentum: number; catalyst: number; price: number; float: number };
+  isPreMarket: boolean;
+  preMarketStocksCount: number;
 }
 
 export async function GET() {
@@ -103,6 +105,8 @@ export async function GET() {
           strongMomentum: 0, highMomentum: 0, floatVerifiedCount: 0,
           floatSACount: 0, floatFinvizCount: 0,
           pillarPassRates: { rvol: 0, momentum: 0, catalyst: 0, price: 0, float: 0 },
+          isPreMarket: isPreMarketHours(),
+          preMarketStocksCount: 0,
         },
         timestamp: new Date().toISOString(),
         message: 'No US stocks passed pre-filter.',
@@ -243,6 +247,34 @@ export async function GET() {
       }
     }
 
+    // ═══ STEP 4.7: Pre-Market Volume (only during 4:00-9:30 AM ET) ═══
+    if (isPreMarketHours()) {
+      const preMarketTickers = enriched
+        .filter(c => c.status !== 'REJECTED')
+        .slice(0, 30)
+        .map(c => c.symbol);
+      
+      if (preMarketTickers.length > 0) {
+        console.log(`[5-PILLARS-MOMENTUM] Fetching pre-market volume for ${preMarketTickers.length} candidates...`);
+        try {
+          const preMarketData = await fetchPreMarketVolumeBatch(preMarketTickers, 5);
+          for (const candidate of enriched) {
+            const pm = preMarketData[candidate.symbol];
+            if (pm && pm.preMarketVolume > 0) {
+              candidate.preMarketVolume = pm.preMarketVolume;
+              candidate.preMarketPrice = pm.preMarketPrice;
+              candidate.preMarketChange = pm.preMarketChange;
+              candidate.preMarketRVol = pm.preMarketRVol;
+            }
+          }
+          const withPreVol = enriched.filter(c => c.preMarketVolume && c.preMarketVolume > 0).length;
+          console.log(`[5-PILLARS-MOMENTUM] Pre-market volume: ${withPreVol} stocks have pre-market data`);
+        } catch (err) {
+          console.log('[5-PILLARS-MOMENTUM] Pre-market volume fetch failed:', err);
+        }
+      }
+    }
+
     // ═══ STEP 5: Compute summary ═══
     const total = enriched.length;
     const summary: ScanSummary = {
@@ -265,6 +297,8 @@ export async function GET() {
         price: total ? (enriched.filter(r => r.passesPrice).length / total) * 100 : 0,
         float: total ? (enriched.filter(r => r.passesFloat).length / total) * 100 : 0,
       },
+      isPreMarket: isPreMarketHours(),
+      preMarketStocksCount: enriched.filter(r => r.preMarketVolume && r.preMarketVolume > 0).length,
     };
 
     cachedResult = { data: enriched, summary, fetchedAt: Date.now(), universeSize };

@@ -755,3 +755,154 @@ export function injectPricesIntoPrompt(userMessage: string, prices: Record<strin
 
   return userMessage + priceSection;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// PRE-MARKET VOLUME FETCHER
+// ═══════════════════════════════════════════════════════════════
+
+export interface PreMarketData {
+  preMarketVolume: number;
+  preMarketPrice: number | null;
+  preMarketChange: number | null;  // % change from previous close
+  preMarketRVol: number;  // pre-market volume vs 30-day avg
+  regularStartTimestamp: number;  // to identify pre vs regular candles
+}
+
+/**
+ * Check if current time is US pre-market hours (4:00 AM - 9:30 AM ET, Mon-Fri).
+ * Returns true during pre-market, false otherwise.
+ */
+export function isPreMarketHours(): boolean {
+  const now = new Date();
+  // Convert to US Eastern time
+  const etString = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const etDate = new Date(etString);
+  
+  // Check weekend
+  const day = etDate.getDay();
+  if (day === 0 || day === 6) return false;
+  
+  const hours = etDate.getHours();
+  const minutes = etDate.getMinutes();
+  const etMinutes = hours * 60 + minutes;
+  
+  // Pre-market: 4:00 AM (240 min) to 9:30 AM (570 min)
+  return etMinutes >= 240 && etMinutes < 570;
+}
+
+/**
+ * Fetch pre-market volume for a single stock from Yahoo Finance chart API.
+ * Uses 5-minute candles with includePrePost=true to extract pre-market volume.
+ */
+async function fetchPreMarketVolumeSingle(ticker: string): Promise<PreMarketData> {
+  const empty: PreMarketData = {
+    preMarketVolume: 0,
+    preMarketPrice: null,
+    preMarketChange: null,
+    preMarketRVol: 0,
+    regularStartTimestamp: 0,
+  };
+
+  try {
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=5m&range=1d&includePrePost=true`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return empty;
+
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return empty;
+
+    const meta = result.meta;
+    const regStart = meta?.currentTradingPeriod?.regular?.start || 0;
+    const preEnd = meta?.currentTradingPeriod?.pre?.end || regStart;
+    const timestamps = result.timestamp || [];
+    const volumes = result.indicators?.quote?.[0]?.volume || [];
+    const opens = result.indicators?.quote?.[0]?.open || [];
+
+    // Sum pre-market volume
+    let preVol = 0;
+    let lastPreOpen: number | null = null;
+    for (let i = 0; i < timestamps.length; i++) {
+      if (timestamps[i] < regStart && opens[i] !== null && opens[i] !== undefined) {
+        preVol += (volumes[i] || 0);
+        lastPreOpen = opens[i];
+      }
+    }
+
+    // Get pre-market price from meta
+    const prePrice = meta?.preMarketPrice || lastPreOpen;
+    const prevClose = meta?.chartPreviousClose || meta?.previousClose;
+    const preChange = (prePrice && prevClose && prevClose > 0) ? ((prePrice - prevClose) / prevClose) * 100 : null;
+
+    // Get 30-day average volume from meta or compute from regular market
+    const avgVol30d = meta?.averageDailyVolume3Month || meta?.regularMarketVolume || 0;
+    const preRVol = avgVol30d > 0 ? preVol / avgVol30d : 0;
+
+    return {
+      preMarketVolume: preVol,
+      preMarketPrice: prePrice,
+      preMarketChange: preChange !== null ? parseFloat(preChange.toFixed(2)) : null,
+      preMarketRVol: parseFloat(preRVol.toFixed(1)),
+      regularStartTimestamp: regStart,
+    };
+  } catch (err) {
+    return empty;
+  }
+}
+
+/**
+ * Fetch pre-market volume for multiple stocks in batches.
+ * Only fetches during pre-market hours (4:00-9:30 AM ET).
+ * Outside pre-market, returns empty data.
+ */
+export async function fetchPreMarketVolumeBatch(tickers: string[], concurrency = 5): Promise<Record<string, PreMarketData>> {
+  const results: Record<string, PreMarketData> = {};
+  const empty: PreMarketData = {
+    preMarketVolume: 0,
+    preMarketPrice: null,
+    preMarketChange: null,
+    preMarketRVol: 0,
+    regularStartTimestamp: 0,
+  };
+
+  // Only fetch during pre-market hours
+  if (!isPreMarketHours()) {
+    console.log('[PRE-MARKET] Not in pre-market hours — skipping volume fetch');
+    for (const t of tickers) results[t] = empty;
+    return results;
+  }
+
+  console.log(`[PRE-MARKET] Fetching pre-market volume for ${tickers.length} stocks...`);
+
+  for (let i = 0; i < tickers.length; i += concurrency) {
+    const batch = tickers.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (ticker) => {
+        const data = await fetchPreMarketVolumeSingle(ticker);
+        return { ticker, data };
+      })
+    );
+
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled') {
+        results[r.value.ticker] = r.value.data;
+      }
+    }
+
+    if (i + concurrency < tickers.length) {
+      await new Promise(r => setTimeout(r, 200)); // Rate limit
+    }
+  }
+
+  const withVol = Object.values(results).filter(r => r.preMarketVolume > 0).length;
+  console.log(`[PRE-MARKET] Got volume for ${withVol}/${tickers.length} stocks`);
+
+  return results;
+}

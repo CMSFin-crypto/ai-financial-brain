@@ -81,6 +81,12 @@ export interface FivePillarsCandidate {
   historicalScore: number;            // 0-100 composite score from historical analysis
   historicalPattern: PatternAnalysis;  // full historical analysis
 
+  // Pre-Market data
+  preMarketVolume: number | null;
+  preMarketPrice: number | null;
+  preMarketChange: number | null;  // % change pre-market
+  preMarketRVol: number | null;  // pre-market volume vs 30-day avg
+
   // Rise reason + News + Caution fields
   riseReason: string;                   // AI-style explanation of WHY it's moving
   cautionSignals: string[];             // When to be careful
@@ -507,6 +513,10 @@ export async function analyzeFivePillarsCandidate(
       takeProfitTargets,
       historicalScore,
       historicalPattern,
+      preMarketVolume: null,
+      preMarketPrice: null,
+      preMarketChange: null,
+      preMarketRVol: null,
       riseReason,
       cautionSignals,
       newsHeadlines: [],

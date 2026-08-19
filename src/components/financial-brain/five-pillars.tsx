@@ -155,6 +155,10 @@ interface Candidate {
   shortFloatPct: number | null;
   sharesOutstandingM: number | null;
   shortDaysToCover: number | null;
+  preMarketVolume: number | null;
+  preMarketPrice: number | null;
+  preMarketChange: number | null;
+  preMarketRVol: number | null;
 }
 
 interface ScanSummary {
@@ -171,6 +175,8 @@ interface ScanSummary {
   floatVerifiedCount?: number;
   floatSACount?: number;
   floatFinvizCount?: number;
+  isPreMarket?: boolean;
+  preMarketStocksCount?: number;
 }
 
 type StatusFilter = 'ALL' | 'ELIGIBLE' | 'WATCH' | 'FLOAT_REVIEW' | 'REJECTED';
@@ -479,10 +485,15 @@ export function FivePillars() {
         return (
           <div className="space-y-3">
             {/* Section Header — ALWAYS visible */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Trophy className="w-5 h-5 text-amber-400" />
               <span className="text-sm font-bold text-foreground">TOP 5 ELIGIBLE + TOP 5 WATCH</span>
               <span className="text-[10px] text-muted-foreground ml-1">— renditur sipas Historical Score</span>
+              {summary?.isPreMarket && (
+                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/40 text-[9px] px-1.5 animate-pulse">
+                  PRE-MARKET {(summary.preMarketStocksCount ?? 0) > 0 ? `(${summary.preMarketStocksCount} me volum)` : '(asnje volum ende)'}
+                </Badge>
+              )}
             </div>
 
             {/* No ELIGIBLE/WATCH message */}
@@ -681,6 +692,11 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
                 ${c.price.toFixed(2)}
               </span>
               {' '} RVol: <span className={c.passesRvol ? 'text-blue-400' : ''}>{c.relativeVolume}x</span>
+              {c.preMarketVolume && c.preMarketVolume > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] ml-1 bg-orange-500/15 text-orange-400 border border-orange-500/30 px-1 py-0 rounded" title={"Pre-Market Vol: " + (c.preMarketVolume / 1e6).toFixed(1) + "M | RVol: " + (c.preMarketRVol || 0) + "x"}>
+                  PRE {c.preMarketRVol && c.preMarketRVol > 0 ? c.preMarketRVol + 'x' : ((c.preMarketVolume / 1e6).toFixed(1) + 'M')}
+                </span>
+              )}
               {' '}
               {/* FLOAT with verification badge */}
               <span className={c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : ''}>
