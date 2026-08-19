@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
-// YAHOO FINANCE FLOAT FETCHER — Real float shares from Yahoo
-// Returns floatShares, sharesOutstanding, shortRatio, etc.
-// Primary source: Yahoo quoteSummary API (most accurate free data)
+// FLOAT FETCHER — Real float shares from StockAnalysis.com
+// Yahoo Finance quoteSummary now requires crumb/cookie (blocked).
+// StockAnalysis.com has accurate float, shares out, short % in HTML.
+// Fallback: Finviz scraper (already separate module).
 // ═══════════════════════════════════════════════════════════════
 
 export interface YahooFloatData {
@@ -11,25 +12,51 @@ export interface YahooFloatData {
   sharesOutM: number | null;         // Total shares out in millions
   shortRatio: number | null;         // Short ratio (days to cover)
   shortPctOfFloat: number | null;    // Short % of float
-  name: string;
-  sector: string;
-  industry: string;
-  source: 'yahoo';
+  shortInterest: number | null;      // Short interest (actual shares)
+  source: 'stockanalysis';
   fetchedAt: number;
 }
 
-const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  'Accept': 'application/json',
-  'Accept-Language': 'en-US,en;q=0.9',
-};
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // In-memory cache
 const cache = new Map<string, { data: YahooFloatData; time: number }>();
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
 /**
- * Fetch float data for a single ticker from Yahoo Finance.
+ * Parse a value like "14.57B", "214.14M", "1,234,567" into a number.
+ */
+function parseShareValue(str: string | null | undefined): number | null {
+  if (!str || str === 'n/a') return null;
+  const cleaned = str.replace(/,/g, '').trim();
+  const bMatch = cleaned.match(/^([\d.]+)\s*B$/i);
+  if (bMatch) return parseFloat(bMatch[1]) * 1e9;
+  const mMatch = cleaned.match(/^([\d.]+)\s*M$/i);
+  if (mMatch) return parseFloat(mMatch[1]) * 1e6;
+  const num = parseFloat(cleaned);
+  return isNaN(num) || num <= 0 ? null : num;
+}
+
+/**
+ * Extract JSON-like data objects from StockAnalysis.com HTML.
+ * They have format: {id:"float",title:"Float",value:"14.57B",hover:"14,569,172,097"}
+ * We extract the hover value (exact number) when available, else the value field.
+ */
+function extractDataObjects(html: string): Map<string, { value: string; hover: string }> {
+  const dataMap = new Map<string, { value: string; hover: string }>();
+
+  // Match patterns like: {id:"float",title:"Float",value:"14.57B",hover:"14,569,172,097"}
+  const regex = /\{id:"([^"]+)",title:"[^"]*",value:"([^"]*)",hover:"([^"]*)"\}/g;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    dataMap.set(match[1], { value: match[2], hover: match[3] });
+  }
+
+  return dataMap;
+}
+
+/**
+ * Fetch float data for a single ticker from StockAnalysis.com.
  */
 export async function fetchYahooFloat(ticker: string): Promise<YahooFloatData | null> {
   const key = ticker.toUpperCase();
@@ -38,81 +65,81 @@ export async function fetchYahooFloat(ticker: string): Promise<YahooFloatData | 
     return cached.data;
   }
 
-  // Try multiple Yahoo endpoints
-  const endpoints = [
-    `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${key}?modules=defaultKeyStatistics,summaryDetail,financialData&corsDomain=finance.yahoo.com`,
-    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${key}?modules=defaultKeyStatistics,summaryDetail,financialData&corsDomain=finance.yahoo.com`,
-  ];
+  try {
+    const url = `https://stockanalysis.com/stocks/${key.toLowerCase()}/statistics/`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: {
+        'User-Agent': BROWSER_UA,
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
 
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(8000),
-        headers: BROWSER_HEADERS,
-      });
+    if (!res.ok) return null;
 
-      if (!res.ok) continue;
+    const html = await res.text();
 
-      const json = await res.json();
-      const result = json?.quoteSummary?.result?.[0];
-      if (!result) continue;
+    // Extract all data objects from the embedded JSON
+    const dataMap = extractDataObjects(html);
 
-      // Extract from defaultKeyStatistics
-      const stats = result.defaultKeyStatistics || {};
-      const detail = result.summaryDetail || {};
-      const finData = result.financialData || {};
+    // Get float — prefer hover (exact number), fallback to value (formatted)
+    const floatObj = dataMap.get('float');
+    const floatShares = floatObj
+      ? (parseShareValue(floatObj.hover) || parseShareValue(floatObj.value))
+      : null;
 
-      // Float shares (raw number of shares)
-      const floatRaw = stats.floatShares?.raw ?? stats.floatShares ?? null;
-      // Shares outstanding
-      const sharesOutRaw = stats.sharesOutstanding?.raw ?? detail.sharesOutstanding?.raw ?? null;
-      // Short ratio (days to cover)
-      const shortRatio = detail.shortRatio?.raw ?? null;
-      // Short % of float
-      const shortPct = stats.shortPercentOfFloat?.raw ?? detail.shortPercentOfFloat?.raw ?? null;
+    // Get shares outstanding
+    const sharesObj = dataMap.get('sharesOutClass');
+    const sharesOutstanding = sharesObj
+      ? (parseShareValue(sharesObj.hover) || parseShareValue(sharesObj.value))
+      : null;
 
-      // Company info
-      const priceInfo = result.price || {};
-      const name = priceInfo.shortName || priceInfo.longName || key;
-      const sector = priceInfo.sector || '';
-      const industry = priceInfo.industry || '';
+    // Get short % of float
+    const shortFloatObj = dataMap.get('shortFloat');
+    const shortPctOfFloat = shortFloatObj && shortFloatObj.value !== 'n/a'
+      ? parseFloat(shortFloatObj.hover) || parseFloat(shortFloatObj.value.replace(/%/g, ''))
+      : null;
 
-      if (floatRaw === null && sharesOutRaw === null) continue;
+    // Get short ratio (days to cover)
+    const shortRatioObj = dataMap.get('shortRatio');
+    const shortRatio = shortRatioObj && shortRatioObj.value !== 'n/a'
+      ? parseFloat(shortRatioObj.hover) || parseFloat(shortRatioObj.value)
+      : null;
 
-      const floatShares = typeof floatRaw === 'number' && floatRaw > 0 ? floatRaw : null;
-      const sharesOut = typeof sharesOutRaw === 'number' && sharesOutRaw > 0 ? sharesOutRaw : null;
+    // Get short interest (actual shares)
+    const shortIntObj = dataMap.get('shortInterest');
+    const shortInterest = shortIntObj
+      ? (parseShareValue(shortIntObj.hover) || parseShareValue(shortIntObj.value))
+      : null;
 
-      const data: YahooFloatData = {
-        floatShares,
-        floatM: floatShares ? floatShares / 1e6 : null,
-        sharesOutstanding: sharesOut,
-        sharesOutM: sharesOut ? sharesOut / 1e6 : null,
-        shortRatio: typeof shortRatio === 'number' ? shortRatio : null,
-        shortPctOfFloat: typeof shortPct === 'number' ? shortPct : null,
-        name,
-        sector,
-        industry,
-        source: 'yahoo',
-        fetchedAt: Date.now(),
-      };
+    if (floatShares === null && sharesOutstanding === null) return null;
 
-      cache.set(key, { data, time: Date.now() });
-      return data;
-    } catch {
-      continue;
-    }
+    const data: YahooFloatData = {
+      floatShares,
+      floatM: floatShares ? floatShares / 1e6 : null,
+      sharesOutstanding,
+      sharesOutM: sharesOutstanding ? sharesOutstanding / 1e6 : null,
+      shortRatio: shortRatio !== null && !isNaN(shortRatio) ? shortRatio : null,
+      shortPctOfFloat: shortPctOfFloat !== null && !isNaN(shortPctOfFloat) ? shortPctOfFloat : null,
+      shortInterest,
+      source: 'stockanalysis',
+      fetchedAt: Date.now(),
+    };
+
+    cache.set(key, { data, time: Date.now() });
+    return data;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 /**
  * Fetch float data for multiple tickers (batched, concurrent).
- * Higher concurrency than Finviz since Yahoo API is more reliable.
  */
 export async function fetchYahooFloatBatch(
   tickers: string[],
-  concurrency = 5
+  concurrency = 4
 ): Promise<Record<string, YahooFloatData>> {
   const results: Record<string, YahooFloatData> = {};
 
@@ -128,9 +155,9 @@ export async function fetchYahooFloatBatch(
       }
     });
 
-    // Small delay between batches
+    // Delay between batches to be respectful
     if (i + concurrency < tickers.length) {
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 300));
     }
   }
 

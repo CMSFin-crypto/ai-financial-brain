@@ -151,7 +151,7 @@ interface Candidate {
   catalystAnalysis: CatalystAnalysis | null;
   finvizData: FinvizData | null;
   floatVerified: boolean;
-  floatSource: 'yahoo' | 'finviz' | 'static' | null;
+  floatSource: 'stockanalysis' | 'finviz' | 'static' | null;
   shortFloatPct: number | null;
   sharesOutstandingM: number | null;
   shortDaysToCover: number | null;
@@ -169,7 +169,7 @@ interface ScanSummary {
   highMomentum: number;
   pillarPassRates: { rvol: number; momentum: number; catalyst: number; price: number; float: number };
   floatVerifiedCount?: number;
-  floatYahooCount?: number;
+  floatSACount?: number;
   floatFinvizCount?: number;
 }
 
@@ -387,8 +387,8 @@ export function FivePillars() {
           </Badge>
           {(summary.floatVerifiedCount ?? 0) > 0 && (
             <Badge className="bg-purple-500/15 text-purple-300 border-purple-500/30 border text-[10px]">
-              Float: {(summary.floatYahooCount ?? 0) > 0 && <span className="text-purple-300">{(summary.floatYahooCount ?? 0)} Yahoo</span>}
-              {(summary.floatYahooCount ?? 0) > 0 && (summary.floatFinvizCount ?? 0) > 0 && <span className="text-muted-foreground"> + </span>}
+              Float: {(summary.floatSACount ?? 0) > 0 && <span className="text-purple-300">{(summary.floatSACount ?? 0)} StockAnalysis</span>}
+              {(summary.floatSACount ?? 0) > 0 && (summary.floatFinvizCount ?? 0) > 0 && <span className="text-muted-foreground"> + </span>}
               {(summary.floatFinvizCount ?? 0) > 0 && <span className="text-emerald-300">{(summary.floatFinvizCount ?? 0)} Finviz</span>}
               {' '}verified
             </Badge>
@@ -688,8 +688,8 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
                 {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
               </span>
               {c.floatVerified && (
-                <span className={"inline-flex items-center gap-0.5 text-[9px] ml-0.5 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} title={"Float i verifikuar nga " + (c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz')}>
-                  <CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'yahoo' ? 'Yahoo' : c.floatSource === 'finviz' ? 'Finviz' : 'Verified'}
+                <span className={"inline-flex items-center gap-0.5 text-[9px] ml-0.5 " + (c.floatSource === 'stockanalysis' ? 'text-purple-400' : 'text-emerald-400')} title={"Float i verifikuar nga " + (c.floatSource === 'stockanalysis' ? 'StockAnalysis.com' : 'Finviz')}>
+                  <CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'stockanalysis' ? 'SA' : c.floatSource === 'finviz' ? 'Finviz' : 'Verified'}
                 </span>
               )}
               {!c.floatVerified && c.floatShares !== null && (
@@ -732,12 +732,12 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
           <span className="text-[10px] text-amber-300/80 font-medium">Float:</span>
           {c.floatVerified ? (
             <span className="flex items-center gap-1">
-              <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} />
+              <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'stockanalysis' ? 'text-purple-400' : 'text-emerald-400')} />
               <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
                 {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
               </span>
-              <span className={"text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
-                ({c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz'})
+              <span className={"text-[9px] " + (c.floatSource === 'stockanalysis' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
+                ({c.floatSource === 'stockanalysis' ? 'StockAnalysis.com' : 'Finviz'})
               </span>
             </span>
           ) : (
@@ -1063,7 +1063,7 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
             <span className="text-muted-foreground">Float:</span>
             <span className={"font-medium " + (c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground')}>
               {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown'}
-              {c.floatVerified && <span className={"inline-flex items-center gap-0.5 ml-1 text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')}><CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'yahoo' ? 'Yahoo' : 'Finviz'}</span>}
+              {c.floatVerified && <span className={"inline-flex items-center gap-0.5 ml-1 text-[9px] " + (c.floatSource === 'stockanalysis' ? 'text-purple-400' : 'text-emerald-400')}><CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'stockanalysis' ? 'SA' : 'Finviz'}</span>}
               {!c.floatVerified && c.floatShares !== null && <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] text-yellow-500/60"><CircleX className="w-2.5 h-2.5" />static</span>}
               {c.shortFloatPct !== null && <span className={"ml-1 text-[9px] " + (c.shortFloatPct >= 15 ? 'text-red-400' : 'text-muted-foreground')}>Short: {c.shortFloatPct.toFixed(1)}%</span>}
             </span>
@@ -1152,12 +1152,12 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
                 <span className="text-[10px] text-amber-300/80 font-medium">Float Data:</span>
                 {c.floatVerified ? (
                   <span className="flex items-center gap-1">
-                    <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} />
+                    <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'stockanalysis' ? 'text-purple-400' : 'text-emerald-400')} />
                     <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
                       Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
                     </span>
-                    <span className={"text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
-                      ({c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz'})
+                    <span className={"text-[9px] " + (c.floatSource === 'stockanalysis' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
+                      ({c.floatSource === 'stockanalysis' ? 'StockAnalysis.com' : 'Finviz'})
                     </span>
                   </span>
                 ) : (

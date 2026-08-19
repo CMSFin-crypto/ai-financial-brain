@@ -23,16 +23,10 @@ interface ScanSummary {
   floatReview: number;
   strongMomentum: number;
   highMomentum: number;
-  floatVerifiedCount: number;    // How many got real float data
-  floatYahooCount: number;       // How many from Yahoo
-  floatFinvizCount: number;      // How many from Finviz fallback
-  pillarPassRates: {
-    rvol: number;
-    momentum: number;
-    catalyst: number;
-    price: number;
-    float: number;
-  };
+  floatVerifiedCount: number;
+  floatSACount: number;
+  floatFinvizCount: number;
+  pillarPassRates: { rvol: number; momentum: number; catalyst: number; price: number; float: number };
 }
 
 export async function GET() {
@@ -53,7 +47,6 @@ export async function GET() {
     let universeSize = 0;
     let toAnalyze: string[] = [];
 
-    // Method A: NASDAQ Screener + Yahoo (ALL US stocks)
     const snapshots = await getAllUSStockSnapshots();
     if (snapshots.length > 100) {
       universeSize = snapshots.length;
@@ -71,14 +64,11 @@ export async function GET() {
       console.log(`[5-PILLARS-MOMENTUM] Pre-filtered to ${toAnalyze.length} candidates from ${universeSize} US stocks`);
     }
 
-    // Method B: Fallback
     if (toAnalyze.length < 5) {
       console.log('[5-PILLARS-MOMENTUM] Fallback: fetching from NASDAQ Trader + Yahoo individual prices');
-
       let allTickers = await getAllUSTickers();
       const allStocks = getAllStocks();
       const mainTickers = Object.keys(allStocks);
-
       const SMALL_CAP_FALLBACK = [
         'NVAX','MRNA','AKBA','ARDX','AYTU','KRTX','LGVN','MRTX','VKTX','VSTM',
         'CLSK','IONQ','SOUN','RGTI','FUBO','MARA','SMCI','UPST','PATH','VERI',
@@ -91,22 +81,15 @@ export async function GET() {
       const fallbackSet = new Set([...allTickers, ...mainTickers, ...SMALL_CAP_FALLBACK]);
       allTickers = Array.from(fallbackSet);
       universeSize = allTickers.length;
-      console.log(`[5-PILLARS-MOMENTUM] Fallback universe: ${universeSize} tickers`);
-
       try {
         realPrices = await getRealPrices(allTickers.slice(0, 2000));
-        console.log(`[5-PILLARS-MOMENTUM] Got ${Object.keys(realPrices).length} prices`);
-      } catch {
-        console.log('[5-PILLARS-MOMENTUM] Price fetch failed in fallback');
-      }
-
+      } catch { /* ignore */ }
       toAnalyze = Object.keys(realPrices).filter(t => {
         const p = realPrices[t];
         if (!p || p.price <= 0) return false;
         if (p.price < 0.8 || p.price > 25) return false;
         return p.change >= 2;
       });
-
       toAnalyze.sort((a, b) => (realPrices[b]?.change || 0) - (realPrices[a]?.change || 0));
       toAnalyze = toAnalyze.slice(0, 500);
     }
@@ -118,38 +101,36 @@ export async function GET() {
           totalUniverse: universeSize, totalPreFiltered: 0, totalAnalyzed: 0,
           eligible: 0, watch: 0, rejected: 0, floatReview: 0,
           strongMomentum: 0, highMomentum: 0, floatVerifiedCount: 0,
-          floatYahooCount: 0, floatFinvizCount: 0,
+          floatSACount: 0, floatFinvizCount: 0,
           pillarPassRates: { rvol: 0, momentum: 0, catalyst: 0, price: 0, float: 0 },
         },
         timestamp: new Date().toISOString(),
-        message: 'No US stocks passed pre-filter. Market may be quiet.',
+        message: 'No US stocks passed pre-filter.',
       });
     }
 
-    // ═══ STEP 2: Fetch REAL float from Yahoo Finance for ALL candidates ═══
-    // This replaces the old static float from market-data.ts
-    console.log(`[5-PILLARS-MOMENTUM] Fetching Yahoo Finance float for ${toAnalyze.length} candidates...`);
+    // ═══ STEP 2: Fetch REAL float from StockAnalysis.com for ALL candidates ═══
+    console.log(`[5-PILLARS-MOMENTUM] Fetching StockAnalysis float for ${toAnalyze.length} candidates...`);
     let floatMap: Record<string, number | null> = {};
-    let yahooFloatData: Record<string, { floatM: number; source: 'yahoo' }> = {};
-    let yahooSuccessCount = 0;
+    let saFloatData: Record<string, { floatM: number; source: 'stockanalysis' }> = {};
+    let saSuccessCount = 0;
 
     try {
-      const yahooMap = await fetchYahooFloatBatch(toAnalyze, 5);
-      yahooSuccessCount = Object.keys(yahooMap).length;
-      console.log(`[5-PILLARS-MOMENTUM] Yahoo float: got ${yahooSuccessCount}/${toAnalyze.length} stocks`);
+      const saMap = await fetchYahooFloatBatch(toAnalyze, 4);
+      saSuccessCount = Object.keys(saMap).length;
+      console.log(`[5-PILLARS-MOMENTUM] StockAnalysis float: got ${saSuccessCount}/${toAnalyze.length} stocks`);
 
       for (const ticker of toAnalyze) {
-        const yd = yahooMap[ticker];
-        if (yd && yd.floatM !== null) {
-          floatMap[ticker] = yd.floatM;
-          yahooFloatData[ticker] = { floatM: yd.floatM, source: 'yahoo' };
+        const sd = saMap[ticker];
+        if (sd && sd.floatM !== null) {
+          floatMap[ticker] = sd.floatM;
+          saFloatData[ticker] = { floatM: sd.floatM, source: 'stockanalysis' };
         } else {
-          floatMap[ticker] = null; // Will get Finviz fallback later
+          floatMap[ticker] = null;
         }
       }
     } catch (err) {
-      console.log('[5-PILLARS-MOMENTUM] Yahoo float batch failed (non-critical):', err);
-      // Fallback to static data
+      console.log('[5-PILLARS-MOMENTUM] StockAnalysis float batch failed (non-critical):', err);
       const allStocks = getAllStocks();
       for (const ticker of toAnalyze) {
         const profile = allStocks[ticker];
@@ -158,31 +139,23 @@ export async function GET() {
     }
 
     // ═══ STEP 3: Run 5 Pillars analysis ═══
-    const results = await analyzeFivePillarsBatch(
-      toAnalyze,
-      realPrices,
-      floatMap,
-      10
-    );
-
+    const results = await analyzeFivePillarsBatch(toAnalyze, realPrices, floatMap, 10);
     console.log(`[5-PILLARS-MOMENTUM] Analysis complete: ${Object.keys(results).length} results`);
 
     // ═══ STEP 4: Enrich and sort ═══
     const allStocks = getAllStocks();
     const enriched: FivePillarsCandidate[] = Object.values(results).map(r => {
       const profile = allStocks[r.symbol];
-      const yahooData = yahooFloatData[r.symbol];
+      const saData = saFloatData[r.symbol];
       return {
         ...r,
         company: profile?.company || r.symbol,
         sector: profile?.sector || 'Momentum',
-        // Mark float source
-        floatVerified: !!yahooData,
-        floatSource: yahooData?.source || (r.floatShares ? 'static' : null),
+        floatVerified: !!saData,
+        floatSource: saData?.source || (r.floatShares ? 'static' : null),
       };
     });
 
-    // Sort: ELIGIBLE first, then WATCH, then FLOAT_REVIEW, then REJECTED
     const statusOrder: Record<string, number> = { ELIGIBLE: 0, WATCH: 1, FLOAT_REVIEW: 2, REJECTED: 3 };
     enriched.sort((a, b) => {
       if (statusOrder[a.status] !== statusOrder[b.status]) return statusOrder[a.status] - statusOrder[b.status];
@@ -197,7 +170,7 @@ export async function GET() {
     let finvizSuccessCount = 0;
 
     if (topCandidates.length > 0) {
-      // Fetch news (5 per ticker)
+      // Fetch news
       try {
         console.log(`[5-PILLARS-MOMENTUM] Fetching news for ${topCandidates.length} top candidates...`);
         const newsMap = await fetchStockNewsBatch(topCandidates.map(c => c.symbol), 5);
@@ -208,19 +181,17 @@ export async function GET() {
             candidate.catalystAnalysis = analyzeCatalystFromNews(headlines, candidate.dailyChangePct);
           }
         }
-        console.log(`[5-PILLARS-MOMENTUM] News fetched for ${Object.keys(newsMap).length} stocks`);
       } catch (err) {
         console.log('[5-PILLARS-MOMENTUM] News fetch failed (non-critical):', err);
       }
 
-      // Fetch Finviz float for candidates that STILL don't have float (Yahoo missed them)
+      // Finviz fallback for stocks that STILL don't have float
       const missingFloatCandidates = topCandidates.filter(c => !c.floatVerified && c.floatShares === null);
       if (missingFloatCandidates.length > 0) {
         try {
-          console.log(`[5-PILLARS-MOMENTUM] Fetching Finviz float fallback for ${missingFloatCandidates.length} stocks...`);
+          console.log(`[5-PILLARS-MOMENTUM] Fetching Finviz fallback for ${missingFloatCandidates.length} stocks...`);
           const finvizMap = await fetchFinvizFloatBatch(missingFloatCandidates.map(c => c.symbol));
           finvizSuccessCount = Object.keys(finvizMap).length;
-          console.log(`[5-PILLARS-MOMENTUM] Finviz fallback: got ${finvizSuccessCount} stocks`);
 
           for (const candidate of enriched) {
             const fd = finvizMap[candidate.symbol];
@@ -238,28 +209,16 @@ export async function GET() {
                   detail: `Float (Finviz): ${fd.floatM.toFixed(1)}M shares${fd.floatM <= 20 ? ' — supply/demand imbalance' : ` (duhet ≤20M)`}`,
                 };
               }
-              if (fd.shortFloat !== null) {
-                candidate.shortFloatPct = fd.shortFloat;
-              }
-              if (fd.name && (!candidate.company || candidate.company === candidate.symbol)) {
-                candidate.company = fd.name;
-              }
-              if (fd.sector && (!candidate.sector || candidate.sector === 'Momentum')) {
-                candidate.sector = fd.sector;
-              }
-              // Re-compute status with new float data
+              if (fd.shortFloat !== null) candidate.shortFloatPct = fd.shortFloat;
+              if (fd.name && (!candidate.company || candidate.company === candidate.symbol)) candidate.company = fd.name;
+              if (fd.sector && (!candidate.sector || candidate.sector === 'Momentum')) candidate.sector = fd.sector;
               const pillarCount = [candidate.passesRvol, candidate.passesMomentum, candidate.passesCatalyst, candidate.passesPrice, candidate.passesFloat].filter(Boolean).length;
               candidate.pillarCount = pillarCount;
               if (candidate.floatVerified) {
-                if (pillarCount === 5 && candidate.catalystStatus !== 'MISSING') {
-                  candidate.status = 'ELIGIBLE';
-                } else if (pillarCount >= 4) {
-                  candidate.status = 'WATCH';
-                } else if (pillarCount >= 3 && (candidate.passesRvol || candidate.passesMomentum)) {
-                  candidate.status = 'FLOAT_REVIEW';
-                } else {
-                  candidate.status = 'REJECTED';
-                }
+                if (pillarCount === 5 && candidate.catalystStatus !== 'MISSING') candidate.status = 'ELIGIBLE';
+                else if (pillarCount >= 4) candidate.status = 'WATCH';
+                else if (pillarCount >= 3 && (candidate.passesRvol || candidate.passesMomentum)) candidate.status = 'FLOAT_REVIEW';
+                else candidate.status = 'REJECTED';
               }
             }
           }
@@ -268,17 +227,16 @@ export async function GET() {
         }
       }
 
-      // Also update Yahoo-sourced candidates with extra Yahoo data (shares outstanding, short ratio)
-      // This data was already fetched, just needs to be attached
+      // Attach extra StockAnalysis data (shares outstanding, short ratio) to verified candidates
       const { fetchYahooFloat } = await import('@/lib/yahoo-float-fetcher');
       for (const candidate of topCandidates) {
-        if (candidate.floatSource === 'yahoo') {
+        if (candidate.floatSource === 'stockanalysis') {
           try {
-            const yData = await fetchYahooFloat(candidate.symbol);
-            if (yData) {
-              if (yData.sharesOutM !== null) candidate.sharesOutstandingM = yData.sharesOutM;
-              if (yData.shortPctOfFloat !== null) candidate.shortFloatPct = yData.shortPctOfFloat;
-              if (yData.shortRatio !== null) candidate.shortDaysToCover = yData.shortRatio;
+            const sd = await fetchYahooFloat(candidate.symbol);
+            if (sd) {
+              if (sd.sharesOutM !== null) candidate.sharesOutstandingM = sd.sharesOutM;
+              if (sd.shortPctOfFloat !== null) candidate.shortFloatPct = sd.shortPctOfFloat;
+              if (sd.shortRatio !== null) candidate.shortDaysToCover = sd.shortRatio;
             }
           } catch { /* ignore */ }
         }
@@ -298,7 +256,7 @@ export async function GET() {
       strongMomentum: enriched.filter(r => r.strongMomentum).length,
       highMomentum: enriched.filter(r => r.highMomentum).length,
       floatVerifiedCount: enriched.filter(r => r.floatVerified).length,
-      floatYahooCount: enriched.filter(r => r.floatSource === 'yahoo').length,
+      floatSACount: enriched.filter(r => r.floatSource === 'stockanalysis').length,
       floatFinvizCount: enriched.filter(r => r.floatSource === 'finviz').length,
       pillarPassRates: {
         rvol: total ? (enriched.filter(r => r.passesRvol).length / total) * 100 : 0,
@@ -309,34 +267,16 @@ export async function GET() {
       },
     };
 
-    cachedResult = {
-      data: enriched,
-      summary,
-      fetchedAt: Date.now(),
-      universeSize,
-    };
+    cachedResult = { data: enriched, summary, fetchedAt: Date.now(), universeSize };
 
-    console.log(`[5-PILLARS-MOMENTUM] Universe: ${universeSize} | Pre-filtered: ${toAnalyze.length} | ELIGIBLE: ${summary.eligible} | WATCH: ${summary.watch} | REJECTED: ${summary.rejected} | FLOAT_REVIEW: ${summary.floatReview} | Float verified: ${summary.floatVerifiedCount} (Yahoo: ${summary.floatYahooCount}, Finviz: ${summary.floatFinvizCount})`);
+    console.log(`[5-PILLARS-MOMENTUM] Done | ELIGIBLE: ${summary.eligible} | WATCH: ${summary.watch} | Float verified: ${summary.floatVerifiedCount} (StockAnalysis: ${summary.floatSACount}, Finviz: ${summary.floatFinvizCount})`);
 
-    return NextResponse.json({
-      candidates: enriched,
-      summary,
-      timestamp: new Date().toISOString(),
-      cached: false,
-    });
+    return NextResponse.json({ candidates: enriched, summary, timestamp: new Date().toISOString(), cached: false });
   } catch (error) {
     console.error('[5-PILLARS-MOMENTUM] Error:', error);
-
     if (cachedResult) {
-      return NextResponse.json({
-        candidates: cachedResult.data,
-        summary: cachedResult.summary,
-        cached: true,
-        stale: true,
-        timestamp: new Date().toISOString(),
-      });
+      return NextResponse.json({ candidates: cachedResult.data, summary: cachedResult.summary, cached: true, stale: true, timestamp: new Date().toISOString() });
     }
-
     return NextResponse.json({ error: 'Error in 5 Pillars Momentum scan' }, { status: 502 });
   }
 }

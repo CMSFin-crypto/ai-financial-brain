@@ -90,7 +90,7 @@ export interface FivePillarsCandidate {
   // Verified float data from Finviz
   finvizData: FinvizData | null;
   floatVerified: boolean;               // Whether float came from a real source (Yahoo/Finviz) vs static list
-  floatSource: 'yahoo' | 'finviz' | 'static' | null;  // Which source provided float
+  floatSource: 'stockanalysis' | 'finviz' | 'static' | null;  // Which source provided float
   shortFloatPct: number | null;         // Short % of float
   sharesOutstandingM: number | null;    // Total shares outstanding (millions)
   shortDaysToCover: number | null;      // Short ratio (days to cover)
