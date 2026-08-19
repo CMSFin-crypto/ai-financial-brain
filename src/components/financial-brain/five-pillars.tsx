@@ -151,7 +151,10 @@ interface Candidate {
   catalystAnalysis: CatalystAnalysis | null;
   finvizData: FinvizData | null;
   floatVerified: boolean;
+  floatSource: 'yahoo' | 'finviz' | 'static' | null;
   shortFloatPct: number | null;
+  sharesOutstandingM: number | null;
+  shortDaysToCover: number | null;
 }
 
 interface ScanSummary {
@@ -165,6 +168,9 @@ interface ScanSummary {
   strongMomentum: number;
   highMomentum: number;
   pillarPassRates: { rvol: number; momentum: number; catalyst: number; price: number; float: number };
+  floatVerifiedCount?: number;
+  floatYahooCount?: number;
+  floatFinvizCount?: number;
 }
 
 type StatusFilter = 'ALL' | 'ELIGIBLE' | 'WATCH' | 'FLOAT_REVIEW' | 'REJECTED';
@@ -379,6 +385,14 @@ export function FivePillars() {
           <Badge className="bg-muted/30 text-muted-foreground border border-border/50 text-[10px]">
             {summary.totalPreFiltered || summary.totalAnalyzed} analyzed
           </Badge>
+          {(summary.floatVerifiedCount ?? 0) > 0 && (
+            <Badge className="bg-purple-500/15 text-purple-300 border-purple-500/30 border text-[10px]">
+              Float: {(summary.floatYahooCount ?? 0) > 0 && <span className="text-purple-300">{(summary.floatYahooCount ?? 0)} Yahoo</span>}
+              {(summary.floatYahooCount ?? 0) > 0 && (summary.floatFinvizCount ?? 0) > 0 && <span className="text-muted-foreground"> + </span>}
+              {(summary.floatFinvizCount ?? 0) > 0 && <span className="text-emerald-300">{(summary.floatFinvizCount ?? 0)} Finviz</span>}
+              {' '}verified
+            </Badge>
+          )}
         </div>
       )}
 
@@ -674,8 +688,13 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
                 {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
               </span>
               {c.floatVerified && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-400 ml-0.5" title="Float i verifikuar nga Finviz">
-                  <CircleCheck className="w-2.5 h-2.5" />Verified
+                <span className={"inline-flex items-center gap-0.5 text-[9px] ml-0.5 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} title={"Float i verifikuar nga " + (c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz')}>
+                  <CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'yahoo' ? 'Yahoo' : c.floatSource === 'finviz' ? 'Finviz' : 'Verified'}
+                </span>
+              )}
+              {!c.floatVerified && c.floatShares !== null && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-yellow-500/60 ml-0.5" title="Float nga te dhena statike — verifiko">
+                  <CircleX className="w-2.5 h-2.5" />static
                 </span>
               )}
               {c.shortFloatPct !== null && c.shortFloatPct > 10 && (
@@ -713,29 +732,36 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
           <span className="text-[10px] text-amber-300/80 font-medium">Float:</span>
           {c.floatVerified ? (
             <span className="flex items-center gap-1">
-              <CircleCheck className="w-3 h-3 text-emerald-400" />
+              <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} />
               <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
                 {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
               </span>
-              <span className="text-[9px] text-emerald-400/60">(Finviz)</span>
+              <span className={"text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
+                ({c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz'})
+              </span>
             </span>
           ) : (
             <span className="flex items-center gap-1">
-              <CircleX className="w-3 h-3 text-blue-400/60" />
+              <CircleX className="w-3 h-3 text-yellow-500/60" />
               <span className={"text-[11px] " + (c.floatShares !== null ? 'text-amber-400' : 'text-blue-400')}>
                 {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : 'Unknown'}
               </span>
-              <span className="text-[9px] text-muted-foreground">(static)</span>
+              <span className="text-[9px] text-yellow-500/60">(static)</span>
             </span>
           )}
-          {c.finvizData?.sharesOutM && (
+          {(c.sharesOutstandingM || c.finvizData?.sharesOutM) && (
             <span className="text-[10px] text-muted-foreground">
-              Outstanding: {c.finvizData.sharesOutM.toFixed(1)}M
+              Outstanding: {(c.sharesOutstandingM || c.finvizData!.sharesOutM)!.toFixed(1)}M
             </span>
           )}
           {c.shortFloatPct !== null && (
             <span className={"text-[10px] font-medium " + (c.shortFloatPct >= 15 ? 'text-red-400' : c.shortFloatPct >= 5 ? 'text-orange-400' : 'text-muted-foreground')}>
               Short: {c.shortFloatPct.toFixed(1)}%{c.shortFloatPct >= 15 ? ' ⚠️ Squeeze risk' : ''}
+            </span>
+          )}
+          {c.shortDaysToCover !== null && (
+            <span className={"text-[10px] " + (c.shortDaysToCover >= 5 ? 'text-red-400 font-medium' : 'text-muted-foreground')}>
+              DTC: {c.shortDaysToCover.toFixed(1)}d{c.shortDaysToCover >= 5 ? ' ⚠️' : ''}
             </span>
           )}
           {c.finvizData?.marketCap && (
@@ -1037,7 +1063,8 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
             <span className="text-muted-foreground">Float:</span>
             <span className={"font-medium " + (c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground')}>
               {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown'}
-              {c.floatVerified && <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] text-emerald-400"><CircleCheck className="w-2.5 h-2.5" />Finviz</span>}
+              {c.floatVerified && <span className={"inline-flex items-center gap-0.5 ml-1 text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')}><CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'yahoo' ? 'Yahoo' : 'Finviz'}</span>}
+              {!c.floatVerified && c.floatShares !== null && <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] text-yellow-500/60"><CircleX className="w-2.5 h-2.5" />static</span>}
               {c.shortFloatPct !== null && <span className={"ml-1 text-[9px] " + (c.shortFloatPct >= 15 ? 'text-red-400' : 'text-muted-foreground')}>Short: {c.shortFloatPct.toFixed(1)}%</span>}
             </span>
           </div>
@@ -1119,22 +1146,40 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
               })}
             </div>
 
-            {/* Float Detail Panel — from Finviz */}
-            {c.floatVerified && (
+            {/* Float Detail Panel — with source info */}
+            {(c.floatVerified || c.floatShares !== null) && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-2 rounded-md bg-amber-500/10 border border-amber-500/30">
-                <span className="text-[10px] text-amber-300/80 font-medium">Float Data (Finviz):</span>
-                <span className="flex items-center gap-1">
-                  <CircleCheck className="w-3 h-3 text-emerald-400" />
-                  <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
-                    Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+                <span className="text-[10px] text-amber-300/80 font-medium">Float Data:</span>
+                {c.floatVerified ? (
+                  <span className="flex items-center gap-1">
+                    <CircleCheck className={"w-3 h-3 " + (c.floatSource === 'yahoo' ? 'text-purple-400' : 'text-emerald-400')} />
+                    <span className={"text-[11px] font-semibold " + (c.passesFloat ? 'text-emerald-400' : 'text-red-400')}>
+                      Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : '?'}
+                    </span>
+                    <span className={"text-[9px] " + (c.floatSource === 'yahoo' ? 'text-purple-400/70' : 'text-emerald-400/60')}>
+                      ({c.floatSource === 'yahoo' ? 'Yahoo Finance' : 'Finviz'})
+                    </span>
                   </span>
-                </span>
-                {c.finvizData?.sharesOutM && (
-                  <span className="text-[10px] text-muted-foreground">Outstanding: {c.finvizData.sharesOutM.toFixed(1)}M</span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <CircleX className="w-3 h-3 text-yellow-500/60" />
+                    <span className={"text-[11px] " + (c.floatShares !== null ? 'text-amber-400' : 'text-blue-400')}>
+                      Float: {c.floatShares !== null ? c.floatShares.toFixed(1) + 'M' : 'Unknown'}
+                    </span>
+                    <span className="text-[9px] text-yellow-500/60">(static — verifiko manualisht)</span>
+                  </span>
+                )}
+                {(c.sharesOutstandingM || c.finvizData?.sharesOutM) && (
+                  <span className="text-[10px] text-muted-foreground">Outstanding: {(c.sharesOutstandingM || c.finvizData!.sharesOutM)!.toFixed(1)}M</span>
                 )}
                 {c.shortFloatPct !== null && (
                   <span className={"text-[10px] font-medium " + (c.shortFloatPct >= 15 ? 'text-red-400' : c.shortFloatPct >= 5 ? 'text-orange-400' : 'text-muted-foreground')}>
                     Short % of Float: {c.shortFloatPct.toFixed(1)}%{c.shortFloatPct >= 15 ? ' — Short squeeze i mundshem' : ''}
+                  </span>
+                )}
+                {c.shortDaysToCover !== null && (
+                  <span className={"text-[10px] " + (c.shortDaysToCover >= 5 ? 'text-red-400 font-medium' : 'text-muted-foreground')}>
+                    Days to Cover: {c.shortDaysToCover.toFixed(1)}d{c.shortDaysToCover >= 5 ? ' — High short interest' : ''}
                   </span>
                 )}
                 {c.finvizData?.marketCap && (

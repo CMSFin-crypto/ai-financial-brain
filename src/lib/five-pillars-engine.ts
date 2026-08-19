@@ -19,6 +19,7 @@ import { fetchHistoricalData, type HistoricalDataPoint } from '@/lib/alpha-vanta
 import { analyzeHistoricalPatterns, computeHistoricalScore, type PatternAnalysis } from '@/lib/historical-pattern-engine';
 import { generateRiseReason, generateCautionSignals, analyzeCatalystFromNews, type StockNewsItem, type CatalystAnalysis } from '@/lib/stock-news-fetcher';
 import type { FinvizData } from '@/lib/finviz-float-fetcher';
+import type { YahooFloatData } from '@/lib/yahoo-float-fetcher';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -88,8 +89,11 @@ export interface FivePillarsCandidate {
 
   // Verified float data from Finviz
   finvizData: FinvizData | null;
-  floatVerified: boolean;               // Whether float came from Finviz (real) vs static list
-  shortFloatPct: number | null;         // Short % of float from Finviz
+  floatVerified: boolean;               // Whether float came from a real source (Yahoo/Finviz) vs static list
+  floatSource: 'yahoo' | 'finviz' | 'static' | null;  // Which source provided float
+  shortFloatPct: number | null;         // Short % of float
+  sharesOutstandingM: number | null;    // Total shares outstanding (millions)
+  shortDaysToCover: number | null;      // Short ratio (days to cover)
 }
 
 // ─── Thresholds (EXACT Ross Cameron defaults) ──────────────
@@ -509,7 +513,10 @@ export async function analyzeFivePillarsCandidate(
       catalystAnalysis: null,
       finvizData: null,
       floatVerified: false,
+      floatSource: null,
       shortFloatPct: null,
+      sharesOutstandingM: null,
+      shortDaysToCover: null,
     };
   } catch (err) {
     console.error(`[5-PILLARS] ${ticker}: Error:`, err);
