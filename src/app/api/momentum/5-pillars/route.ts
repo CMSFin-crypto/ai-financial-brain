@@ -4,7 +4,7 @@ import { getAllStocks } from '@/lib/market-data';
 import { analyzeFivePillarsBatch, type FivePillarsCandidate } from '@/lib/five-pillars-engine';
 import { getAllUSStockSnapshots, prefilterCandidates, getAllUSTickers } from '@/lib/us-stock-universe';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Cache for 8 minutes
 let cachedResult: { data: FivePillarsCandidate[]; summary: ScanSummary; fetchedAt: number; universeSize: number } | null = null;
@@ -55,12 +55,13 @@ export async function GET() {
       universeSize = snapshots.length;
       console.log(`[5-PILLARS-MOMENTUM] Got ${snapshots.length} US stocks from NASDAQ/Yahoo`);
 
-      // Pre-filter: price $0.8-$25, change >= 2%
+      // Pre-filter: price $0.5-$25, change >= 1.5%
+      // Scan up to 500 candidates to maximize ELIGIBLE/WATCH finds
       const prefiltered = prefilterCandidates(snapshots, {
-        minPrice: 0.8,
+        minPrice: 0.5,
         maxPrice: 25,
-        minChange: 2,
-        maxCandidates: 100,
+        minChange: 1.5,
+        maxCandidates: 500,
       });
 
       realPrices = prefiltered.priceMap;
@@ -109,7 +110,7 @@ export async function GET() {
       });
 
       toAnalyze.sort((a, b) => (realPrices[b]?.change || 0) - (realPrices[a]?.change || 0));
-      toAnalyze = toAnalyze.slice(0, 100);
+      toAnalyze = toAnalyze.slice(0, 500);
     }
 
     if (toAnalyze.length === 0) {
@@ -141,11 +142,12 @@ export async function GET() {
     }
 
     // ═══ STEP 3: Run 5 Pillars analysis ═══
+    // Higher concurrency (10) for larger universe, 150ms delay between batches
     const results = await analyzeFivePillarsBatch(
       toAnalyze,
       realPrices,
       floatMap,
-      6
+      10
     );
 
     console.log(`[5-PILLARS-MOMENTUM] Analysis complete: ${Object.keys(results).length} results`);

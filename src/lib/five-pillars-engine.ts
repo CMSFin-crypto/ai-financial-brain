@@ -506,7 +506,7 @@ export async function analyzeFivePillarsBatch(
     });
 
     if (i + concurrency < tickers.length) {
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 150));
     }
   }
 
