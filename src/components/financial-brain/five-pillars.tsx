@@ -427,16 +427,34 @@ export function FivePillars() {
       {(() => {
         const topEligible = candidates.filter(c => c.status === 'ELIGIBLE').slice(0, 5);
         const topWatch = candidates.filter(c => c.status === 'WATCH').slice(0, 5);
+        const topFloatReview = candidates.filter(c => c.status === 'FLOAT_REVIEW').slice(0, 5);
         const topPicks = [...topEligible, ...topWatch];
-        if (topPicks.length === 0) return null;
         return (
           <div className="space-y-3">
-            {/* Section Header */}
+            {/* Section Header — ALWAYS visible */}
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-amber-400" />
               <span className="text-sm font-bold text-foreground">TOP 5 ELIGIBLE + TOP 5 WATCH</span>
               <span className="text-[10px] text-muted-foreground ml-1">— renditur sipas Historical Score</span>
             </div>
+
+            {/* No ELIGIBLE/WATCH message */}
+            {topPicks.length === 0 && (
+              <div className="bg-muted/10 border border-border/50 rounded-lg p-4 text-center">
+                <Trophy className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">
+                  Asnjë ELIGIBLE ose WATCH nuk u gjet. Tregu mund të jetë i qetë.
+                </p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">
+                  5 Pillars kërkon: RVol ≥5x, Change ≥10%, Catalyst, Price $1-20, Float &lt;10M
+                </p>
+                {topFloatReview.length > 0 && (
+                  <p className="text-[10px] text-blue-400 mt-2">
+                    Ka {topFloatReview.length} FLOAT_REVIEW — këta mund të bëhen ELIGIBLE pasi të verifikohet float-i
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* TOP ELIGIBLE Row */}
             {topEligible.length > 0 && (
@@ -471,12 +489,10 @@ export function FivePillars() {
         );
       })()}
 
-      {/* ─── Separator ─── */}
-      {candidates.filter(c => c.status === 'ELIGIBLE' || c.status === 'WATCH').length > 0 && (
-        <div className="border-t border-border/50 pt-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Të gjitha rezultatet ({filtered.length})</div>
-        </div>
-      )}
+      {/* ─── Separator ─── ALWAYS visible ─── */}
+      <div className="border-t border-border/50 pt-2">
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Të gjitha rezultatet ({filtered.length})</div>
+      </div>
 
       {/* ─── Candidate Cards ─── */}
       <div className="space-y-2">
