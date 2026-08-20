@@ -33,13 +33,19 @@ interface ScanSummary {
 
 export async function GET() {
   try {
-    // Return cached if fresh
+    // Return cached if fresh — but always re-evaluate isPreMarket with current time
+    const nowIsPreMarket = isPreMarketHours();
     if (cachedResult && Date.now() - cachedResult.fetchedAt < CACHE_TTL) {
-      return NextResponse.json({
-        candidates: cachedResult.data,
-        summary: cachedResult.summary,
-        cached: true,
-      });
+      // Invalidate cache when market transitions from pre-market to open
+      if (cachedResult.summary.isPreMarket && !nowIsPreMarket) {
+        console.log('[5-PILLARS-MOMENTUM] Market opened — invalidating pre-market cache');
+      } else {
+        return NextResponse.json({
+          candidates: cachedResult.data,
+          summary: { ...cachedResult.summary, isPreMarket: nowIsPreMarket },
+          cached: true,
+        });
+      }
     }
 
     console.log('[5-PILLARS-MOMENTUM] Starting scan of ALL US stocks...');
@@ -309,7 +315,7 @@ export async function GET() {
   } catch (error) {
     console.error('[5-PILLARS-MOMENTUM] Error:', error);
     if (cachedResult) {
-      return NextResponse.json({ candidates: cachedResult.data, summary: cachedResult.summary, cached: true, stale: true, timestamp: new Date().toISOString() });
+      return NextResponse.json({ candidates: cachedResult.data, summary: { ...cachedResult.summary, isPreMarket: isPreMarketHours() }, cached: true, stale: true, timestamp: new Date().toISOString() });
     }
     return NextResponse.json({ error: 'Error in 5 Pillars Momentum scan' }, { status: 502 });
   }
