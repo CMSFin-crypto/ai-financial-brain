@@ -491,7 +491,7 @@ export function FivePillars() {
               <span className="text-[10px] text-muted-foreground ml-1">— renditur sipas Historical Score</span>
               {summary?.isPreMarket && (
                 <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/40 text-[9px] px-1.5 animate-pulse">
-                  PRE-MARKET {(summary.preMarketStocksCount ?? 0) > 0 ? `(${summary.preMarketStocksCount} me volum)` : '(asnje volum ende)'}
+                  PRE-MARKET {summary.preMarketStocksCount > 0 ? `(${summary.preMarketStocksCount} me volum pre-market)` : `(${summary.totalAnalyzed || 0} kandidate — pa volum ende)`}
                 </Badge>
               )}
             </div>
@@ -523,7 +523,7 @@ export function FivePillars() {
                 </div>
                 <div className="grid gap-2">
                   {topEligible.map((c, idx) => (
-                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"ELIGIBLE"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />
+                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"ELIGIBLE"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} isPreMarket={summary?.isPreMarket} />
                   ))}
                 </div>
               </div>
@@ -538,7 +538,7 @@ export function FivePillars() {
                 </div>
                 <div className="grid gap-2">
                   {topWatch.map((c, idx) => (
-                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"WATCH"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} />
+                    <TopPickCard key={c.symbol} candidate={c} rank={idx + 1} type={"WATCH"} expanded={expandedTicker === c.symbol} onToggle={() => setExpandedTicker(expandedTicker === c.symbol ? null : c.symbol)} isPreMarket={summary?.isPreMarket} />
                   ))}
                 </div>
               </div>
@@ -650,7 +650,7 @@ function WinRateCard({ label, value, ret }: { label: string; value: number; ret:
 // TOP PICK Card — Compact card for Top 5 ELIGIBLE + Top 5 WATCH
 // ═══════════════════════════════════════════════════════════════
 
-function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candidate: Candidate; rank: number; type: 'ELIGIBLE' | 'WATCH'; expanded: boolean; onToggle: () => void }) {
+function TopPickCard({ candidate: c, rank, type, expanded, onToggle, isPreMarket }: { candidate: Candidate; rank: number; type: 'ELIGIBLE' | 'WATCH'; expanded: boolean; onToggle: () => void; isPreMarket?: boolean }) {
   const isEligible = type === 'ELIGIBLE';
   const isPositive = c.dailyChangePct >= 0;
   const borderColor = isEligible ? 'border-emerald-500/50' : 'border-amber-500/50';
@@ -692,11 +692,15 @@ function TopPickCard({ candidate: c, rank, type, expanded, onToggle }: { candida
                 ${c.price.toFixed(2)}
               </span>
               {' '} RVol: <span className={c.passesRvol ? 'text-blue-400' : ''}>{c.relativeVolume}x</span>
-              {c.preMarketVolume && c.preMarketVolume > 0 && (
+              {c.preMarketVolume && c.preMarketVolume > 0 ? (
                 <span className="inline-flex items-center gap-0.5 text-[9px] ml-1 bg-orange-500/15 text-orange-400 border border-orange-500/30 px-1 py-0 rounded" title={"Pre-Market Vol: " + (c.preMarketVolume / 1e6).toFixed(1) + "M | RVol: " + (c.preMarketRVol || 0) + "x"}>
                   PRE {c.preMarketRVol && c.preMarketRVol > 0 ? c.preMarketRVol + 'x' : ((c.preMarketVolume / 1e6).toFixed(1) + 'M')}
                 </span>
-              )}
+              ) : isPreMarket && c.averageVolume30d > 0 ? (
+                <span className="inline-flex items-center gap-0.5 text-[9px] ml-1 bg-muted/20 text-muted-foreground border border-border/30 px-1 py-0 rounded" title={"Avg 30d Volume: " + (c.averageVolume30d / 1e6).toFixed(1) + "M"}>
+                  AVG {(c.averageVolume30d / 1e6).toFixed(1)}M
+                </span>
+              ) : null}
               {' '}
               {/* FLOAT with verification badge */}
               <span className={c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : ''}>
