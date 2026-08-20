@@ -18,3 +18,19 @@ Stage Summary:
 - Regime-aware: 7 different threshold profiles (BULL_LOW_VOL to PANIC_CAPITULATION)
 - Display rank formula now uses 6 layers: rawScore*0.30 + confidence*0.20 + trendQuality*0.12 + sectorStrength*0.08 + alignment*0.08 + PEAD + universeRank*0.08 + tradability*0.07
 - Commit: 819311c pushed to main
+---
+Task ID: 1
+Agent: Main Agent
+Task: Replace Watchlist tab with IBKR Strategy + increase font sizes
+
+Work Log:
+- Bumped all font sizes in top-swing-predictions.tsx (11px→12px, 12px→13px, 14px→15px, etc.)
+- Created ibkr-strategy.tsx with full Trend Pullback Swing strategy content
+- Updated page.tsx: replaced Watchlist import/usage with IBKRStrategy, updated desktop+mobile tab triggers
+- Build passed with no errors
+- Pushed to GitHub (commit 0e73640)
+
+Stage Summary:
+- Watchlist tab fully replaced by IBKR Strategy tab with Briefcase icon
+- All font sizes in top-swing-predictions.tsx increased by 1-2px for laptop readability
+- Build successful, pushed to main
