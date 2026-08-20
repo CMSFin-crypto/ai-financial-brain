@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllStocks, fetchLivePrices } from '@/lib/market-data';
+import { getAllStocks } from '@/lib/market-data';
+import { getRealPrices, type LivePrice } from '@/lib/alpha-vantage';
 
 export const maxDuration = 60;
 
@@ -121,13 +122,14 @@ export async function GET(request: NextRequest) {
     const allStocks = getAllStocks();
     const stocks = Object.values(allStocks);
 
-    // Fetch live prices
+    // Fetch live prices — ALWAYS force refresh so every click gets fresh data
     const tickers = stocks.map(s => s.ticker);
-    const livePrices = await fetchLivePrices(tickers);
+    const forceRefresh = searchParams.get('refresh') === '1';
+    const livePrices = await getRealPrices(tickers, { forceRefresh: true });
 
     // Apply filters — use LIVE data for dynamic signal/trend/rating/score
     let filtered = stocks.map(stock => {
-      const live = livePrices[stock.ticker];
+      const live: LivePrice | undefined = livePrices[stock.ticker];
       const price = live?.price ?? stock.price;
       const change = live?.change ?? stock.change;
       const hasLiveData = live && live.price > 0;
@@ -139,6 +141,12 @@ export async function GET(request: NextRequest) {
         ? deriveRating(change, stock.pe, parseFloat(stock.revGrowth) || 0, parseFloat(stock.epsGrowth) || 0)
         : stock.rating;
 
+      // Use LIVE volume when available (from Yahoo Finance)
+      const liveVol = live?.volume && live.volume > 0 ? live.volume : 0;
+      const volume = liveVol > 0
+        ? (liveVol >= 1e9 ? `${(liveVol / 1e9).toFixed(1)}B` : `${(liveVol / 1e6).toFixed(1)}M`)
+        : stock.volume;
+
       return {
         ticker: stock.ticker,
         company: stock.company,
@@ -146,7 +154,8 @@ export async function GET(request: NextRequest) {
         industry: stock.industry,
         price,
         change,
-        volume: stock.volume,
+        volume,
+        _liveVolume: liveVol,
         marketCap: stock.marketCap,
         marketCapNum: parseMarketCap(stock.marketCap),
         pe: stock.pe,

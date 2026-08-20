@@ -153,12 +153,15 @@ export function StockScreener() {
     return params.toString();
   }, [sectorFilter, marketCapFilter, peFilter, changeFilter, signalFilter, sortField, sortDir]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     setIsRefreshing(true);
     setError(null);
     try {
       const query = buildQuery();
-      const res = await fetch(`/api/screener${query ? `?${query}` : ''}`);
+      const bust = forceRefresh ? `&_t=${Date.now()}&refresh=1` : '';
+      const res = await fetch(`/api/screener${query ? `?${query}` : ''}${bust}`, {
+        cache: 'no-store',
+      });
       const json = await res.json();
       if (!res.ok) {
         setError(json.error || 'Gabim');
@@ -344,12 +347,12 @@ export function StockScreener() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchData}
+            onClick={() => fetchData(true)}
             disabled={isRefreshing}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-blue-500 transition-colors"
           >
             <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Rifresko
+            Rifresko Live
           </button>
           <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-blue-500 transition-colors">
             <Download className="w-3 h-3" />
