@@ -18,10 +18,10 @@ export async function GET(
 
     const horizonParam = request.nextUrl.searchParams.get('horizon');
     const sectorParam = request.nextUrl.searchParams.get('sector');
-    // Default: all 3 horizons. ?horizon=5 → only 5D
+    // Default: all 3 horizons. ?horizon=3 → only 3D
     const horizons = horizonParam
-      ? [parseInt(horizonParam, 10)].filter(h => [1, 5, 20].includes(h))
-      : [1, 5, 20];
+      ? [parseInt(horizonParam, 10)].filter(h => [1, 3, 7].includes(h))
+      : [1, 3, 7];
 
     const historicalData = await fetchHistoricalData(ticker, '6mo');
     if (!historicalData || historicalData.length < 60) {

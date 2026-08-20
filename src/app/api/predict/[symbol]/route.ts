@@ -6,8 +6,8 @@
 //
 // Weights by horizon:
 //   1D:  tech 55%, spillover 20%, regime 10%, event 10%, fund 5%
-//   5D:  tech 40%, spillover 20%, regime 15%, event 10%, fund 15%
-//   20D: fund 35%, regime 20%, tech 20%, spillover 15%, event 10%
+//   3D:  tech 45%, spillover 20%, regime 13%, event 10%, fund 12%
+//   7D:  fund 30%, regime 18%, tech 22%, spillover 18%, event 12%
 //
 // Business rules:
 //   - No strong BUY when Asia risk-off + VIX rising + weak sector
@@ -215,19 +215,19 @@ export async function GET(
     const rsScore = relStrength.rsScore;
 
     // ── Phase 3: 5-Factor Scoring per horizon ──────────────────
-    const [weights5d, weights20d] = await Promise.all([getModelWeights(5), getModelWeights(20)]);
+    const [weights3d, weights7d] = await Promise.all([getModelWeights(3), getModelWeights(7)]);
 
     const score1d = computeFiveFactorScore(
       techScore, spillover.spilloverScore, regimeAssessment,
       eventRisk.riskScore, fundScore, weights1d, 1, crossMarket,
     );
-    const score5d = computeFiveFactorScore(
+    const score3d = computeFiveFactorScore(
       techScore, spillover.spilloverScore, regimeAssessment,
-      eventRisk.riskScore, fundScore, weights5d, 5, crossMarket,
+      eventRisk.riskScore, fundScore, weights3d, 3, crossMarket,
     );
-    const score20d = computeFiveFactorScore(
+    const score7d = computeFiveFactorScore(
       techScore, spillover.spilloverScore, regimeAssessment,
-      eventRisk.riskScore, fundScore, weights20d, 20, crossMarket,
+      eventRisk.riskScore, fundScore, weights7d, 7, crossMarket,
     );
 
     // Use 1D score as primary
@@ -409,7 +409,7 @@ export async function GET(
       score: f.score, weight: f.weight, signal: f.signal, description: f.description,
     }));
 
-    const [pred1d, pred5d, pred20d] = await Promise.all([
+    const [pred1d, pred3d, pred7d] = await Promise.all([
       savePrediction({
         symbol: ticker, sector, horizonDays: 1, modelVersion,
         entryPrice: lastClose, benchmarkEntryPrice: spyClose,
@@ -420,20 +420,20 @@ export async function GET(
         eventSnapshots: eventSnaps, decisionReasons,
       }),
       savePrediction({
-        symbol: ticker, sector, horizonDays: 5, modelVersion,
+        symbol: ticker, sector, horizonDays: 3, modelVersion,
         entryPrice: lastClose, benchmarkEntryPrice: spyClose,
         regime: regimeAssessment.regime, regimeConfidence: regimeAssessment.confidence,
         transitionRisk: regimeAssessment.transitionRisk,
-        rawScore: score5d.score, calibratedConfidence, finalDecision,
+        rawScore: score3d.score, calibratedConfidence, finalDecision,
         factors: saveFactors, marketSnapshot: marketSnap,
         eventSnapshots: eventSnaps, decisionReasons,
       }),
       savePrediction({
-        symbol: ticker, sector, horizonDays: 20, modelVersion,
+        symbol: ticker, sector, horizonDays: 7, modelVersion,
         entryPrice: lastClose, benchmarkEntryPrice: spyClose,
         regime: regimeAssessment.regime, regimeConfidence: regimeAssessment.confidence,
         transitionRisk: regimeAssessment.transitionRisk,
-        rawScore: score20d.score, calibratedConfidence, finalDecision,
+        rawScore: score7d.score, calibratedConfidence, finalDecision,
         factors: saveFactors, marketSnapshot: marketSnap,
         eventSnapshots: eventSnaps, decisionReasons,
       }).catch(() => null),
@@ -490,8 +490,8 @@ export async function GET(
       finalDecision,
       horizons: {
         '1D': { score: score1d.score, predictionId: pred1d?.id, reasons: score1d.decisionReasons },
-        '5D': { score: score5d.score, predictionId: pred5d?.id, reasons: score5d.decisionReasons },
-        '20D': { score: score20d.score, predictionId: pred20d?.id, reasons: score20d.decisionReasons },
+        '3D': { score: score3d.score, predictionId: pred3d?.id, reasons: score3d.decisionReasons },
+        '7D': { score: score7d.score, predictionId: pred7d?.id, reasons: score7d.decisionReasons },
       },
       predictionId: pred1d?.id, modelVersion, processingTimeMs: elapsedMs,
       positionSizing: positionSizing ? {

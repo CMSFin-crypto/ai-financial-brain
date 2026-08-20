@@ -45,3 +45,20 @@ Stage Summary:
 - Tab renamed: 'Top Stocks' → 'Swing Predictions' (both desktop + mobile)
 - All horizon references updated from 1/5/20 to 1/3/7
 - Build passes cleanly
+---
+Task ID: 2
+Agent: main
+Task: Change prediction pipeline horizons from 1/5/20 to 1/3/7
+
+Work Log:
+- Updated HORIZON_WEIGHTS in model-weights.ts: 1D (tech-heavy), 3D (balanced), 7D (fund-heavy)
+- Updated predict/[symbol]/route.ts: score3d/score7d replace score5d/score20d, save with horizonDays 3/7
+- Updated ai-predict/[symbol]/route.ts: default horizons [1,3,7] instead of [1,5,20]
+- Updated horizons response keys: '3D' and '7D' replace '5D' and '20D'
+- Build verified successfully
+
+Stage Summary:
+- New predictions will be created with horizons 1D, 3D, 7D
+- /api/top-stocks endpoint was already configured for 1/3/7
+- Frontend badges already configured for 1D/3D/7D
+- Full pipeline is now consistent: predict → save → query → display

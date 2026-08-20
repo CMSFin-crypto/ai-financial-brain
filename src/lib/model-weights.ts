@@ -3,8 +3,8 @@
 //
 // Weights per horizon:
 //   1D:  technical 55%, spillover 20%, regime 10%, event 10%, fundamental 5%
-//   5D:  technical 40%, spillover 20%, regime 15%, event 10%, fundamental 15%
-//   20D: fundamental 35%, regime 20%, technical 20%, spillover 15%, event 10%
+//   3D:  technical 45%, spillover 20%, regime 13%, event 10%, fundamental 12%
+//   7D:  fundamental 30%, regime 18%, technical 22%, spillover 18%, event 12%
 //
 // Learning uses 70/30 blending (70% old, 30% new evidence)
 // with horizon + sector + regime awareness.
@@ -32,9 +32,9 @@ export interface HorizonWeights {
 }
 
 export const HORIZON_WEIGHTS: Record<number, HorizonWeights> = {
-  1:  { technical: 0.55, spillover: 0.20, regime: 0.10, event: 0.10, fundamental: 0.05 },
-  5:  { technical: 0.40, spillover: 0.20, regime: 0.15, event: 0.10, fundamental: 0.15 },
-  20: { technical: 0.20, spillover: 0.15, regime: 0.20, event: 0.10, fundamental: 0.35 },
+  1: { technical: 0.55, spillover: 0.20, regime: 0.10, event: 0.10, fundamental: 0.05 },
+  3: { technical: 0.45, spillover: 0.20, regime: 0.13, event: 0.10, fundamental: 0.12 },
+  7: { technical: 0.22, spillover: 0.18, regime: 0.18, event: 0.12, fundamental: 0.30 },
 };
 
 // ─── Default per-indicator weights ──
