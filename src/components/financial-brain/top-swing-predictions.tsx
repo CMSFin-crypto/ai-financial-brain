@@ -55,6 +55,8 @@ interface TopStockCard {
   isTradeable: boolean;
   tradabilityRecommendation: string;
   estSlippageBps: number;
+  analystRevisionScore: number;
+  analystRevisionTrend: string;
   activeRegimeThresholds?: {
     confidenceFloor: number;
     trendQualityFloor: number;
@@ -97,23 +99,27 @@ function scoreBg(v: number, good = 40, great = 70): string {
   return 'bg-red-500/10';
 }
 
+// ── Badge sizes (all bumped for readability) ──
+const BADGE_XS = 'text-[11px] px-2 py-0.5 font-semibold';
+const BADGE_SM = 'text-[11px] px-2 py-0.5 font-semibold';
+
 // ── Alignment status badge ──
 function AlignmentBadge({ status }: { status: string }) {
-  if (status === 'ALIGNED') return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">ALIGNED</Badge>;
-  if (status === 'MIXED') return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">MIXED</Badge>;
-  return <Badge className="bg-red-500/15 text-red-400 border-red-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">CONFLICTED</Badge>;
+  if (status === 'ALIGNED') return <Badge className={`bg-emerald-500/15 text-emerald-400 border-emerald-500/30 ${BADGE_XS}`} variant="outline">ALIGNED</Badge>;
+  if (status === 'MIXED') return <Badge className={`bg-amber-500/15 text-amber-400 border-amber-500/30 ${BADGE_XS}`} variant="outline">MIXED</Badge>;
+  return <Badge className={`bg-red-500/15 text-red-400 border-red-500/30 ${BADGE_XS}`} variant="outline">CONFLICTED</Badge>;
 }
 
 // ── PEAD signal badge ──
 function PEADBadge({ signal, driftActive, daysSince }: { signal: string; driftActive: boolean; daysSince: number | null }) {
   if (!driftActive) return null;
   if (signal === 'STRONG_BUY' || signal === 'BUY') {
-    return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">PEAD +{daysSince}d</Badge>;
+    return <Badge className={`bg-emerald-500/15 text-emerald-400 border-emerald-500/30 ${BADGE_SM}`} variant="outline">PEAD +{daysSince}d</Badge>;
   }
   if (signal === 'SELL' || signal === 'STRONG_SELL') {
-    return <Badge className="bg-red-500/15 text-red-400 border-red-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">PEAD SELL</Badge>;
+    return <Badge className={`bg-red-500/15 text-red-400 border-red-500/30 ${BADGE_SM}`} variant="outline">PEAD SELL</Badge>;
   }
-  return <Badge className="bg-muted/30 text-muted-foreground border-muted/50 text-[8px] px-1.5 py-0" variant="outline">PEAD {daysSince}d</Badge>;
+  return <Badge className={`bg-muted/30 text-muted-foreground border-muted/50 ${BADGE_SM}`} variant="outline">PEAD {daysSince}d</Badge>;
 }
 
 // ── Tradability recommendation badge ──
@@ -125,15 +131,30 @@ function TradabilityBadge({ rec }: { rec: string }) {
     POOR: 'bg-red-500/10 text-red-400/80 border-red-500/20',
     UNTRADEABLE: 'bg-red-500/15 text-red-400 border-red-500/30',
   };
-  return <Badge className={`${styles[rec] || styles.ACCEPTABLE} text-[8px] px-1.5 py-0 font-semibold`} variant="outline">{rec}</Badge>;
+  return <Badge className={`${styles[rec] || styles.ACCEPTABLE} ${BADGE_SM}`} variant="outline">{rec}</Badge>;
 }
 
 // ── Universe rank badge ──
 function UniverseRankBadge({ isTopDecile, isTopQuintile, percentile }: { isTopDecile: boolean; isTopQuintile: boolean; percentile: number }) {
-  if (isTopDecile) return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">TOP 10%</Badge>;
-  if (isTopQuintile) return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/30 text-[8px] px-1.5 py-0 font-semibold" variant="outline">TOP 20%</Badge>;
-  if (percentile >= 60) return <span className="text-[9px] text-muted-foreground">P{percentile}</span>;
+  if (isTopDecile) return <Badge className={`bg-amber-500/15 text-amber-400 border-amber-500/30 ${BADGE_SM}`} variant="outline">TOP 10%</Badge>;
+  if (isTopQuintile) return <Badge className={`bg-blue-500/15 text-blue-400 border-blue-500/30 ${BADGE_SM}`} variant="outline">TOP 20%</Badge>;
+  if (percentile >= 60) return <span className="text-[11px] text-muted-foreground font-medium">P{percentile}</span>;
   return null;
+}
+
+// ── Score Cell Component ──
+function ScoreCell({ icon: Icon, label, value, color, bg, active = true }: {
+  icon: any; label: string; value: string | number; color: string; bg: string; active?: boolean;
+}) {
+  return (
+    <div className={`rounded-md p-2 text-center ${bg}`}>
+      <div className="flex items-center justify-center gap-1">
+        <Icon className="w-3 h-3 text-muted-foreground" />
+        <p className="text-[11px] text-muted-foreground font-medium">{label}</p>
+      </div>
+      <p className={`text-[14px] font-bold mt-0.5 ${active ? color : 'text-muted-foreground/50'}`}>{value}</p>
+    </div>
+  );
 }
 
 // ── Single Stock Card ──
@@ -144,168 +165,156 @@ function SwingCard({ stock, rank }: { stock: TopStockCard; rank: number }) {
 
   return (
     <Card className="border-border/50 bg-card hover:border-border transition-all duration-200">
-      <CardContent className="p-3.5">
+      <CardContent className="p-4">
         {/* Top row: rank + ticker + horizon + score */}
         <div className="flex items-center gap-3">
-          <div className={"w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 " + (rank <= 3 ? 'bg-amber-500/20 text-amber-400' : 'bg-muted/30 text-muted-foreground')}>
+          <div className={"w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 " + (rank <= 3 ? 'bg-amber-500/20 text-amber-400' : 'bg-muted/30 text-muted-foreground')}>
             {rank}
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-sm text-foreground">{stock.symbol}</span>
-              <Badge className={`${h.bg} ${h.text} text-[9px] px-1.5 py-0 font-semibold`} variant="outline">
+              <span className="font-bold text-[15px] text-foreground">{stock.symbol}</span>
+              <Badge className={`${h.bg} ${h.text} ${BADGE_SM}`} variant="outline">
                 {h.label} Swing
               </Badge>
-              <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[9px] px-1.5 py-0 font-semibold" variant="outline">
+              <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 ${BADGE_SM}" variant="outline">
                 BUY
               </Badge>
               <PEADBadge signal={stock.peadSignal} driftActive={stock.peadDriftActive} daysSince={stock.peadDaysSince} />
               <UniverseRankBadge isTopDecile={stock.isTopDecile} isTopQuintile={stock.isTopQuintile} percentile={stock.universePercentile} />
             </div>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-[12px] text-muted-foreground mt-1">
               {stock.sector}{stock.regime && stock.regime !== 'UNKNOWN' ? ` · ${stock.regime.replace(/_/g, ' ')}` : ''}
             </p>
           </div>
 
           <div className="text-right flex-shrink-0">
-            <div className={`text-xl font-bold ${mainScoreColor}`}>{stock.displayRankScore}</div>
-            <div className="text-[8px] text-muted-foreground">Rank Score</div>
+            <div className={`text-2xl font-bold ${mainScoreColor}`}>{stock.displayRankScore}</div>
+            <div className="text-[11px] text-muted-foreground">Rank Score</div>
           </div>
         </div>
 
-        {/* ── NEW: Advanced Scores Row (6 cells) ── */}
-        <div className="mt-2.5 grid grid-cols-6 gap-1">
-          {/* Trend Quality */}
-          <div className={`rounded p-1.5 text-center ${scoreBg(stock.trendQualityScore)}`}>
-            <div className="flex items-center justify-center gap-0.5">
-              <BarChart3 className="w-2.5 h-2.5 text-muted-foreground" />
-              <p className="text-[7px] text-muted-foreground">Trend</p>
+        {/* ── Score Grid (7 cells) ── */}
+        <div className="mt-3 grid grid-cols-7 gap-1.5">
+          <ScoreCell icon={BarChart3} label="Trend" value={stock.trendQualityScore} color={scoreColor(stock.trendQualityScore)} bg={scoreBg(stock.trendQualityScore)} />
+          <ScoreCell icon={ArrowRightLeft} label="Sektor" value={stock.sectorStrengthScore} color={scoreColor(stock.sectorStrengthScore)} bg={scoreBg(stock.sectorStrengthScore)} />
+          <div className={`rounded-md p-2 text-center ${scoreBg(stock.timeframeAlignmentScore)}`}>
+            <div className="flex items-center justify-center gap-1">
+              <Layers className="w-3 h-3 text-muted-foreground" />
+              <p className="text-[11px] text-muted-foreground font-medium">Align</p>
             </div>
-            <p className={`text-[11px] font-bold ${scoreColor(stock.trendQualityScore)}`}>{stock.trendQualityScore}</p>
-          </div>
-          {/* Sector Strength */}
-          <div className={`rounded p-1.5 text-center ${scoreBg(stock.sectorStrengthScore)}`}>
-            <div className="flex items-center justify-center gap-0.5">
-              <ArrowRightLeft className="w-2.5 h-2.5 text-muted-foreground" />
-              <p className="text-[7px] text-muted-foreground">Sektor</p>
+            <div className="flex items-center justify-center gap-1 mt-0.5">
+              <p className={`text-[14px] font-bold ${scoreColor(stock.timeframeAlignmentScore)}`}>{stock.timeframeAlignmentScore}</p>
+              <AlignmentBadge status={stock.timeframeAlignmentStatus} />
             </div>
-            <p className={`text-[11px] font-bold ${scoreColor(stock.sectorStrengthScore)}`}>{stock.sectorStrengthScore}</p>
           </div>
-          {/* Alignment */}
-          <div className={`rounded p-1.5 text-center ${scoreBg(stock.timeframeAlignmentScore)}`}>
-            <div className="flex items-center justify-center gap-0.5">
-              <Layers className="w-2.5 h-2.5 text-muted-foreground" />
-              <p className="text-[7px] text-muted-foreground">Align</p>
-            </div>
-            <p className={`text-[10px] font-bold ${scoreColor(stock.timeframeAlignmentScore)}`}>{stock.timeframeAlignmentScore}</p>
-          </div>
-          {/* PEAD */}
-          <div className={`rounded p-1.5 text-center ${scoreBg(stock.peadScore, 15, 40)}`}>
-            <div className="flex items-center justify-center gap-0.5">
-              <Target className="w-2.5 h-2.5 text-muted-foreground" />
-              <p className="text-[7px] text-muted-foreground">PEAD</p>
-            </div>
-            <p className={`text-[11px] font-bold ${stock.peadDriftActive ? scoreColor(stock.peadScore, 15, 40) : 'text-muted-foreground'}`}>{stock.peadDriftActive ? stock.peadScore : '—'}</p>
-          </div>
-          {/* Universe Rank */}
-          <div className={`rounded p-1.5 text-center ${scoreBg(stock.universeRankScore, 50, 80)}`}>
-            <div className="flex items-center justify-center gap-0.5">
-              <Trophy className="w-2.5 h-2.5 text-muted-foreground" />
-              <p className="text-[7px] text-muted-foreground">Rank</p>
-            </div>
-            <p className={`text-[11px] font-bold ${scoreColor(stock.universeRankScore, 50, 80)}`}>{stock.universeRankScore}</p>
-          </div>
-          {/* Tradability */}
-          <div className={`rounded p-1.5 text-center ${scoreBg(stock.tradabilityScore, 40, 60)}`}>
-            <div className="flex items-center justify-center gap-0.5">
-              <DollarSign className="w-2.5 h-2.5 text-muted-foreground" />
-              <p className="text-[7px] text-muted-foreground">Trade</p>
-            </div>
-            <p className={`text-[11px] font-bold ${scoreColor(stock.tradabilityScore, 40, 60)}`}>{stock.tradabilityScore}</p>
-          </div>
+          <ScoreCell icon={Target} label="PEAD" value={stock.peadDriftActive ? stock.peadScore : '—'} color={stock.peadDriftActive ? scoreColor(stock.peadScore, 15, 40) : 'text-muted-foreground/50'} bg={scoreBg(stock.peadScore, 15, 40)} active={stock.peadDriftActive} />
+          <ScoreCell icon={Trophy} label="Rank" value={stock.universeRankScore} color={scoreColor(stock.universeRankScore, 50, 80)} bg={scoreBg(stock.universeRankScore, 50, 80)} />
+          <ScoreCell icon={DollarSign} label="Trade" value={stock.tradabilityScore} color={scoreColor(stock.tradabilityScore, 40, 60)} bg={scoreBg(stock.tradabilityScore, 40, 60)} />
+          <ScoreCell icon={Activity} label="Analyst" value={stock.analystRevisionScore || '—'} color={stock.analystRevisionScore > 0 ? 'text-emerald-400' : stock.analystRevisionScore < 0 ? 'text-red-400' : 'text-muted-foreground/50'} bg={stock.analystRevisionScore > 20 ? 'bg-emerald-500/10' : stock.analystRevisionScore < -20 ? 'bg-red-500/10' : 'bg-muted/5'} active={stock.analystRevisionScore !== 0} />
         </div>
 
-        {/* Why this stock? — always visible */}
-        <div className="mt-2.5 flex items-start gap-2 px-2 py-2 rounded-md bg-blue-500/5 border border-blue-500/15">
-          <Lightbulb className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
-          <div className="space-y-0.5 min-w-0">
+        {/* Why this stock? */}
+        <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-blue-500/5 border border-blue-500/15">
+          <Lightbulb className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+          <div className="space-y-1 min-w-0">
             {stock.topReasons.map((r, i) => (
-              <p key={i} className="text-[10px] text-blue-300/80 leading-relaxed">· {r}</p>
+              <p key={i} className="text-[12px] text-blue-300/80 leading-relaxed">· {r}</p>
             ))}
           </div>
         </div>
 
         {/* Expanded: all metrics + risk */}
         {expanded && (
-          <div className="mt-2.5 space-y-2.5 border-t border-border/50 pt-2.5">
+          <div className="mt-3 space-y-3 border-t border-border/50 pt-3">
             {/* Core metrics */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-3">
               <div className="text-center">
-                <p className="text-[9px] text-muted-foreground">Score</p>
-                <p className="text-sm font-bold text-foreground">{stock.rawScore}</p>
+                <p className="text-[12px] text-muted-foreground">Score</p>
+                <p className="text-base font-bold text-foreground">{stock.rawScore}</p>
               </div>
               <div className="text-center">
-                <p className="text-[9px] text-muted-foreground">Confidence</p>
-                <p className={`text-sm font-bold ${scoreColor(stock.hybridConfidence, 58, 70)}`}>{stock.hybridConfidence}%</p>
+                <p className="text-[12px] text-muted-foreground">Confidence</p>
+                <p className={`text-base font-bold ${scoreColor(stock.hybridConfidence, 58, 70)}`}>{stock.hybridConfidence}%</p>
               </div>
               <div className="text-center">
-                <p className="text-[9px] text-muted-foreground">Transition</p>
-                <p className={`text-sm font-bold ${(stock.transitionRisk ?? 0) > 50 ? 'text-red-400' : 'text-emerald-400'}`}>{stock.transitionRisk ?? 0}%</p>
+                <p className="text-[12px] text-muted-foreground">Transition</p>
+                <p className={`text-base font-bold ${(stock.transitionRisk ?? 0) > 50 ? 'text-red-400' : 'text-emerald-400'}`}>{stock.transitionRisk ?? 0}%</p>
               </div>
               <div className="text-center">
-                <p className="text-[9px] text-muted-foreground">Regime</p>
-                <p className={`text-sm font-bold ${scoreColor(stock.regimeConfidence ?? 0, 40, 65)}`}>{stock.regimeConfidence ?? '?'}%</p>
+                <p className="text-[12px] text-muted-foreground">Regime</p>
+                <p className={`text-base font-bold ${scoreColor(stock.regimeConfidence ?? 0, 40, 65)}`}>{stock.regimeConfidence ?? '?'}%</p>
               </div>
             </div>
 
             {/* Advanced metrics row */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded p-2 bg-muted/5 text-center">
-                <div className="flex items-center justify-center gap-1">
-                  <Target className="w-3 h-3 text-muted-foreground" />
-                  <p className="text-[9px] text-muted-foreground">PEAD</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg p-3 bg-muted/5 text-center">
+                <div className="flex items-center justify-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-muted-foreground" />
+                  <p className="text-[12px] text-muted-foreground">PEAD</p>
                 </div>
-                <p className={`text-xs font-bold ${stock.peadDriftActive ? scoreColor(stock.peadScore, 15, 40) : 'text-muted-foreground'}`}>
+                <p className={`text-sm font-bold ${stock.peadDriftActive ? scoreColor(stock.peadScore, 15, 40) : 'text-muted-foreground'}`}>
                   {stock.peadDriftActive ? `${stock.peadScore} (${stock.peadSignal})` : 'Jo aktiv'}
                 </p>
                 {stock.peadSurprisePct !== null && (
-                  <p className="text-[8px] text-muted-foreground">
+                  <p className="text-[11px] text-muted-foreground">
                     Surprise: {stock.peadSurprisePct > 0 ? '+' : ''}{stock.peadSurprisePct.toFixed(1)}%
                   </p>
                 )}
               </div>
-              <div className="rounded p-2 bg-muted/5 text-center">
-                <div className="flex items-center justify-center gap-1">
-                  <Trophy className="w-3 h-3 text-muted-foreground" />
-                  <p className="text-[9px] text-muted-foreground">Universe</p>
+              <div className="rounded-lg p-3 bg-muted/5 text-center">
+                <div className="flex items-center justify-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5 text-muted-foreground" />
+                  <p className="text-[12px] text-muted-foreground">Universe</p>
                 </div>
-                <p className={`text-xs font-bold ${scoreColor(stock.universeRankScore, 50, 80)}`}>
+                <p className={`text-sm font-bold ${scoreColor(stock.universeRankScore, 50, 80)}`}>
                   {stock.universeRankScore}/100 (P{stock.universePercentile})
                 </p>
-                <p className="text-[8px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   {stock.momentumRegime === 'LEADING' ? 'Lider' : stock.momentumRegime === 'DECLINING' ? 'Ngec' : stock.momentumRegime}
                 </p>
               </div>
-              <div className="rounded p-2 bg-muted/5 text-center">
-                <div className="flex items-center justify-center gap-1">
-                  <Activity className="w-3 h-3 text-muted-foreground" />
-                  <p className="text-[9px] text-muted-foreground">Tradability</p>
+              <div className="rounded-lg p-3 bg-muted/5 text-center">
+                <div className="flex items-center justify-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+                  <p className="text-[12px] text-muted-foreground">Tradability</p>
                 </div>
-                <div className="flex items-center justify-center gap-1">
-                  <p className={`text-xs font-bold ${scoreColor(stock.tradabilityScore, 40, 60)}`}>{stock.tradabilityScore}</p>
+                <div className="flex items-center justify-center gap-1.5">
+                  <p className={`text-sm font-bold ${scoreColor(stock.tradabilityScore, 40, 60)}`}>{stock.tradabilityScore}</p>
                   <TradabilityBadge rec={stock.tradabilityRecommendation} />
                 </div>
-                <p className="text-[8px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   Slippage: ~{stock.estSlippageBps} bps
                 </p>
               </div>
             </div>
 
+            {/* Analyst Revision detail */}
+            <div className="rounded-lg p-3 bg-muted/5">
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+                <p className="text-[12px] text-muted-foreground">Analyst Revisions</p>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className={`text-sm font-bold ${stock.analystRevisionScore > 0 ? 'text-emerald-400' : stock.analystRevisionScore < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                  {stock.analystRevisionScore > 0 ? '+' : ''}{stock.analystRevisionScore}
+                </p>
+                <Badge className={
+                  stock.analystRevisionTrend === 'UP' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                  stock.analystRevisionTrend === 'DOWN' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                  'bg-muted/30 text-muted-foreground border-muted/50'
+                } variant="outline">
+                  {stock.analystRevisionTrend || 'NO DATA'}
+                </Badge>
+              </div>
+            </div>
+
             {/* Regime thresholds applied */}
             {stock.activeRegimeThresholds && (
-              <div className="flex items-center gap-1.5 text-[8px] text-muted-foreground/70 px-2 py-1.5 rounded bg-muted/5">
-                <Shield className="w-3 h-3" />
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70 px-3 py-2 rounded-lg bg-muted/5">
+                <Shield className="w-3.5 h-3.5" />
                 <span>
                   Gates: Conf ≥ {stock.activeRegimeThresholds.confidenceFloor}% · Trend ≥ {stock.activeRegimeThresholds.trendQualityFloor} · Sektor ≥ {stock.activeRegimeThresholds.sectorStrengthFloor} · Trade ≥ {stock.activeRegimeThresholds.tradabilityFloor}
                 </span>
@@ -314,26 +323,26 @@ function SwingCard({ stock, rank }: { stock: TopStockCard; rank: number }) {
 
             {/* Risk Flags */}
             {stock.riskFlags.length > 0 && (
-              <div className="flex items-start gap-1.5">
-                <AlertTriangle className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
-                <div className="flex flex-wrap gap-1">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                <div className="flex flex-wrap gap-1.5">
                   {stock.riskFlags.map((f, i) => (
-                    <Badge key={i} className="bg-amber-500/10 text-amber-400/80 border-amber-500/20 text-[8px] px-1.5 py-0" variant="outline">{f}</Badge>
+                    <Badge key={i} className="bg-amber-500/10 text-amber-400/80 border-amber-500/20 ${BADGE_SM}" variant="outline">{f}</Badge>
                   ))}
                 </div>
               </div>
             )}
 
             {stock.riskFlags.length === 0 && (
-              <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/70">
-                <Shield className="w-3 h-3" /> Asnje flag risku — profili i pastër
+              <div className="flex items-center gap-2 text-[12px] text-emerald-400/70">
+                <Shield className="w-4 h-4" /> Asnje flag risku — profili i pastër
               </div>
             )}
 
-            <div className="flex items-center justify-between text-[9px] text-muted-foreground">
-              <span>Trend: {stock.trendQualityScore} | Sektor: {stock.sectorStrengthScore} | Align: {stock.timeframeAlignmentStatus} | PEAD: {stock.peadScore}</span>
-              <span className="flex items-center gap-1">
-                <Clock className="w-2.5 h-2.5" />{stock.updatedAt}
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Trend: {stock.trendQualityScore} | Sektor: {stock.sectorStrengthScore} | Align: {stock.timeframeAlignmentStatus} | PEAD: {stock.peadScore} | Analyst: {stock.analystRevisionScore}</span>
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3 h-3" />{stock.updatedAt}
               </span>
             </div>
           </div>
@@ -341,10 +350,10 @@ function SwingCard({ stock, rank }: { stock: TopStockCard; rank: number }) {
 
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-center gap-1 mt-2 text-[9px] text-muted-foreground hover:text-foreground transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 mt-2.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
         >
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          {expanded ? 'Fshi detajet' : 'Shiko 6 shtresat + detajet'}
+          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {expanded ? 'Fshi detajet' : 'Shiko 7 shtresat + detajet'}
         </button>
       </CardContent>
     </Card>
@@ -378,7 +387,7 @@ export function TopSwingPredictions() {
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-[180px] rounded-xl" />
+          <Skeleton key={i} className="h-[220px] rounded-xl" />
         ))}
       </div>
     );
@@ -387,10 +396,10 @@ export function TopSwingPredictions() {
   if (error) {
     return (
       <Card className="border-red-500/20 bg-red-500/5">
-        <CardContent className="flex items-center gap-2 py-4">
-          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+        <CardContent className="flex items-center gap-3 py-5">
+          <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <span className="text-sm text-red-400">{error}</span>
-          <button onClick={fetchData} className="ml-auto text-xs text-red-500 hover:underline">Provo perseri</button>
+          <button onClick={fetchData} className="ml-auto text-sm text-red-500 hover:underline">Provo perseri</button>
         </CardContent>
       </Card>
     );
@@ -401,21 +410,21 @@ export function TopSwingPredictions() {
     return (
       <div className="space-y-4">
         <Card className="border-border/50 bg-muted/5">
-          <CardContent className="py-8 text-center">
-            <Zap className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground font-medium">Asnje kandidat swing per momentin</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
+          <CardContent className="py-10 text-center">
+            <Zap className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-base text-muted-foreground font-medium">Asnje kandidat swing per momentin</p>
+            <p className="text-sm text-muted-foreground/60 mt-1.5">
               {data.message || 'Modeli nuk ka gjetur aktualisht asnje aksion qe permbush kriteret tona per swing trade.'}
             </p>
             {data.activeRegime && data.activeRegime !== 'UNKNOWN' && (
-              <div className="mt-2">
-                <Badge className="text-[9px] bg-muted/50" variant="secondary">
+              <div className="mt-3">
+                <Badge className="text-[11px] bg-muted/50 px-2.5 py-0.5" variant="secondary">
                   Regjimi aktiv: {data.activeRegime.replace(/_/g, ' ')}
                 </Badge>
               </div>
             )}
-            <div className="mt-3 flex items-center justify-center gap-1 text-[10px] text-muted-foreground/50">
-              <Info className="w-3 h-3" />
+            <div className="mt-4 flex items-center justify-center gap-1.5 text-[12px] text-muted-foreground/50">
+              <Info className="w-4 h-4" />
               Ky seksion shfaq vetem BUY predictions me confidence, trend, PEAD, universe rank dhe tradability te kontrolluar. Ekzekuto nje scan te ri.
             </div>
           </CardContent>
@@ -429,49 +438,49 @@ export function TopSwingPredictions() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <TrendingUp className="w-4 h-4 text-emerald-500" />
-          <span className="text-xs text-muted-foreground">
+          <TrendingUp className="w-5 h-5 text-emerald-500" />
+          <span className="text-[13px] text-muted-foreground">
             {data.topStocks.length} kandidate swing
             {data.totalScanned > 0 && <span className="text-muted-foreground/50"> (prej {data.totalScanned} prediction-eve, {data.filteredOut} te filtruar)</span>}
           </span>
           {data.activeRegime && data.activeRegime !== 'UNKNOWN' && (
-            <Badge variant="secondary" className="text-[9px] bg-muted/50">
+            <Badge variant="secondary" className="text-[11px] bg-muted/50 px-2.5 py-0.5">
               {data.activeRegime.replace(/_/g, ' ')}
             </Badge>
           )}
           {data.modelVersion !== 'N/A' && (
-            <Badge variant="secondary" className="text-[9px] bg-muted/50">{data.modelVersion}</Badge>
+            <Badge variant="secondary" className="text-[11px] bg-muted/50 px-2.5 py-0.5">{data.modelVersion}</Badge>
           )}
         </div>
         <button
           onClick={fetchData}
           disabled={loading}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-emerald-500 transition-colors"
+          className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-emerald-500 transition-colors"
         >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Rifresko
         </button>
       </div>
 
       {/* Cards */}
-      <div className="space-y-2.5">
+      <div className="space-y-3">
         {data.topStocks.map((stock, i) => (
           <SwingCard key={`${stock.symbol}-${stock.horizonDays}`} stock={stock} rank={i + 1} />
         ))}
       </div>
 
-      {/* Footer info — updated for 6-layer model */}
-      <div className="border border-border/30 rounded-lg px-3 py-2.5 space-y-1.5">
+      {/* Footer info */}
+      <div className="border border-border/30 rounded-lg px-4 py-3 space-y-2">
         <div className="flex items-start gap-2">
-          <Info className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-          <p className="text-[9px] text-muted-foreground/70 leading-relaxed">
-            <strong>6 shtresat e filtrit:</strong> Trend Quality · Sector Strength · Multi-TF Alignment · PEAD (Post-Earnings Drift) · Universe Rank (cross-sectional momentum) · Tradability (execution quality).
+          <Info className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+            <strong>7 shtresat e filtrit:</strong> Trend Quality · Sector Strength · Multi-TF Alignment · PEAD (Post-Earnings Drift) · Universe Rank (cross-sectional momentum) · Tradability (execution quality) · Analyst Revisions (estimate momentum).
           </p>
         </div>
         {data.regimeThresholdsApplied && (
-          <div className="flex items-start gap-2 pl-5">
-            <Shield className="w-3 h-3 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
-            <p className="text-[9px] text-muted-foreground/50 leading-relaxed">
+          <div className="flex items-start gap-2 pl-6">
+            <Shield className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+            <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
               Regime gates: Conf ≥ {data.regimeThresholdsApplied.confidenceFloor}% · Trend ≥ {data.regimeThresholdsApplied.trendQualityFloor} · Sektor ≥ {data.regimeThresholdsApplied.sectorStrengthFloor} · Trade ≥ {data.regimeThresholdsApplied.tradabilityFloor} · Rank ≥ {data.regimeThresholdsApplied.universeRankFloor}.
               Maksimum 9 stocks (3/horizon, 2/sector).
             </p>

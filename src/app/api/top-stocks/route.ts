@@ -16,6 +16,7 @@ import { computeRelativeRanking, type StockMomentumProfile } from '@/lib/univers
 import { computeTradabilityScore } from '@/lib/tradability-score';
 import { getRegimePolicy } from '@/lib/regime-policy';
 import type { MarketRegimeState } from '@/lib/regime-intelligence';
+import { computeAnalystRevisionScore } from '@/lib/analyst-revision-engine';
 
 export const maxDuration = 60;
 
@@ -54,6 +55,9 @@ interface TopStockCard {
   isTradeable: boolean;
   tradabilityRecommendation: string;
   estSlippageBps: number;
+  // Layer 5: Analyst Revision
+  analystRevisionScore: number;
+  analystRevisionTrend: string;
   // Regime-aware
   activeRegimeThresholds: {
     confidenceFloor: number;
@@ -334,6 +338,17 @@ export async function GET() {
     await Promise.allSettled(peadPromises);
     console.log(`[TOP-STOCKS] PEAD computed for ${peadMap.size} symbols`);
 
+    // 6b. Compute Analyst Revision scores (reuses PEAD earnings cache)
+    const analystMap = new Map<string, Awaited<ReturnType<typeof computeAnalystRevisionScore>>>();
+    for (const sym of candidateSymbols) {
+      try {
+        const reports = await fetchEarnings(sym);
+        if (reports.length >= 2) {
+          analystMap.set(sym, computeAnalystRevisionScore({ symbol: sym, earningsReports: reports }));
+        }
+      } catch {}
+    }
+
     // 7. Compute Tradability scores
     const tradabilityMap = new Map<string, Awaited<ReturnType<typeof computeTradabilityScore>>>();
     for (const sym of candidateSymbols) {
@@ -428,6 +443,14 @@ export async function GET() {
       const isTopQuintile = uniRank?.isTopQuintile ?? false;
       const momentumRegime = uniRank?.momentumRegime ?? 'FOLLOWING';
 
+      // ── Layer 5: Analyst Revision ──
+      const analyst = analystMap.get(p.symbol);
+      const analystRevisionScore = analyst?.revisionScore ?? 0;
+      const analystRevisionTrend = analyst?.trend ?? 'NO_DATA';
+
+      // Analyst revision gate: STRONG_DOWN = filter out
+      if (analystRevisionTrend === 'STRONG_DOWN') continue;
+
       // ── Layer 4: Tradability ──
       const trad = tradabilityMap.get(p.symbol);
       const tradabilityScore = trad?.tradabilityScore ?? 50;
@@ -465,6 +488,7 @@ export async function GET() {
         riskFlags.push(`Tradability: ${tradabilityRecommendation}`);
       }
       if (momentumRegime === 'DECLINING') riskFlags.push('Momentum në rënie');
+      if (analyst?.riskFlags) riskFlags.push(...analyst.riskFlags.slice(0, 1));
       if (pead?.riskFlags) riskFlags.push(...pead.riskFlags.slice(0, 2));
       if (trad?.riskFlags) riskFlags.push(...trad.riskFlags.slice(0, 1));
       const sp = p.spilloverSignal;
@@ -501,6 +525,11 @@ export async function GET() {
         if (sp && (sp.riskAlignment ?? 0) > 0.2) topReasons.push('Positive spillover signal');
       }
 
+      // Analyst revision reasons
+      if (analyst?.reasons) topReasons.push(...analyst.reasons.slice(0, 1));
+      if (analystRevisionTrend === 'STRONG_UP') topReasons.push('Konsensusi i analystëve po ngrihet fort');
+      else if (analystRevisionTrend === 'UP') topReasons.push('Revisionet pozitive — nxitje konsensusi');
+
       // Tradability reason
       if (tradabilityRecommendation === 'EXCELLENT') topReasons.push('Likuiditet i lartë, slippage i ulët');
 
@@ -528,8 +557,9 @@ export async function GET() {
         sectorStrengthScore * 0.08 +
         tfScore * 0.08 +
         (peadDriftActive ? peadScore * regimeThresholds.peadBonusWeight : 0) +
-        universeRankScore * 0.08 +
-        tradabilityScore * 0.07;
+        universeRankScore * 0.07 +
+        tradabilityScore * 0.06 +
+        (analystRevisionScore > 0 ? analystRevisionScore * 0.04 : 0);
 
       // Risk penalty
       const riskPenalty = uniqueFlags.length === 0 ? 3 : uniqueFlags.length <= 1 ? 1 : uniqueFlags.length <= 2 ? -1 : -4;
@@ -579,6 +609,9 @@ export async function GET() {
         isTradeable,
         tradabilityRecommendation,
         estSlippageBps,
+        // Layer 5: Analyst Revision
+        analystRevisionScore,
+        analystRevisionTrend,
         // Regime-aware
         activeRegimeThresholds: {
           confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
