@@ -57,11 +57,16 @@ interface ScreenerStock {
   fcf: string;
   score: number;
   _liveSource?: string;
+  _preMarketVolume?: number;
+  _rvol?: number;
+  _isPreMarket?: boolean;
 }
 
 interface ScreenerData {
   scannedAt?: string;
   liveCount?: number;
+  isPreMarket?: boolean;
+  preMarketStocksWithVolume?: number;
   stocks: ScreenerStock[];
   totalStocks: number;
   filteredCount: number;
@@ -333,10 +338,20 @@ export function StockScreener() {
           <span className="text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">{data?.filteredCount || 0}</span> nga {data?.totalStocks || 0} aksione
           </span>
+          {data?.isPreMarket && (
+            <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-[9px] px-1.5 h-4">
+              PRE-MARKET
+            </Badge>
+          )}
           {data?.liveCount && data.liveCount > 0 && (
             <span className="flex items-center gap-1 text-[10px] text-emerald-500">
               <Radio className="w-3 h-3" />
               {data.liveCount} live
+            </span>
+          )}
+          {data?.isPreMarket && data.preMarketStocksWithVolume !== undefined && data.preMarketStocksWithVolume > 0 && (
+            <span className="text-[10px] text-orange-400">
+              {data.preMarketStocksWithVolume} me volum pre-market
             </span>
           )}
           {data?.scannedAt && (
@@ -373,6 +388,7 @@ export function StockScreener() {
                   { key: 'sector', label: 'Sektori' },
                   { key: 'price', label: 'Çmimi' },
                   { key: 'change', label: 'Ndryshimi' },
+                  { key: '_rvol', label: data?.isPreMarket ? 'RVol' : 'Volumi' },
                   { key: 'pe', label: 'P/E' },
                   { key: 'marketCapNum', label: 'Kap. Tregut' },
                   { key: 'signal', label: 'Sinjali' },
@@ -432,6 +448,22 @@ export function StockScreener() {
                           {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                           {isUp ? '+' : ''}{stock.change.toFixed(2)}%
                         </span>
+                      </td>
+                      <td className="py-2.5 px-3 tabular-nums">
+                        {data?.isPreMarket ? (
+                          <div className="flex flex-col">
+                            <span className="text-[10px] text-muted-foreground">
+                              {stock._preMarketVolume ? `${(stock._preMarketVolume / 1e6).toFixed(1)}M` : '—'}
+                            </span>
+                            {stock._rvol && stock._rvol > 0 && (
+                              <span className={`text-[9px] font-bold ${stock._rvol >= 0.5 ? 'text-orange-400' : stock._rvol >= 0.2 ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                                RVol {stock._rvol.toFixed(1)}x
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px]">{stock.volume}</span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 tabular-nums">
                         {stock.pe > 0 ? stock.pe.toFixed(1) : 'N/A'}

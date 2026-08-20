@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllStocks } from '@/lib/market-data';
-import { getRealPrices, type LivePrice } from '@/lib/alpha-vantage';
+import { getRealPrices, fetchPreMarketVolumeBatch, isPreMarketHours, type LivePrice, type PreMarketData } from '@/lib/alpha-vantage';
 
 export const maxDuration = 60;
 
@@ -127,12 +127,23 @@ export async function GET(request: NextRequest) {
     const forceRefresh = searchParams.get('refresh') === '1';
     const livePrices = await getRealPrices(tickers, { forceRefresh: true });
 
+    // ── PRE-MARKET: Fetch pre-market volume from Yahoo chart API ──
+    const preMarket = isPreMarketHours();
+    let preMarketData: Record<string, PreMarketData> = {};
+    if (preMarket) {
+      console.log(`[SCREENER] Pre-market detected — fetching pre-market volume for ${tickers.length} stocks...`);
+      preMarketData = await fetchPreMarketVolumeBatch(tickers);
+      const withVol = Object.values(preMarketData).filter(d => d.preMarketVolume > 0).length;
+      console.log(`[SCREENER] Pre-market volume obtained for ${withVol}/${tickers.length} stocks`);
+    }
+
     // Apply filters — use LIVE data for dynamic signal/trend/rating/score
     let filtered = stocks.map(stock => {
       const live: LivePrice | undefined = livePrices[stock.ticker];
-      const price = live?.price ?? stock.price;
-      const change = live?.change ?? stock.change;
-      const hasLiveData = live && live.price > 0;
+      const pre = preMarketData[stock.ticker];
+      const price = live?.price ?? pre?.preMarketPrice ?? stock.price;
+      const change = live?.change ?? pre?.preMarketChange ?? stock.change;
+      const hasLiveData = (live && live.price > 0) || (pre && pre.preMarketPrice && pre.preMarketPrice > 0);
 
       // DYNAMIC signals based on live change (not static)
       const signal = hasLiveData ? deriveSignal(change) : stock.signal;
@@ -141,11 +152,16 @@ export async function GET(request: NextRequest) {
         ? deriveRating(change, stock.pe, parseFloat(stock.revGrowth) || 0, parseFloat(stock.epsGrowth) || 0)
         : stock.rating;
 
-      // Use LIVE volume when available (from Yahoo Finance)
+      // Use LIVE volume (regular or pre-market)
       const liveVol = live?.volume && live.volume > 0 ? live.volume : 0;
-      const volume = liveVol > 0
-        ? (liveVol >= 1e9 ? `${(liveVol / 1e9).toFixed(1)}B` : `${(liveVol / 1e6).toFixed(1)}M`)
+      const preVol = pre?.preMarketVolume || 0;
+      const activeVol = pre ? preVol : liveVol; // pre-market: use pre-market vol
+      const volume = activeVol > 0
+        ? (activeVol >= 1e9 ? `${(activeVol / 1e9).toFixed(1)}B` : `${(activeVol / 1e6).toFixed(1)}M`)
         : stock.volume;
+
+      // Pre-market RVol (relative volume vs 30-day avg)
+      const rvol = pre?.preMarketRVol || 0;
 
       return {
         ticker: stock.ticker,
@@ -155,7 +171,10 @@ export async function GET(request: NextRequest) {
         price,
         change,
         volume,
-        _liveVolume: liveVol,
+        _liveVolume: activeVol,
+        _preMarketVolume: preVol,
+        _rvol: rvol,
+        _isPreMarket: pre,
         marketCap: stock.marketCap,
         marketCapNum: parseMarketCap(stock.marketCap),
         pe: stock.pe,
@@ -247,6 +266,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       scannedAt: new Date().toISOString(),
       liveCount: Object.keys(livePrices).length,
+      isPreMarket: preMarket,
+      preMarketStocksWithVolume: Object.values(preMarketData).filter(d => d.preMarketVolume > 0).length,
       stocks: filtered,
       totalStocks: stocks.length,
       filteredCount: filtered.length,
