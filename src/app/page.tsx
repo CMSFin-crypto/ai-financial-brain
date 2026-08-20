@@ -13,7 +13,7 @@ import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
 import { TopSwingPredictions } from '@/components/financial-brain/top-swing-predictions';
-import { Watchlist } from '@/components/financial-brain/watchlist';
+import { IBKRStrategy } from '@/components/financial-brain/ibkr-strategy';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
 import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
@@ -34,7 +34,7 @@ import {
   Radar,
   Flame,
   MessageSquare,
-  Eye,
+  Briefcase,
   Search,
   LayoutDashboard,
   CalendarDays,
@@ -118,8 +118,8 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Tregu</span>
                 <TabsList className="flex flex-wrap gap-1 h-auto p-1 flex-1">
-                  <TabsTrigger value="watchlist" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Eye className="w-3.5 h-3.5 mr-1.5" />Watchlist
+                  <TabsTrigger value="ibkr" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Briefcase className="w-3.5 h-3.5 mr-1.5" />IBKR
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
@@ -211,8 +211,8 @@ export default function Home() {
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
                 <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
-                  <TabsTrigger value="watchlist" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Eye className="w-3 h-3 mr-1" />Watchlist
+                  <TabsTrigger value="ibkr" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Briefcase className="w-3 h-3 mr-1" />IBKR
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
@@ -300,14 +300,14 @@ export default function Home() {
             </div>
           </div>
 
-          <TabsContent value="watchlist" className="mt-4">
+          <TabsContent value="ibkr" className="mt-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              <Watchlist />
+              <IBKRStrategy />
             </motion.div>
           </TabsContent>
 
