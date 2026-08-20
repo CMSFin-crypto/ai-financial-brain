@@ -121,10 +121,12 @@ export async function GET() {
       });
     }
 
-    // 4. Deduplicate: keep only latest prediction per symbol per horizon
+    // 4. Remap DB horizons (1/5/20) → display horizons (1/3/7), then deduplicate
+    const HORIZON_REMAP: Record<number, 1 | 3 | 7> = { 1: 1, 3: 3, 5: 3, 7: 7, 20: 7 };
     const latestByKey = new Map<string, typeof predictions[0]>();
     for (const p of predictions) {
-      const key = `${p.symbol}:${p.horizonDays}`;
+      const displayH = HORIZON_REMAP[p.horizonDays] ?? p.horizonDays as 1 | 3 | 7;
+      const key = `${p.symbol}:${displayH}`;
       const existing = latestByKey.get(key);
       if (!existing || p.predictedAt > existing.predictedAt) {
         latestByKey.set(key, p);
@@ -140,7 +142,7 @@ export async function GET() {
     for (const p of candidates) {
       if (cards.length >= CONFIG.maxTotal) break;
 
-      const horizon = p.horizonDays as 1 | 3 | 7;
+      const horizon = HORIZON_REMAP[p.horizonDays] ?? (p.horizonDays as 1 | 3 | 7);
       const sector = p.sector || 'Unknown';
 
       // Event risk: skip critical event within 2 days
