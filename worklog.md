@@ -26,3 +26,22 @@ Stage Summary:
 - Modified: `src/lib/five-pillars-engine.ts` (price $1-$20, float <10M)
 - Rewritten: `src/app/api/momentum/5-pillars/route.ts` (scans ALL 7,165 US stocks)
 - Modified: `src/components/financial-brain/five-pillars.tsx` (labels, universe badge)
+---
+Task ID: 1
+Agent: main
+Task: Update Top Swing Predictions — Option B naming + horizons 1D/3D/7D
+
+Work Log:
+- Verified Prisma schema: Prediction model has all required fields (finalDecision, evaluationStatus, rawScore, calibratedConfidence, transitionRisk, regime, etc.)
+- Backend /api/top-stocks/route.ts already had correct 1/3/7 horizons and full filtering/ranking logic
+- Frontend top-swing-predictions.tsx already had 1/3/7 horizon badges
+- Renamed tab from 'Top Stocks' to 'Swing Predictions' in both desktop and mobile TabsTrigger
+- Updated description in page.tsx card from '1D, 5D apo 20D' to '1D, 3D apo 7D'
+- Updated footer info text in component to mention '1D, 3D apo 7D'
+- Fixed missing TrendingUp import in page.tsx
+- Build verified successfully
+
+Stage Summary:
+- Tab renamed: 'Top Stocks' → 'Swing Predictions' (both desktop + mobile)
+- All horizon references updated from 1/5/20 to 1/3/7
+- Build passes cleanly

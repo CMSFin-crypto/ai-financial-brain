@@ -50,6 +50,7 @@ import {
   FileText,
   ArrowRight,
   Zap,
+  TrendingUp,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -124,7 +125,7 @@ export default function Home() {
                     <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
                   </TabsTrigger>
                   <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Flame className="w-3.5 h-3.5 mr-1.5" />Top Stocks
+                    <Flame className="w-3.5 h-3.5 mr-1.5" />Swing Predictions
                   </TabsTrigger>
                   <TabsTrigger value="5-pillars" className="text-xs py-2 px-3 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <Zap className="w-3.5 h-3.5 mr-1.5" />5 Pillars Momentum
@@ -217,7 +218,7 @@ export default function Home() {
                     <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
                   </TabsTrigger>
                   <TabsTrigger value="top-movers" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Flame className="w-3 h-3 mr-1" />Top Stocks
+                    <Flame className="w-3 h-3 mr-1" />Swing Predictions
                   </TabsTrigger>
                   <TabsTrigger value="5-pillars" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <Zap className="w-3 h-3 mr-1" />5 Pillars Momentum
@@ -348,7 +349,7 @@ export default function Home() {
                     <h3 className="text-sm font-semibold">Best Swing Candidates</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Swing trade candidates me probabilitet më të lartë për upside 1D, 5D apo 20D, të filtruar nga regime, spillover, event risk dhe confidence.
+                    Swing trade candidates me probabilitet më të lartë për upside 1D, 3D apo 7D, të filtruar nga regime, spillover, event risk dhe confidence.
                   </p>
                 </CardContent>
               </Card>

@@ -8,7 +8,7 @@ interface TopStockCard {
   symbol: string;
   company?: string;
   sector: string;
-  horizonDays: 1 | 5 | 20;
+  horizonDays: 1 | 3 | 7;
   finalDecision: 'BUY';
   rawScore: number;
   hybridConfidence: number;
@@ -140,7 +140,7 @@ export async function GET() {
     for (const p of candidates) {
       if (cards.length >= CONFIG.maxTotal) break;
 
-      const horizon = p.horizonDays as 1 | 5 | 20;
+      const horizon = p.horizonDays as 1 | 3 | 7;
       const sector = p.sector || 'Unknown';
 
       // Event risk: skip critical event within 2 days
