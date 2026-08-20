@@ -1,0 +1,1733 @@
+     1→'use client';
+     2→
+     3→import { useState, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import { Card, CardContent } from '@/components/ui/card';
+     6→import { Badge } from '@/components/ui/badge';
+     7→import { Button } from '@/components/ui/button';
+     8→import { Input } from '@/components/ui/input';
+     9→import {
+    10→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    11→} from '@/components/ui/select';
+    12→import {
+    13→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    14→} from '@/components/ui/table';
+    15→import {
+    16→  Brain, Play, Loader2, TrendingUp, TrendingDown, Minus,
+    17→  Shield, AlertTriangle, Zap, BarChart3, ArrowUp, ArrowDown,
+    18→  Target, Clock, Search, RefreshCw, ChevronDown, ChevronUp,
+    19→  Sparkles, GraduationCap, BookOpen, CheckCircle2, XCircle, Activity, Trophy, PieChart,
+    20→} from 'lucide-react';
+    21→
+    22→// ─── Types ──────────────────────────────────────────────────
+    23→
+    24→interface KeyFactor {
+    25→  name: string;
+    26→  signal: string;
+    27→  impact: string;
+    28→  score: number;
+    29→  description: string;
+    30→}
+    31→
+    32→interface TermPrediction {
+    33→  prediction: string;
+    34→  probability: number;
+    35→  expectedMove: number;
+    36→}
+    37→
+    38→interface FundamentalData {
+    39→  score: number;
+    40→  summary: string;
+    41→  scores: Record<string, number>;
+    42→}
+    43→
+    44→interface LearningData {
+    45→  totalPredictions: number;
+    46→  directionAccuracy: number;
+    47→  shortTermAccuracy: number;
+    48→  mediumTermAccuracy: number;
+    49→  bestIndicators: string[];
+    50→  worstIndicators: string[];
+    51→  recentAccuracy: number;
+    52→}
+    53→
+    54→interface PredictionResult {
+    55→  symbol: string;
+    56→  score: number;
+    57→  direction: string;
+    58→  confidence: number;
+    59→  shortTerm: TermPrediction;
+    60→  mediumTerm: TermPrediction;
+    61→  riskLevel: string;
+    62→  volatility: string;
+    63→  keyFactors: KeyFactor[];
+    64→  indicatorScores: Record<string, number>;
+    65→  timestamp: string;
+    66→  technicalScore?: number;
+    67→  fundamentalData?: FundamentalData | null;
+    68→  learningData?: LearningData | null;
+    69→  combinedScore?: number;
+    70→}
+    71→
+    72→interface ScanLearningInfo {
+    73→  totalPredictions: number;
+    74→  directionAccuracy: number;
+    75→  recentAccuracy: number;
+    76→  bestIndicators: string[];
+    77→  worstIndicators: string[];
+    78→}
+    79→
+    80→interface ScanResult {
+    81→  scannedAt: string;
+    82→  total: number;
+    83→  successful: number;
+    84→  failed: number;
+    85→  errors: string[];
+    86→  learningStats?: ScanLearningInfo;
+    87→  topPicks: PredictionResult[];
+    88→  topShorts: PredictionResult[];
+    89→  mostConfident: PredictionResult[];
+    90→  allResults: PredictionResult[];
+    91→}
+    92→
+    93→// ─── Hybrid Types ───────────────────────────────────────
+    94→
+    95→interface FundamentalFactor {
+    96→  score: number;
+    97→  name: string;
+    98→  description: string;
+    99→}
+   100→
+   101→interface FundamentalScore {
+   102→  score: number;
+   103→  signal: string;
+   104→  factors: {
+   105→    valuation: FundamentalFactor;
+   106→    growth: FundamentalFactor;
+   107→    profitability: FundamentalFactor;
+   108→    financialHealth: FundamentalFactor;
+   109→    analystConsensus: FundamentalFactor;
+   110→  };
+   111→  timestamp: string;
+   112→}
+   113→
+   114→interface HybridPredictionResult extends PredictionResult {
+   115→  fundamentalScore: FundamentalScore | null;
+   116→  fundamentalAvailable: boolean;
+   117→  aiInsight: string;
+   118→  totalScore: number;
+   119→  hybridConfidence: number;
+   120→}
+   121→
+   122→interface LearningStatsData {
+   123→  totalRecorded: number;
+   124→  totalEvaluated: number;
+   125→  totalCorrect: number;
+   126→  overallAccuracy: number;
+   127→  overallAccuracyPercent: number;
+   128→  lessons: Array<{ id: string; category: string; message: string; severity: number; createdAt: string }>;
+   129→  indicatorAccuracies: Record<string, {
+   130→    indicator: string;
+   131→    description: string;
+   132→    accuracy: number;
+   133→    totalPredictions: number;
+   134→    correctPredictions: number;
+   135→    weight: number;
+   136→    type: string;
+   137→  }>;
+   138→  tickerAccuracy: Record<string, { total: number; correct: number; accuracy: number }>;
+   139→  weightMultipliers: Record<string, number>;
+   140→  recentPredictions: Array<{
+   141→    ticker: string;
+   142→    timestamp: string;
+   143→    direction: string;
+   144→    totalScore: number;
+   145→    confidence: number;
+   146→    priceAtPrediction: number;
+   147→    actualPrice?: number;
+   148→    actualChangePercent?: number;
+   149→    wasCorrect?: boolean;
+   150→    evaluated: boolean;
+   151→    topWrongIndicators: string[];
+   152→  }>;
+   153→}
+   154→
+   155→interface HybridScanResult {
+   156→  scannedAt: string;
+   157→  total: number;
+   158→  successful: number;
+   159→  failed: number;
+   160→  errors: string[];
+   161→  topPicks: HybridPredictionResult[];
+   162→  topShorts: HybridPredictionResult[];
+   163→  mostConfident: HybridPredictionResult[];
+   164→  allResults: HybridPredictionResult[];
+   165→  learning?: {
+   166→    totalPredictions: number;
+   167→    totalRecorded: number;
+   168→    totalEvaluated: number;
+   169→    evaluatedPredictions: number;
+   170→    correctPredictions: number;
+   171→    avgAccuracy: number;
+   172→    overallAccuracy: number;
+   173→    lessonsCount: number;
+   174→    bestSector: string | null;
+   175→    worstSector: string | null;
+   176→    streakCorrect: number;
+   177→    streakWrong: number;
+   178→    lessonsLearned: number;
+   179→    recentAccuracy: number;
+   180→    improvement: number;
+   181→    evaluationResult?: {
+   182→      evaluated: number;
+   183→      correct: number;
+   184→      wrong: number;
+   185→      accuracy: number;
+   186→      newLessons: number;
+   187→      details: Array<{ ticker: string; horizonDays: number; predictedDir: string; actualPrice: number; returnPct: number; wasCorrect: boolean }>;
+   188→    };
+   189→  };
+   190→}
+   191→
+   192→// ─── Helper Functions ───────────────────────────────────────
+   193→
+   194→function directionColor(direction: string): string {
+   195→  switch (direction) {
+   196→    case 'STRONG_BUY': return 'text-emerald-400';
+   197→    case 'BUY': return 'text-emerald-500';
+   198→    case 'NEUTRAL': return 'text-yellow-500';
+   199→    case 'SELL': return 'text-red-500';
+   200→    case 'STRONG_SELL': return 'text-red-400';
+   201→    default: return 'text-muted-foreground';
+   202→  }
+   203→}
+   204→
+   205→function directionBg(direction: string): string {
+   206→  switch (direction) {
+   207→    case 'STRONG_BUY': return 'bg-emerald-500/15 border-emerald-500/30';
+   208→    case 'BUY': return 'bg-emerald-500/10 border-emerald-500/20';
+   209→    case 'NEUTRAL': return 'bg-yellow-500/10 border-yellow-500/20';
+   210→    case 'SELL': return 'bg-red-500/10 border-red-500/20';
+   211→    case 'STRONG_SELL': return 'bg-red-500/15 border-red-500/30';
+   212→    default: return 'bg-muted/50 border-border/50';
+   213→  }
+   214→}
+   215→
+   216→function directionLabel(direction: string): string {
+   217→  switch (direction) {
+   218→    case 'STRONG_BUY': return 'BLERJE E FORTË';
+   219→    case 'BUY': return 'BLERJE';
+   220→    case 'NEUTRAL': return 'NEUTRAL';
+   221→    case 'SELL': return 'SHITJE';
+   222→    case 'STRONG_SELL': return 'SHITJE E FORTË';
+   223→    default: return direction;
+   224→  }
+   225→}
+   226→
+   227→function directionBadgeVariant(direction: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+   228→  if (direction === 'STRONG_BUY' || direction === 'BUY') return 'default';
+   229→  if (direction === 'SELL' || direction === 'STRONG_SELL') return 'destructive';
+   230→  return 'secondary';
+   231→}
+   232→
+   233→function scoreColor(score: number): string {
+   234→  if (score > 60) return 'text-emerald-400';
+   235→  if (score > 25) return 'text-emerald-500';
+   236→  if (score > -25) return 'text-yellow-500';
+   237→  if (score > -60) return 'text-red-500';
+   238→  return 'text-red-400';
+   239→}
+   240→
+   241→function confidenceColor(conf: number): string {
+   242→  if (conf > 70) return 'text-emerald-400';
+   243→  if (conf > 40) return 'text-yellow-400';
+   244→  return 'text-red-400';
+   245→}
+   246→
+   247→function predictionLabel(prediction: string): string {
+   248→  switch (prediction) {
+   249→    case 'UP': return 'Rritje';
+   250→    case 'DOWN': return 'Ulje';
+   251→    case 'SIDEWAYS': return 'Barnë';
+   252→    default: return prediction;
+   253→  }
+   254→}
+   255→
+   256→function predictionIcon(prediction: string) {
+   257→  if (prediction === 'UP') return <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />;
+   258→  if (prediction === 'DOWN') return <TrendingDown className="w-3.5 h-3.5 text-red-400" />;
+   259→  return <Minus className="w-3.5 h-3.5 text-yellow-400" />;
+   260→}
+   261→
+   262→function riskLabel(level: string): string {
+   263→  switch (level) {
+   264→    case 'LOW': return 'Ulët';
+   265→    case 'MEDIUM': return 'Mesatar';
+   266→    case 'HIGH': return 'I Lartë';
+   267→    default: return level;
+   268→  }
+   269→}
+   270→
+   271→function riskVariant(level: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+   272→  if (level === 'LOW') return 'default';
+   273→  if (level === 'HIGH') return 'destructive';
+   274→  return 'secondary';
+   275→}
+   276→
+   277→function volatilityLabel(level: string): string {
+   278→  switch (level) {
+   279→    case 'LOW': return 'Ulët';
+   280→    case 'MEDIUM': return 'Mesatar';
+   281→    case 'HIGH': return 'I Lartë';
+   282→    default: return level;
+   283→  }
+   284→}
+   285→
+   286→function indicatorScoreColor(score: number): string {
+   287→  if (score > 0) return 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5';
+   288→  if (score < 0) return 'text-red-400 border-red-500/20 bg-red-500/5';
+   289→  return 'text-yellow-400 border-yellow-500/20 bg-yellow-500/5';
+   290→}
+   291→
+   292→// ─── Inline Components ──────────────────────────────────────
+   293→
+   294→function PredictionScoreGauge({ score, direction }: { score: number; direction: string }) {
+   295→  const radius = 54;
+   296→  const circumference = 2 * Math.PI * radius;
+   297→  const normalizedScore = ((score + 100) / 200) * 100;
+   298→  const offset = circumference - (normalizedScore / 100) * circumference;
+   299→
+   300→  const ringColor = score > 25
+   301→    ? 'stroke-emerald-500'
+   302→    : score > -25
+   303→      ? 'stroke-yellow-500'
+   304→      : 'stroke-red-500';
+   305→
+   306→  return (
+   307→    <div className="flex flex-col items-center gap-3">
+   308→      <div className="relative w-36 h-36">
+   309→        <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+   310→          <circle
+   311→            cx="60" cy="60" r={radius}
+   312→            fill="none" className="stroke-muted/30" strokeWidth="8"
+   313→          />
+   314→          <motion.circle
+   315→            cx="60" cy="60" r={radius}
+   316→            fill="none" className={ringColor}
+   317→            strokeWidth="8" strokeLinecap="round"
+   318→            strokeDasharray={circumference}
+   319→            initial={{ strokeDashoffset: circumference }}
+   320→            animate={{ strokeDashoffset: offset }}
+   321→            transition={{ duration: 1.2, ease: 'easeOut' }}
+   322→          />
+   323→        </svg>
+   324→        <div className="absolute inset-0 flex flex-col items-center justify-center">
+   325→          <span className={`text-3xl font-bold ${scoreColor(score)}`}>
+   326→            {score > 0 ? '+' : ''}{score}
+   327→          </span>
+   328→          <span className="text-[10px] text-muted-foreground">-100 — +100</span>
+   329→        </div>
+   330→      </div>
+   331→      <Badge
+   332→        variant={directionBadgeVariant(direction)}
+   333→        className="text-sm px-4 py-1.5 font-semibold"
+   334→      >
+   335→        {directionLabel(direction)}
+   336→      </Badge>
+   337→    </div>
+   338→  );
+   339→}
+   340→
+   341→function ConfidenceBar({ confidence }: { confidence: number }) {
+   342→  const barColor = confidence > 70
+   343→    ? 'bg-emerald-500'
+   344→    : confidence > 40
+   345→      ? 'bg-yellow-500'
+   346→      : 'bg-red-500';
+   347→
+   348→  return (
+   349→    <div className="w-full space-y-1.5">
+   350→      <div className="flex items-center justify-between">
+   351→        <span className="text-xs text-muted-foreground">Besimi</span>
+   352→        <span className={`text-xs font-bold ${confidenceColor(confidence)}`}>
+   353→          {confidence.toFixed(1)}%
+   354→        </span>
+   355→      </div>
+   356→      <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden">
+   357→        <motion.div
+   358→          className={`h-full rounded-full ${barColor}`}
+   359→          initial={{ width: 0 }}
+   360→          animate={{ width: `${confidence}%` }}
+   361→          transition={{ duration: 0.8, ease: 'easeOut' }}
+   362→        />
+   363→      </div>
+   364→    </div>
+   365→  );
+   366→}
+   367→
+   368→function TermCard({
+   369→  label,
+   370→  data,
+   371→}: {
+   372→  label: string;
+   373→  data: TermPrediction;
+   374→}) {
+   375→  return (
+   376→    <Card className={`border ${directionBg(data.prediction === 'UP' ? 'BUY' : data.prediction === 'DOWN' ? 'SELL' : 'NEUTRAL')}`}>
+   377→      <CardContent className="p-3 space-y-2">
+   378→        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+   379→          <Clock className="w-3 h-3" />
+   380→          {label}
+   381→        </div>
+   382→        <div className="flex items-center gap-2">
+   383→          {predictionIcon(data.prediction)}
+   384→          <span className={`text-sm font-bold ${directionColor(data.prediction === 'UP' ? 'BUY' : data.prediction === 'DOWN' ? 'SELL' : 'NEUTRAL')}`}>
+   385→            {predictionLabel(data.prediction)}
+   386→          </span>
+   387→        </div>
+   388→        <div className="flex items-center justify-between text-xs text-muted-foreground">
+   389→          <span>Probabiliteti</span>
+   390→          <span className="font-semibold text-foreground">{data.probability.toFixed(1)}%</span>
+   391→        </div>
+   392→        <div className="flex items-center justify-between text-xs text-muted-foreground">
+   393→          <span>Lëvizja e pritur</span>
+   394→          <span className={`font-semibold ${data.expectedMove >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+   395→            {data.expectedMove >= 0 ? '+' : ''}{data.expectedMove.toFixed(2)}%
+   396→          </span>
+   397→        </div>
+   398→      </CardContent>
+   399→    </Card>
+   400→  );
+   401→}
+   402→
+   403→function ScoreBar({ score }: { score: number }) {
+   404→  const normalized = ((score + 100) / 200) * 100;
+   405→
+   406→  return (
+   407→    <div className="relative w-full h-2.5 rounded-full overflow-hidden">
+   408→      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500 opacity-40" />
+   409→      <motion.div
+   410→        className="absolute top-1/2 -translate-y-1/2 w-1.5 h-3.5 rounded-sm bg-white shadow-sm border border-foreground/20"
+   411→        initial={{ left: '50%' }}
+   412→        animate={{ left: `${Math.max(2, Math.min(98, normalized))}%` }}
+   413→        transition={{ duration: 0.6, ease: 'easeOut' }}
+   414→      />
+   415→    </div>
+   416→  );
+   417→}
+   418→
+   419→// ─── Main Component ─────────────────────────────────────────
+   420→
+   421→export function StockPredictor() {
+   422→  // Mode
+   423→  const [mode, setMode] = useState<'single' | 'scan' | 'ai-hybrid'>('scan');
+   424→
+   425→  // Single mode
+   426→  const [ticker, setTicker] = useState('');
+   427→  const [singleResult, setSingleResult] = useState<PredictionResult | null>(null);
+   428→  const [singleLoading, setSingleLoading] = useState(false);
+   429→  const [singleError, setSingleError] = useState('');
+   430→
+   431→  // Scan mode
+   432→  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+   433→  const [scanLoading, setScanLoading] = useState(false);
+   434→  const [scanError, setScanError] = useState('');
+   435→  const [scanProgress, setScanProgress] = useState('');
+   436→  const [viewTab, setViewTab] = useState<'top-picks' | 'top-shorts' | 'most-confident' | 'all'>('top-picks');
+   437→  const [sortField, setSortField] = useState<'score' | 'confidence' | 'symbol' | 'totalScore' | 'hybridConfidence'>('score');
+   438→  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+   439→  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
+   440→
+   441→  // AI Hybrid scan mode
+   442→  const [hybridResult, setHybridResult] = useState<HybridScanResult | null>(null);
+   443→  const [hybridLoading, setHybridLoading] = useState(false);
+   444→  const [hybridError, setHybridError] = useState('');
+   445→  const [hybridViewTab, setHybridViewTab] = useState<'top-picks' | 'top-shorts' | 'most-confident' | 'all'>('top-picks');
+   446→  const [hybridSortField, setHybridSortField] = useState<'totalScore' | 'hybridConfidence' | 'symbol'>('totalScore');
+   447→  const [hybridSortDir, setHybridSortDir] = useState<'asc' | 'desc'>('desc');
+   448→  const [hybridExpandedSymbol, setHybridExpandedSymbol] = useState<string | null>(null);
+   449→
+   450→  // ─── Handlers ─────────────────────────────────────────────
+   451→
+   452→  const handleSinglePredict = useCallback(async () => {
+   453→    if (!ticker.trim()) return;
+   454→    setSingleLoading(true);
+   455→    setSingleError('');
+   456→    setSingleResult(null);
+   457→    try {
+   458→      const res = await fetch(`/api/predict/${ticker.trim().toUpperCase()}`);
+   459→      const data = await res.json();
+   460→      if (!res.ok) throw new Error(data.error || 'Gabim gjatë predikimit');
+   461→      setSingleResult(data);
+   462→    } catch (err: unknown) {
+   463→      setSingleError(err instanceof Error ? err.message : 'Gabim i papritur');
+   464→    } finally {
+   465→      setSingleLoading(false);
+   466→    }
+   467→  }, [ticker]);
+   468→
+   469→  const handleFullScan = useCallback(async () => {
+   470→    setScanLoading(true);
+   471→    setScanError('');
+   472→    setScanResult(null);
+   473→    setScanProgress('Duke filluar skanimin...');
+   474→    setExpandedSymbol(null);
+   475→    try {
+   476→      const res = await fetch('/api/predict-scan', {
+   477→        signal: AbortSignal.timeout(300000),
+   478→      });
+   479→      const data = await res.json();
+   480→      if (!res.ok) throw new Error(data.error || 'Gabim gjatë skanimit');
+   481→      setScanResult(data);
+   482→    } catch (err: unknown) {
+   483→      if (err instanceof DOMException && err.name === 'TimeoutError') {
+   484→        setScanError('Koha i mbaroi. Provoni përsëri.');
+   485→      } else {
+   486→        setScanError(err instanceof Error ? err.message : 'Gabim i papritur');
+   487→      }
+   488→    } finally {
+   489→      setScanLoading(false);
+   490→      setScanProgress('');
+   491→    }
+   492→  }, []);
+   493→
+   494→  const handleSort = useCallback((field: 'score' | 'confidence' | 'symbol' | 'totalScore' | 'hybridConfidence') => {
+   495→    if (sortField === field) {
+   496→      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+   497→    } else {
+   498→      setSortField(field);
+   499→      setSortDir('desc');
+   500→    }
+   501→  }, [sortField]);
+   502→
+   503→  const handleHybridScan = useCallback(async () => {
+   504→    setHybridLoading(true);
+   505→    setHybridError('');
+   506→    setHybridResult(null);
+   507→    setHybridExpandedSymbol(null);
+   508→    try {
+   509→      const res = await fetch('/api/ai-predict-scan', {
+   510→        signal: AbortSignal.timeout(300000),
+   511→      });
+   512→      const data = await res.json();
+   513→      if (!res.ok) throw new Error(data.error || 'Gabim gjatë skanimit hibrid');
+   514→      setHybridResult(data);
+   515→    } catch (err: unknown) {
+   516→      if (err instanceof DOMException && err.name === 'TimeoutError') {
+   517→        setHybridError('Koha i mbaroi. Provoni përsëri.');
+   518→      } else {
+   519→        setHybridError(err instanceof Error ? err.message : 'Gabim i papritur');
+   520→      }
+   521→    } finally {
+   522→      setHybridLoading(false);
+   523→    }
+   524→  }, []);
+   525→
+   526→  const handleHybridSort = useCallback((field: 'totalScore' | 'hybridConfidence' | 'symbol') => {
+   527→    if (hybridSortField === field) {
+   528→      setHybridSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+   529→    } else {
+   530→      setHybridSortField(field);
+   531→      setHybridSortDir('desc');
+   532→    }
+   533→  }, [hybridSortField]);
+   534→
+   535→  // ─── Derived Data ─────────────────────────────────────────
+   536→
+   537→  // Hybrid derived data
+   538→  const currentHybridResults: HybridPredictionResult[] | null = (() => {
+   539→    if (!hybridResult) return null;
+   540→    const src = (() => {
+   541→      switch (hybridViewTab) {
+   542→        case 'top-picks': return hybridResult.topPicks;
+   543→        case 'top-shorts': return hybridResult.topShorts;
+   544→        case 'most-confident': return hybridResult.mostConfident;
+   545→        case 'all': return hybridResult.allResults;
+   546→        default: return null;
+   547→      }
+   548→    })();
+   549→    if (!src) return null;
+   550→    if (hybridViewTab !== 'all') return src;
+   551→    return [...src].sort((a, b) => {
+   552→      if (hybridSortField === 'symbol') {
+   553→        return hybridSortDir === 'asc'
+   554→          ? a.symbol.localeCompare(b.symbol)
+   555→          : b.symbol.localeCompare(a.symbol);
+   556→      }
+   557→      const aVal = a[hybridSortField];
+   558→      const bVal = b[hybridSortField];
+   559→      return hybridSortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+   560→    });
+   561→  })();
+   562→
+   563→  const currentResults: PredictionResult[] | null = (() => {
+   564→    if (!scanResult) return null;
+   565→    switch (viewTab) {
+   566→      case 'top-picks': return scanResult.topPicks;
+   567→      case 'top-shorts': return scanResult.topShorts;
+   568→      case 'most-confident': return scanResult.mostConfident;
+   569→      case 'all': {
+   570→        const sorted = [...scanResult.allResults].sort((a, b) => {
+   571→          if (sortField === 'symbol') {
+   572→            return sortDir === 'asc'
+   573→              ? a.symbol.localeCompare(b.symbol)
+   574→              : b.symbol.localeCompare(a.symbol);
+   575→          }
+   576→          const aVal = sortField === 'score' ? a.score : a.confidence;
+   577→          const bVal = sortField === 'score' ? b.score : b.confidence;
+   578→          return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+   579→        });
+   580→        return sorted;
+   581→      }
+   582→      default: return null;
+   583→    }
+   584→  })();
+   585→
+   586→  // ─── Render ───────────────────────────────────────────────
+   587→
+   588→  return (
+   589→    <div className="space-y-5">
+   590→      {/* ═══════ Title ═══════ */}
+   591→      <div className="flex items-center gap-2.5">
+   592→        <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
+   593→          <Brain className="w-5 h-5 text-violet-400" />
+   594→        </div>
+   595→        <div>
+   596→          <h2 className="text-lg font-bold text-foreground">Predikues i Stoqeve me AI</h2>
+   597→          <p className="text-xs text-muted-foreground">Analizë teknike + fundamentale me sistem mësues</p>
+   598→        </div>
+   599→      </div>
+   600→
+   601→      {/* ═══════ Mode Toggle ═══════ */}
+   602→      <div className="flex flex-wrap gap-2">
+   603→        <Button
+   604→          variant={mode === 'single' ? 'default' : 'outline'}
+   605→          size="sm"
+   606→          onClick={() => setMode('single')}
+   607→          className={mode === 'single' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+   608→        >
+   609→          <Search className="w-3.5 h-3.5 mr-1.5" />
+   610→          Predikim Individual
+   611→        </Button>
+   612→        <Button
+   613→          variant={mode === 'scan' ? 'default' : 'outline'}
+   614→          size="sm"
+   615→          onClick={() => setMode('scan')}
+   616→          className={mode === 'scan' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+   617→        >
+   618→          <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
+   619→          Skanim Teknik
+   620→        </Button>
+   621→        <Button
+   622→          variant={mode === 'ai-hybrid' ? 'default' : 'outline'}
+   623→          size="sm"
+   624→          onClick={() => setMode('ai-hybrid')}
+   625→          className={mode === 'ai-hybrid' ? 'bg-violet-600 hover:bg-violet-700' : ''}
+   626→        >
+   627→          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+   628→          AI Hybrid
+   629→        </Button>
+   630→      </div>
+   631→
+   632→      <AnimatePresence mode="wait">
+   633→        {/* ═══════════════════════════════════════════════════ */}
+   634→        {/* SINGLE STOCK MODE                                 */}
+   635→        {/* ═══════════════════════════════════════════════════ */}
+   636→        {mode === 'single' && (
+   637→          <motion.div
+   638→            key="single"
+   639→            initial={{ opacity: 0, y: 10 }}
+   640→            animate={{ opacity: 1, y: 0 }}
+   641→            exit={{ opacity: 0, y: -10 }}
+   642→            transition={{ duration: 0.3 }}
+   643→            className="space-y-4"
+   644→          >
+   645→            <p className="text-xs text-muted-foreground">
+   646→              Shkruani një ticker për të marrë predikimin e detajuar me indikatorë teknike, sinjale dhe faturët kryesorë.
+   647→            </p>
+   648→
+   649→            {/* Input row */}
+   650→            <div className="flex gap-2">
+   651→              <Input
+   652→                placeholder="Shkruaj ticker (p.sh. AAPL)"
+   653→                value={ticker}
+   654→                onChange={(e) => setTicker(e.target.value.toUpperCase())}
+   655→                onKeyDown={(e) => e.key === 'Enter' && handleSinglePredict()}
+   656→                className="max-w-xs"
+   657→              />
+   658→              <Button
+   659→                onClick={handleSinglePredict}
+   660→                disabled={singleLoading || !ticker.trim()}
+   661→                size="sm"
+   662→              >
+   663→                {singleLoading
+   664→                  ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+   665→                  : <Zap className="w-4 h-4 mr-1.5" />
+   666→                }
+   667→                Analizo
+   668→              </Button>
+   669→            </div>
+   670→
+   671→            {/* Error */}
+   672→            {singleError && (
+   673→              <motion.p
+   674→                initial={{ opacity: 0 }}
+   675→                animate={{ opacity: 1 }}
+   676→                className="text-sm text-red-400 flex items-center gap-1.5"
+   677→              >
+   678→                <AlertTriangle className="w-3.5 h-3.5" />
+   679→                {singleError}
+   680→              </motion.p>
+   681→            )}
+   682→
+   683→            {/* Loading */}
+   684→            {singleLoading && (
+   685→              <motion.div
+   686→                initial={{ opacity: 0 }}
+   687→                animate={{ opacity: 1 }}
+   688→                className="flex items-center justify-center gap-3 py-12 text-muted-foreground"
+   689→              >
+   690→                <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+   691→                <span className="text-sm">Duke analizuar {ticker}...</span>
+   692→              </motion.div>
+   693→            )}
+   694→
+   695→            {/* Result */}
+   696→            {singleResult && (
+   697→              <motion.div
+   698→                initial={{ opacity: 0, scale: 0.97 }}
+   699→                animate={{ opacity: 1, scale: 1 }}
+   700→                transition={{ duration: 0.4 }}
+   701→                className="space-y-4"
+   702→              >
+   703→                <Card className="border-violet-500/20 bg-violet-500/5">
+   704→                  <CardContent className="pt-5 space-y-5">
+   705→                    {/* Top row: Gauge + Meta */}
+   706→                    <div className="flex flex-col sm:flex-row items-center gap-6">
+   707→                      <PredictionScoreGauge
+   708→                        score={singleResult.score}
+   709→                        direction={singleResult.direction}
+   710→                      />
+   711→                      <div className="flex-1 space-y-3 w-full">
+   712→                        <div>
+   713→                          <h3 className="text-xl font-bold">{singleResult.symbol}</h3>
+   714→                          <p className="text-[10px] text-muted-foreground">
+   715→                            {new Date(singleResult.timestamp).toLocaleString('sq-AL')}
+   716→                          </p>
+   717→                        </div>
+   718→                        <ConfidenceBar confidence={singleResult.confidence} />
+   719→                        <div className="flex gap-2 flex-wrap">
+   720→                          <Badge variant={riskVariant(singleResult.riskLevel)} className="text-[10px]">
+   721→                            <Shield className="w-3 h-3 mr-1" />
+   722→                            Rreziku: {riskLabel(singleResult.riskLevel)}
+   723→                          </Badge>
+   724→                          <Badge variant="outline" className="text-[10px]">
+   725→                            <BarChart3 className="w-3 h-3 mr-1" />
+   726→                            Volatiliteti: {volatilityLabel(singleResult.volatility)}
+   727→                          </Badge>
+   728→                        </div>
+   729→                      </div>
+   730→                    </div>
+   731→
+   732→                    {/* Term predictions */}
+   733→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   734→                      <TermCard
+   735→                        label="Afati i Shkurtër (1-3 ditë)"
+   736→                        data={singleResult.shortTerm}
+   737→                      />
+   738→                      <TermCard
+   739→                        label="Afati i Gjatë (1-2 javë)"
+   740→                        data={singleResult.mediumTerm}
+   741→                      />
+   742→                    </div>
+   743→
+   744→                    {/* Key Factors */}
+   745→                    {singleResult.keyFactors.length > 0 && (
+   746→                      <div>
+   747→                        <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+   748→                          <Target className="w-3 h-3" />
+   749→                          Faktorët Kryesorë
+   750→                        </h4>
+   751→                        <div className="overflow-x-auto rounded-md border">
+   752→                          <Table>
+   753→                            <TableHeader>
+   754→                              <TableRow>
+   755→                                <TableHead className="text-[10px]">Emri</TableHead>
+   756→                                <TableHead className="text-[10px]">Sinjali</TableHead>
+   757→                                <TableHead className="text-[10px]">Ndikimi</TableHead>
+   758→                                <TableHead className="text-[10px] text-right">Pikët</TableHead>
+   759→                                <TableHead className="text-[10px]">Përshkrimi</TableHead>
+   760→                              </TableRow>
+   761→                            </TableHeader>
+   762→                            <TableBody>
+   763→                              {singleResult.keyFactors.map((f, i) => (
+   764→                                <TableRow key={i}>
+   765→                                  <TableCell className="text-xs font-medium py-1.5">{f.name}</TableCell>
+   766→                                  <TableCell className="py-1.5">
+   767→                                    <Badge
+   768→                                      variant={directionBadgeVariant(f.signal)}
+   769→                                      className="text-[10px]"
+   770→                                    >
+   771→                                      {directionLabel(f.signal)}
+   772→                                    </Badge>
+   773→                                  </TableCell>
+   774→                                  <TableCell className="text-[10px] py-1.5">{f.impact}</TableCell>
+   775→                                  <TableCell className={`text-xs font-bold text-right py-1.5 ${scoreColor(f.score)}`}>
+   776→                                    {f.score > 0 ? '+' : ''}{f.score}
+   777→                                  </TableCell>
+   778→                                  <TableCell className="text-[10px] text-muted-foreground py-1.5 max-w-[250px] truncate">
+   779→                                    {f.description}
+   780→                                  </TableCell>
+   781→                                </TableRow>
+   782→                              ))}
+   783→                            </TableBody>
+   784→                          </Table>
+   785→                        </div>
+   786→                      </div>
+   787→                    )}
+   788→
+   789→                    {/* Technical vs Fundamental Score Breakdown */}
+   790→                    {singleResult.fundamentalData && (
+   791→                      <div className="grid grid-cols-2 gap-3">
+   792→                        <div className="rounded-md border p-3">
+   793→                          <div className="flex items-center gap-1.5 mb-2">
+   794→                            <Activity className="w-3 h-3 text-violet-400" />
+   795→                            <span className="text-[10px] font-semibold text-muted-foreground">Teknik</span>
+   796→                          </div>
+   797→                          <p className={`text-lg font-bold ${scoreColor(singleResult.technicalScore ?? 0)}`}>
+   798→                            {(singleResult.technicalScore ?? 0) > 0 ? '+' : ''}{singleResult.technicalScore ?? 0}
+   799→                          </p>
+   800→                          <p className="text-[10px] text-muted-foreground">15 indikatorë</p>
+   801→                        </div>
+   802→                        <div className="rounded-md border p-3">
+   803→                          <div className="flex items-center gap-1.5 mb-2">
+   804→                            <BookOpen className="w-3 h-3 text-amber-400" />
+   805→                            <span className="text-[10px] font-semibold text-muted-foreground">Fondamentale</span>
+   806→                          </div>
+   807→                          <p className={`text-lg font-bold ${scoreColor(singleResult.fundamentalData.score)}`}>
+   808→                            {singleResult.fundamentalData.score > 0 ? '+' : ''}{singleResult.fundamentalData.score}
+   809→                          </p>
+   810→                          <p className="text-[10px] text-muted-foreground">6 faktorë</p>
+   811→                        </div>
+   812→                      </div>
+   813→                    )}
+   814→
+   815→                    {/* Fundamental Scores Grid */}
+   816→                    {singleResult.fundamentalData && singleResult.fundamentalData.scores && Object.keys(singleResult.fundamentalData.scores).length > 0 && (
+   817→                      <div>
+   818→                        <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+   819→                          <BookOpen className="w-3 h-3" />
+   820→                          Analiza Fondamentale
+   821→                        </h4>
+   822→                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+   823→                          {Object.entries(singleResult.fundamentalData.scores).map(([name, score]) => (
+   824→                            <div
+   825→                              key={name}
+   826→                              className={`rounded-md border px-2.5 py-1.5 text-center ${indicatorScoreColor(score)}`}
+   827→                            >
+   828→                              <p className="text-[10px] opacity-70 truncate">{name}</p>
+   829→                              <p className="text-xs font-bold">
+   830→                                {score > 0 ? '+' : ''}{score}
+   831→                              </p>
+   832→                            </div>
+   833→                          ))}
+   834→                        </div>
+   835→                        {singleResult.fundamentalData.summary && (
+   836→                          <p className="text-[10px] text-muted-foreground mt-2 italic">{singleResult.fundamentalData.summary}</p>
+   837→                        )}
+   838→                      </div>
+   839→                    )}
+   840→
+   841→                    {/* Learning Data */}
+   842→                    {singleResult.learningData && singleResult.learningData.totalPredictions > 0 && (
+   843→                      <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3">
+   844→                        <div className="flex items-center gap-1.5 mb-2">
+   845→                          <GraduationCap className="w-3 h-3 text-blue-400" />
+   846→                          <span className="text-[10px] font-semibold text-blue-300">Sistemi i Mësuarit</span>
+   847→                          <Badge variant="outline" className="text-[9px] ml-auto">{singleResult.learningData.totalPredictions} predikime</Badge>
+   848→                        </div>
+   849→                        <div className="grid grid-cols-3 gap-2 text-center">
+   850→                          <div>
+   851→                            <p className="text-sm font-bold text-blue-300">{singleResult.learningData.directionAccuracy}%</p>
+   852→                            <p className="text-[9px] text-muted-foreground">Saktësia e Drejtimit</p>
+   853→                          </div>
+   854→                          <div>
+   855→                            <p className="text-sm font-bold text-green-300">{singleResult.learningData.shortTermAccuracy}%</p>
+   856→                            <p className="text-[9px] text-muted-foreground">Afati i Shkurtër</p>
+   857→                          </div>
+   858→                          <div>
+   859→                            <p className="text-sm font-bold text-amber-300">{singleResult.learningData.recentAccuracy}%</p>
+   860→                            <p className="text-[9px] text-muted-foreground">E Fundit (50)</p>
+   861→                          </div>
+   862→                        </div>
+   863→                        {singleResult.learningData.bestIndicators.length > 0 && (
+   864→                          <p className="text-[9px] text-muted-foreground mt-2">
+   865→                            <Trophy className="w-2.5 h-2.5 inline mr-1" />
+   866→                            Më të mirët: {singleResult.learningData.bestIndicators.slice(0, 3).join(', ')}
+   867→                          </p>
+   868→                        )}
+   869→                      </div>
+   870→                    )}
+   871→
+   872→                    {/* All Indicators Grid */}
+   873→                    {Object.keys(singleResult.indicatorScores).length > 0 && (
+   874→                      <div>
+   875→                        <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+   876→                          <BarChart3 className="w-3 h-3" />
+   877→                          Indikatorët Teknikë
+   878→                        </h4>
+   879→                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+   880→                          {Object.entries(singleResult.indicatorScores).map(([name, score]) => (
+   881→                            <div
+   882→                              key={name}
+   883→                              className={`rounded-md border px-2.5 py-1.5 text-center ${indicatorScoreColor(score)}`}
+   884→                            >
+   885→                              <p className="text-[10px] opacity-70 truncate">{name}</p>
+   886→                              <p className="text-xs font-bold">
+   887→                                {score > 0 ? '+' : ''}{score}
+   888→                              </p>
+   889→                            </div>
+   890→                          ))}
+   891→                        </div>
+   892→                      </div>
+   893→                    )}
+   894→                  </CardContent>
+   895→                </Card>
+   896→              </motion.div>
+   897→            )}
+   898→          </motion.div>
+   899→        )}
+   900→
+   901→        {/* ═══════════════════════════════════════════════════ */}
+   902→        {/* SCAN MODE                                         */}
+   903→        {/* ═══════════════════════════════════════════════════ */}
+   904→        {mode === 'scan' && (
+   905→          <motion.div
+   906→            key="scan"
+   907→            initial={{ opacity: 0, y: 10 }}
+   908→            animate={{ opacity: 1, y: 0 }}
+   909→            exit={{ opacity: 0, y: -10 }}
+   910→            transition={{ duration: 0.3 }}
+   911→            className="space-y-4"
+   912→          >
+   913→            <p className="text-xs text-muted-foreground">
+   914→              Skanoni të gjitha 116 stoqet me një klikim. Analizë teknike (15 indikatorë) + fundamentale (P/E, rritja, etj.) + mësuarit nga historia.
+   915→            </p>
+   916→
+   917→            {/* Scan button */}
+   918→            {!scanResult && !scanLoading && (
+   919→              <motion.div
+   920→                initial={{ opacity: 0, scale: 0.97 }}
+   921→                animate={{ opacity: 1, scale: 1 }}
+   922→              >
+   923→                <Button
+   924→                  onClick={handleFullScan}
+   925→                  size="lg"
+   926→                  className="bg-violet-600 hover:bg-violet-700 text-white font-semibold px-8 h-12 text-sm"
+   927→                >
+   928→                  <Zap className="w-5 h-5 mr-2" />
+   929→                  Skanoni 116 Stoqet
+   930→                </Button>
+   931→              </motion.div>
+   932→            )}
+   933→
+   934→            {/* Loading state */}
+   935→            {scanLoading && (
+   936→              <motion.div
+   937→                initial={{ opacity: 0 }}
+   938→                animate={{ opacity: 1 }}
+   939→                className="flex flex-col items-center gap-4 py-16"
+   940→              >
+   941→                <div className="relative">
+   942→                  <motion.div
+   943→                    className="w-20 h-20 rounded-full border-2 border-violet-500/30"
+   944→                    animate={{ scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] }}
+   945→                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+   946→                  />
+   947→                  <motion.div
+   948→                    className="absolute inset-0 rounded-full border-2 border-violet-400/50"
+   949→                    animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.7, 0.3] }}
+   950→                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+   951→                  />
+   952→                  <div className="absolute inset-0 flex items-center justify-center">
+   953→                    <Brain className="w-8 h-8 text-violet-400" />
+   954→                  </div>
+   955→                </div>
+   956→                <div className="text-center space-y-1">
+   957→                  <p className="text-sm font-semibold text-foreground">
+   958→                    Duke skanuar stoqet...
+   959→                  </p>
+   960→                  <p className="text-xs text-muted-foreground">
+   961→                    Kjo mund të zgjasë 2-3 minuta
+   962→                  </p>
+   963→                </div>
+   964→                {scanProgress && (
+   965→                  <p className="text-[10px] text-violet-400">{scanProgress}</p>
+   966→                )}
+   967→                {/* Fake progress bar */}
+   968→                <div className="w-64 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+   969→                  <motion.div
+   970→                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+   971→                    initial={{ width: '0%' }}
+   972→                    animate={{ width: '90%' }}
+   973→                    transition={{ duration: 120, ease: 'linear' }}
+   974→                  />
+   975→                </div>
+   976→              </motion.div>
+   977→            )}
+   978→
+   979→            {/* Error */}
+   980→            {scanError && (
+   981→              <motion.div
+   982→                initial={{ opacity: 0 }}
+   983→                animate={{ opacity: 1 }}
+   984→                className="flex items-center gap-2 text-sm text-red-400"
+   985→              >
+   986→                <AlertTriangle className="w-4 h-4" />
+   987→                {scanError}
+   988→                <Button
+   989→                  variant="outline"
+   990→                  size="sm"
+   991→                  onClick={handleFullScan}
+   992→                  className="ml-2"
+   993→                >
+   994→                  <RefreshCw className="w-3 h-3 mr-1" />
+   995→                  Provo përsëri
+   996→                </Button>
+   997→              </motion.div>
+   998→            )}
+   999→
+  1000→            {/* Scan Results */}
+  1001→            {scanResult && !scanLoading && (
+  1002→              <motion.div
+  1003→                initial={{ opacity: 0, y: 10 }}
+  1004→                animate={{ opacity: 1, y: 0 }}
+  1005→                transition={{ duration: 0.4 }}
+  1006→                className="space-y-4"
+  1007→              >
+  1008→                {/* Stats bar */}
+  1009→                <div className="flex flex-wrap items-center gap-3">
+  1010→                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  1011→                    <BarChart3 className="w-3.5 h-3.5" />
+  1012→                    <span className="font-semibold text-foreground">{scanResult.total}</span> skanuar
+  1013→                  </div>
+  1014→                  <div className="text-xs text-muted-foreground">|</div>
+  1015→                  <div className="flex items-center gap-1.5 text-xs">
+  1016→                    <span className="text-emerald-400 font-semibold">{scanResult.successful}</span>
+  1017→                    <span className="text-muted-foreground">me sukses</span>
+  1018→                  </div>
+  1019→                  <div className="text-xs text-muted-foreground">|</div>
+  1020→                  <div className="flex items-center gap-1.5 text-xs">
+  1021→                    <span className="text-red-400 font-semibold">{scanResult.failed}</span>
+  1022→                    <span className="text-muted-foreground">dështuan</span>
+  1023→                  </div>
+  1024→                  {scanResult.scannedAt && (
+  1025→                    <>
+  1026→                      <div className="text-xs text-muted-foreground">|</div>
+  1027→                      <div className="text-[10px] text-muted-foreground">
+  1028→                        {new Date(scanResult.scannedAt).toLocaleString('sq-AL')}
+  1029→                      </div>
+  1030→                    </>
+  1031→                  )}
+  1032→                  <Button
+  1033→                    variant="ghost"
+  1034→                    size="sm"
+  1035→                    onClick={handleFullScan}
+  1036→                    className="ml-auto h-7 text-[10px]"
+  1037→                  >
+  1038→                    <RefreshCw className="w-3 h-3 mr-1" />
+  1039→                    Rifresko
+  1040→                  </Button>
+  1041→                </div>
+  1042→
+  1043→                {/* Learning stats bar */}
+  1044→                {scanResult.learningStats && scanResult.learningStats.totalPredictions > 0 && (
+  1045→                  <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-2.5 flex flex-wrap items-center gap-4">
+  1046→                    <div className="flex items-center gap-1.5">
+  1047→                      <GraduationCap className="w-3.5 h-3.5 text-blue-400" />
+  1048→                      <span className="text-[10px] font-semibold text-blue-300">Mësuarit</span>
+  1049→                    </div>
+  1050→                    <div className="flex items-center gap-1.5 text-[10px]">
+  1051→                      <span className="text-muted-foreground">Predikime:</span>
+  1052→                      <span className="font-semibold text-foreground">{scanResult.learningStats.totalPredictions}</span>
+  1053→                    </div>
+  1054→                    <div className="flex items-center gap-1.5 text-[10px]">
+  1055→                      <span className="text-muted-foreground">Saktësia:</span>
+  1056→                      <span className={`font-bold ${scanResult.learningStats.directionAccuracy >= 55 ? 'text-emerald-400' : scanResult.learningStats.directionAccuracy >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+  1057→                        {scanResult.learningStats.directionAccuracy}%
+  1058→                      </span>
+  1059→                    </div>
+  1060→                    <div className="flex items-center gap-1.5 text-[10px]">
+  1061→                      <span className="text-muted-foreground">E Fundit:</span>
+  1062→                      <span className={`font-bold ${scanResult.learningStats.recentAccuracy >= 55 ? 'text-emerald-400' : scanResult.learningStats.recentAccuracy >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+  1063→                        {scanResult.learningStats.recentAccuracy}%
+  1064→                      </span>
+  1065→                    </div>
+  1066→                    {scanResult.learningStats.bestIndicators.length > 0 && (
+  1067→                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+  1068→                        <Trophy className="w-3 h-3 text-amber-400" />
+  1069→                        <span>Më të mirët: {scanResult.learningStats.bestIndicators.slice(0, 3).join(', ')}</span>
+  1070→                      </div>
+  1071→                    )}
+  1072→                  </div>
+  1073→                )}
+  1074→
+  1075→                {/* Sub-tabs */}
+  1076→                <div className="flex gap-1.5 flex-wrap">
+  1077→                  {([
+  1078→                    { key: 'top-picks' as const, label: '🎯 Top Picks (Blerje)', count: scanResult.topPicks.length },
+  1079→                    { key: 'top-shorts' as const, label: '📉 Top Shorts (Shitje)', count: scanResult.topShorts.length },
+  1080→                    { key: 'most-confident' as const, label: '✅ Më të Sigurtat', count: scanResult.mostConfident.length },
+  1081→                    { key: 'all' as const, label: '📊 Të Gjitha', count: scanResult.allResults.length },
+  1082→                  ]).map((tab) => (
+  1083→                    <Button
+  1084→                      key={tab.key}
+  1085→                      variant={viewTab === tab.key ? 'default' : 'outline'}
+  1086→                      size="sm"
+  1087→                      onClick={() => { setViewTab(tab.key); setExpandedSymbol(null); }}
+  1088→                      className={`text-[10px] h-7 ${viewTab === tab.key ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
+  1089→                    >
+  1090→                      {tab.label}
+  1091→                      <Badge variant="outline" className="ml-1.5 text-[9px] px-1.5 py-0 h-4">
+  1092→                        {tab.count}
+  1093→                      </Badge>
+  1094→                    </Button>
+  1095→                  ))}
+  1096→                </div>
+  1097→
+  1098→                {/* Table */}
+  1099→                <div className="max-h-[70vh] overflow-y-auto rounded-md border">
+  1100→                  {currentResults && currentResults.length > 0 ? (
+  1101→                    <Table>
+  1102→                      <TableHeader className="sticky top-0 bg-card z-10">
+  1103→                        <TableRow>
+  1104→                          <TableHead className="text-[10px] w-8 text-center">#</TableHead>
+  1105→                          <TableHead className="text-[10px]">Ticker</TableHead>
+  1106→                          <TableHead
+  1107→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+  1108→                            onClick={() => handleSort('score')}
+  1109→                          >
+  1110→                            <div className="flex items-center gap-1">
+  1111→                              Pikët
+  1112→                              {sortField === 'score' && (
+  1113→                                sortDir === 'desc'
+  1114→                                  ? <ChevronDown className="w-3 h-3" />
+  1115→                                  : <ChevronUp className="w-3 h-3" />
+  1116→                              )}
+  1117→                            </div>
+  1118→                          </TableHead>
+  1119→                          <TableHead className="text-[10px]">Sinjali</TableHead>
+  1120→                          <TableHead
+  1121→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+  1122→                            onClick={() => handleSort('confidence')}
+  1123→                          >
+  1124→                            <div className="flex items-center gap-1">
+  1125→                              Besimi %
+  1126→                              {sortField === 'confidence' && (
+  1127→                                sortDir === 'desc'
+  1128→                                  ? <ChevronDown className="w-3 h-3" />
+  1129→                                  : <ChevronUp className="w-3 h-3" />
+  1130→                              )}
+  1131→                            </div>
+  1132→                          </TableHead>
+  1133→                          <TableHead className="text-[10px]">Afatshkurtër</TableHead>
+  1134→                          <TableHead className="text-[10px]">Afatgjatë</TableHead>
+  1135→                          <TableHead className="text-[10px]">Rreziku</TableHead>
+  1136→                          <TableHead className="text-[10px]">Volatiliteti</TableHead>
+  1137→                          <TableHead className="text-[10px]">Teknik</TableHead>
+  1138→                          <TableHead className="text-[10px]">Fond.</TableHead>
+  1139→                        </TableRow>
+  1140→                      </TableHeader>
+  1141→                      <TableBody>
+  1142→                        {currentResults.map((r, idx) => {
+  1143→                          const isExpanded = expandedSymbol === r.symbol;
+  1144→                          return (
+  1145→                            <motion.tr
+  1146→                              key={r.symbol}
+  1147→                              initial={{ opacity: 0, y: 5 }}
+  1148→                              animate={{ opacity: 1, y: 0 }}
+  1149→                              transition={{ duration: 0.2, delay: idx * 0.03 }}
+  1150→                              className="group"
+  1151→                            >
+  1152→                              {/* Regular row */}
+  1153→                              <TableCell className="text-[10px] text-muted-foreground text-center py-1.5">
+  1154→                                {idx + 1}
+  1155→                              </TableCell>
+  1156→                              <TableCell className="py-1.5">
+  1157→                                <button
+  1158→                                  onClick={() => setExpandedSymbol(isExpanded ? null : r.symbol)}
+  1159→                                  className="flex items-center gap-1 font-bold text-xs hover:text-violet-400 transition-colors"
+  1160→                                >
+  1161→                                  {r.symbol}
+  1162→                                  {isExpanded
+  1163→                                    ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
+  1164→                                    : <ChevronDown className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+  1165→                                  }
+  1166→                                </button>
+  1167→                              </TableCell>
+  1168→                              <TableCell className="py-1.5">
+  1169→                                <div className="space-y-0.5">
+  1170→                                  <span className={`text-xs font-bold ${scoreColor(r.score)}`}>
+  1171→                                    {r.score > 0 ? '+' : ''}{r.score}
+  1172→                                  </span>
+  1173→                                  <ScoreBar score={r.score} />
+  1174→                                </div>
+  1175→                              </TableCell>
+  1176→                              <TableCell className="py-1.5">
+  1177→                                <Badge
+  1178→                                  variant={directionBadgeVariant(r.direction)}
+  1179→                                  className="text-[9px] px-1.5 py-0"
+  1180→                                >
+  1181→                                  {directionLabel(r.direction)}
+  1182→                                </Badge>
+  1183→                              </TableCell>
+  1184→                              <TableCell className="py-1.5">
+  1185→                                <div className="flex items-center gap-1.5">
+  1186→                                  <div className="w-12 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+  1187→                                    <div
+  1188→                                      className={`h-full rounded-full ${
+  1189→                                        r.confidence > 70
+  1190→                                          ? 'bg-emerald-500'
+  1191→                                          : r.confidence > 40
+  1192→                                            ? 'bg-yellow-500'
+  1193→                                            : 'bg-red-500'
+  1194→                                      }`}
+  1195→                                      style={{ width: `${r.confidence}%` }}
+  1196→                                    />
+  1197→                                  </div>
+  1198→                                  <span className={`text-[10px] font-semibold ${confidenceColor(r.confidence)}`}>
+  1199→                                    {r.confidence.toFixed(0)}%
+  1200→                                  </span>
+  1201→                                </div>
+  1202→                              </TableCell>
+  1203→                              <TableCell className="py-1.5">
+  1204→                                <div className="flex items-center gap-1 text-[10px]">
+  1205→                                  {predictionIcon(r.shortTerm.prediction)}
+  1206→                                  <span className="font-medium">{predictionLabel(r.shortTerm.prediction)}</span>
+  1207→                                  <span className="text-muted-foreground">({r.shortTerm.probability.toFixed(0)}%)</span>
+  1208→                                </div>
+  1209→                              </TableCell>
+  1210→                              <TableCell className="py-1.5">
+  1211→                                <div className="flex items-center gap-1 text-[10px]">
+  1212→                                  {predictionIcon(r.mediumTerm.prediction)}
+  1213→                                  <span className="font-medium">{predictionLabel(r.mediumTerm.prediction)}</span>
+  1214→                                  <span className="text-muted-foreground">({r.mediumTerm.probability.toFixed(0)}%)</span>
+  1215→                                </div>
+  1216→                              </TableCell>
+  1217→                              <TableCell className="py-1.5">
+  1218→                                <Badge variant={riskVariant(r.riskLevel)} className="text-[9px] px-1.5 py-0">
+  1219→                                  {riskLabel(r.riskLevel)}
+  1220→                                </Badge>
+  1221→                              </TableCell>
+  1222→                              <TableCell className="text-[10px] text-muted-foreground py-1.5">
+  1223→                                {volatilityLabel(r.volatility)}
+  1224→                              </TableCell>
+  1225→                              <TableCell className="py-1.5">
+  1226→                                <span className={`text-[10px] font-semibold ${scoreColor(r.technicalScore ?? r.score)}`}>
+  1227→                                  {(r.technicalScore ?? r.score) > 0 ? '+' : ''}{Math.round(r.technicalScore ?? r.score)}
+  1228→                                </span>
+  1229→                              </TableCell>
+  1230→                              <TableCell className="py-1.5">
+  1231→                                {r.fundamentalData ? (
+  1232→                                  <span className={`text-[10px] font-semibold ${scoreColor(r.fundamentalData.score)}`}>
+  1233→                                    {r.fundamentalData.score > 0 ? '+' : ''}{Math.round(r.fundamentalData.score)}
+  1234→                                  </span>
+  1235→                                ) : (
+  1236→                                  <span className="text-[10px] text-muted-foreground">—</span>
+  1237→                                )}
+  1238→                              </TableCell>
+  1239→
+  1240→                              {/* Expanded detail row */}
+  1241→                              {isExpanded && (
+  1242→                                <TableCell colSpan={11} className="p-0">
+  1243→                                  <motion.div
+  1244→                                    initial={{ opacity: 0, height: 0 }}
+  1245→                                    animate={{ opacity: 1, height: 'auto' }}
+  1246→                                    exit={{ opacity: 0, height: 0 }}
+  1247→                                    transition={{ duration: 0.3 }}
+  1248→                                    className="border-t border-border/50 bg-muted/20 px-4 py-3"
+  1249→                                  >
+  1250→                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  1251→                                      {/* Key Factors */}
+  1252→                                      {r.keyFactors.length > 0 && (
+  1253→                                        <div>
+  1254→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">
+  1255→                                            Faktorët Kryesorë
+  1256→                                          </p>
+  1257→                                          <div className="space-y-1">
+  1258→                                            {r.keyFactors.map((f, fi) => (
+  1259→                                              <div
+  1260→                                                key={fi}
+  1261→                                                className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1"
+  1262→                                              >
+  1263→                                                <div className="flex-1">
+  1264→                                                  <span className="font-medium">{f.name}</span>
+  1265→                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+  1266→                                                </div>
+  1267→                                                <Badge
+  1268→                                                  variant={directionBadgeVariant(f.signal)}
+  1269→                                                  className="text-[9px] px-1.5 py-0 shrink-0"
+  1270→                                                >
+  1271→                                                  {directionLabel(f.signal)}
+  1272→                                                </Badge>
+  1273→                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>
+  1274→                                                  {f.score > 0 ? '+' : ''}{f.score}
+  1275→                                                </span>
+  1276→                                              </div>
+  1277→                                            ))}
+  1278→                                          </div>
+  1279→                                        </div>
+  1280→                                      )}
+  1281→
+  1282→                                      {/* Indicator Scores */}
+  1283→                                      {Object.keys(r.indicatorScores).length > 0 && (
+  1284→                                        <div>
+  1285→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">
+  1286→                                            Indikatorët
+  1287→                                          </p>
+  1288→                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+  1289→                                            {Object.entries(r.indicatorScores).map(([name, score]) => (
+  1290→                                              <div
+  1291→                                                key={name}
+  1292→                                                className={`rounded-md border px-2 py-1 text-center ${indicatorScoreColor(score)}`}
+  1293→                                              >
+  1294→                                                <p className="text-[9px] opacity-70 truncate">{name}</p>
+  1295→                                                <p className="text-[10px] font-bold">
+  1296→                                                  {score > 0 ? '+' : ''}{score}
+  1297→                                                </p>
+  1298→                                              </div>
+  1299→                                            ))}
+  1300→                                          </div>
+  1301→                                        </div>
+  1302→                                      )}
+  1303→                                    </div>
+  1304→                                  </motion.div>
+  1305→                                </TableCell>
+  1306→                              )}
+  1307→                            </motion.tr>
+  1308→                          );
+  1309→                        })}
+  1310→                      </TableBody>
+  1311→                    </Table>
+  1312→                  ) : (
+  1313→                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+  1314→                      <BarChart3 className="w-8 h-8 mb-2 opacity-40" />
+  1315→                      <p className="text-sm">Nuk u gjetën predikime</p>
+  1316→                    </div>
+  1317→                  )}
+  1318→                </div>
+  1319→
+  1320→                {/* Errors */}
+  1321→                {scanResult.errors.length > 0 && (
+  1322→                  <details className="text-xs">
+  1323→                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
+  1324→                      {scanResult.errors.length} gabime
+  1325→                    </summary>
+  1326→                    <ul className="mt-1 space-y-0.5 pl-4 text-red-400/80 list-disc">
+  1327→                      {scanResult.errors.map((err, i) => (
+  1328→                        <li key={i}>{err}</li>
+  1329→                      ))}
+  1330→                    </ul>
+  1331→                  </details>
+  1332→                )}
+  1333→              </motion.div>
+  1334→            )}
+  1335→          </motion.div>
+  1336→        )}
+  1337→        {/* ═══════════════════════════════════════════════════ */}
+  1338→        {/* AI HYBRID MODE                                   */}
+  1339→        {/* ═══════════════════════════════════════════════════ */}
+  1340→        {mode === 'ai-hybrid' && (
+  1341→          <motion.div
+  1342→            key="ai-hybrid"
+  1343→            initial={{ opacity: 0, y: 10 }}
+  1344→            animate={{ opacity: 1, y: 0 }}
+  1345→            exit={{ opacity: 0, y: -10 }}
+  1346→            transition={{ duration: 0.3 }}
+  1347→            className="space-y-4"
+  1348→          >
+  1349→            <p className="text-xs text-muted-foreground">
+  1350→              Predikim hibrid që kombinon analizën teknike (60%) me analizën themelore (40%) për rezultate më të sakta.
+  1351→            </p>
+  1352→
+  1353→            {/* Scan button */}
+  1354→            {!hybridResult && !hybridLoading && (
+  1355→              <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}>
+  1356→                <Button
+  1357→                  onClick={handleHybridScan}
+  1358→                  size="lg"
+  1359→                  className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white font-semibold px-8 h-12 text-sm"
+  1360→                >
+  1361→                  <Sparkles className="w-5 h-5 mr-2" />
+  1362→                  Skanim Hibrid AI (116 stoqe)
+  1363→                </Button>
+  1364→              </motion.div>
+  1365→            )}
+  1366→
+  1367→            {/* Loading state */}
+  1368→            {hybridLoading && (
+  1369→              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4 py-16">
+  1370→                <div className="relative">
+  1371→                  <motion.div className="w-20 h-20 rounded-full border-2 border-violet-500/30" animate={{ scale: [1, 1.15, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
+  1372→                  <motion.div className="absolute inset-0 rounded-full border-2 border-fuchsia-400/50" animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} />
+  1373→                  <div className="absolute inset-0 flex items-center justify-center">
+  1374→                    <Sparkles className="w-8 h-8 text-fuchsia-400" />
+  1375→                  </div>
+  1376→                </div>
+  1377→                <div className="text-center space-y-1">
+  1378→                  <p className="text-sm font-semibold text-foreground">Duke skanuar me AI Hybrid...</p>
+  1379→                  <p className="text-xs text-muted-foreground">Teknikë + Fundamente — kjo mund të zgjasë 3-5 minuta</p>
+  1380→                </div>
+  1381→                <div className="w-64 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+  1382→                  <motion.div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" initial={{ width: '0%' }} animate={{ width: '90%' }} transition={{ duration: 180, ease: 'linear' }} />
+  1383→                </div>
+  1384→              </motion.div>
+  1385→            )}
+  1386→
+  1387→            {/* Error */}
+  1388→            {hybridError && (
+  1389→              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm text-red-400">
+  1390→                <AlertTriangle className="w-4 h-4" />
+  1391→                {hybridError}
+  1392→                <Button variant="outline" size="sm" onClick={handleHybridScan} className="ml-2">
+  1393→                  <RefreshCw className="w-3 h-3 mr-1" />
+  1394→                  Provo përsëri
+  1395→                </Button>
+  1396→              </motion.div>
+  1397→            )}
+  1398→
+  1399→            {/* Scan Results */}
+  1400→            {hybridResult && !hybridLoading && (
+  1401→              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-4">
+  1402→                {/* Stats bar */}
+  1403→                <div className="flex flex-wrap items-center gap-3">
+  1404→                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  1405→                    <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
+  1406→                    <span className="font-semibold text-foreground">{hybridResult.total}</span> skanuar hibrid
+  1407→                  </div>
+  1408→                  <div className="text-xs text-muted-foreground">|</div>
+  1409→                  <div className="flex items-center gap-1.5 text-xs">
+  1410→                    <span className="text-emerald-400 font-semibold">{hybridResult.successful}</span>
+  1411→                    <span className="text-muted-foreground">me sukses</span>
+  1412→                  </div>
+  1413→                  <div className="text-xs text-muted-foreground">|</div>
+  1414→                  <div className="flex items-center gap-1.5 text-xs">
+  1415→                    <span className="text-red-400 font-semibold">{hybridResult.failed}</span>
+  1416→                    <span className="text-muted-foreground">dështuan</span>
+  1417→                  </div>
+  1418→                  {hybridResult.scannedAt && (
+  1419→                    <>
+  1420→                      <div className="text-xs text-muted-foreground">|</div>
+  1421→                      <div className="text-[10px] text-muted-foreground">{new Date(hybridResult.scannedAt).toLocaleString('sq-AL')}</div>
+  1422→                    </>
+  1423→                  )}
+  1424→                  <Button variant="ghost" size="sm" onClick={handleHybridScan} className="ml-auto h-7 text-[10px]">
+  1425→                    <RefreshCw className="w-3 h-3 mr-1" />
+  1426→                    Rifresko
+  1427→                  </Button>
+  1428→                </div>
+  1429→
+  1430→                {/* Sub-tabs */}
+  1431→                <div className="flex gap-1.5 flex-wrap">
+  1432→                  {([
+  1433→                    { key: 'top-picks' as const, label: '🎯 Top Picks', count: hybridResult.topPicks.length },
+  1434→                    { key: 'top-shorts' as const, label: '📉 Top Shorts', count: hybridResult.topShorts.length },
+  1435→                    { key: 'most-confident' as const, label: '✅ Më të Sigurtat', count: hybridResult.mostConfident.length },
+  1436→                    { key: 'all' as const, label: '📊 Të Gjitha', count: hybridResult.allResults.length },
+  1437→                  ]).map((tab) => (
+  1438→                    <Button
+  1439→                      key={tab.key}
+  1440→                      variant={hybridViewTab === tab.key ? 'default' : 'outline'}
+  1441→                      size="sm"
+  1442→                      onClick={() => { setHybridViewTab(tab.key); setHybridExpandedSymbol(null); }}
+  1443→                      className={`text-[10px] h-7 ${hybridViewTab === tab.key ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
+  1444→                    >
+  1445→                      {tab.label}
+  1446→                      <Badge variant="outline" className="ml-1.5 text-[9px] px-1.5 py-0 h-4">{tab.count}</Badge>
+  1447→                    </Button>
+  1448→                  ))}
+  1449→                </div>
+  1450→
+  1451→                {/* Hybrid Table */}
+  1452→                <div className="max-h-[70vh] overflow-y-auto rounded-md border">
+  1453→                  {currentHybridResults && currentHybridResults.length > 0 ? (
+  1454→                    <Table>
+  1455→                      <TableHeader className="sticky top-0 bg-card z-10">
+  1456→                        <TableRow>
+  1457→                          <TableHead className="text-[10px] w-8 text-center">#</TableHead>
+  1458→                          <TableHead className="text-[10px]">Ticker</TableHead>
+  1459→                          <TableHead
+  1460→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+  1461→                            onClick={() => handleHybridSort('totalScore')}
+  1462→                          >
+  1463→                            <div className="flex items-center gap-1">
+  1464→                              Total
+  1465→                              {hybridSortField === 'totalScore' && (
+  1466→                                hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
+  1467→                              )}
+  1468→                            </div>
+  1469→                          </TableHead>
+  1470→                          <TableHead className="text-[10px]">Teknik</TableHead>
+  1471→                          <TableHead className="text-[10px]">Fundamentet</TableHead>
+  1472→                          <TableHead className="text-[10px]">Sinjali</TableHead>
+  1473→                          <TableHead
+  1474→                            className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
+  1475→                            onClick={() => handleHybridSort('hybridConfidence')}
+  1476→                          >
+  1477→                            <div className="flex items-center gap-1">
+  1478→                              Besim H.
+  1479→                              {hybridSortField === 'hybridConfidence' && (
+  1480→                                hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
+  1481→                              )}
+  1482→                            </div>
+  1483→                          </TableHead>
+  1484→                          <TableHead className="text-[10px]">AI Insight</TableHead>
+  1485→                        </TableRow>
+  1486→                      </TableHeader>
+  1487→                      <TableBody>
+  1488→                        {currentHybridResults.map((r, idx) => {
+  1489→                          const isExpanded = hybridExpandedSymbol === r.symbol;
+  1490→                          return (
+  1491→                            <motion.tr
+  1492→                              key={r.symbol}
+  1493→                              initial={{ opacity: 0, y: 5 }}
+  1494→                              animate={{ opacity: 1, y: 0 }}
+  1495→                              transition={{ duration: 0.2, delay: Math.min(idx * 0.02, 0.5) }}
+  1496→                              className="group"
+  1497→                            >
+  1498→                              <TableCell className="text-[10px] text-muted-foreground text-center py-1.5">{idx + 1}</TableCell>
+  1499→                              <TableCell className="py-1.5">
+  1500→                                <button
+  1501→                                  onClick={() => setHybridExpandedSymbol(isExpanded ? null : r.symbol)}
+  1502→                                  className="flex items-center gap-1 font-bold text-xs hover:text-violet-400 transition-colors"
+  1503→                                >
+  1504→                                  {r.symbol}
+  1505→                                  {isExpanded
+  1506→                                    ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
+  1507→                                    : <ChevronDown className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+  1508→                                  }
+  1509→                                </button>
+  1510→                              </TableCell>
+  1511→                              <TableCell className="py-1.5">
+  1512→                                <div className="space-y-0.5">
+  1513→                                  <span className={`text-xs font-bold ${scoreColor(r.totalScore)}`}>
+  1514→                                    {r.totalScore > 0 ? '+' : ''}{r.totalScore}
+  1515→                                  </span>
+  1516→                                  <ScoreBar score={r.totalScore} />
+  1517→                                </div>
+  1518→                              </TableCell>
+  1519→                              <TableCell className="py-1.5">
+  1520→                                <span className={`text-[10px] font-semibold ${scoreColor(r.score)}`}>
+  1521→                                  {r.score > 0 ? '+' : ''}{r.score}
+  1522→                                </span>
+  1523→                              </TableCell>
+  1524→                              <TableCell className="py-1.5">
+  1525→                                {r.fundamentalAvailable && r.fundamentalScore ? (
+  1526→                                  <span className={`text-[10px] font-semibold ${scoreColor(r.fundamentalScore.score)}`}>
+  1527→                                    {r.fundamentalScore.score > 0 ? '+' : ''}{r.fundamentalScore.score}
+  1528→                                  </span>
+  1529→                                ) : (
+  1530→                                  <span className="text-[10px] text-muted-foreground">—</span>
+  1531→                                )}
+  1532→                              </TableCell>
+  1533→                              <TableCell className="py-1.5">
+  1534→                                <Badge variant={directionBadgeVariant(r.direction)} className="text-[9px] px-1.5 py-0">
+  1535→                                  {directionLabel(r.direction)}
+  1536→                                </Badge>
+  1537→                              </TableCell>
+  1538→                              <TableCell className="py-1.5">
+  1539→                                <div className="flex items-center gap-1.5">
+  1540→                                  <div className="w-12 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+  1541→                                    <div
+  1542→                                      className={`h-full rounded-full ${
+  1543→                                r.hybridConfidence > 70
+  1544→                                  ? 'bg-emerald-500'
+  1545→                                  : r.hybridConfidence > 40
+  1546→                                    ? 'bg-yellow-500'
+  1547→                                    : 'bg-red-500'
+  1548→                              }`}
+  1549→                                      style={{ width: `${r.hybridConfidence}%` }}
+  1550→                                    />
+  1551→                                  </div>
+  1552→                                  <span className={`text-[10px] font-semibold ${confidenceColor(r.hybridConfidence)}`}>
+  1553→                                    {r.hybridConfidence.toFixed(0)}%
+  1554→                                  </span>
+  1555→                                </div>
+  1556→                              </TableCell>
+  1557→                              <TableCell className="py-1.5 max-w-[220px]">
+  1558→                                <p className="text-[9px] text-muted-foreground leading-tight line-clamp-2">{r.aiInsight}</p>
+  1559→                              </TableCell>
+  1560→
+  1561→                              {/* Expanded detail */}
+  1562→                              {isExpanded && (
+  1563→                                <TableCell colSpan={8} className="p-0">
+  1564→                                  <motion.div
+  1565→                                    initial={{ opacity: 0, height: 0 }}
+  1566→                                    animate={{ opacity: 1, height: 'auto' }}
+  1567→                                    exit={{ opacity: 0, height: 0 }}
+  1568→                                    transition={{ duration: 0.3 }}
+  1569→                                    className="border-t border-border/50 bg-muted/20 px-4 py-3"
+  1570→                                  >
+  1571→                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  1572→                                      {/* Technical Key Factors */}
+  1573→                                      {r.keyFactors.length > 0 && (
+  1574→                                        <div>
+  1575→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">Faktorët Teknikë</p>
+  1576→                                          <div className="space-y-1">
+  1577→                                            {r.keyFactors.slice(0, 5).map((f, fi) => (
+  1578→                                              <div key={fi} className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1">
+  1579→                                                <div className="flex-1">
+  1580→                                                  <span className="font-medium">{f.name}</span>
+  1581→                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+  1582→                                                </div>
+  1583→                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>{f.score > 0 ? '+' : ''}{f.score}</span>
+  1584→                                              </div>
+  1585→                                            ))}
+  1586→                                          </div>
+  1587→                                        </div>
+  1588→                                      )}
+  1589→
+  1590→                                      {/* Fundamental Factors */}
+  1591→                                      {r.fundamentalAvailable && r.fundamentalScore && (
+  1592→                                        <div>
+  1593→                                          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">Faktorët Themelorë</p>
+  1594→                                          <div className="space-y-1">
+  1595→                                            {Object.entries(r.fundamentalScore.factors).map(([key, f]) => (
+  1596→                                              <div key={key} className="flex items-start gap-2 text-[10px] rounded-md border px-2 py-1">
+  1597→                                                <div className="flex-1">
+  1598→                                                  <span className="font-medium">{f.name}</span>
+  1599→                                                  <span className="text-muted-foreground ml-1.5">{f.description}</span>
+  1600→                                                </div>
+  1601→                                                <span className={`font-bold shrink-0 ${scoreColor(f.score)}`}>{f.score > 0 ? '+' : ''}{f.score}</span>
+  1602→                                              </div>
+  1603→                                            ))}
+  1604→                                          </div>
+  1605→                                        </div>
+  1606→                                      )}
+  1607→
+  1608→                                      {/* No fundamentals notice */}
+  1609→                                      {!r.fundamentalAvailable && (
+  1610→                                        <div className="col-span-2">
+  1611→                                          <p className="text-[10px] text-muted-foreground italic">Të dhëna themelore nuk janë të disponueshme për {r.symbol}. Predikimi bazohet vetëm në analizën teknike.</p>
+  1612→                                        </div>
+  1613→                                      )}
+  1614→                                    </div>
+  1615→                                  </motion.div>
+  1616→                                </TableCell>
+  1617→                              )}
+  1618→                            </motion.tr>
+  1619→                          );
+  1620→                        })}
+  1621→                      </TableBody>
+  1622→                    </Table>
+  1623→                  ) : (
+  1624→                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+  1625→                      <Sparkles className="w-8 h-8 mb-2 opacity-40" />
+  1626→                      <p className="text-sm">Nuk u gjetën predikime hibride</p>
+  1627→                    </div>
+  1628→                  )}
+  1629→                </div>
+  1630→
+  1631→                {/* Errors */}
+  1632→                {hybridResult.errors.length > 0 && (
+  1633→                  <details className="text-xs">
+  1634→                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">{hybridResult.errors.length} gabime</summary>
+  1635→                    <ul className="mt-1 space-y-0.5 pl-4 text-red-400/80 list-disc">
+  1636→                      {hybridResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+  1637→                    </ul>
+  1638→                  </details>
+  1639→                )}
+  1640→
+  1641→                {/* ─── LEARNING STATS ─────────────────────────── */}
+  1642→                {hybridResult.learning && hybridResult.learning.totalRecorded > 0 && (
+  1643→                  <motion.div
+  1644→                    initial={{ opacity: 0, height: 0 }}
+  1645→                    animate={{ opacity: 1, height: 'auto' }}
+  1646→                    transition={{ duration: 0.4 }}
+  1647→                    className="mt-4"
+  1648→                  >
+  1649→                    <Card className="border-blue-500/20 bg-blue-500/5">
+  1650→                      <CardContent className="p-4">
+  1651→                        <div className="flex items-center gap-2 mb-3">
+  1652→                          <GraduationCap className="w-4 h-4 text-blue-400" />
+  1653→                          <h3 className="text-sm font-bold">Sistemi i Mesimit nga Historia</h3>
+  1654→                          <Badge variant="outline" className="text-[10px] ml-auto">
+  1655→                            <Brain className="w-3 h-3 mr-1" />
+  1656→                            AI Learning
+  1657→                          </Badge>
+  1658→                        </div>
+  1659→
+  1660→                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+  1661→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1662→                            <p className="text-[10px] text-muted-foreground">Të Regjistruara</p>
+  1663→                            <p className="text-lg font-bold">{hybridResult.learning.totalRecorded}</p>
+  1664→                          </div>
+  1665→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1666→                            <p className="text-[10px] text-muted-foreground">Të Vlerësuara</p>
+  1667→                            <p className="text-lg font-bold">{hybridResult.learning.totalEvaluated}</p>
+  1668→                          </div>
+  1669→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1670→                            <p className="text-[10px] text-muted-foreground">Saktesia</p>
+  1671→                            <p className={`text-lg font-bold ${hybridResult.learning.overallAccuracy > 55 ? 'text-emerald-400' : hybridResult.learning.overallAccuracy > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+  1672→                              {hybridResult.learning.overallAccuracy}%
+  1673→                            </p>
+  1674→                          </div>
+  1675→                          <div className="text-center p-2 rounded-lg bg-muted/30">
+  1676→                            <p className="text-[10px] text-muted-foreground">Mësime</p>
+  1677→                            <p className="text-lg font-bold">{hybridResult.learning.lessonsCount}</p>
+  1678→                          </div>
+  1679→                        </div>
+  1680→
+  1681→                        {/* Evaluation result from this scan */}
+  1682→                        {hybridResult.learning.evaluationResult && hybridResult.learning.evaluationResult.evaluated > 0 && (
+  1683→                          <div className="mb-3 p-2.5 rounded-lg border bg-muted/20">
+  1684→                            <div className="flex items-center gap-2 mb-1">
+  1685→                              <Activity className="w-3.5 h-3.5 text-blue-400" />
+  1686→                              <span className="text-xs font-semibold">Vlerësim i fundit nga kjo skanë</span>
+  1687→                            </div>
+  1688→                            <div className="text-[11px] text-muted-foreground">
+  1689→                              Vlerësuan {hybridResult.learning.evaluationResult.evaluated} parashikime të kaluara:{' '}
+  1690→                              <span className={hybridResult.learning.evaluationResult.correct > 0 ? 'text-emerald-400' : 'text-red-400'}>
+  1691→                                {hybridResult.learning.evaluationResult.correct} ({hybridResult.learning.evaluationResult.accuracy}%) ishin
+  1692→                              </span>
+  1693→                              {hybridResult.learning.evaluationResult.newLessons > 0 && (
+  1694→                                <span className="text-yellow-400">• {hybridResult.learning.evaluationResult.newLessons} mësime të reja</span>
+  1695→                              )}
+  1696→                            </div>
+  1697→                          </div>
+  1698→                        )}
+  1699→
+  1700→                        {/* No data yet message */}
+  1701→                        {(!hybridResult.learning || hybridResult.learning.totalEvaluated < 5) && (
+  1702→                          <div className="text-center py-4">
+  1703→                            <BookOpen className="w-6 h-6 text-blue-400/40 mx-auto mb-2" />
+  1704→                            <p className="text-xs text-muted-foreground">
+  1705→                              Sistemi po mëson. Pas {5 - 10} skane, do të fillojë të tregojë saktesinë
+  1706→                              per indikatorë dhe të rregullojë peshat automatikisht.
+  1707→                            </p>
+  1708→                            <p className="text-[10px] text-muted-foreground/60 mt-1">
+  1709→                              Çdo skanë regjistron parashikimet dhe i vlerëson më pas me çmimet aktuale.
+  1710→                            </p>
+  1711→                          </div>
+  1712→                        )}
+  1713→
+  1714→                        {/* Recent evaluated predictions */}
+  1715→                        {hybridResult.learning && hybridResult.learning.totalEvaluated >= 5 && (
+  1716→                          <div className="space-y-2">
+  1717→                            <p className="text-xs font-medium text-muted-foreground">
+  1718→                              Saktesia: {hybridResult.learning.avgAccuracy.toFixed(1)}% ({hybridResult.learning.correctPredictions}/{hybridResult.learning.evaluatedPredictions})
+  1719→                            </p>
+  1720→                          </div>
+  1721→                        )}
+  1722→                      </CardContent>
+  1723→                    </Card>
+  1724→                  </motion.div>
+  1725→                )}
+  1726→              </motion.div>
+  1727→            )}
+  1728→          </motion.div>
+  1729→        )}
+  1730→      </AnimatePresence>
+  1731→    </div>
+  1732→  );
+  1733→}

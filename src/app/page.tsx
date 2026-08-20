@@ -12,7 +12,7 @@ import { DailyPicks } from '@/components/financial-brain/daily-picks';
 import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
-import { TopMovers } from '@/components/financial-brain/top-movers';
+import { TopSwingPredictions } from '@/components/financial-brain/top-swing-predictions';
 import { Watchlist } from '@/components/financial-brain/watchlist';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
@@ -344,15 +344,15 @@ export default function Home() {
               <Card className="border-emerald-500/20 bg-emerald-500/5">
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <Flame className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Aksionet me Performancën Më Të Mirë dhe Më të Keqe</h3>
+                    <TrendingUp className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-sm font-semibold">Best Swing Candidates</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    10 aksione me rritje më të lartë dhe 10 me rrezik më të madh, të vlerësuara sipas shumë faktorëve. Çmimet përditësohen në kohë reale.
+                    Swing trade candidates me probabilitet më të lartë për upside 1D, 5D apo 20D, të filtruar nga regime, spillover, event risk dhe confidence.
                   </p>
                 </CardContent>
               </Card>
-              <TopMovers />
+              <TopSwingPredictions />
             </motion.div>
           </TabsContent>
 
