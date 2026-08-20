@@ -28,6 +28,7 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  Radio,
 } from 'lucide-react';
 
 interface ScreenerStock {
@@ -55,9 +56,12 @@ interface ScreenerStock {
   trend: string;
   fcf: string;
   score: number;
+  _liveSource?: string;
 }
 
 interface ScreenerData {
+  scannedAt?: string;
+  liveCount?: number;
   stocks: ScreenerStock[];
   totalStocks: number;
   filteredCount: number;
@@ -326,6 +330,17 @@ export function StockScreener() {
           <span className="text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">{data?.filteredCount || 0}</span> nga {data?.totalStocks || 0} aksione
           </span>
+          {data?.liveCount && data.liveCount > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-500">
+              <Radio className="w-3 h-3" />
+              {data.liveCount} live
+            </span>
+          )}
+          {data?.scannedAt && (
+            <span className="text-[10px] text-muted-foreground/60">
+              {new Date(data.scannedAt).toLocaleTimeString('sq-AL', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -395,7 +410,10 @@ export function StockScreener() {
                       onClick={() => setExpandedTicker(isExpanded ? null : stock.ticker)}
                     >
                       <td className="py-2.5 px-3">
-                        <span className="font-bold text-foreground">{stock.ticker}</span>
+                        <div className="flex items-center gap-1">
+                          {stock._liveSource === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                          <span className="font-bold text-foreground">{stock.ticker}</span>
+                        </div>
                       </td>
                       <td className="py-2.5 px-3 max-w-[120px] truncate text-muted-foreground">
                         {stock.company}

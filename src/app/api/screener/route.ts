@@ -26,14 +26,56 @@ function parseMarketCap(marketCapStr: string): number {
   return parseFloat(str) || 0;
 }
 
+// Derive signal DYNAMICALLY from live change % (not from static data)
+function deriveSignal(change: number): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
+  if (change >= 1.5) return 'BULLISH';
+  if (change <= -1.5) return 'BEARISH';
+  return 'NEUTRAL';
+}
+
+function deriveTrend(change: number): 'uptrend' | 'downtrend' | 'sideways' {
+  if (change >= 1.0) return 'uptrend';
+  if (change <= -1.0) return 'downtrend';
+  return 'sideways';
+}
+
+// Derive rating DYNAMICALLY from live change + fundamentals
+function deriveRating(change: number, pe: number, revGrowth: number, epsGrowth: number): string {
+  // Strong bullish: big gain + good fundamentals
+  if (change >= 3 && revGrowth > 15) return 'STRONG_BUY';
+  if (change >= 2 && epsGrowth > 10) return 'STRONG_BUY';
+
+  // Strong bearish: big drop
+  if (change <= -3) return 'SELL';
+
+  // Moderate bullish
+  if (change >= 1) return 'BUY';
+
+  // Moderate bearish
+  if (change <= -2) return 'SELL';
+
+  // Value play: low PE + decent growth
+  if (pe > 0 && pe < 18 && revGrowth > 8) return 'BUY';
+
+  return 'HOLD';
+}
+
 function computeScore(stock: any): number {
   let score = 50;
 
-  // Signal bonus
+  // Signal bonus — now from LIVE change
   if (stock.signal === 'BULLISH') score += 15;
   else if (stock.signal === 'BEARISH') score -= 15;
 
-  // Rating bonus
+  // Change momentum — bigger moves = bigger score impact
+  const changeAbs = Math.abs(stock.change);
+  if (stock.change > 0) {
+    score += Math.min(changeAbs * 2, 15); // up to +15 for strong gainers
+  } else {
+    score -= Math.min(changeAbs * 2, 15); // up to -15 for strong losers
+  }
+
+  // Rating bonus — now derived dynamically
   if (stock.rating === 'STRONG_BUY') score += 20;
   else if (stock.rating === 'BUY') score += 10;
   else if (stock.rating === 'SELL') score -= 15;
@@ -83,11 +125,19 @@ export async function GET(request: NextRequest) {
     const tickers = stocks.map(s => s.ticker);
     const livePrices = await fetchLivePrices(tickers);
 
-    // Apply filters
+    // Apply filters — use LIVE data for dynamic signal/trend/rating/score
     let filtered = stocks.map(stock => {
       const live = livePrices[stock.ticker];
       const price = live?.price ?? stock.price;
       const change = live?.change ?? stock.change;
+      const hasLiveData = live && live.price > 0;
+
+      // DYNAMIC signals based on live change (not static)
+      const signal = hasLiveData ? deriveSignal(change) : stock.signal;
+      const trend = hasLiveData ? deriveTrend(change) : stock.trend;
+      const rating = hasLiveData
+        ? deriveRating(change, stock.pe, parseFloat(stock.revGrowth) || 0, parseFloat(stock.epsGrowth) || 0)
+        : stock.rating;
 
       return {
         ticker: stock.ticker,
@@ -108,12 +158,13 @@ export async function GET(request: NextRequest) {
         epsGrowth: stock.epsGrowth,
         moat: stock.moat,
         brandStrength: stock.brandStrength,
-        rating: stock.rating,
+        rating,
         targetPrice: stock.targetPrice,
-        signal: stock.signal,
-        trend: stock.trend,
+        signal,
+        trend,
         fcf: stock.fcf,
         score: 0, // computed below
+        _liveSource: hasLiveData ? 'live' : 'static',
       };
     });
 
@@ -185,6 +236,8 @@ export async function GET(request: NextRequest) {
     const sectors = [...new Set(stocks.map(s => s.sector))].sort();
 
     return NextResponse.json({
+      scannedAt: new Date().toISOString(),
+      liveCount: Object.keys(livePrices).length,
       stocks: filtered,
       totalStocks: stocks.length,
       filteredCount: filtered.length,
