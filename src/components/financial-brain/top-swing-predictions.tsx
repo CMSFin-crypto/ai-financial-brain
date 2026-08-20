@@ -136,7 +136,7 @@ function SwingCard({ stock, rank }: { stock: TopStockCard; rank: number }) {
 
             {stock.riskFlags.length === 0 && (
               <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/70">
-                <Shield className="w-3 h-3" /> No critical event · Clean risk profile
+                <Shield className="w-3 h-3" /> Asnje event kritik · Profili i riskut eshte i pastër
               </div>
             )}
 
@@ -239,7 +239,7 @@ export function TopSwingPredictions() {
         <div className="flex items-center gap-3">
           <TrendingUp className="w-4 h-4 text-emerald-500" />
           <span className="text-xs text-muted-foreground">
-            {data.topStocks.length} swing candidates
+            {data.topStocks.length} kandidate swing
             {data.totalScanned > 0 && <span className="text-muted-foreground/50"> (prej {data.totalScanned} prediction-eve)</span>}
           </span>
           {data.modelVersion !== 'N/A' && (

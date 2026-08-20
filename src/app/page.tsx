@@ -334,7 +334,7 @@ export default function Home() {
             </motion.div>
           </TabsContent>
 
-          {/* Tab: Top Movers */}
+          {/* Tab: Swing Predictions */}
           <TabsContent value="top-movers" className="mt-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -346,10 +346,10 @@ export default function Home() {
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-2 mb-1">
                     <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Best Swing Candidates</h3>
+                    <h3 className="text-sm font-semibold">Top Swing Predictions</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Swing trade candidates me probabilitet më të lartë për upside 1D, 3D apo 7D, të filtruar nga regime, spillover, event risk dhe confidence.
+                    Aksione te perzgjedhura nga modeli per potencial swing ne 1D, 3D dhe 7D, te filtruara nga risku i ngjarjeve, regjimi i tregut dhe faktoret global.
                   </p>
                 </CardContent>
               </Card>
