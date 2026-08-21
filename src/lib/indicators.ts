@@ -295,6 +295,71 @@ export function calculateConfidenceScore(data: Array<{
 }
 
 /**
+ * Calculate ADX (Average Directional Index).
+ * Requires high[], low[], close[] arrays of the SAME length.
+ * Returns ADX values array (first `period*2` values are NaN).
+ */
+export function calculateADX(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period: number = 14
+): number[] {
+  const adx: number[] = new Array(closes.length).fill(NaN);
+  if (closes.length < period * 2) return adx;
+
+  // Calculate +DM, -DM, TR
+  const plusDM: number[] = [0];
+  const minusDM: number[] = [0];
+  const tr: number[] = [0];
+
+  for (let i = 1; i < closes.length; i++) {
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    tr.push(Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    ));
+  }
+
+  // Smooth with Wilder's method
+  let smoothTR = tr.slice(1, period + 1).reduce((a, b) => a + b, 0);
+  let smoothPlusDM = plusDM.slice(1, period + 1).reduce((a, b) => a + b, 0);
+  let smoothMinusDM = minusDM.slice(1, period + 1).reduce((a, b) => a + b, 0);
+
+  const dxArr: number[] = [];
+
+  for (let i = period; i < closes.length; i++) {
+    if (i > period) {
+      smoothTR = smoothTR - (smoothTR / period) + tr[i];
+      smoothPlusDM = smoothPlusDM - (smoothPlusDM / period) + plusDM[i];
+      smoothMinusDM = smoothMinusDM - (smoothMinusDM / period) + minusDM[i];
+    }
+
+    const plusDI = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
+    const minusDI = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
+    const diSum = plusDI + minusDI;
+    const dx = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+    dxArr.push(dx);
+  }
+
+  // ADX = smoothed DX
+  if (dxArr.length < period) return adx;
+  let adxVal = dxArr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  adx[period * 2 - 1] = adxVal;
+
+  for (let i = period; i < dxArr.length; i++) {
+    adxVal = (adxVal * (period - 1) + dxArr[i]) / period;
+    adx[period + i] = adxVal;
+  }
+
+  return adx;
+}
+
+/**
  * Calculate Simple Moving Average.
  */
 export function calculateSMA(closes: number[], period: number): number[] {

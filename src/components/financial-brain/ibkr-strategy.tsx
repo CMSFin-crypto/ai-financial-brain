@@ -19,25 +19,33 @@ interface FunnelStock {
   symbol: string; price: number;
   avgVol20d: number; avgDolVol20d: number;
   passedLiquidity: boolean; passedTrend: boolean;
+  passedStackedMA: boolean; passedADX: boolean; passedEventRisk: boolean;
+  passedStackedMA: boolean; passedADX: boolean; passedEventRisk: boolean;
   trendScore: number; rsScore: number; momentumScore: number;
   volConfScore: number; setupScore: number; riskScore: number; totalScore: number;
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
-  horizon: string; rsi: number; atr: number; atrPct: number;
+  horizon: string; rsi: number; atr: number; atrPct: number; adx: number;
+  adx: number;
   volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
   pullbackDays: number; pullbackPct: number;
   distFromEMA10: number; distFromEMA20: number;
-  aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean;
+  aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean; stackedMA: boolean;
+  stackedMA: boolean;
   rsVsSPY: number; rsVsQQQ: number; rsVsSPY60d: number;
-  entry: number; stop: number; target1R: number; target2R: number;
+  entry: number; stop: number; target1R: number; target2R: number; target3R: number;
   riskPct: number; rewardRiskRatio: number; swingLow: number;
-  decision: Decision; reasons: string[]; warnings: string[];
+  sector: string;
+  positionSize: number; positionValue: number; riskDollars: number;
+  eventRisk: string; eventRiskSeverity: string;
+ decision: Decision; reasons: string[]; warnings: string[];
 }
 
 interface FunnelResponse {
   scannedAt: string; regimeOk: boolean;
   regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
-  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; };
+  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; passedEventRisk: number; passedSectorLimit: number; displayed: number; };
   results: FunnelStock[];
+  sectorExposure?: Record<string, number>;
 }
 
 // ── Decision styling ──
@@ -52,10 +60,10 @@ const DECISION_STYLE: Record<Decision, { bg: string; text: string; border: strin
 // ── Strategy Reference Data ──
 const STRATEGY_RULES = [
   { element: 'Universe', icon: Layers, rule: '200 kompani te medha, likuide, tregtueshme ne IBKR', color: 'text-blue-400' },
-  { element: 'Filtri mekanik', icon: Filter, rule: 'Cmimi >= $10, Vol >= 1M, DolVol >= $20M, mbi SMA50, SMA50 > SMA200, RS > SPY', color: 'text-emerald-400' },
-  { element: 'Analize teknike', icon: BarChart3, rule: 'Trend, momentum, RS, ATR, setup quality, volum konfirmim', color: 'text-blue-400' },
-  { element: 'Event-risk gate', icon: AlertTriangle, rule: 'R:R >= 1:2, RSI 30-75, risk <= 8%, regjimi i tregut, jo extended', color: 'text-red-400' },
-  { element: 'Top Stocks', icon: Target, rule: '5-10 kandidate me score me te larte, READY ose WATCHLIST', color: 'text-amber-400' },
+  { element: 'Filtri mekanik', icon: Filter, rule: 'Cmimi >= $10, Vol >= 1M, DolVol >= $20M, mbi SMA50, SMA50 > SMA200, Stacked MA, ADX > 25, RS > SPY', color: 'text-emerald-400' },
+  { element: 'Analize teknike', icon: BarChart3, rule: 'Trend (me Stacked MA + ADX bonus), momentum, RS, ATR, setup quality, volum konfirmim', color: 'text-blue-400' },
+  { element: 'Event-risk gate', icon: AlertTriangle, rule: 'R:R >= 1:2 (3R target), RSI 30-75, risk <= 8%, regjimi OK, jo earnings/FOMC/CPI, max 2 per sektor', color: 'text-red-400' },
+  { element: 'Top Stocks', icon: Target, rule: '5-10 kandidate me score me te larte, READY (me IBKR bracket order) ose WATCHLIST', color: 'text-amber-400' },
 ];
 
 const ENTRY_RULES = [
@@ -77,9 +85,11 @@ const DONT_RULES = [
 const SYSTEM_GATES = [
   { gate: 'Market Regime', desc: 'SPY/QQQ mbi 50 dhe 200 SMA', icon: Shield },
   { gate: 'Liquidity', desc: 'Vol > 1M, DolVol > $20M, cmimi > $10', icon: DollarSign },
-  { gate: 'Trend + RS', desc: 'Mbi 50/200 SMA, RS > SPY ne 60d', icon: TrendingUp },
+  { gate: 'Trend + RS', desc: 'Mbi 50/200 SMA, Stacked MA, ADX > 25, RS > SPY ne 60d', icon: TrendingUp },
   { gate: 'Setup Quality', desc: 'Pullback/Breakout me volum, RSI, EMA proximity', icon: BarChart3 },
-  { gate: 'Risk Gate', desc: 'R:R >= 1:2, risk <= 8%, RSI 30-75', icon: AlertTriangle },
+  { gate: 'Risk Gate', desc: 'R:R >= 1:2 (3R target), risk <= 8%, RSI 30-75', icon: AlertTriangle },
+          { gate: 'Sector Limit', desc: 'Max 2 aksione per sektor (diversifikim)', icon: Layers },
+          { gate: 'IBKR Bracket', desc: 'Entry + Stop (1.5 ATR) + Take-profit 3R automatik', icon: Target },
   { gate: 'IBKR Bracket', desc: 'Entry + Stop + Take-profit automatik', icon: Target },
 ];
 
@@ -154,6 +164,8 @@ function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
     { label: 'Trend + RS', count: funnel.passedTrend, color: 'bg-emerald-500/20 text-emerald-400' },
     { label: 'Setup', count: funnel.passedSetup, color: 'bg-violet-500/20 text-violet-400' },
     { label: 'Risk Gate', count: funnel.passedRisk, color: 'bg-amber-500/20 text-amber-400' },
+    { label: 'Event Risk', count: funnel.passedEventRisk ?? funnel.passedRisk, color: 'bg-red-500/20 text-red-400' },
+    { label: 'Sector Limit', count: funnel.passedSectorLimit ?? funnel.passedRisk, color: 'bg-indigo-500/20 text-indigo-400' },
     { label: 'Top Stocks', count: funnel.displayed, color: 'bg-emerald-500/20 text-emerald-400' },
   ];
 

@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
-import { calculateSMA, calculateRSI } from '@/lib/indicators';
+import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
+import { checkMultiEventRisk } from '@/lib/event-risk';
 
 // ═══════════════════════════════════════════════════════════════
-// IBKR FUNNEL SCANNER — 200 → Liquidity → Trend → Technical → Risk → 5-10
+// IBKR FUNNEL SCANNER v2 — Blueprint-aligned
+// 5 shtresa: Data → Signal → Execution → Risk → Reporting
 // ═══════════════════════════════════════════════════════════════
 
 const UNIVERSE = [
@@ -42,11 +44,63 @@ const UNIVERSE = [
   'NEE','DUK','SO','AEP','EXC','SRE','XEL','PEG','EIX','DTE',
 ];
 
-// Deduplicate (some tickers may appear in multiple sector lists)
 const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
 
 const ETF_SET = new Set(['SPY','QQQ','SMH','XLF','XLE','XLK','XLV','XLY','XLP','XLI','XLB','XLU','XLRE','XLC','GLD','TLT','IWM','VTI','ARKK','SCHD']);
-const BENCHMARKS = ['SPY', 'QQQ'];
+
+// ── Sector map ──
+const SECTOR_MAP: Record<string, string> = {
+  // Tech / AI / Semiconductors
+  AAPL:'Tech',MSFT:'Tech',NVDA:'Tech',AMZN:'Consumer',GOOGL:'Tech',META:'Tech',
+  AVGO:'Tech',TSLA:'Consumer','BRK.B':'Finance',LLY:'Healthcare',
+  CRM:'Tech',ORCL:'Tech',ADBE:'Tech',NOW:'Tech',INTU:'Tech',SNOW:'Tech',
+  PLTR:'Tech',DDOG:'Tech',CRWD:'Tech',PANW:'Tech',NET:'Tech',ZS:'Tech',
+  FTNT:'Tech',MRVL:'Tech',QCOM:'Tech',TXN:'Tech',MU:'Tech',LRCX:'Tech',
+  AMAT:'Tech',ADI:'Tech',KLAC:'Tech',ON:'Tech',DELL:'Tech',HPQ:'Tech',
+  IBM:'Tech',CTSH:'Tech',WDAY:'Tech',VEEV:'Healthcare',HUBS:'Tech',ANSS:'Tech',
+  PAYX:'Tech',CDNS:'Tech',MANH:'Tech',STX:'Tech',AKAM:'Tech',EQIX:'REITs',
+  FSLR:'Energy',ENPH:'Energy',GFS:'Tech',ARM:'Tech',GOOG:'Tech',
+  // Communication / Media
+  DIS:'Consumer',CMCSA:'Communication',NFLX:'Communication',EA:'Consumer',
+  TTWO:'Consumer',UBER:'Consumer',ABNB:'Consumer',BKNG:'Consumer',EXPE:'Consumer',
+  ROKU:'Communication',PARA:'Communication',LYV:'Communication',DASH:'Consumer',RBLX:'Consumer',
+  // Consumer Discretionary
+  COST:'Consumer',WMT:'Consumer',TGT:'Consumer',HD:'Consumer',LOW:'Consumer',
+  NKE:'Consumer',MCD:'Consumer',SBUX:'Consumer',YUM:'Consumer',CMG:'Consumer',
+  EL:'Consumer',DEO:'Consumer',STZ:'Consumer',CL:'Consumer',KMB:'Consumer',
+  RCL:'Consumer',LULU:'Consumer',TJX:'Consumer',AZO:'Consumer',DLTR:'Consumer',
+  // Consumer Staples
+  KO:'Staples',PEP:'Staples',PM:'Staples',MO:'Staples',BUD:'Staples',
+  UL:'Staples',GIS:'Staples',SJM:'Staples',HSY:'Staples',COTY:'Consumer',
+  CPB:'Staples',CHD:'Staples',K:'Staples',CLX:'Staples','BF.B':'Staples',
+  // Healthcare
+  UNH:'Healthcare',JNJ:'Healthcare',MRK:'Healthcare',ABBV:'Healthcare',PFE:'Healthcare',
+  TMO:'Healthcare',ABT:'Healthcare',DHR:'Healthcare',BMY:'Healthcare',GILD:'Healthcare',
+  VRTX:'Healthcare',REGN:'Healthcare',BIIB:'Healthcare',ISRG:'Healthcare',SYK:'Healthcare',
+  EW:'Healthcare',BSX:'Healthcare',MDT:'Healthcare',HUM:'Healthcare',CI:'Healthcare',
+  ELV:'Healthcare',CVS:'Healthcare',MOH:'Healthcare',CNC:'Healthcare',IDXX:'Healthcare',
+  // Finance
+  JPM:'Finance',V:'Finance',MA:'Finance',BAC:'Finance',GS:'Finance',
+  MS:'Finance',AXP:'Finance',BLK:'Finance',SCHW:'Finance',C:'Finance',
+  USB:'Finance',PGR:'Finance',CB:'Finance',AON:'Finance',MET:'Finance',
+  PRU:'Finance',COF:'Finance',SYF:'Finance',DFS:'Finance',NTRS:'Finance',
+  ICE:'Finance',MKTX:'Finance',CBOE:'Finance',PYPL:'Finance',CME:'Finance',
+  // Energy
+  XOM:'Energy',CVX:'Energy',COP:'Energy',SLB:'Energy',EOG:'Energy',
+  OXY:'Energy',MPC:'Energy',PSX:'Energy',VLO:'Energy',DVN:'Energy',
+  FANG:'Energy',PXD:'Energy',CTRA:'Energy',HES:'Energy',WMB:'Energy',
+  // Industrial
+  CAT:'Industrial',GE:'Industrial',HON:'Industrial',UPS:'Industrial',RTX:'Industrial',
+  BA:'Industrial',LMT:'Industrial',NOC:'Industrial',GD:'Industrial',DE:'Industrial',
+  MMM:'Industrial',EMR:'Industrial',ITW:'Industrial',ETN:'Industrial',CMI:'Industrial',
+  ROK:'Industrial',PH:'Industrial',JCI:'Industrial',PCAR:'Industrial',FDX:'Industrial',
+  // REITs
+  AMT:'REITs',CCI:'REITs',SPG:'REITs',O:'Energy',PSA:'REITs',WELL:'REITs',
+  DLR:'REITs',VICI:'REITs',IRM:'REITs',
+  // Utilities
+  NEE:'Utilities',DUK:'Utilities',SO:'Utilities',AEP:'Utilities',EXC:'Utilities',
+  SRE:'Utilities',XEL:'Utilities',PEG:'Utilities',EIX:'Utilities',DTE:'Utilities',
+};
 
 // ── Helpers ──
 function calcEMA(data: number[], period: number): number[] {
@@ -74,26 +128,87 @@ function pct(data: number[], days: number): number {
   return p > 0 ? ((c - p) / p) * 100 : 0;
 }
 
+// Position sizing: risk-based share calculation
+function calcPositionSize(entry: number, stop: number, riskBudgetPct: number, accountEquity: number): { shares: number; positionValue: number; riskDollars: number; riskPct: number } {
+  const riskPerShare = entry - stop;
+  if (riskPerShare <= 0 || entry <= 0) return { shares: 0, positionValue: 0, riskDollars: 0, riskPct: 0 };
+  const riskDollars = accountEquity * (riskBudgetPct / 100);
+  const shares = Math.max(0, Math.floor(riskDollars / riskPerShare));
+  const positionValue = shares * entry;
+  const actualRiskPct = positionValue > 0 ? ((shares * riskPerShare) / accountEquity) * 100 : 0;
+  return { shares, positionValue: Math.round(positionValue * 100) / 100, riskDollars: Math.round(riskDollars * 100) / 100, riskPct: Math.round(actualRiskPct * 100) / 100 };
+}
+
+// IBKR Bracket Order generator
+function generateBracketOrder(symbol: string, action: 'BUY' | 'SELL', entry: number, stop: number, target: number, shares: number): object {
+  const cOID = `ibkr_${symbol}_${Date.now()}`;
+  const parentOID = `${cOID}_parent`;
+  const stopChildOID = `${cOID}_stop`;
+  const targetChildOID = `${cOID}_target`;
+
+  return {
+    orders: [
+      {
+        cOID: parentOID,
+        symbol,
+        orderType: 'LMT',
+        side: action,
+        quantity: shares,
+        price: Math.round(entry * 100) / 100,
+        tif: 'GTC',
+        transmit: false,
+      },
+      {
+        cOID: stopChildOID,
+        symbol,
+        orderType: 'STP',
+        side: action === 'BUY' ? 'SELL' : 'BUY',
+        quantity: shares,
+        price: Math.round(stop * 100) / 100,
+        tif: 'GTC',
+        parentId: parentOID,
+        transmit: false,
+      },
+      {
+        cOID: targetChildOID,
+        symbol,
+        orderType: 'LMT',
+        side: action === 'BUY' ? 'SELL' : 'BUY',
+        quantity: shares,
+        price: Math.round(target * 100) / 100,
+        tif: 'GTC',
+        parentId: parentOID,
+        transmit: true, // last child transmits the bracket
+      },
+    ],
+    summary: `Bracket: ${action} ${shares} ${symbol} @ $${entry.toFixed(2)} | Stop $${stop.toFixed(2)} | Target $${target.toFixed(2)}`,
+  };
+}
+
 // ── Types ──
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
 
 interface FunnelStock {
   symbol: string;
   price: number;
+  sector: string;
   // Phase 1: mechanical
   avgVol20d: number;
   avgDolVol20d: number;
   passedLiquidity: boolean;
   passedTrend: boolean;
+  passedStackedMA: boolean; // NEW: close > EMA20 > SMA50 > SMA200
+  passedADX: boolean;       // NEW: ADX 14 > 25
+  passedEventRisk: boolean; // NEW: no critical events
   // Phase 2: technical
-  trendScore: number;       // 0-100
-  rsScore: number;          // 0-100
-  momentumScore: number;    // 0-100
-  volConfScore: number;     // 0-100
-  setupScore: number;       // 0-100
+  trendScore: number;
+  rsScore: number;
+  momentumScore: number;
+  volConfScore: number;
+  setupScore: number;
   // Phase 3: risk
-  riskScore: number;        // 0-100
-  totalScore: number;       // 0-100
+  riskScore: number;
+  totalScore: number;
   // Setup detail
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string;
@@ -101,6 +216,7 @@ interface FunnelStock {
   rsi: number;
   atr: number;
   atrPct: number;
+  adx: number;           // NEW
   volRatio: number;
   volDeclining: boolean;
   lastDaySpike: boolean;
@@ -112,6 +228,7 @@ interface FunnelStock {
   aboveSMA50: boolean;
   aboveSMA200: boolean;
   sma50Above200: boolean;
+  stackedMA: boolean;     // NEW
   // RS
   rsVsSPY: number;
   rsVsQQQ: number;
@@ -120,10 +237,20 @@ interface FunnelStock {
   entry: number;
   stop: number;
   target1R: number;
-  target2R: number;
+  target2R: number;        // NOW 3R
+  target3R: number;        // NEW
   riskPct: number;
-  rewardRiskRatio: number;
+  rewardRiskRatio: number; // NOW based on 3R
   swingLow: number;
+  // NEW: Risk management
+  positionSize: number;     // shares
+  positionValue: number;   // total $
+  riskDollars: number;     // risk in $
+  // NEW: Event risk
+  eventRisk: string;        // summary text
+  eventRiskSeverity: string;
+  // NEW: IBKR bracket order
+  bracketOrder: object | null;
   // Verdict
   decision: Decision;
   reasons: string[];
@@ -134,8 +261,10 @@ interface FunnelResponse {
   scannedAt: string;
   regimeOk: boolean;
   regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
-  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; };
+  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; passedEventRisk: number; passedSectorLimit: number; };
   results: FunnelStock[];
+  // NEW: exposure summary
+  sectorExposure: Record<string, number>;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -143,6 +272,9 @@ interface FunnelResponse {
 // ═══════════════════════════════════════════════════════════════
 export async function GET() {
   const t0 = Date.now();
+  const ACCOUNT_EQUITY = 25000; // default demo account
+  const MAX_RISK_PCT = 1.0;   // max 1% of equity per trade
+  const MAX_PER_SECTOR = 2;   // max 2 stocks per sector
 
   try {
     // ── 0. Fetch benchmarks ──
@@ -173,10 +305,11 @@ export async function GET() {
       if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 250));
     }
 
-    console.log(`[IBKR FUNNEL] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
+    console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
 
-    // ── 2. PHASE 1 — Mechanical filter (liquidity + trend) ──
+    // ── 2. PHASE 1 — Mechanical filter (liquidity + trend + ADX + stacked MA + event risk) ──
     const phase1: FunnelStock[] = [];
+    let passedEventRiskCount = 0;
 
     for (const sym of syms) {
       const data = hist[sym];
@@ -194,7 +327,7 @@ export async function GET() {
       const avgDolVol = price * avgVol20;
       const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
 
-      // Trend checks
+      // Trend checks (existing)
       const sma50 = calculateSMA(closes, 50);
       const sma200 = calculateSMA(closes, 200);
       const above50 = price > (sma50[last] || 0);
@@ -203,18 +336,45 @@ export async function GET() {
       const rs60 = pct(closes, 60);
       const passedTrend = above50 && golden && rs60 > spyRS60;
 
-      // Store basic info for all stocks (we need it for funnel counts)
+      // NEW: Stacked MA — close > EMA20 > SMA50 > SMA200
+      const ema20 = calcEMA(closes, 20);
+      const ema20Val = ema20[last] || 0;
+      const sma50Val = sma50[last] || 0;
+      const sma200Val = sma200[last] || 0;
+      const stackedMA = price > ema20Val && ema20Val > sma50Val && sma50Val > sma200Val;
+
+      // NEW: ADX 14 > 25 (trend strength)
+      const adxArr = calculateADX(highs, lows, closes, 14);
+      const adx = adxArr[last] || 0;
+      const passedADX = adx > 25;
+
+      // NEW: Event risk check
+      const eventResult = checkMultiEventRisk(sym);
+      const hasCriticalEvent = eventResult.hasCriticalEvent || eventResult.compositeRiskScore <= -50;
+      const passedEventRisk = !hasCriticalEvent;
+      if (passedEventRisk) passedEventRiskCount++;
+
+      const sector = SECTOR_MAP[sym] || 'Other';
+
+      // Store basic info for all stocks (funnel counts)
       phase1.push({
-        symbol: sym, price, avgVol20d: avgVol20, avgDolVol20d: avgDolVol,
+        symbol: sym, price, sector,
+        avgVol20d: avgVol20, avgDolVol20d: avgDolVol,
         passedLiquidity: passedLiq, passedTrend,
+        passedStackedMA: stackedMA, passedADX, passedEventRisk,
         trendScore: 0, rsScore: 0, momentumScore: 0, volConfScore: 0, setupScore: 0,
         riskScore: 0, totalScore: 0,
         setup: 'NONE', horizon: '',
-        rsi: 0, atr: 0, atrPct: 0, volRatio: 0, volDeclining: false, lastDaySpike: false,
+        rsi: 0, atr: 0, atrPct: 0, adx: Math.round(adx * 10) / 10,
+        volRatio: 0, volDeclining: false, lastDaySpike: false,
         pullbackDays: 0, pullbackPct: 0, distFromEMA10: 0, distFromEMA20: 0,
-        aboveSMA50: above50, aboveSMA200: above200, sma50Above200: golden,
+        aboveSMA50: above50, aboveSMA200: above200, sma50Above200: golden, stackedMA,
         rsVsSPY: 0, rsVsQQQ: 0, rsVsSPY60d: rs60 - spyRS60,
-        entry: 0, stop: 0, target1R: 0, target2R: 0, riskPct: 0, rewardRiskRatio: 0, swingLow: 0,
+        entry: 0, stop: 0, target1R: 0, target2R: 0, target3R: 0,
+        riskPct: 0, rewardRiskRatio: 0, swingLow: 0,
+        positionSize: 0, positionValue: 0, riskDollars: 0,
+        eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
+        bracketOrder: null,
         decision: 'NO_TRADE', reasons: [], warnings: [],
       });
     }
@@ -246,14 +406,18 @@ export async function GET() {
       const sma50 = calculateSMA(closes, 50);
       const sma200 = calculateSMA(closes, 200);
       let tScore = 0;
-      if (price > (sma50[last]||0)) tScore += 25;
-      if (price > (sma200[last]||0)) tScore += 25;
-      if ((sma50[last]||0) > (sma200[last]||0)) tScore += 25;
-      // Higher-high structure: last 20d high > prior 20d high
+      if (price > (sma50[last]||0)) tScore += 20;
+      if (price > (sma200[last]||0)) tScore += 20;
+      if ((sma50[last]||0) > (sma200[last]||0)) tScore += 15;
+      // NEW: Stacked MA bonus (+15)
+      if (stock.stackedMA) tScore += 15;
+      // Higher-high structure
       const h20a = Math.max(...highs.slice(-40, -20));
       const h20b = Math.max(...highs.slice(-20));
-      if (h20b > h20a) tScore += 25;
-      stock.trendScore = tScore;
+      if (h20b > h20a) tScore += 15;
+      // NEW: ADX bonus (+15 if > 25)
+      if (stock.adx > 25) tScore += 15;
+      stock.trendScore = Math.min(100, tScore);
 
       // ── B) Relative Strength (0-100) — 20% weight ──
       const rsSpy22 = pct(closes, 22) - pct(spyC, 22);
@@ -275,7 +439,6 @@ export async function GET() {
       if (mom5 > -2) mScore += 10; else mScore -= 10;
       if (mom10 > 0) mScore += 15; else mScore -= 10;
       if (mom22 > 0) mScore += 15; else mScore -= 10;
-      // Not overextended
       if (mom5 < 8) mScore += 10; else mScore -= 15;
       stock.momentumScore = Math.round(Math.max(0, Math.min(100, mScore)));
 
@@ -306,7 +469,7 @@ export async function GET() {
       stock.distFromEMA10 = Math.round(dist10 * 100) / 100;
       stock.distFromEMA20 = Math.round(dist20 * 100) / 100;
 
-      // Find pullback: high in last 10d, decline since
+      // Find pullback
       let highIdx = last;
       for (let i = last; i >= Math.max(0, last - 10); i--) if (closes[i] >= closes[highIdx]) highIdx = i;
       const peakPrice = closes[highIdx];
@@ -345,7 +508,7 @@ export async function GET() {
         }
       }
 
-      // Trend continuation (consolidation near highs)
+      // Trend continuation
       if (setup === 'NONE' && pbPct > -0.5 && pbPct < 2 && price > (sma50[last]||0)) {
         setup = 'TREND_CONT'; sScore = 40;
         reasons.push('Trend continuation');
@@ -360,26 +523,38 @@ export async function GET() {
       stock.atrPct = Math.round(atrPct * 100) / 100;
       stock.reasons = reasons;
 
-      // Entry / Stop / Target
-      // Per pullback: entry = cmimi aktual (je beje buy ne nivelin e supportit)
-      // Per breakout: entry = high 20d + 0.2% (konfirmim i thyerjes)
+      // Entry / Stop / Target (BLUEPRINT-ALIGNED)
       const isBreakout = setup === 'BREAKOUT';
       const high20 = Math.max(...highs.slice(-20));
       const entry = isBreakout
         ? Math.round((high20 * 1.002) * 100) / 100
         : Math.round(price * 100) / 100;
-      const stop = Math.round((swLow - atr * 0.2) * 100) / 100;
+
+      // NEW: Stop = max(entry - 1.5*ATR, swingLow - 0.2*ATR) — use the tighter (higher) one
+      const stopAtr = Math.round((entry - atr * 1.5) * 100) / 100;
+      const stopSwing = Math.round((swLow - atr * 0.2) * 100) / 100;
+      const stop = Math.max(stopAtr, stopSwing); // tighter stop = higher price
+
       const riskPerShare = entry - stop;
       const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
       const target1R = Math.round((entry + riskPerShare) * 100) / 100;
       const target2R = Math.round((entry + riskPerShare * 2) * 100) / 100;
-      const rr = riskPerShare > 0 ? (riskPerShare * 2) / riskPerShare : 0;
+      const target3R = Math.round((entry + riskPerShare * 3) * 100) / 100;
+      const rr = riskPerShare > 0 ? (riskPerShare * 3) / riskPerShare : 0; // based on 3R now
+
       stock.entry = entry;
       stock.stop = stop;
       stock.target1R = target1R;
       stock.target2R = target2R;
+      stock.target3R = target3R;
       stock.riskPct = Math.round(riskPct * 100) / 100;
       stock.rewardRiskRatio = Math.round(rr * 10) / 10;
+
+      // NEW: Position sizing
+      const pos = calcPositionSize(entry, stop, MAX_RISK_PCT, ACCOUNT_EQUITY);
+      stock.positionSize = pos.shares;
+      stock.positionValue = pos.positionValue;
+      stock.riskDollars = pos.riskDollars;
 
       // Horizon based on ATR
       if (atrPct < 1.5) stock.horizon = '10D';
@@ -391,16 +566,18 @@ export async function GET() {
       if (riskPct <= 3) rScore += 20;
       else if (riskPct <= 5) rScore += 10;
       else if (riskPct > 7) rScore -= 20;
-      if (rr >= 2) rScore += 15;
+      if (rr >= 2) rScore += 15; // 2R+ is good
       else if (rr >= 1.5) rScore += 5;
       else rScore -= 15;
       if (atrPct < 2) rScore += 10;
       else if (atrPct > 4) rScore -= 10;
+      // NEW: Event risk penalty
+      if (!stock.passedEventRisk) rScore -= 25;
       stock.riskScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
       // ── Total Score ──
       stock.totalScore = Math.round(
-        tScore * 0.25 +
+        stock.trendScore * 0.25 +
         stock.rsScore * 0.20 +
         stock.momentumScore * 0.15 +
         stock.volConfScore * 0.15 +
@@ -415,16 +592,16 @@ export async function GET() {
 
     const passedSetup = phase2.length;
 
-    // ── 4. PHASE 3 — Risk gate + Decision ──
+    // ── 4. PHASE 3 — Risk gate + Decision + Event risk ──
     const phase3: FunnelStock[] = [];
 
     for (const stock of phase2) {
       const warnings: string[] = [...stock.warnings];
       let decision: Decision = 'NO_TRADE';
 
-      // R:R gate
-      if (stock.rewardRiskRatio < 1.5) {
-        warnings.push(`R:R ${stock.rewardRiskRatio} — shume i ulet (duhet 1:2+)`);
+      // R:R gate (based on 3R now, so 2.0+ is the threshold)
+      if (stock.rewardRiskRatio < 2.0) {
+        warnings.push(`R:R ${stock.rewardRiskRatio} — i ulet (duhet 1:2 me 3R target)`);
       }
 
       // RSI gate
@@ -437,9 +614,24 @@ export async function GET() {
         warnings.push(`Rreziku ${stock.riskPct}% — shume i larte`);
       }
 
+      // ADX gate
+      if (stock.adx < 20) {
+        warnings.push(`ADX ${stock.adx} — trendi i dobet (duhet > 25)`);
+      }
+
       // Regime gate
       if (!regimeOk) {
         warnings.push('REGJIMI jo OK — vetem watcher');
+      }
+
+      // NEW: Event risk gate
+      if (!stock.passedEventRisk) {
+        warnings.push(`EVENT RISK: ${stock.eventRisk}`);
+      }
+
+      // Stacked MA bonus/penalty
+      if (!stock.stackedMA) {
+        warnings.push('MA jo te stackuara (close/EMA20/SMA50/SMA200)');
       }
 
       // Extended (chasing)
@@ -448,16 +640,18 @@ export async function GET() {
       }
 
       // Determine decision
-      const hasRR = stock.rewardRiskRatio >= 1.5;
+      const hasRR = stock.rewardRiskRatio >= 2.0;
       const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
       const riskOk = stock.riskPct <= 8;
       const scoreOk = stock.totalScore >= 45;
+      const eventOk = stock.passedEventRisk;
 
-      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk) {
+      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk) {
         decision = 'READY';
-      } else if (hasRR && rsiOk && riskOk && scoreOk && !regimeOk) {
+      } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
         decision = 'WATCHLIST';
-        warnings.push('WATCHLIST: Regjimi i tregut nuk lejon long tani');
+        if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
+        if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
       } else if (!hasRR || stock.riskPct > 6) {
         if (stock.setupScore >= 50) decision = 'WATCHLIST';
         else decision = 'NO_TRADE';
@@ -467,7 +661,13 @@ export async function GET() {
         decision = 'WATCHLIST';
       }
 
-      // Event risk: if RSI > 70 or overextended, mark EVENT_RISK
+      // Event risk override
+      if (!eventOk && decision === 'READY') {
+        decision = 'EVENT_RISK';
+        warnings.push('EVENT_RISK: Ngjarje kritike — mos hyr');
+      }
+
+      // RSI overbought override
       if (stock.rsi > 70 && stock.totalScore >= 55) {
         decision = 'EVENT_RISK';
         warnings.push('EVENT_RISK: RSI i larte, rrezik kthimi');
@@ -476,6 +676,13 @@ export async function GET() {
       stock.decision = decision;
       stock.warnings = warnings;
 
+      // NEW: Generate bracket order for READY trades
+      if (decision === 'READY' && stock.positionSize > 0) {
+        stock.bracketOrder = generateBracketOrder(
+          stock.symbol, 'BUY', stock.entry, stock.stop, stock.target3R, stock.positionSize
+        );
+      }
+
       if (decision === 'READY' || decision === 'WATCHLIST' || decision === 'EVENT_RISK') {
         phase3.push(stock);
       }
@@ -483,9 +690,26 @@ export async function GET() {
 
     const passedRisk = phase3.length;
 
-    // ── 5. PHASE 4 — Top 5-10 final ──
+    // ── 5. PHASE 4 — Sector exposure limit + Top 10 final ──
+    const sectorCount: Record<string, number> = {};
+    const afterSectorLimit: FunnelStock[] = [];
+
+    // Sort by totalScore descending first
     phase3.sort((a, b) => b.totalScore - a.totalScore);
-    const topStocks = phase3.slice(0, 10);
+
+    for (const stock of phase3) {
+      const sec = stock.sector;
+      if (!sectorCount[sec]) sectorCount[sec] = 0;
+      if (sectorCount[sec] < MAX_PER_SECTOR) {
+        afterSectorLimit.push(stock);
+        sectorCount[sec]++;
+      } else {
+        stock.warnings.push(`Sector limit: ${sec} ka tashme ${MAX_PER_SECTOR} aksione`);
+      }
+    }
+
+    const passedSectorLimit = afterSectorLimit.length;
+    const topStocks = afterSectorLimit.slice(0, 10);
     // READY first, then WATCHLIST, then others
     topStocks.sort((a, b) => {
       const order: Record<Decision, number> = { READY: 0, WATCHLIST: 1, EVENT_RISK: 2, EXTENDED: 3, NO_TRADE: 4 };
@@ -493,8 +717,15 @@ export async function GET() {
       return diff !== 0 ? diff : b.totalScore - a.totalScore;
     });
 
+    // Build sector exposure summary
+    const sectorExposure: Record<string, number> = {};
+    for (const s of topStocks) {
+      if (!sectorExposure[s.sector]) sectorExposure[s.sector] = 0;
+      sectorExposure[s.sector]++;
+    }
+
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    console.log(`[IBKR FUNNEL] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${topStocks.length} displayed (${elapsed}s)`);
+    console.log(`[IBKR v2] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${passedSectorLimit} → ${topStocks.length} (${elapsed}s)`);
 
     return NextResponse.json({
       scannedAt: new Date().toISOString(),
@@ -509,12 +740,15 @@ export async function GET() {
         passedTrend,
         passedSetup,
         passedRisk,
+        passedEventRisk: passedEventRiskCount,
+        passedSectorLimit,
         displayed: topStocks.length,
       },
       results: topStocks,
+      sectorExposure,
     } satisfies FunnelResponse);
   } catch (err: any) {
-    console.error('[IBKR FUNNEL] Error:', err);
+    console.error('[IBKR v2] Error:', err);
     return NextResponse.json({ error: err?.message || 'Gabim skaneri' }, { status: 500 });
   }
 }
