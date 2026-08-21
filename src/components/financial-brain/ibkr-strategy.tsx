@@ -302,16 +302,16 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
         {expanded && (
           <div className="mt-3 border-t border-border/50 pt-3 space-y-2 text-[13px] text-muted-foreground">
             <div className="grid grid-cols-2 gap-2">
-              <div>SMA 50: <span className={stock.aboveSMA50 ? 'text-emerald-400' : 'text-red-400'}>{stock.aboveSMA50 ? 'Mbi' : 'Nen'}</span></div>
-              <div>SMA 200: <span className={stock.aboveSMA200 ? 'text-emerald-400' : 'text-red-400'}>{stock.aboveSMA200 ? 'Mbi' : 'Nen'}</span></div>
-              <div>50/200: <span className={stock.sma50Above200 ? 'text-emerald-400' : 'text-red-400'}>{stock.sma50Above200 ? 'Golden' : 'Death'}</span></div>
-              <div>ATR: ${stock.atr.toFixed(2)}</div>
-              <div>Dist EMA10: {stock.distFromEMA10 > 0 ? '+' : ''}{stock.distFromEMA10.toFixed(1)}%</div>
-              <div>Dist EMA20: {stock.distFromEMA20 > 0 ? '+' : ''}{stock.distFromEMA20.toFixed(1)}%</div>
-              <div>RS vs QQQ: {stock.rsVsQQQ > 0 ? '+' : ''}{stock.rsVsQQQ.toFixed(1)}%</div>
-              <div>RS 60d vs SPY: {stock.rsVsSPY60d > 0 ? '+' : ''}{stock.rsVsSPY60d.toFixed(1)}%</div>
-              <div>Swing Low: ${stock.swingLow.toFixed(2)}</div>
-              <div>Vol Ratio: {stock.volRatio}x</div>
+              <DetailPopover label="SMA 50" value={stock.aboveSMA50 ? 'Mbi' : 'Nen'} good={stock.aboveSMA50} desc="Simple Moving Average 50-ditor — mesatarja e cmimeve te mbylljes per 50 dite tregtimi. Aksioni ne trend rrites duhet te jete mbi SMA50. Nese cmimi bie nen SMA50, shpesh tregon nje ndryshim trendi apo nje korektim te thelle." ideal="Cmimi mbi SMA50 per swing long trades." />
+              <DetailPopover label="SMA 200" value={stock.aboveSMA200 ? 'Mbi' : 'Nen'} good={stock.aboveSMA200} desc="Simple Moving Average 200-ditor — mesatarja e gjate. Kjo eshte linja me e rendesishme e trendit institucional. Shumica e fondeve te medha shikojne SMA200. Nese cmimi eshte mbi, aksioni eshte ne secular bull trend." ideal="Cmimi mbi SMA200 per konfirmim trendi afatgjate." />
+              <DetailPopover label="50/200" value={stock.sma50Above200 ? 'Golden Cross' : 'Death Cross'} good={stock.sma50Above200} desc="Kur SMA50 kalon mbi SMA200 quhet Golden Cross — sinjal i fuqishem bullish. Kur SMA50 bie nen SMA200 quhet Death Cross — sinjal bearish. Kjo cross tregon drejtimin e trendit afatmesem." ideal="Golden Cross (SMA50 mbi SMA200) per trend rrites." />
+              <DetailPopover label="ATR" value={'$' + stock.atr.toFixed(2)} good={stock.atrPct <= 2} warn={stock.atrPct > 3.5} desc="Average True Range — levizja mesatare ditorne e aksionit, llogaritur nga high-low, high-prev_close, dhe low-prev_close per 14 dite. Perdoret per te vendosur stop-loss: stop vendoset nen swing-low minus 0.2 x ATR." ideal="Me i ulet aq me i mire. ATR 1-2% per stop te ngushte." />
+              <DetailPopover label="Dist EMA10" value={(stock.distFromEMA10 > 0 ? '+' : '') + stock.distFromEMA10.toFixed(1) + '%'} good={Math.abs(stock.distFromEMA10) < 3} warn={Math.abs(stock.distFromEMA10) > 6} desc="Distanca e cmimit aktual nga EMA (Exponential Moving Average) 10-ditore si perqindje. Ne nje pullback ideal, cmimi afrohet EMA10. Nese distanca eshte negative e madhe, aksioni eshte shume larg mesatares se shkurter." ideal="-3% deri +3%. Pullback ideal afrohet EMA10." />
+              <DetailPopover label="Dist EMA20" value={(stock.distFromEMA20 > 0 ? '+' : '') + stock.distFromEMA20.toFixed(1) + '%'} good={Math.abs(stock.distFromEMA20) < 3} warn={Math.abs(stock.distFromEMA20) > 6} desc="Distanca nga EMA 20-ditore. EMA20 eshte mesatarja e shkurter qe institucionet ndiqne. Nje pullback qe teston EMA20 pa e thyer eshte nje zone e mire hyrjeje. Distancat e medha tregojne te bizhnozuar." ideal="-3% deri +3%. Test i EMA20 pa thyer = i mire." />
+              <DetailPopover label="RS vs QQQ" value={(stock.rsVsQQQ > 0 ? '+' : '') + stock.rsVsQQQ.toFixed(1) + '%'} good={stock.rsVsQQQ > 0} warn={stock.rsVsQQQ < -3} desc="Relative Strength vs QQQ (Nasdaq 100) ne 22 dite te fundit. Nese pozitiv, aksioni po performon me mire se sektori teknologjik. I rendesishem per aksione tech/AI — nese RS vs QQQ eshte negativ, aksioni po humbet terren krah te njejten klas." ideal="Positive (mbi 0%). Outperformance ndaj QQQ = fute me te fort." />
+              <DetailPopover label="RS 60d vs SPY" value={(stock.rsVsSPY60d > 0 ? '+' : '') + stock.rsVsSPY60d.toFixed(1) + '%'} good={stock.rsVsSPY60d > 0} warn={stock.rsVsSPY60d < -5} desc="Relative Strength vs SPY (S&P 500) ne 60 dite te fundit. Ky eshte nje indikator me afatgjate se RS 22d. Nje aksion me RS 60d pozitiv ka nje trend outperformance qe zgjat me shume se nje spike te shkurter." ideal="Positive (mbi 0%). Me i larte aq me i mire per swing." />
+              <DetailPopover label="Swing Low" value={'$' + stock.swingLow.toFixed(2)} desc="Cmimi me i ulet qe aksioni ka arritur qe nga fillimi i pullback-it (prej peak-it te fundit 10-ditor). Kjo eshte baza per vendosjen e stop-loss: stop-i vendoset pak nen swing-low minus 0.2 x ATR." ideal="Nje swing-low i qarte (i persosur) jep nje stop te definuar sakte." />
+              <DetailPopover label="Vol Ratio" value={stock.volRatio + 'x'} good={stock.volRatio >= 0.8 && stock.volRatio <= 1.5} warn={stock.volRatio > 2} desc="Raporti i volumit 3-ditor te fundit ndaj mesatares 20-ditore. 1.0x = volum normal. Nen 1.0x tregon volum te ulet (i mire gjate pullback-it). Mbi 1.5x tregon interes te larte (i mire per konfirmim)." ideal="0.8x - 1.5x. Pullback: nen 1.0x. Konfirmim: mbi 1.2x." />
             </div>
           </div>
         )}
@@ -427,6 +427,38 @@ function StatPopover({ label, value, good, warn, ideal, warnRange, desc }: {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400 mb-1">Kujdes</p>
             <p className="text-[13px] leading-relaxed text-foreground/85">{warnRange}</p>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function DetailPopover({ label, value, good, warn, desc, ideal }: {
+  label: string; value: string; good?: boolean; warn?: boolean; desc: string; ideal: string;
+}) {
+  const colorCls = good ? 'text-emerald-400' : warn ? 'text-red-400' : 'text-muted-foreground';
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="flex items-center gap-1 hover:brightness-125 transition-all cursor-pointer group w-full text-left">
+          <span className="text-muted-foreground/70">{label}:</span>
+          <strong className={colorCls}>{value}</strong>
+          <Info className="w-2.5 h-2.5 opacity-0 group-hover:opacity-50 transition-opacity ml-auto" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-72 sm:w-80 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <h3 className="text-sm font-bold text-foreground">{label}</h3>
+        </div>
+        <div className="px-4 pb-4 space-y-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Cka eshte?</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{desc}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{ideal}</p>
           </div>
         </div>
       </PopoverContent>
