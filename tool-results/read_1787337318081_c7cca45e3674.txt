@@ -1,0 +1,755 @@
+     1→     1→import { NextResponse } from 'next/server';
+     2→     2→import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
+     3→     3→import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
+     4→     4→import { checkMultiEventRisk } from '@/lib/event-risk';
+     5→     5→
+     6→     6→// ═══════════════════════════════════════════════════════════════
+     7→     7→// IBKR FUNNEL SCANNER v2 — Blueprint-aligned
+     8→     8→// 5 shtresa: Data → Signal → Execution → Risk → Reporting
+     9→     9→// ═══════════════════════════════════════════════════════════════
+    10→    10→
+    11→    11→const UNIVERSE = [
+    12→    12→  // Mega Caps + Tech / AI / Semiconductors (50)
+    13→    13→  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','AVGO','TSLA','BRK.B','LLY',
+    14→    14→  'CRM','ORCL','ADBE','NOW','INTU','SNOW','PLTR','DDOG','CRWD','PANW',
+    15→    15→  'NET','ZS','FTNT','MRVL','QCOM','TXN','MU','LRCX','AMAT','ADI',
+    16→    16→  'KLAC','ON','DELL','HPQ','IBM','CTSH','WDAY','VEEV','HUBS','ANSS',
+    17→    17→  'PAYX','CDNS','MANH','STX','AKAM','EQIX','FSLR','ENPH','GFS','ARM',
+    18→    18→  // Communication / Media / Platforms (15)
+    19→    19→  'DIS','CMCSA','NFLX','EA','TTWO','UBER','ABNB','BKNG','EXPE','ROKU',
+    20→    20→  'PARA','LYV','DASH','RBLX','GOOG',
+    21→    21→  // Consumer Discretionary / Retail (20)
+    22→    22→  'COST','WMT','TGT','HD','LOW','NKE','MCD','SBUX','YUM','CMG',
+    23→    23→  'EL','DEO','STZ','CL','KMB','RCL','LULU','TJX','AZO','DLTR',
+    24→    24→  // Consumer Staples (15)
+    25→    25→  'KO','PEP','PM','MO','BUD','UL','GIS','SJM','HSY','COTY',
+    26→    26→  'CPB','CHD','K','CLX','BF.B',
+    27→    27→  // Healthcare / Biotech / Pharma (25)
+    28→    28→  'UNH','JNJ','MRK','ABBV','PFE','TMO','ABT','DHR','BMY','GILD',
+    29→    29→  'VRTX','REGN','BIIB','ISRG','SYK','EW','BSX','MDT','HUM','CI',
+    30→    30→  'ELV','CVS','MOH','CNC','IDXX',
+    31→    31→  // Finance / Payments / Insurance (25)
+    32→    32→  'JPM','V','MA','BAC','GS','MS','AXP','BLK','SCHW','C',
+    33→    33→  'USB','PGR','CB','AON','MET','PRU','COF','SYF','DFS','NTRS',
+    34→    34→  'ICE','MKTX','CBOE','PYPL','CME',
+    35→    35→  // Energy / Oil & Gas (15)
+    36→    36→  'XOM','CVX','COP','SLB','EOG','OXY','MPC','PSX','VLO','DVN',
+    37→    37→  'FANG','PXD','CTRA','HES','WMB',
+    38→    38→  // Industrial / Manufacturing / Aerospace (20)
+    39→    39→  'CAT','GE','HON','UPS','RTX','BA','LMT','NOC','GD','DE',
+    40→    40→  'MMM','EMR','ITW','ETN','CMI','ROK','PH','JCI','PCAR','FDX',
+    41→    41→  // REITs / Infra / Telecom (10)
+    42→    42→  'AMT','CCI','SPG','O','PSA','WELL','DLR','VICI','IRM','EQIX',
+    43→    43→  // Utilities / Power (10)
+    44→    44→  'NEE','DUK','SO','AEP','EXC','SRE','XEL','PEG','EIX','DTE',
+    45→    45→];
+    46→    46→
+    47→    47→const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
+    48→    48→
+    49→    49→const ETF_SET = new Set(['SPY','QQQ','SMH','XLF','XLE','XLK','XLV','XLY','XLP','XLI','XLB','XLU','XLRE','XLC','GLD','TLT','IWM','VTI','ARKK','SCHD']);
+    50→    50→
+    51→    51→// ── Sector map ──
+    52→    52→const SECTOR_MAP: Record<string, string> = {
+    53→    53→  // Tech / AI / Semiconductors
+    54→    54→  AAPL:'Tech',MSFT:'Tech',NVDA:'Tech',AMZN:'Consumer',GOOGL:'Tech',META:'Tech',
+    55→    55→  AVGO:'Tech',TSLA:'Consumer','BRK.B':'Finance',LLY:'Healthcare',
+    56→    56→  CRM:'Tech',ORCL:'Tech',ADBE:'Tech',NOW:'Tech',INTU:'Tech',SNOW:'Tech',
+    57→    57→  PLTR:'Tech',DDOG:'Tech',CRWD:'Tech',PANW:'Tech',NET:'Tech',ZS:'Tech',
+    58→    58→  FTNT:'Tech',MRVL:'Tech',QCOM:'Tech',TXN:'Tech',MU:'Tech',LRCX:'Tech',
+    59→    59→  AMAT:'Tech',ADI:'Tech',KLAC:'Tech',ON:'Tech',DELL:'Tech',HPQ:'Tech',
+    60→    60→  IBM:'Tech',CTSH:'Tech',WDAY:'Tech',VEEV:'Healthcare',HUBS:'Tech',ANSS:'Tech',
+    61→    61→  PAYX:'Tech',CDNS:'Tech',MANH:'Tech',STX:'Tech',AKAM:'Tech',EQIX:'REITs',
+    62→    62→  FSLR:'Energy',ENPH:'Energy',GFS:'Tech',ARM:'Tech',GOOG:'Tech',
+    63→    63→  // Communication / Media
+    64→    64→  DIS:'Consumer',CMCSA:'Communication',NFLX:'Communication',EA:'Consumer',
+    65→    65→  TTWO:'Consumer',UBER:'Consumer',ABNB:'Consumer',BKNG:'Consumer',EXPE:'Consumer',
+    66→    66→  ROKU:'Communication',PARA:'Communication',LYV:'Communication',DASH:'Consumer',RBLX:'Consumer',
+    67→    67→  // Consumer Discretionary
+    68→    68→  COST:'Consumer',WMT:'Consumer',TGT:'Consumer',HD:'Consumer',LOW:'Consumer',
+    69→    69→  NKE:'Consumer',MCD:'Consumer',SBUX:'Consumer',YUM:'Consumer',CMG:'Consumer',
+    70→    70→  EL:'Consumer',DEO:'Consumer',STZ:'Consumer',CL:'Consumer',KMB:'Consumer',
+    71→    71→  RCL:'Consumer',LULU:'Consumer',TJX:'Consumer',AZO:'Consumer',DLTR:'Consumer',
+    72→    72→  // Consumer Staples
+    73→    73→  KO:'Staples',PEP:'Staples',PM:'Staples',MO:'Staples',BUD:'Staples',
+    74→    74→  UL:'Staples',GIS:'Staples',SJM:'Staples',HSY:'Staples',COTY:'Consumer',
+    75→    75→  CPB:'Staples',CHD:'Staples',K:'Staples',CLX:'Staples','BF.B':'Staples',
+    76→    76→  // Healthcare
+    77→    77→  UNH:'Healthcare',JNJ:'Healthcare',MRK:'Healthcare',ABBV:'Healthcare',PFE:'Healthcare',
+    78→    78→  TMO:'Healthcare',ABT:'Healthcare',DHR:'Healthcare',BMY:'Healthcare',GILD:'Healthcare',
+    79→    79→  VRTX:'Healthcare',REGN:'Healthcare',BIIB:'Healthcare',ISRG:'Healthcare',SYK:'Healthcare',
+    80→    80→  EW:'Healthcare',BSX:'Healthcare',MDT:'Healthcare',HUM:'Healthcare',CI:'Healthcare',
+    81→    81→  ELV:'Healthcare',CVS:'Healthcare',MOH:'Healthcare',CNC:'Healthcare',IDXX:'Healthcare',
+    82→    82→  // Finance
+    83→    83→  JPM:'Finance',V:'Finance',MA:'Finance',BAC:'Finance',GS:'Finance',
+    84→    84→  MS:'Finance',AXP:'Finance',BLK:'Finance',SCHW:'Finance',C:'Finance',
+    85→    85→  USB:'Finance',PGR:'Finance',CB:'Finance',AON:'Finance',MET:'Finance',
+    86→    86→  PRU:'Finance',COF:'Finance',SYF:'Finance',DFS:'Finance',NTRS:'Finance',
+    87→    87→  ICE:'Finance',MKTX:'Finance',CBOE:'Finance',PYPL:'Finance',CME:'Finance',
+    88→    88→  // Energy
+    89→    89→  XOM:'Energy',CVX:'Energy',COP:'Energy',SLB:'Energy',EOG:'Energy',
+    90→    90→  OXY:'Energy',MPC:'Energy',PSX:'Energy',VLO:'Energy',DVN:'Energy',
+    91→    91→  FANG:'Energy',PXD:'Energy',CTRA:'Energy',HES:'Energy',WMB:'Energy',
+    92→    92→  // Industrial
+    93→    93→  CAT:'Industrial',GE:'Industrial',HON:'Industrial',UPS:'Industrial',RTX:'Industrial',
+    94→    94→  BA:'Industrial',LMT:'Industrial',NOC:'Industrial',GD:'Industrial',DE:'Industrial',
+    95→    95→  MMM:'Industrial',EMR:'Industrial',ITW:'Industrial',ETN:'Industrial',CMI:'Industrial',
+    96→    96→  ROK:'Industrial',PH:'Industrial',JCI:'Industrial',PCAR:'Industrial',FDX:'Industrial',
+    97→    97→  // REITs
+    98→    98→  AMT:'REITs',CCI:'REITs',SPG:'REITs',O:'Energy',PSA:'REITs',WELL:'REITs',
+    99→    99→  DLR:'REITs',VICI:'REITs',IRM:'REITs',
+   100→   100→  // Utilities
+   101→   101→  NEE:'Utilities',DUK:'Utilities',SO:'Utilities',AEP:'Utilities',EXC:'Utilities',
+   102→   102→  SRE:'Utilities',XEL:'Utilities',PEG:'Utilities',EIX:'Utilities',DTE:'Utilities',
+   103→   103→};
+   104→   104→
+   105→   105→// ── Helpers ──
+   106→   106→function calcEMA(data: number[], period: number): number[] {
+   107→   107→  const r: number[] = new Array(data.length).fill(NaN);
+   108→   108→  if (data.length < period) return r;
+   109→   109→  let s = 0; for (let i = 0; i < period; i++) s += data[i];
+   110→   110→  r[period - 1] = s / period;
+   111→   111→  const k = 2 / (period + 1);
+   112→   112→  for (let i = period; i < data.length; i++) r[i] = data[i] * k + r[i - 1] * (1 - k);
+   113→   113→  return r;
+   114→   114→}
+   115→   115→
+   116→   116→function calcATR(data: HistoricalDataPoint[], period = 14): number {
+   117→   117→  if (data.length < period + 1) return 0;
+   118→   118→  const trs: number[] = [];
+   119→   119→  for (let i = 1; i < data.length; i++) {
+   120→   120→    trs.push(Math.max(data[i].high - data[i].low, Math.abs(data[i].high - data[i-1].close), Math.abs(data[i].low - data[i-1].close)));
+   121→   121→  }
+   122→   122→  return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+   123→   123→}
+   124→   124→
+   125→   125→function pct(data: number[], days: number): number {
+   126→   126→  if (data.length < days + 1) return 0;
+   127→   127→  const c = data[data.length - 1], p = data[data.length - 1 - days];
+   128→   128→  return p > 0 ? ((c - p) / p) * 100 : 0;
+   129→   129→}
+   130→   130→
+   131→   131→// Position sizing: risk-based share calculation
+   132→   132→function calcPositionSize(entry: number, stop: number, riskBudgetPct: number, accountEquity: number): { shares: number; positionValue: number; riskDollars: number; riskPct: number } {
+   133→   133→  const riskPerShare = entry - stop;
+   134→   134→  if (riskPerShare <= 0 || entry <= 0) return { shares: 0, positionValue: 0, riskDollars: 0, riskPct: 0 };
+   135→   135→  const riskDollars = accountEquity * (riskBudgetPct / 100);
+   136→   136→  const shares = Math.max(0, Math.floor(riskDollars / riskPerShare));
+   137→   137→  const positionValue = shares * entry;
+   138→   138→  const actualRiskPct = positionValue > 0 ? ((shares * riskPerShare) / accountEquity) * 100 : 0;
+   139→   139→  return { shares, positionValue: Math.round(positionValue * 100) / 100, riskDollars: Math.round(riskDollars * 100) / 100, riskPct: Math.round(actualRiskPct * 100) / 100 };
+   140→   140→}
+   141→   141→
+   142→   142→// IBKR Bracket Order generator
+   143→   143→function generateBracketOrder(symbol: string, action: 'BUY' | 'SELL', entry: number, stop: number, target: number, shares: number): object {
+   144→   144→  const cOID = `ibkr_${symbol}_${Date.now()}`;
+   145→   145→  const parentOID = `${cOID}_parent`;
+   146→   146→  const stopChildOID = `${cOID}_stop`;
+   147→   147→  const targetChildOID = `${cOID}_target`;
+   148→   148→
+   149→   149→  return {
+   150→   150→    orders: [
+   151→   151→      {
+   152→   152→        cOID: parentOID,
+   153→   153→        symbol,
+   154→   154→        orderType: 'LMT',
+   155→   155→        side: action,
+   156→   156→        quantity: shares,
+   157→   157→        price: Math.round(entry * 100) / 100,
+   158→   158→        tif: 'GTC',
+   159→   159→        transmit: false,
+   160→   160→      },
+   161→   161→      {
+   162→   162→        cOID: stopChildOID,
+   163→   163→        symbol,
+   164→   164→        orderType: 'STP',
+   165→   165→        side: action === 'BUY' ? 'SELL' : 'BUY',
+   166→   166→        quantity: shares,
+   167→   167→        price: Math.round(stop * 100) / 100,
+   168→   168→        tif: 'GTC',
+   169→   169→        parentId: parentOID,
+   170→   170→        transmit: false,
+   171→   171→      },
+   172→   172→      {
+   173→   173→        cOID: targetChildOID,
+   174→   174→        symbol,
+   175→   175→        orderType: 'LMT',
+   176→   176→        side: action === 'BUY' ? 'SELL' : 'BUY',
+   177→   177→        quantity: shares,
+   178→   178→        price: Math.round(target * 100) / 100,
+   179→   179→        tif: 'GTC',
+   180→   180→        parentId: parentOID,
+   181→   181→        transmit: true, // last child transmits the bracket
+   182→   182→      },
+   183→   183→    ],
+   184→   184→    summary: `Bracket: ${action} ${shares} ${symbol} @ $${entry.toFixed(2)} | Stop $${stop.toFixed(2)} | Target $${target.toFixed(2)}`,
+   185→   185→  };
+   186→   186→}
+   187→   187→
+   188→   188→// ── Types ──
+   189→   189→type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
+   190→   190→
+   191→   191→interface FunnelStock {
+   192→   192→  symbol: string;
+   193→   193→  price: number;
+   194→   194→  sector: string;
+   195→   195→  // Phase 1: mechanical
+   196→   196→  avgVol20d: number;
+   197→   197→  avgDolVol20d: number;
+   198→   198→  passedLiquidity: boolean;
+   199→   199→  passedTrend: boolean;
+   200→   200→  passedStackedMA: boolean; // NEW: close > EMA20 > SMA50 > SMA200
+   201→   201→  passedADX: boolean;       // NEW: ADX 14 > 25
+   202→   202→  passedEventRisk: boolean; // NEW: no critical events
+   203→   203→  // Phase 2: technical
+   204→   204→  trendScore: number;
+   205→   205→  rsScore: number;
+   206→   206→  momentumScore: number;
+   207→   207→  volConfScore: number;
+   208→   208→  setupScore: number;
+   209→   209→  // Phase 3: risk
+   210→   210→  riskScore: number;
+   211→   211→  totalScore: number;
+   212→   212→  // Setup detail
+   213→   213→  setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
+   214→   214→  horizon: string;
+   215→   215→  // Indicators
+   216→   216→  rsi: number;
+   217→   217→  atr: number;
+   218→   218→  atrPct: number;
+   219→   219→  adx: number;           // NEW
+   220→   220→  volRatio: number;
+   221→   221→  volDeclining: boolean;
+   222→   222→  lastDaySpike: boolean;
+   223→   223→  pullbackDays: number;
+   224→   224→  pullbackPct: number;
+   225→   225→  distFromEMA10: number;
+   226→   226→  distFromEMA20: number;
+   227→   227→  // Trend
+   228→   228→  aboveSMA50: boolean;
+   229→   229→  aboveSMA200: boolean;
+   230→   230→  sma50Above200: boolean;
+   231→   231→  stackedMA: boolean;     // NEW
+   232→   232→  // RS
+   233→   233→  rsVsSPY: number;
+   234→   234→  rsVsQQQ: number;
+   235→   235→  rsVsSPY60d: number;
+   236→   236→  // Entry levels
+   237→   237→  entry: number;
+   238→   238→  stop: number;
+   239→   239→  target1R: number;
+   240→   240→  target2R: number;        // NOW 3R
+   241→   241→  target3R: number;        // NEW
+   242→   242→  riskPct: number;
+   243→   243→  rewardRiskRatio: number; // NOW based on 3R
+   244→   244→  swingLow: number;
+   245→   245→  // NEW: Risk management
+   246→   246→  positionSize: number;     // shares
+   247→   247→  positionValue: number;   // total $
+   248→   248→  riskDollars: number;     // risk in $
+   249→   249→  // NEW: Event risk
+   250→   250→  eventRisk: string;        // summary text
+   251→   251→  eventRiskSeverity: string;
+   252→   252→  // NEW: IBKR bracket order
+   253→   253→  bracketOrder: object | null;
+   254→   254→  // Verdict
+   255→   255→  decision: Decision;
+   256→   256→  reasons: string[];
+   257→   257→  warnings: string[];
+   258→   258→}
+   259→   259→
+   260→   260→interface FunnelResponse {
+   261→   261→  scannedAt: string;
+   262→   262→  regimeOk: boolean;
+   263→   263→  regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
+   264→   264→  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; passedEventRisk: number; passedSectorLimit: number; };
+   265→   265→  results: FunnelStock[];
+   266→   266→  // NEW: exposure summary
+   267→   267→  sectorExposure: Record<string, number>;
+   268→   268→}
+   269→   269→
+   270→   270→// ═══════════════════════════════════════════════════════════════
+   271→   271→// MAIN GET HANDLER
+   272→   272→// ═══════════════════════════════════════════════════════════════
+   273→   273→export async function GET() {
+   274→   274→  const t0 = Date.now();
+   275→   275→  const ACCOUNT_EQUITY = 25000; // default demo account
+   276→   276→  const MAX_RISK_PCT = 1.0;   // max 1% of equity per trade
+   277→   277→  const MAX_PER_SECTOR = 2;   // max 2 stocks per sector
+   278→   278→
+   279→   279→  try {
+   280→   280→    // ── 0. Fetch benchmarks ──
+   281→   281→    const [spyData, qqqData] = await Promise.all([
+   282→   282→      fetchHistoricalData('SPY', '1y'),
+   283→   283→      fetchHistoricalData('QQQ', '1y'),
+   284→   284→    ]);
+   285→   285→    if (!spyData || !qqqData) return NextResponse.json({ error: 'Te dhena SPY/QQQ mungojne' }, { status: 500 });
+   286→   286→
+   287→   287→    const spyC = spyData.map(d => d.close), qqqC = qqqData.map(d => d.close);
+   288→   288→    const spyS50 = calculateSMA(spyC, 50), spyS200 = calculateSMA(spyC, 200);
+   289→   289→    const qqqS50 = calculateSMA(qqqC, 50), qqqS200 = calculateSMA(qqqC, 200);
+   290→   290→    const sL = spyC.length - 1, qL = qqqC.length - 1;
+   291→   291→    const spyA50 = spyC[sL] > (spyS50[sL]||0), spyA200 = spyC[sL] > (spyS200[sL]||0);
+   292→   292→    const qqqA50 = qqqC[qL] > (qqqS50[qL]||0), qqqA200 = qqqC[qL] > (qqqS200[qL]||0);
+   293→   293→    const regimeOk = spyA50 && spyA200 && qqqA50 && qqqA200;
+   294→   294→    const spyRS60 = pct(spyC, 60);
+   295→   295→
+   296→   296→    // ── 1. Fetch all universe OHLCV ──
+   297→   297→    const syms = DEDUPED_UNIVERSE.filter(s => !ETF_SET.has(s));
+   298→   298→    const hist: Record<string, HistoricalDataPoint[] | null> = {};
+   299→   299→
+   300→   300→    const BATCH = 8;
+   301→   301→    for (let i = 0; i < syms.length; i += BATCH) {
+   302→   302→      const batch = syms.slice(i, i + BATCH);
+   303→   303→      const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '1y') })));
+   304→   304→      for (const r of res) if (r.status === 'fulfilled' && r.value.d) hist[r.value.s] = r.value.d;
+   305→   305→      if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 250));
+   306→   306→    }
+   307→   307→
+   308→   308→    console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
+   309→   309→
+   310→   310→    // ── 2. PHASE 1 — Mechanical filter (liquidity + trend + ADX + stacked MA + event risk) ──
+   311→   311→    const phase1: FunnelStock[] = [];
+   312→   312→    let passedEventRiskCount = 0;
+   313→   313→
+   314→   314→    for (const sym of syms) {
+   315→   315→      const data = hist[sym];
+   316→   316→      if (!data || data.length < 200) continue;
+   317→   317→
+   318→   318→      const closes = data.map(d => d.close);
+   319→   319→      const highs = data.map(d => d.high);
+   320→   320→      const lows = data.map(d => d.low);
+   321→   321→      const vols = data.map(d => d.volume);
+   322→   322→      const last = closes.length - 1;
+   323→   323→      const price = closes[last];
+   324→   324→
+   325→   325→      // Liquidity checks
+   326→   326→      const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
+   327→   327→      const avgDolVol = price * avgVol20;
+   328→   328→      const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
+   329→   329→
+   330→   330→      // Trend checks (existing)
+   331→   331→      const sma50 = calculateSMA(closes, 50);
+   332→   332→      const sma200 = calculateSMA(closes, 200);
+   333→   333→      const above50 = price > (sma50[last] || 0);
+   334→   334→      const above200 = price > (sma200[last] || 0);
+   335→   335→      const golden = (sma50[last] || 0) > (sma200[last] || 0);
+   336→   336→      const rs60 = pct(closes, 60);
+   337→   337→      const passedTrend = above50 && golden && rs60 > spyRS60;
+   338→   338→
+   339→   339→      // NEW: Stacked MA — close > EMA20 > SMA50 > SMA200
+   340→   340→      const ema20 = calcEMA(closes, 20);
+   341→   341→      const ema20Val = ema20[last] || 0;
+   342→   342→      const sma50Val = sma50[last] || 0;
+   343→   343→      const sma200Val = sma200[last] || 0;
+   344→   344→      const stackedMA = price > ema20Val && ema20Val > sma50Val && sma50Val > sma200Val;
+   345→   345→
+   346→   346→      // NEW: ADX 14 > 25 (trend strength)
+   347→   347→      const adxArr = calculateADX(highs, lows, closes, 14);
+   348→   348→      const adx = adxArr[last] || 0;
+   349→   349→      const passedADX = adx > 25;
+   350→   350→
+   351→   351→      // NEW: Event risk check
+   352→   352→      const eventResult = checkMultiEventRisk(sym);
+   353→   353→      const hasCriticalEvent = eventResult.hasCriticalEvent || eventResult.compositeRiskScore <= -50;
+   354→   354→      const passedEventRisk = !hasCriticalEvent;
+   355→   355→      if (passedEventRisk) passedEventRiskCount++;
+   356→   356→
+   357→   357→      const sector = SECTOR_MAP[sym] || 'Other';
+   358→   358→
+   359→   359→      // Store basic info for all stocks (funnel counts)
+   360→   360→      phase1.push({
+   361→   361→        symbol: sym, price, sector,
+   362→   362→        avgVol20d: avgVol20, avgDolVol20d: avgDolVol,
+   363→   363→        passedLiquidity: passedLiq, passedTrend,
+   364→   364→        passedStackedMA: stackedMA, passedADX, passedEventRisk,
+   365→   365→        trendScore: 0, rsScore: 0, momentumScore: 0, volConfScore: 0, setupScore: 0,
+   366→   366→        riskScore: 0, totalScore: 0,
+   367→   367→        setup: 'NONE', horizon: '',
+   368→   368→        rsi: 0, atr: 0, atrPct: 0, adx: Math.round(adx * 10) / 10,
+   369→   369→        volRatio: 0, volDeclining: false, lastDaySpike: false,
+   370→   370→        pullbackDays: 0, pullbackPct: 0, distFromEMA10: 0, distFromEMA20: 0,
+   371→   371→        aboveSMA50: above50, aboveSMA200: above200, sma50Above200: golden, stackedMA,
+   372→   372→        rsVsSPY: 0, rsVsQQQ: 0, rsVsSPY60d: rs60 - spyRS60,
+   373→   373→        entry: 0, stop: 0, target1R: 0, target2R: 0, target3R: 0,
+   374→   374→        riskPct: 0, rewardRiskRatio: 0, swingLow: 0,
+   375→   375→        positionSize: 0, positionValue: 0, riskDollars: 0,
+   376→   376→        eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
+   377→   377→        bracketOrder: null,
+   378→   378→        decision: 'NO_TRADE', reasons: [], warnings: [],
+   379→   379→      });
+   380→   380→    }
+   381→   381→
+   382→   382→    const passedLiquidity = phase1.filter(s => s.passedLiquidity).length;
+   383→   383→    const passedTrend = phase1.filter(s => s.passedTrend).length;
+   384→   384→
+   385→   385→    // ── 3. PHASE 2 — Technical analysis on trend-passed stocks ──
+   386→   386→    const phase2: FunnelStock[] = [];
+   387→   387→
+   388→   388→    for (const stock of phase1) {
+   389→   389→      if (!stock.passedTrend) continue;
+   390→   390→
+   391→   391→      const data = hist[stock.symbol];
+   392→   392→      if (!data) continue;
+   393→   393→      const closes = data.map(d => d.close), highs = data.map(d => d.high), lows = data.map(d => d.low);
+   394→   394→      const vols = data.map(d => d.volume);
+   395→   395→      const last = closes.length - 1;
+   396→   396→      const price = closes[last];
+   397→   397→
+   398→   398→      const ema10 = calcEMA(closes, 10);
+   399→   399→      const ema20 = calcEMA(closes, 20);
+   400→   400→      const rsiArr = calculateRSI(closes, 14);
+   401→   401→      const rsi = rsiArr[last] || 50;
+   402→   402→      const atr = calcATR(data, 14);
+   403→   403→      const atrPct = price > 0 ? (atr / price) * 100 : 0;
+   404→   404→
+   405→   405→      // ── A) Trend Quality (0-100) — 25% weight ──
+   406→   406→      const sma50 = calculateSMA(closes, 50);
+   407→   407→      const sma200 = calculateSMA(closes, 200);
+   408→   408→      let tScore = 0;
+   409→   409→      if (price > (sma50[last]||0)) tScore += 20;
+   410→   410→      if (price > (sma200[last]||0)) tScore += 20;
+   411→   411→      if ((sma50[last]||0) > (sma200[last]||0)) tScore += 15;
+   412→   412→      // NEW: Stacked MA bonus (+15)
+   413→   413→      if (stock.stackedMA) tScore += 15;
+   414→   414→      // Higher-high structure
+   415→   415→      const h20a = Math.max(...highs.slice(-40, -20));
+   416→   416→      const h20b = Math.max(...highs.slice(-20));
+   417→   417→      if (h20b > h20a) tScore += 15;
+   418→   418→      // NEW: ADX bonus (+15 if > 25)
+   419→   419→      if (stock.adx > 25) tScore += 15;
+   420→   420→      stock.trendScore = Math.min(100, tScore);
+   421→   421→
+   422→   422→      // ── B) Relative Strength (0-100) — 20% weight ──
+   423→   423→      const rsSpy22 = pct(closes, 22) - pct(spyC, 22);
+   424→   424→      const rsQqq22 = pct(closes, 22) - pct(qqqC, 22);
+   425→   425→      const rsSpy60 = pct(closes, 60) - pct(spyC, 60);
+   426→   426→      let rsScore = 50;
+   427→   427→      if (rsSpy22 > 0) rsScore += Math.min(25, rsSpy22 * 3);
+   428→   428→      else rsScore -= Math.min(25, Math.abs(rsSpy22) * 3);
+   429→   429→      if (rsSpy60 > 0) rsScore += Math.min(25, rsSpy60 * 2);
+   430→   430→      else rsScore -= Math.min(25, Math.abs(rsSpy60) * 2);
+   431→   431→      stock.rsScore = Math.round(Math.max(0, Math.min(100, rsScore)));
+   432→   432→      stock.rsVsSPY = Math.round(rsSpy22 * 100) / 100;
+   433→   433→      stock.rsVsQQQ = Math.round(rsQqq22 * 100) / 100;
+   434→   434→      stock.rsVsSPY60d = Math.round(rsSpy60 * 100) / 100;
+   435→   435→
+   436→   436→      // ── C) Momentum (0-100) — 15% weight ──
+   437→   437→      const mom5 = pct(closes, 5), mom10 = pct(closes, 10), mom22 = pct(closes, 22);
+   438→   438→      let mScore = 50;
+   439→   439→      if (mom5 > -2) mScore += 10; else mScore -= 10;
+   440→   440→      if (mom10 > 0) mScore += 15; else mScore -= 10;
+   441→   441→      if (mom22 > 0) mScore += 15; else mScore -= 10;
+   442→   442→      if (mom5 < 8) mScore += 10; else mScore -= 15;
+   443→   443→      stock.momentumScore = Math.round(Math.max(0, Math.min(100, mScore)));
+   444→   444→
+   445→   445→      // ── D) Volume Confirmation (0-100) — 15% weight ──
+   446→   446→      const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
+   447→   447→      const recent3 = vols.slice(-3).reduce((a,b) => a+b, 0) / 3;
+   448→   448→      const pbVol = vols.slice(-5, -1);
+   449→   449→      const priorVol = vols.slice(-10, -5);
+   450→   450→      const avgPb = pbVol.length > 0 ? pbVol.reduce((a,b) => a+b, 0)/pbVol.length : 0;
+   451→   451→      const avgPrior = priorVol.length > 0 ? priorVol.reduce((a,b) => a+b, 0)/priorVol.length : 0;
+   452→   452→      const volDeclining = avgPb < avgPrior * 0.95;
+   453→   453→      const lastDaySpike = vols[last] > avgVol20 * 1.1;
+   454→   454→      const volRatio = avgVol20 > 0 ? recent3 / avgVol20 : 1;
+   455→   455→      let vScore = 50;
+   456→   456→      if (volDeclining) vScore += 20;
+   457→   457→      if (lastDaySpike) vScore += 15;
+   458→   458→      if (volRatio > 0.8 && volRatio < 1.5) vScore += 10;
+   459→   459→      if (avgVol20 > 5_000_000) vScore += 5;
+   460→   460→      stock.volConfScore = Math.round(Math.max(0, Math.min(100, vScore)));
+   461→   461→      stock.volRatio = Math.round(volRatio * 100) / 100;
+   462→   462→      stock.volDeclining = volDeclining;
+   463→   463→      stock.lastDaySpike = lastDaySpike;
+   464→   464→
+   465→   465→      // ── E) Setup Quality (0-100) — 10% weight ──
+   466→   466→      const ema10Val = ema10[last], ema20Val = ema20[last];
+   467→   467→      const dist10 = !isNaN(ema10Val) ? ((price - ema10Val) / ema10Val) * 100 : 99;
+   468→   468→      const dist20 = !isNaN(ema20Val) ? ((price - ema20Val) / ema20Val) * 100 : 99;
+   469→   469→      stock.distFromEMA10 = Math.round(dist10 * 100) / 100;
+   470→   470→      stock.distFromEMA20 = Math.round(dist20 * 100) / 100;
+   471→   471→
+   472→   472→      // Find pullback
+   473→   473→      let highIdx = last;
+   474→   474→      for (let i = last; i >= Math.max(0, last - 10); i--) if (closes[i] >= closes[highIdx]) highIdx = i;
+   475→   475→      const peakPrice = closes[highIdx];
+   476→   476→      const pbPct = peakPrice > 0 ? ((price - peakPrice) / peakPrice) * 100 : 0;
+   477→   477→      const swLow = Math.min(...lows.slice(highIdx, last + 1));
+   478→   478→      let pbDays = 0;
+   479→   479→      for (let i = highIdx + 1; i <= last; i++) if (closes[i] < closes[i-1]) pbDays++;
+   480→   480→
+   481→   481→      stock.pullbackDays = pbDays;
+   482→   482→      stock.pullbackPct = Math.round(pbPct * 100) / 100;
+   483→   483→      stock.swingLow = Math.round(swLow * 100) / 100;
+   484→   484→
+   485→   485→      let setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE' = 'NONE';
+   486→   486→      let sScore = 0;
+   487→   487→      const reasons: string[] = [];
+   488→   488→
+   489→   489→      // Pullback
+   490→   490→      if (pbDays >= 2 && pbDays <= 8 && pbPct >= -8 && pbPct <= -0.5) {
+   491→   491→        setup = 'PULLBACK';
+   492→   492→        sScore += 30;
+   493→   493→        if (pbDays >= 3 && pbDays <= 6) { sScore += 20; reasons.push(`Pullback ${pbDays}d (ideal)`); }
+   494→   494→        else { sScore += 10; reasons.push(`Pullback ${pbDays}d`); }
+   495→   495→        if (Math.abs(dist10) < 3 || Math.abs(dist20) < 3) { sScore += 20; reasons.push('Afer EMA 10/20'); }
+   496→   496→        if (volDeclining) { sScore += 15; reasons.push('Volumi ne renie (i mire)'); }
+   497→   497→        if (lastDaySpike) { sScore += 15; reasons.push('Volum konfirmim'); }
+   498→   498→        if (rsi >= 40 && rsi <= 65) { sScore += 10; reasons.push(`RSI ${rsi.toFixed(0)}`); }
+   499→   499→      }
+   500→   500→
+   501→   501→      // Breakout
+   502→   502→      if (setup === 'NONE') {
+   503→   503→        const high20 = Math.max(...highs.slice(-20));
+   504→   504→        if (price >= high20 * 0.98 && lastDaySpike && rsi >= 45 && rsi <= 70) {
+   505→   505→          setup = 'BREAKOUT'; sScore = 55;
+   506→   506→          reasons.push('Breakout 20d + volum');
+   507→   507→          if (rsi >= 45 && rsi <= 65) { sScore += 15; reasons.push(`RSI ${rsi.toFixed(0)}`); }
+   508→   508→        }
+   509→   509→      }
+   510→   510→
+   511→   511→      // Trend continuation
+   512→   512→      if (setup === 'NONE' && pbPct > -0.5 && pbPct < 2 && price > (sma50[last]||0)) {
+   513→   513→        setup = 'TREND_CONT'; sScore = 40;
+   514→   514→        reasons.push('Trend continuation');
+   515→   515→        if (rsi >= 50 && rsi <= 65) { sScore += 15; reasons.push(`RSI ${rsi.toFixed(0)}`); }
+   516→   516→        if (lastDaySpike) { sScore += 10; reasons.push('Volum konfirmim'); }
+   517→   517→      }
+   518→   518→
+   519→   519→      stock.setup = setup;
+   520→   520→      stock.setupScore = Math.min(100, sScore);
+   521→   521→      stock.rsi = Math.round(rsi * 10) / 10;
+   522→   522→      stock.atr = Math.round(atr * 100) / 100;
+   523→   523→      stock.atrPct = Math.round(atrPct * 100) / 100;
+   524→   524→      stock.reasons = reasons;
+   525→   525→
+   526→   526→      // Entry / Stop / Target (BLUEPRINT-ALIGNED)
+   527→   527→      const isBreakout = setup === 'BREAKOUT';
+   528→   528→      const high20 = Math.max(...highs.slice(-20));
+   529→   529→      const entry = isBreakout
+   530→   530→        ? Math.round((high20 * 1.002) * 100) / 100
+   531→   531→        : Math.round(price * 100) / 100;
+   532→   532→
+   533→   533→      // NEW: Stop = max(entry - 1.5*ATR, swingLow - 0.2*ATR) — use the tighter (higher) one
+   534→   534→      const stopAtr = Math.round((entry - atr * 1.5) * 100) / 100;
+   535→   535→      const stopSwing = Math.round((swLow - atr * 0.2) * 100) / 100;
+   536→   536→      const stop = Math.max(stopAtr, stopSwing); // tighter stop = higher price
+   537→   537→
+   538→   538→      const riskPerShare = entry - stop;
+   539→   539→      const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
+   540→   540→      const target1R = Math.round((entry + riskPerShare) * 100) / 100;
+   541→   541→      const target2R = Math.round((entry + riskPerShare * 2) * 100) / 100;
+   542→   542→      const target3R = Math.round((entry + riskPerShare * 3) * 100) / 100;
+   543→   543→      const rr = riskPerShare > 0 ? (riskPerShare * 3) / riskPerShare : 0; // based on 3R now
+   544→   544→
+   545→   545→      stock.entry = entry;
+   546→   546→      stock.stop = stop;
+   547→   547→      stock.target1R = target1R;
+   548→   548→      stock.target2R = target2R;
+   549→   549→      stock.target3R = target3R;
+   550→   550→      stock.riskPct = Math.round(riskPct * 100) / 100;
+   551→   551→      stock.rewardRiskRatio = Math.round(rr * 10) / 10;
+   552→   552→
+   553→   553→      // NEW: Position sizing
+   554→   554→      const pos = calcPositionSize(entry, stop, MAX_RISK_PCT, ACCOUNT_EQUITY);
+   555→   555→      stock.positionSize = pos.shares;
+   556→   556→      stock.positionValue = pos.positionValue;
+   557→   557→      stock.riskDollars = pos.riskDollars;
+   558→   558→
+   559→   559→      // Horizon based on ATR
+   560→   560→      if (atrPct < 1.5) stock.horizon = '10D';
+   561→   561→      else if (atrPct < 3) stock.horizon = '5D';
+   562→   562→      else stock.horizon = '5D';
+   563→   563→
+   564→   564→      // ── F) Risk Quality (0-100) — 5% weight ──
+   565→   565→      let rScore = 50;
+   566→   566→      if (riskPct <= 3) rScore += 20;
+   567→   567→      else if (riskPct <= 5) rScore += 10;
+   568→   568→      else if (riskPct > 7) rScore -= 20;
+   569→   569→      if (rr >= 2) rScore += 15; // 2R+ is good
+   570→   570→      else if (rr >= 1.5) rScore += 5;
+   571→   571→      else rScore -= 15;
+   572→   572→      if (atrPct < 2) rScore += 10;
+   573→   573→      else if (atrPct > 4) rScore -= 10;
+   574→   574→      // NEW: Event risk penalty
+   575→   575→      if (!stock.passedEventRisk) rScore -= 25;
+   576→   576→      stock.riskScore = Math.round(Math.max(0, Math.min(100, rScore)));
+   577→   577→
+   578→   578→      // ── Total Score ──
+   579→   579→      stock.totalScore = Math.round(
+   580→   580→        stock.trendScore * 0.25 +
+   581→   581→        stock.rsScore * 0.20 +
+   582→   582→        stock.momentumScore * 0.15 +
+   583→   583→        stock.volConfScore * 0.15 +
+   584→   584→        sScore * 0.10 +
+   585→   585→        50 * 0.10 + // fundamentals placeholder (neutral)
+   586→   586→        stock.riskScore * 0.05
+   587→   587→      );
+   588→   588→
+   589→   589→      // Only keep stocks with valid setups
+   590→   590→      if (setup !== 'NONE') phase2.push(stock);
+   591→   591→    }
+   592→   592→
+   593→   593→    const passedSetup = phase2.length;
+   594→   594→
+   595→   595→    // ── 4. PHASE 3 — Risk gate + Decision + Event risk ──
+   596→   596→    const phase3: FunnelStock[] = [];
+   597→   597→
+   598→   598→    for (const stock of phase2) {
+   599→   599→      const warnings: string[] = [...stock.warnings];
+   600→   600→      let decision: Decision = 'NO_TRADE';
+   601→   601→
+   602→   602→      // R:R gate (based on 3R now, so 2.0+ is the threshold)
+   603→   603→      if (stock.rewardRiskRatio < 2.0) {
+   604→   604→        warnings.push(`R:R ${stock.rewardRiskRatio} — i ulet (duhet 1:2 me 3R target)`);
+   605→   605→      }
+   606→   606→
+   607→   607→      // RSI gate
+   608→   608→      if (stock.rsi > 75) {
+   609→   609→        warnings.push(`RSI ${stock.rsi} — i mbivleresuar`);
+   610→   610→      }
+   611→   611→
+   612→   612→      // Risk % gate
+   613→   613→      if (stock.riskPct > 8) {
+   614→   614→        warnings.push(`Rreziku ${stock.riskPct}% — shume i larte`);
+   615→   615→      }
+   616→   616→
+   617→   617→      // ADX gate
+   618→   618→      if (stock.adx < 20) {
+   619→   619→        warnings.push(`ADX ${stock.adx} — trendi i dobet (duhet > 25)`);
+   620→   620→      }
+   621→   621→
+   622→   622→      // Regime gate
+   623→   623→      if (!regimeOk) {
+   624→   624→        warnings.push('REGJIMI jo OK — vetem watcher');
+   625→   625→      }
+   626→   626→
+   627→   627→      // NEW: Event risk gate
+   628→   628→      if (!stock.passedEventRisk) {
+   629→   629→        warnings.push(`EVENT RISK: ${stock.eventRisk}`);
+   630→   630→      }
+   631→   631→
+   632→   632→      // Stacked MA bonus/penalty
+   633→   633→      if (!stock.stackedMA) {
+   634→   634→        warnings.push('MA jo te stackuara (close/EMA20/SMA50/SMA200)');
+   635→   635→      }
+   636→   636→
+   637→   637→      // Extended (chasing)
+   638→   638→      if (stock.pullbackPct > -0.5 && stock.setup === 'PULLBACK') {
+   639→   639→        warnings.push('Jo te vertete nje pullback — extended');
+   640→   640→      }
+   641→   641→
+   642→   642→      // Determine decision
+   643→   643→      const hasRR = stock.rewardRiskRatio >= 2.0;
+   644→   644→      const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
+   645→   645→      const riskOk = stock.riskPct <= 8;
+   646→   646→      const scoreOk = stock.totalScore >= 45;
+   647→   647→      const eventOk = stock.passedEventRisk;
+   648→   648→
+   649→   649→      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk) {
+   650→   650→        decision = 'READY';
+   651→   651→      } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
+   652→   652→        decision = 'WATCHLIST';
+   653→   653→        if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
+   654→   654→        if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
+   655→   655→      } else if (!hasRR || stock.riskPct > 6) {
+   656→   656→        if (stock.setupScore >= 50) decision = 'WATCHLIST';
+   657→   657→        else decision = 'NO_TRADE';
+   658→   658→      } else if (stock.rsi > 72 || stock.pullbackPct > -0.3) {
+   659→   659→        decision = 'EXTENDED';
+   660→   660→      } else {
+   661→   661→        decision = 'WATCHLIST';
+   662→   662→      }
+   663→   663→
+   664→   664→      // Event risk override
+   665→   665→      if (!eventOk && decision === 'READY') {
+   666→   666→        decision = 'EVENT_RISK';
+   667→   667→        warnings.push('EVENT_RISK: Ngjarje kritike — mos hyr');
+   668→   668→      }
+   669→   669→
+   670→   670→      // RSI overbought override
+   671→   671→      if (stock.rsi > 70 && stock.totalScore >= 55) {
+   672→   672→        decision = 'EVENT_RISK';
+   673→   673→        warnings.push('EVENT_RISK: RSI i larte, rrezik kthimi');
+   674→   674→      }
+   675→   675→
+   676→   676→      stock.decision = decision;
+   677→   677→      stock.warnings = warnings;
+   678→   678→
+   679→   679→      // NEW: Generate bracket order for READY trades
+   680→   680→      if (decision === 'READY' && stock.positionSize > 0) {
+   681→   681→        stock.bracketOrder = generateBracketOrder(
+   682→   682→          stock.symbol, 'BUY', stock.entry, stock.stop, stock.target3R, stock.positionSize
+   683→   683→        );
+   684→   684→      }
+   685→   685→
+   686→   686→      if (decision === 'READY' || decision === 'WATCHLIST' || decision === 'EVENT_RISK') {
+   687→   687→        phase3.push(stock);
+   688→   688→      }
+   689→   689→    }
+   690→   690→
+   691→   691→    const passedRisk = phase3.length;
+   692→   692→
+   693→   693→    // ── 5. PHASE 4 — Sector exposure limit + Top 10 final ──
+   694→   694→    const sectorCount: Record<string, number> = {};
+   695→   695→    const afterSectorLimit: FunnelStock[] = [];
+   696→   696→
+   697→   697→    // Sort by totalScore descending first
+   698→   698→    phase3.sort((a, b) => b.totalScore - a.totalScore);
+   699→   699→
+   700→   700→    for (const stock of phase3) {
+   701→   701→      const sec = stock.sector;
+   702→   702→      if (!sectorCount[sec]) sectorCount[sec] = 0;
+   703→   703→      if (sectorCount[sec] < MAX_PER_SECTOR) {
+   704→   704→        afterSectorLimit.push(stock);
+   705→   705→        sectorCount[sec]++;
+   706→   706→      } else {
+   707→   707→        stock.warnings.push(`Sector limit: ${sec} ka tashme ${MAX_PER_SECTOR} aksione`);
+   708→   708→      }
+   709→   709→    }
+   710→   710→
+   711→   711→    const passedSectorLimit = afterSectorLimit.length;
+   712→   712→    const topStocks = afterSectorLimit.slice(0, 10);
+   713→   713→    // READY first, then WATCHLIST, then others
+   714→   714→    topStocks.sort((a, b) => {
+   715→   715→      const order: Record<Decision, number> = { READY: 0, WATCHLIST: 1, EVENT_RISK: 2, EXTENDED: 3, NO_TRADE: 4 };
+   716→   716→      const diff = (order[a.decision] || 5) - (order[b.decision] || 5);
+   717→   717→      return diff !== 0 ? diff : b.totalScore - a.totalScore;
+   718→   718→    });
+   719→   719→
+   720→   720→    // Build sector exposure summary
+   721→   721→    const sectorExposure: Record<string, number> = {};
+   722→   722→    for (const s of topStocks) {
+   723→   723→      if (!sectorExposure[s.sector]) sectorExposure[s.sector] = 0;
+   724→   724→      sectorExposure[s.sector]++;
+   725→   725→    }
+   726→   726→
+   727→   727→    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+   728→   728→    console.log(`[IBKR v2] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${passedSectorLimit} → ${topStocks.length} (${elapsed}s)`);
+   729→   729→
+   730→   730→    return NextResponse.json({
+   731→   731→      scannedAt: new Date().toISOString(),
+   732→   732→      regimeOk,
+   733→   733→      regimeDetail: {
+   734→   734→        spy: { above50: spyA50, above200: spyA200 },
+   735→   735→        qqq: { above50: qqqA50, above200: qqqA200 },
+   736→   736→      },
+   737→   737→      funnel: {
+   738→   738→        universe: syms.length,
+   739→   739→        passedLiquidity,
+   740→   740→        passedTrend,
+   741→   741→        passedSetup,
+   742→   742→        passedRisk,
+   743→   743→        passedEventRisk: passedEventRiskCount,
+   744→   744→        passedSectorLimit,
+   745→   745→        displayed: topStocks.length,
+   746→   746→      },
+   747→   747→      results: topStocks,
+   748→   748→      sectorExposure,
+   749→   749→    } satisfies FunnelResponse);
+   750→   750→  } catch (err: any) {
+   751→   751→    console.error('[IBKR v2] Error:', err);
+   752→   752→    return NextResponse.json({ error: err?.message || 'Gabim skaneri' }, { status: 500 });
+   753→   753→  }
+   754→   754→}
+   755→   755→
