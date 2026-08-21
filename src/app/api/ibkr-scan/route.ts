@@ -8,11 +8,39 @@ import { calculateSMA, calculateRSI } from '@/lib/indicators';
 // ═══════════════════════════════════════════════════════════════
 
 const UNIVERSE = [
-  'NVDA', 'AMD', 'MSFT', 'AAPL', 'AMZN', 'META', 'GOOGL',
-  'TSLA', 'NFLX', 'AVGO', 'CRM', 'ORCL', 'ADBE', 'COST',
-  'WMT', 'JPM', 'V', 'MA', 'UNH', 'JNJ',
-  'SPY', 'QQQ', 'SMH',
+  // Tech / AI / Semiconductors
+  'NVDA', 'AMD', 'MSFT', 'AAPL', 'AMZN', 'META', 'GOOGL', 'AVGO', 'TSLA', 'NFLX',
+  'CRM', 'ORCL', 'ADBE', 'NOW', 'INTU', 'SNOW', 'PLTR', 'DDOG', 'CRWD', 'PANW',
+  'NET', 'ZS', 'FTNT', 'PANW', 'MRVL', 'QCOM', 'TXN', 'MU', 'LRCX', 'AMAT',
+  'ADI', 'KLAC', 'ON', 'DELL', 'HPQ', 'IBM', 'CTSH', 'WDAY', 'VEEV', 'HUBS',
+  // Communication / Media
+  'DIS', 'CMCSA', 'WBD', 'NFLX', 'EA', 'TTWO', 'UBER', 'ABNB', 'BKNG', 'EXPE',
+  // Consumer / Retail
+  'COST', 'WMT', 'TGT', 'HD', 'LOW', 'NKE', 'KO', 'PEP', 'MCD', 'SBUX',
+  'YUM', 'CMG', 'EL', 'PM', 'MO', 'DEO', 'STZ', 'MON', 'CL', 'KMB',
+  'PG', 'JNJ', 'UNH', 'LLY', 'MRK', 'ABBV', 'PFE', 'TMO', 'ABT', 'DHR',
+  'BMY', 'GILD', 'VRTX', 'REGN', 'BIIB', 'ISRG', 'SYK', 'EW', 'BSX', 'MDT',
+  // Finance
+  'JPM', 'V', 'MA', 'BAC', 'GS', 'MS', 'AXP', 'BLK', 'SCHW', 'C',
+  'USB', 'PGR', 'CB', 'AON', 'MET', 'PRU', 'COF', 'SYF', 'DFS', 'NTRS',
+  // Energy
+  'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'OXY', 'MPC', 'PSX', 'VLO', 'WBA',
+  // Industrial / Manufacturing
+  'CAT', 'GE', 'HON', 'UPS', 'RTX', 'BA', 'LMT', 'NOC', 'GD', 'DE',
+  'MMM', 'EMR', 'ITW', 'ETN', 'CMI', 'ROK', 'PH', 'JCI', 'PCAR', 'FDX',
+  // Automative / Transport
+  'GM', 'F', 'RIVN', 'LCID', 'NIO', 'F', 'STLA',
+  // Materials / Chemicals
+  'LIN', 'APD', 'SHW', 'ECL', 'DD', 'FCX', 'NEM', 'GOLD',
+  // Utilities / Infrastructure
+  'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE', 'AMT', 'CCI', 'EQIX',
+  // Real Estate / REITs
+  'PLD', 'AMT', 'PSA', 'O', 'WELL', 'VICI', 'CBRE',
+  // ETFs (for reference, filtered out of scan)
+  'SPY', 'QQQ', 'SMH', 'XLF', 'XLE', 'XLK', 'XLV', 'XLY', 'XLP', 'XLI', 'XLB', 'XLU', 'XLRE', 'XLC', 'XLI', 'GLD', 'TLT', 'IWM', 'IWM', 'VTI', 'ARKK', 'SCHD',
 ];
+
+const ETF_SET = new Set(['SPY','QQQ','SMH','XLF','XLE','XLK','XLV','XLY','XLP','XLI','XLB','XLU','XLRE','XLC','GLD','TLT','IWM','VTI','ARKK','SCHD']);
 
 const BENCHMARKS = ['SPY', 'QQQ'];
 
@@ -234,11 +262,11 @@ export async function GET() {
     const regimeOk = spyAbove50 && spyAbove200 && qqqAbove50 && qqqAbove200;
 
     // ── Step 3: Fetch all universe stocks in parallel (batches) ──
-    const stockSymbols = UNIVERSE.filter(s => !BENCHMARKS.includes(s));
+    const stockSymbols = UNIVERSE.filter(s => !ETF_SET.has(s));
     const allData: Record<string, HistoricalDataPoint[] | null> = {};
 
-    // Fetch in batches of 5 to avoid rate limits
-    const BATCH = 5;
+    // Fetch in batches of 8 to balance speed and rate limits
+    const BATCH = 8;
     for (let i = 0; i < stockSymbols.length; i += BATCH) {
       const batch = stockSymbols.slice(i, i + BATCH);
       const results = await Promise.allSettled(
@@ -252,7 +280,7 @@ export async function GET() {
       }
       // Small delay between batches
       if (i + BATCH < stockSymbols.length) {
-        await new Promise(res => setTimeout(res, 200));
+        await new Promise(res => setTimeout(res, 150));
       }
     }
 
