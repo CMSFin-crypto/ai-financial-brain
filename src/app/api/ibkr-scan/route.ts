@@ -249,6 +249,14 @@ interface FunnelStock {
   // NEW: Event risk
   eventRisk: string;        // summary text
   eventRiskSeverity: string;
+  // NEW: Catalyst Gate
+  catalystStatus: string;              // CLEAR | POSITIVE | MIXED | EVENT_RISK | NO_TRADE
+  daysToEarnings: number | null;
+  macroEventWithin24h: string | null;
+  material8KLast30d: boolean;
+  material8KSentiment: string;          // none | positive | negative
+  positionSizeMultiplier: number;       // 1.0 = full size, 0.5 = half
+  allowNewEntry: boolean;
   // NEW: IBKR bracket order
   bracketOrder: object | null;
   // Verdict
@@ -374,6 +382,13 @@ export async function GET() {
         riskPct: 0, rewardRiskRatio: 0, swingLow: 0,
         positionSize: 0, positionValue: 0, riskDollars: 0,
         eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
+        catalystStatus: eventResult.catalystStatus,
+        daysToEarnings: eventResult.daysToEarnings,
+        macroEventWithin24h: eventResult.macroEventWithin24h,
+        material8KLast30d: eventResult.material8KLast30d,
+        material8KSentiment: eventResult.material8KSentiment,
+        positionSizeMultiplier: eventResult.positionSizeMultiplier,
+        allowNewEntry: eventResult.allowNewEntry,
         bracketOrder: null,
         decision: 'NO_TRADE', reasons: [], warnings: [],
       });
@@ -550,8 +565,9 @@ export async function GET() {
       stock.riskPct = Math.round(riskPct * 100) / 100;
       stock.rewardRiskRatio = Math.round(rr * 10) / 10;
 
-      // NEW: Position sizing
-      const pos = calcPositionSize(entry, stop, MAX_RISK_PCT, ACCOUNT_EQUITY);
+      // NEW: Position sizing (apply catalyst multiplier)
+      const multiplier = stock.positionSizeMultiplier > 0 ? stock.positionSizeMultiplier : 1;
+      const pos = calcPositionSize(entry, stop, MAX_RISK_PCT * multiplier, ACCOUNT_EQUITY);
       stock.positionSize = pos.shares;
       stock.positionValue = pos.positionValue;
       stock.riskDollars = pos.riskDollars;
@@ -624,9 +640,14 @@ export async function GET() {
         warnings.push('REGJIMI jo OK — vetem watcher');
       }
 
-      // NEW: Event risk gate
+      // NEW: Event risk gate (enhanced with catalyst status)
       if (!stock.passedEventRisk) {
         warnings.push(`EVENT RISK: ${stock.eventRisk}`);
+      }
+      if (!stock.allowNewEntry) {
+        warnings.push(`CATALYST GATE: ${stock.catalystStatus} — mos hap long të ri`);
+      } else if (stock.positionSizeMultiplier < 1) {
+        warnings.push(`CATALYST GATE: ${stock.catalystStatus} — pozicion ${Math.round(stock.positionSizeMultiplier * 100)}%`);
       }
 
       // Stacked MA bonus/penalty
@@ -639,19 +660,21 @@ export async function GET() {
         warnings.push('Jo te vertete nje pullback — extended');
       }
 
-      // Determine decision
+      // Determine decision (catalyst gate affects READY)
       const hasRR = stock.rewardRiskRatio >= 2.0;
       const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
       const riskOk = stock.riskPct <= 8;
       const scoreOk = stock.totalScore >= 45;
       const eventOk = stock.passedEventRisk;
+      const catalystOk = stock.allowNewEntry;
 
-      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk) {
+      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk && catalystOk) {
         decision = 'READY';
       } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
         decision = 'WATCHLIST';
         if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
         if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
+        if (!catalystOk) warnings.push('WATCHLIST: Catalyst gate — prit');
       } else if (!hasRR || stock.riskPct > 6) {
         if (stock.setupScore >= 50) decision = 'WATCHLIST';
         else decision = 'NO_TRADE';

@@ -5,9 +5,10 @@
 // ============================================================
 
 export type EventSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type CatalystStatus = 'CLEAR' | 'POSITIVE' | 'MIXED' | 'EVENT_RISK' | 'NO_TRADE';
 
 export interface EventRiskResult {
-  eventType: 'earnings' | 'fed' | 'cpi' | 'nfp' | 'geopolitical' | 'sector_news' | 'company_catalyst' | 'none';
+  eventType: 'earnings' | 'fed' | 'cpi' | 'nfp' | 'geopolitical' | 'sector_news' | 'company_catalyst' | 'sec_8k' | 'none';
   severity: EventSeverity;
   daysUntil: number | null;
   description: string;
@@ -20,6 +21,14 @@ export interface MultiEventRiskResult {
   compositeRiskScore: number; // worst riskScore (most negative)
   hasCriticalEvent: boolean;
   summary: string; // Albanian summary for dashboard
+  // ── Catalyst Gate fields ──
+  catalystStatus: CatalystStatus;
+  daysToEarnings: number | null;
+  macroEventWithin24h: string | null;    // e.g. "FOMC në 1 ditë" or null
+  material8KLast30d: boolean;
+  material8KSentiment: 'none' | 'positive' | 'negative';
+  positionSizeMultiplier: number;         // 1.0 = full, 0.5 = half
+  allowNewEntry: boolean;
 }
 
 // ─── Event calendars ───────────────────────────────────────
@@ -227,6 +236,13 @@ export function checkMultiEventRisk(
       compositeRiskScore: 0,
       hasCriticalEvent: false,
       summary: 'Asnjë ngjarje me rrezik të lartë nuk u zbulua',
+      catalystStatus: 'CLEAR',
+      daysToEarnings: null,
+      macroEventWithin24h: null,
+      material8KLast30d: false,
+      material8KSentiment: 'none',
+      positionSizeMultiplier: 1.0,
+      allowNewEntry: true,
     };
   }
 
@@ -236,6 +252,70 @@ export function checkMultiEventRisk(
   const compositeRiskScore = worstEvent.riskScore;
   const hasCriticalEvent = events.some(e => e.severity === 'CRITICAL');
 
+  // ── Catalyst Gate logic ──
+  // Extract individual event data
+  const earningsEvent = events.find(e => e.eventType === 'earnings');
+  const macroEvents = events.filter(e => ['fed', 'cpi', 'nfp'].includes(e.eventType));
+  const secEvent = events.find(e => e.eventType === 'sec_8k');
+
+  const daysToEarnings = earningsEvent?.daysUntil ?? null;
+  const macroEventWithin24h = macroEvents.length > 0
+    ? macroEvents.map(e => {
+        const label = e.eventType === 'fed' ? 'FOMC' : e.eventType === 'cpi' ? 'CPI' : 'NFP';
+        return `${label} në ${e.daysUntil}d`;
+      }).join(', ')
+    : null;
+  const material8KLast30d = secEvent ? true : false;
+  const material8KSentiment: 'none' | 'positive' | 'negative' = secEvent
+    ? (secEvent.riskScore < -40 ? 'negative' : 'positive')
+    : 'none';
+
+  // Determine catalyst status
+  let catalystStatus: CatalystStatus = 'CLEAR';
+  let positionSizeMultiplier = 1.0;
+  let allowNewEntry = true;
+
+  if (hasCriticalEvent) {
+    catalystStatus = 'EVENT_RISK';
+    positionSizeMultiplier = 0;
+    allowNewEntry = false;
+  } else if (earningsEvent && earningsEvent.daysUntil !== null && earningsEvent.daysUntil <= 3) {
+    catalystStatus = 'EVENT_RISK';
+    positionSizeMultiplier = 0;
+    allowNewEntry = false;
+  } else if (earningsEvent && earningsEvent.daysUntil !== null && earningsEvent.daysUntil <= 7) {
+    catalystStatus = 'MIXED';
+    positionSizeMultiplier = 0.5;
+    allowNewEntry = true;
+  } else if (macroEvents.some(e => e.daysUntil !== null && e.daysUntil <= 1)) {
+    catalystStatus = 'MIXED';
+    positionSizeMultiplier = 0.5;
+    allowNewEntry = true;
+  } else if (material8KLast30d && material8KSentiment === 'negative') {
+    catalystStatus = 'NO_TRADE';
+    positionSizeMultiplier = 0;
+    allowNewEntry = false;
+  } else if (compositeRiskScore <= -50) {
+    catalystStatus = 'EVENT_RISK';
+    positionSizeMultiplier = 0;
+    allowNewEntry = false;
+  } else if (events.some(e => e.severity === 'HIGH')) {
+    catalystStatus = 'MIXED';
+    positionSizeMultiplier = 0.75;
+    allowNewEntry = true;
+  } else if (events.length > 0 && events.every(e => e.severity === 'LOW' || e.severity === 'MEDIUM')) {
+    catalystStatus = 'CLEAR';
+    positionSizeMultiplier = 1.0;
+    allowNewEntry = true;
+  }
+
+  // Positive catalyst bonus: if there's a positive event and no negatives
+  if (secEvent && material8KSentiment === 'positive' && !hasCriticalEvent && !earningsEvent) {
+    catalystStatus = 'POSITIVE';
+    positionSizeMultiplier = 1.0;
+    allowNewEntry = true;
+  }
+
   // Build Albanian summary
   const parts = events.map(e => {
     const sev = e.severity === 'CRITICAL' ? 'KRITIK' : e.severity === 'HIGH' ? 'I LARTË' : e.severity === 'MEDIUM' ? 'MESATAR' : 'I ULTË';
@@ -243,5 +323,10 @@ export function checkMultiEventRisk(
   });
   const summary = `Rrezik ngjarjesh: ${parts.join(', ')}`;
 
-  return { events, worstEvent, compositeRiskScore, hasCriticalEvent, summary };
+  return {
+    events, worstEvent, compositeRiskScore, hasCriticalEvent, summary,
+    catalystStatus, daysToEarnings, macroEventWithin24h,
+    material8KLast30d, material8KSentiment,
+    positionSizeMultiplier, allowNewEntry,
+  };
 }

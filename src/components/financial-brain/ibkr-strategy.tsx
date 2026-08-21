@@ -9,7 +9,7 @@ import {
   BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
-  Copy, Check, Briefcase, FileText,
+  Copy, Check, Briefcase, FileText, ShieldAlert,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -35,6 +35,14 @@ interface FunnelStock {
   sector: string;
   positionSize: number; positionValue: number; riskDollars: number;
   eventRisk: string; eventRiskSeverity: string;
+  // Catalyst Gate
+  catalystStatus: string;
+  daysToEarnings: number | null;
+  macroEventWithin24h: string | null;
+  material8KLast30d: boolean;
+  material8KSentiment: string;
+  positionSizeMultiplier: number;
+  allowNewEntry: boolean;
   bracketOrder?: object | null;
   decision: Decision; reasons: string[]; warnings: string[];
 }
@@ -371,11 +379,89 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
               </div>
             )}
 
-            {/* Event Risk */}
-            {stock.eventRisk && !/^(No events detected|Asnjë ngjarje)/.test(stock.eventRisk) && (
-              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/15">
-                <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-                <div><p className="text-[12px] font-semibold text-red-400">Event Risk</p><p className="text-[13px] text-red-300/80">{stock.eventRisk}</p></div>
+            {stock.catalystStatus && (
+              <div className="mt-2 rounded-lg border p-3 space-y-2" style={{
+                backgroundColor: stock.catalystStatus === 'CLEAR' ? 'rgba(16, 185, 129, 0.05)' :
+                  stock.catalystStatus === 'POSITIVE' ? 'rgba(59, 130, 246, 0.05)' :
+                  stock.catalystStatus === 'MIXED' ? 'rgba(245, 158, 11, 0.05)' :
+                  stock.catalystStatus === 'EVENT_RISK' ? 'rgba(239, 68, 68, 0.05)' :
+                  'rgba(239, 68, 68, 0.08)',
+                borderColor: stock.catalystStatus === 'CLEAR' ? 'rgba(16, 185, 129, 0.2)' :
+                  stock.catalystStatus === 'POSITIVE' ? 'rgba(59, 130, 246, 0.2)' :
+                  stock.catalystStatus === 'MIXED' ? 'rgba(245, 158, 11, 0.2)' :
+                  'rgba(239, 68, 68, 0.2)',
+              }}>
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4" style={{
+                    color: stock.catalystStatus === 'CLEAR' ? '#10b981' :
+                      stock.catalystStatus === 'POSITIVE' ? '#3b82f6' :
+                      stock.catalystStatus === 'MIXED' ? '#f59e0b' :
+                      '#ef4444',
+                  }} />
+                  <p className="text-[13px] font-semibold" style={{
+                    color: stock.catalystStatus === 'CLEAR' ? '#10b981' :
+                      stock.catalystStatus === 'POSITIVE' ? '#3b82f6' :
+                      stock.catalystStatus === 'MIXED' ? '#f59e0b' :
+                      '#ef4444',
+                  }}>Event & Catalyst Gate</p>
+                </div>
+                <div className="space-y-1.5 text-[13px]">
+                  {/* Row 1: Catalyst Status */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Catalyst status</span>
+                    <span className="font-semibold" style={{
+                      color: stock.catalystStatus === 'CLEAR' ? '#10b981' :
+                        stock.catalystStatus === 'POSITIVE' ? '#3b82f6' :
+                        stock.catalystStatus === 'MIXED' ? '#f59e0b' :
+                        '#ef4444',
+                    }}>{stock.catalystStatus}</span>
+                  </div>
+                  {/* Row 2: Earnings */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Earnings</span>
+                    <span className="font-medium text-foreground">
+                      {stock.daysToEarnings !== null
+                        ? `${stock.daysToEarnings} ditë`
+                        : 'Asnjë në afërsi'}
+                    </span>
+                  </div>
+                  {/* Row 3: SEC 8-K */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">SEC filings</span>
+                    <span className="font-medium" style={{
+                      color: stock.material8KLast30d && stock.material8KSentiment === 'negative' ? '#ef4444' :
+                        stock.material8KLast30d && stock.material8KSentiment === 'positive' ? '#10b981' :
+                        'var(--muted-foreground)',
+                    }}>
+                      {stock.material8KLast30d
+                        ? `Material 8-K — ${stock.material8KSentiment === 'negative' ? 'negative' : stock.material8KSentiment === 'positive' ? 'positive' : 'neutral'}`
+                        : 'Asnjë 8-K material 30d'}
+                    </span>
+                  </div>
+                  {/* Row 4: Macro */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Macro</span>
+                    <span className="font-medium" style={{
+                      color: stock.macroEventWithin24h ? '#f59e0b' : 'var(--muted-foreground)',
+                    }}>
+                      {stock.macroEventWithin24h || 'Asnjë ngjarje makro 24h'}
+                    </span>
+                  </div>
+                  {/* Row 5: Trade Action */}
+                  <div className="flex items-center justify-between pt-1.5 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                    <span className="text-muted-foreground">Trade action</span>
+                    <span className="font-bold" style={{
+                      color: !stock.allowNewEntry ? '#ef4444' :
+                        stock.positionSizeMultiplier < 1 ? '#f59e0b' :
+                        '#10b981',
+                    }}>
+                      {!stock.allowNewEntry ? 'NO ENTRY' :
+                        stock.positionSizeMultiplier < 1
+                          ? `READY, ${Math.round(stock.positionSizeMultiplier * 100)}% size`
+                          : 'READY'}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
 
