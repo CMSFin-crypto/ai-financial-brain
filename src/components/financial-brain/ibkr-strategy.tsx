@@ -258,12 +258,24 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
 
         {/* Quick stats row */}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
-          <span>RSI <strong className={stock.rsi >= 40 && stock.rsi <= 65 ? 'text-emerald-400' : 'text-amber-400'}>{stock.rsi}</strong></span>
-          <span>R:R <strong className={stock.rewardRiskRatio >= 2 ? 'text-emerald-400' : 'text-amber-400'}>1:{stock.rewardRiskRatio}</strong></span>
-          <span>Risk <strong className={stock.riskPct <= 4 ? 'text-emerald-400' : stock.riskPct <= 6 ? 'text-amber-400' : 'text-red-400'}>{stock.riskPct}%</strong></span>
-          <span>RS SPY <strong className={stock.rsVsSPY > 0 ? 'text-emerald-400' : 'text-red-400'}>{stock.rsVsSPY > 0 ? '+' : ''}{stock.rsVsSPY.toFixed(1)}%</strong></span>
-          <span>ATR {stock.atrPct}%</span>
-          <span>DolVol ${(stock.avgDolVol20d / 1e6).toFixed(0)}M</span>
+          <StatPopover label="RSI" value={stock.rsi} good={stock.rsi >= 40 && stock.rsi <= 65} warn={stock.rsi > 70 || stock.rsi < 30}
+            ideal="40 - 65 (pullback zone)" warnRange="mbi 70 (mbivleresuar) ose nen 30 (nje shitje e tepruar)"
+            desc="Relative Strength Index — mat forcen e lëvizjes se fundit ne nje shkalle 0-100. Ne pullback swing, duam RSI 40-65: aksioni eshte ne renie te kontrolluar por jo i mbivleresuar. RSI nen 30 do te thote nje shitje e tepruar (oversold) por shpesh tregon nje trend te dobet." />
+          <StatPopover label="R:R" value={`1:${stock.rewardRiskRatio}`} good={stock.rewardRiskRatio >= 2} warn={stock.rewardRiskRatio < 1.5}
+            ideal="1:2.0 ose me i larte" warnRange="nen 1:1.5 (rrezik me i madh se shperblimi)"
+            desc="Reward-to-Risk Ratio — sa dollar fitimi per cdo dollar rreziqi. Nje R:R 1:2 do te thote qe nese stop-i bie, humb 1 njesi, por nese target-i arrihet, fiton 2 njesi. Me R:R te larte, edhe nje winrate me te ulet jep fitim ne fund. Ne pranojme minimum 1:1.5." />
+          <StatPopover label="Risk" value={`${stock.riskPct}%`} good={stock.riskPct <= 4} warn={stock.riskPct > 6}
+            ideal="2% - 4%" warnRange="mbi 6% (shume i larte per nje swing trade)"
+            desc="Rreziku per aksion — distances nga Entry deri te Stop si perqindje e cmimit te hyrjes. Nese hyresh ne NVDA ne $130 me stop ne $124, risku eshte 4.6%. Me i ulet aq me i mire: rreziku i larte do te thote stop i gjere dhe probabilitet me te ulet per fitim. Maximum 8%." />
+          <StatPopover label="RS SPY" value={`${stock.rsVsSPY > 0 ? '+' : ''}${stock.rsVsSPY.toFixed(1)}%`} good={stock.rsVsSPY > 0} warn={stock.rsVsSPY < -3}
+            ideal="Positive (mbi 0%)" warnRange="nen -3% (aksioni eshte me i dobet se tregu)"
+            desc="Relative Strength vs SPY — sa me mire ka performuar aksioni ne 22 dite te fundit krah SPY. RS +5% do te thote se aksioni u rrit 5% me shume se S&P 500. RS pozitiv tregon se institucionet po blejne kete aksion me agresivitet. Ne preferojme aksione me RS pozitiv sepse kane probabilitet me te larte per te vazhduar." />
+          <StatPopover label="ATR" value={`${stock.atrPct}%`} good={stock.atrPct <= 2} warn={stock.atrPct > 3.5}
+            ideal="1% - 2.5%" warnRange="mbi 3.5% (shume volatil, i pakontrollueshem)"
+            desc="Average True Range — mat volatilitetin mesatar ditor. Nje ATR 2% do te thote se aksioni lëviz mesatarisht 2% ne dite. ATR perdoret per te vendosur stop-loss (nen swing-low minus 0.2 x ATR). ATR i ulet = lëvizje me te qete dhe me te parashikueshme = stop i ngushte = me i mire per ne." />
+          <StatPopover label="DolVol" value={`$${(stock.avgDolVol20d / 1e6).toFixed(0)}M`} good={stock.avgDolVol20d >= 50e6} warn={stock.avgDolVol20d < 20e6}
+            ideal="mbi $50M/dite" warnRange="nen $20M/dite (likuiditet i ulet, spread i gjere)"
+            desc="Dollar Volume mesatar 20-ditor — sa dollarra tregtohen ne dite. DolVol i larte siguron qe mund te hysh dhe te dalish pa prekur cmimin. Nen $20M/dite, bid-ask spread bëhet probleme dhe slippage rritet. Kompanit me DolVol mbaltes jane me te besueshme per stop-loss efektiv." />
         </div>
 
         {/* Reasons */}
@@ -329,6 +341,43 @@ function EntryBox({ label, value, color, bg }: { label: string; value: number; c
       <p className={`text-[11px] ${color} font-medium`}>{label}</p>
       <p className={`text-[14px] font-bold ${color}`}>${value.toFixed(2)}</p>
     </div>
+  );
+}
+
+function StatPopover({ label, value, good, warn, ideal, warnRange, desc }: {
+  label: string; value: string | number; good: boolean; warn: boolean;
+  ideal: string; warnRange: string; desc: string;
+}) {
+  const colorCls = good ? 'text-emerald-400' : warn ? 'text-red-400' : 'text-amber-400';
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="hover:brightness-125 transition-all cursor-pointer group flex items-center gap-0.5">
+          <span>{label} </span>
+          <strong className={colorCls}>{value}</strong>
+          <Info className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-72 sm:w-80 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <h3 className="text-sm font-bold text-foreground">{label}</h3>
+        </div>
+        <div className="px-4 pb-4 space-y-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Cka eshte?</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{desc}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{ideal}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400 mb-1">Kujdes</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{warnRange}</p>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
