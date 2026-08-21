@@ -7,41 +7,43 @@ import { calculateSMA, calculateRSI } from '@/lib/indicators';
 // ═══════════════════════════════════════════════════════════════
 
 const UNIVERSE = [
-  // Tech / AI / Semiconductors (50)
-  'NVDA','AMD','MSFT','AAPL','AMZN','META','GOOGL','AVGO','TSLA','NFLX',
+  // Mega Caps + Tech / AI / Semiconductors (50)
+  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','AVGO','TSLA','BRK.B','LLY',
   'CRM','ORCL','ADBE','NOW','INTU','SNOW','PLTR','DDOG','CRWD','PANW',
   'NET','ZS','FTNT','MRVL','QCOM','TXN','MU','LRCX','AMAT','ADI',
   'KLAC','ON','DELL','HPQ','IBM','CTSH','WDAY','VEEV','HUBS','ANSS',
-  'PAYX','CDNS','MANH','STX','AKAM','EQIX','FSLR','ENPH',
-  // Communication / Media (15)
-  'DIS','CMCSA','WBD','EA','TTWO','UBER','ABNB','BKNG','EXPE','ROKU',
-  'PARA','LYV','DASH','RBLX','ANGI',
-  // Consumer / Retail / Staples (35)
-  'COST','WMT','TGT','HD','LOW','NKE','KO','PEP','MCD','SBUX',
-  'YUM','CMG','EL','PM','MO','DEO','STZ','MON','CL','KMB',
-  'PG','BUD','KO','PEP','UL','GIS','SJM','HSY',
-  // Healthcare / Biotech (25)
-  'UNH','LLY','JNJ','MRK','ABBV','PFE','TMO','ABT','DHR','BMY',
-  'GILD','VRTX','REGN','BIIB','ISRG','SYK','EW','BSX','MDT','HUM',
-  'CI','ELV','CVS','MOH','CNC',
-  // Finance (25)
+  'PAYX','CDNS','MANH','STX','AKAM','EQIX','FSLR','ENPH','GFS','ARM',
+  // Communication / Media / Platforms (15)
+  'DIS','CMCSA','NFLX','EA','TTWO','UBER','ABNB','BKNG','EXPE','ROKU',
+  'PARA','LYV','DASH','RBLX','GOOG',
+  // Consumer Discretionary / Retail (20)
+  'COST','WMT','TGT','HD','LOW','NKE','MCD','SBUX','YUM','CMG',
+  'EL','DEO','STZ','CL','KMB','RCL','LULU','TJX','AZO','DLTR',
+  // Consumer Staples (15)
+  'KO','PEP','PM','MO','BUD','UL','GIS','SJM','HSY','COTY',
+  'CPB','CHD','K','CLX','BF.B',
+  // Healthcare / Biotech / Pharma (25)
+  'UNH','JNJ','MRK','ABBV','PFE','TMO','ABT','DHR','BMY','GILD',
+  'VRTX','REGN','BIIB','ISRG','SYK','EW','BSX','MDT','HUM','CI',
+  'ELV','CVS','MOH','CNC','IDXX',
+  // Finance / Payments / Insurance (25)
   'JPM','V','MA','BAC','GS','MS','AXP','BLK','SCHW','C',
   'USB','PGR','CB','AON','MET','PRU','COF','SYF','DFS','NTRS',
-  'ICE','MKTX','CBOE','PYPL','SOFI',
-  // Energy (15)
-  'XOM','CVX','COP','SLB','EOG','OXY','MPC','PSX','VLO','WBA',
-  'DVN','FANG','PXD','CTRA','HES',
-  // Industrial / Manufacturing (25)
+  'ICE','MKTX','CBOE','PYPL','CME',
+  // Energy / Oil & Gas (15)
+  'XOM','CVX','COP','SLB','EOG','OXY','MPC','PSX','VLO','DVN',
+  'FANG','PXD','CTRA','HES','WMB',
+  // Industrial / Manufacturing / Aerospace (20)
   'CAT','GE','HON','UPS','RTX','BA','LMT','NOC','GD','DE',
   'MMM','EMR','ITW','ETN','CMI','ROK','PH','JCI','PCAR','FDX',
-  'R','OTIS','CARR','WM','KEYS',
-  // Auto / EV (10)
-  'GM','RIVN','NIO','STLA','F','TM','HMC','LI','RACE','LCID',
-  // Materials / Chemicals / Mining (10)
-  'LIN','APD','SHW','ECL','DD','FCX','NEM','GOLD','ALB','CE',
-  // Utilities / Infra (10)
-  'NEE','DUK','SO','AEP','EXC','SRE','CCI','WR','AGR','XEL',
+  // REITs / Infra / Telecom (10)
+  'AMT','CCI','SPG','O','PSA','WELL','DLR','VICI','IRM','EQIX',
+  // Utilities / Power (10)
+  'NEE','DUK','SO','AEP','EXC','SRE','XEL','PEG','EIX','DTE',
 ];
+
+// Deduplicate (some tickers may appear in multiple sector lists)
+const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
 
 const ETF_SET = new Set(['SPY','QQQ','SMH','XLF','XLE','XLK','XLV','XLY','XLP','XLI','XLB','XLU','XLRE','XLC','GLD','TLT','IWM','VTI','ARKK','SCHD']);
 const BENCHMARKS = ['SPY', 'QQQ'];
@@ -160,15 +162,15 @@ export async function GET() {
     const spyRS60 = pct(spyC, 60);
 
     // ── 1. Fetch all universe OHLCV ──
-    const syms = UNIVERSE.filter(s => !ETF_SET.has(s));
+    const syms = DEDUPED_UNIVERSE.filter(s => !ETF_SET.has(s));
     const hist: Record<string, HistoricalDataPoint[] | null> = {};
 
-    const BATCH = 10;
+    const BATCH = 8;
     for (let i = 0; i < syms.length; i += BATCH) {
       const batch = syms.slice(i, i + BATCH);
       const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '6mo') })));
       for (const r of res) if (r.status === 'fulfilled' && r.value.d) hist[r.value.s] = r.value.d;
-      if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 120));
+      if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 200));
     }
 
     console.log(`[IBKR FUNNEL] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
