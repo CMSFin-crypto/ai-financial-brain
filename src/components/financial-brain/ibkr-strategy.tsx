@@ -472,10 +472,40 @@ export function IBKRStrategy() {
         {/* No results */}
         {data.results.length === 0 && hasScanned && (
           <Card className="border-border/50 bg-muted/5">
-            <CardContent className="py-8 text-center">
+            <CardContent className="py-6 text-center">
               <Target className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
               <p className="text-[14px] text-muted-foreground font-medium">Asnje setup i pershtatshem</p>
-              <p className="text-[13px] text-muted-foreground/60 mt-1.5">Asnje aksion nuk kaloi te gjithe fazet e funnel-it. Provo perseri me vone.</p>
+              <p className="text-[13px] text-muted-foreground/60 mt-1.5 mb-4">Asnje aksion nuk kaloi te gjithe fazat e funnel-it.</p>
+              {/* Diagnostic funnel breakdown */}
+              <div className="inline-flex items-center gap-1.5 text-[12px] flex-wrap justify-center">
+                <span className="text-blue-400">{data.funnel.universe} universe</span>
+                <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+                <span className={data.funnel.passedLiquidity === 0 ? 'text-red-400 font-bold' : 'text-cyan-400'}>{data.funnel.passedLiquidity} likuiditet</span>
+                <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+                <span className={data.funnel.passedTrend === 0 ? 'text-red-400 font-bold' : 'text-emerald-400'}>{data.funnel.passedTrend} trend</span>
+                <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+                <span className={data.funnel.passedSetup === 0 ? 'text-red-400 font-bold' : 'text-violet-400'}>{data.funnel.passedSetup} setup</span>
+                <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+                <span className="text-amber-400 font-bold">{data.funnel.passedRisk} risk gate</span>
+              </div>
+              {/* Bottleneck explanation */}
+              <div className="mt-4 max-w-sm mx-auto">
+                {data.funnel.passedLiquidity === 0 && (
+                  <p className="text-[12px] text-red-400/80">Te dhenat nuk u morren mjaftueshem. Kontrollo API key.</p>
+                )}
+                {data.funnel.passedLiquidity > 0 && data.funnel.passedTrend === 0 && (
+                  <p className="text-[12px] text-amber-400/80">Asnje aksion nuk eshte ne trend rrites — tregu mund te jete i dobet ose ne rije. Regjimi: {data.regimeOk ? 'OK' : 'JO OK'}.</p>
+                )}
+                {data.funnel.passedTrend > 0 && data.funnel.passedSetup === 0 && (
+                  <p className="text-[12px] text-amber-400/80">{data.funnel.passedTrend} aksione ne trend, por asnje nuk ka pullback/breakout aktual. Pris nje pullback 2-8 ditesh.</p>
+                )}
+                {data.funnel.passedSetup > 0 && data.funnel.passedRisk === 0 && (
+                  <p className="text-[12px] text-amber-400/80">{data.funnel.passedSetup} setup-i te gjithe u refuzuan nga risk gate (R:R me i ulet se 1:2, rreziqet e larte, ose regjimi jo OK). Provo perseri me vone.</p>
+                )}
+              </div>
+              {!data.regimeOk && (
+                <p className="text-[12px] text-red-400/70 mt-3">Regjimi i tregut nuk lejon long tani (SPY/QQQ jo mbi SMA 50/200).</p>
+              )}
             </CardContent>
           </Card>
         )}

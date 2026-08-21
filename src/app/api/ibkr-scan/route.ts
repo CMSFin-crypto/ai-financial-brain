@@ -147,8 +147,8 @@ export async function GET() {
   try {
     // ── 0. Fetch benchmarks ──
     const [spyData, qqqData] = await Promise.all([
-      fetchHistoricalData('SPY', '6mo'),
-      fetchHistoricalData('QQQ', '6mo'),
+      fetchHistoricalData('SPY', '1y'),
+      fetchHistoricalData('QQQ', '1y'),
     ]);
     if (!spyData || !qqqData) return NextResponse.json({ error: 'Te dhena SPY/QQQ mungojne' }, { status: 500 });
 
@@ -168,9 +168,9 @@ export async function GET() {
     const BATCH = 8;
     for (let i = 0; i < syms.length; i += BATCH) {
       const batch = syms.slice(i, i + BATCH);
-      const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '6mo') })));
+      const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '1y') })));
       for (const r of res) if (r.status === 'fulfilled' && r.value.d) hist[r.value.s] = r.value.d;
-      if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 200));
+      if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 250));
     }
 
     console.log(`[IBKR FUNNEL] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);

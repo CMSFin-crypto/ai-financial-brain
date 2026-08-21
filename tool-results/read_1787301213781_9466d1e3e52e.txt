@@ -1,0 +1,543 @@
+     1→'use client';
+     2→
+     3→import { Card, CardContent } from '@/components/ui/card';
+     4→import { Badge } from '@/components/ui/badge';
+     5→import { Skeleton } from '@/components/ui/skeleton';
+     6→import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+     7→import {
+     8→  Shield, TrendingUp, AlertTriangle, CheckCircle2, XCircle, Target,
+     9→  BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
+    10→  ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
+    11→  Filter, ArrowDown, CircleDot, Info,
+    12→} from 'lucide-react';
+    13→import { useState, useEffect, useCallback } from 'react';
+    14→
+    15→// ── Types ──
+    16→type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
+    17→
+    18→interface FunnelStock {
+    19→  symbol: string; price: number;
+    20→  avgVol20d: number; avgDolVol20d: number;
+    21→  passedLiquidity: boolean; passedTrend: boolean;
+    22→  trendScore: number; rsScore: number; momentumScore: number;
+    23→  volConfScore: number; setupScore: number; riskScore: number; totalScore: number;
+    24→  setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
+    25→  horizon: string; rsi: number; atr: number; atrPct: number;
+    26→  volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
+    27→  pullbackDays: number; pullbackPct: number;
+    28→  distFromEMA10: number; distFromEMA20: number;
+    29→  aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean;
+    30→  rsVsSPY: number; rsVsQQQ: number; rsVsSPY60d: number;
+    31→  entry: number; stop: number; target1R: number; target2R: number;
+    32→  riskPct: number; rewardRiskRatio: number; swingLow: number;
+    33→  decision: Decision; reasons: string[]; warnings: string[];
+    34→}
+    35→
+    36→interface FunnelResponse {
+    37→  scannedAt: string; regimeOk: boolean;
+    38→  regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
+    39→  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; };
+    40→  results: FunnelStock[];
+    41→}
+    42→
+    43→// ── Decision styling ──
+    44→const DECISION_STYLE: Record<Decision, { bg: string; text: string; border: string; label: string }> = {
+    45→  READY:        { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', label: 'READY' },
+    46→  WATCHLIST:    { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', label: 'WATCHLIST' },
+    47→  EVENT_RISK:   { bg: 'bg-red-500/15', text: 'text-red-400', border: 'border-red-500/30', label: 'EVENT RISK' },
+    48→  EXTENDED:     { bg: 'bg-orange-500/15', text: 'text-orange-400', border: 'border-orange-500/30', label: 'EXTENDED' },
+    49→  NO_TRADE:     { bg: 'bg-muted/15', text: 'text-muted-foreground', border: 'border-muted/30', label: 'NO TRADE' },
+    50→};
+    51→
+    52→// ── Strategy Reference Data ──
+    53→const STRATEGY_RULES = [
+    54→  { element: 'Universe', icon: Layers, rule: '200 kompani te medha, likuide, tregtueshme ne IBKR', color: 'text-blue-400' },
+    55→  { element: 'Filtri mekanik', icon: Filter, rule: 'Cmimi >= $10, Vol >= 1M, DolVol >= $20M, mbi SMA50, SMA50 > SMA200, RS > SPY', color: 'text-emerald-400' },
+    56→  { element: 'Analize teknike', icon: BarChart3, rule: 'Trend, momentum, RS, ATR, setup quality, volum konfirmim', color: 'text-blue-400' },
+    57→  { element: 'Event-risk gate', icon: AlertTriangle, rule: 'R:R >= 1:2, RSI 30-75, risk <= 8%, regjimi i tregut, jo extended', color: 'text-red-400' },
+    58→  { element: 'Top Stocks', icon: Target, rule: '5-10 kandidate me score me te larte, READY ose WATCHLIST', color: 'text-amber-400' },
+    59→];
+    60→
+    61→const ENTRY_RULES = [
+    62→  'Tregu i pergjithshem eshte bullish; mos detyro long trades kur indekset jane ne trend te dobet.',
+    63→  'Kompania ka raport te mire earnings, rritje te te ardhurave/fitimit ose katalizator te qarte.',
+    64→  'Cmimi eshte mbi 50 SMA dhe 200 SMA.',
+    65→  'Ka bere pullback te kontrolluar me volum me te ulet, pastaj jep candle rikthimi me volum.',
+    66→  'Entry vendose mbi high-in e candle-it te konfirmimit, zakonisht me buy stop-limit ose limit ne pullback.',
+    67→];
+    68→
+    69→const DONT_RULES = [
+    70→  'Mos bej day trading te rastessishem vetem sepse IBKR e ben execution-in te lehte.',
+    71→  'Mos hy para earnings nese nuk je duke tregtuar qellimisht event risk.',
+    72→  'Mos ble aksione qe jane 10-15% mbi 10/20 EMA pas nje rally te shpejte.',
+    73→  'Mos perdor leverage/margin derisa strategjia te jete e testuar.',
+    74→  'Mos u mbeshtet vetem te RSI ose MACD; keta jane filtra, jo edge i vetem.',
+    75→];
+    76→
+    77→const SYSTEM_GATES = [
+    78→  { gate: 'Market Regime', desc: 'SPY/QQQ mbi 50 dhe 200 SMA', icon: Shield },
+    79→  { gate: 'Liquidity', desc: 'Vol > 1M, DolVol > $20M, cmimi > $10', icon: DollarSign },
+    80→  { gate: 'Trend + RS', desc: 'Mbi 50/200 SMA, RS > SPY ne 60d', icon: TrendingUp },
+    81→  { gate: 'Setup Quality', desc: 'Pullback/Breakout me volum, RSI, EMA proximity', icon: BarChart3 },
+    82→  { gate: 'Risk Gate', desc: 'R:R >= 1:2, risk <= 8%, RSI 30-75', icon: AlertTriangle },
+    83→  { gate: 'IBKR Bracket', desc: 'Entry + Stop + Take-profit automatik', icon: Target },
+    84→];
+    85→
+    86→// ── Section ──
+    87→function Section({ title, icon: Icon, children, color = 'text-emerald-400', defaultOpen = true }: {
+    88→  title: string; icon: any; children: React.ReactNode; color?: string; defaultOpen?: boolean;
+    89→}) {
+    90→  const [open, setOpen] = useState(defaultOpen);
+    91→  return (
+    92→    <Card className="border-border/50 bg-card">
+    93→      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/5 transition-colors rounded-t-lg">
+    94→        <Icon className={`w-5 h-5 ${color} flex-shrink-0`} />
+    95→        <span className="font-semibold text-[15px] text-foreground flex-1">{title}</span>
+    96→        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+    97→      </button>
+    98→      {open && <CardContent className="pt-0 pb-4 px-4">{children}</CardContent>}
+    99→    </Card>
+   100→  );
+   101→}
+   102→
+   103→// ── Funnel step detail popups ──
+   104→const FUNNEL_DETAILS: Record<string, { title: string; desc: string; ideal: string; why: string; icon: any }> = {
+   105→  'Universe': {
+   106→    title: '1. Universe — 200 Kompanite Me te Medha',
+   107→    icon: Layers,
+   108→    desc: 'Kjo eshte hapa e pare e funnel-it. Ne fillojme me 200 kompanite me te medha sipas kapitalizimit ne tregun amerikan (S&P 500 top). Keto kompani jane te zgjedhura sepse kane likuiditet te larte, jane te disponueshme per tregtim ne IBKR, dhe zakonisht kane volatilite me te mire per swing trading.',
+   109→    ideal: 'Idealisht 200 kompani. Ceshtje nese keni me pak se 150 (some tickers nuk u morren nga API).',
+   110→    why: 'Nuk ka rendesi sa kompani kalojne — qellimi eshte te kete nje base te ampler per te gjetur cfaredo setup-i i mire qe ekziston ne treg.',
+   111→  },
+   112→  'Liquidity': {
+   113→    title: '2. Liquidity — Filtri Mekanik',
+   114→    icon: DollarSign,
+   115→    desc: 'Filtri i pare qe heq kompanite qe nuk jane te tregtueshme. Nje aksion duhet te kete cmim minimal $10, volumn mesatar ditor > 1M aksione, dhe volumn ditor ne dollare > $20M. Kjo siguron qe mund te hysh dhe te dalish pa problem likuiditeti, dhe se spread-i bid/ask eshte i ngushte.',
+   116→    ideal: 'Sa me shume kompani te kalojne, aq me i mire. Nje treg i shendetshem duhet te kaloje 70-90% te universe-it. Nese kalojne me pak se 50%, tregu mund te jete shume i dobet ose keni probleme te dhena.',
+   117→    why: 'Kompanite me likuiditet te ulet kane spread te gjere, slippage te larte, dhe jane te veshtira per te vendosur stop-loss efektiv. Ne duam vetem aksione qe ne mund te tregtojme me besoje.',
+   118→  },
+   119→  'Trend + RS': {
+   120→    title: '3. Trend + Relative Strength',
+   121→    icon: TrendingUp,
+   122→    desc: 'Ketu kontrollojme nese aksioni eshte ne trend rrites (bullish). Kushtet jane: (1) cmimi mbi SMA 50, (2) SMA 50 mbi SMA 200 (Golden Cross), dhe (3) performanca ne 60 ditet e fundit eshte me e mire sesa SPY (Relative Strength pozitiv). Vetem aksione ne trend rrites kalojne ne fazen tjeter.',
+   123→    ideal: 'Normalisht 20-60 kompani kalojne kete filter (10-30% te universe). Nese asnje nuk kalon, tregu mund te jete ne rnie te pergjithshme — aso kohe rreziu i long trades eshte i larte.',
+   124→    why: 'Strategjia jonse Trend Pullback Swing punon vetem ne aksione qe jane ne trend rrites. Nje pullback ne nje aksion ne rnie eshte thjesht rije e vazhdueshme, jo oportunite. RS > SPY do te thote se aksioni eshte me i fort se tregu — kjo jep nje edge shtese.',
+   125→  },
+   126→  'Setup': {
+   127→    title: '4. Setup Quality — Pullback / Breakout',
+   128→    icon: BarChart3,
+   129→    desc: 'Ketu identifikojme nese aksioni ka nje setup konkret: (1) PULLBACK: renie e kontrolluar 2-8 dite drejt EMA 10/20 me volum ne renie, pastaj candle rikthimi. (2) BREAKOUT: cmimi afeer 20d high me volum spike. (3) TREND CONTINUATION: konsolidim afat te larte me trend i forte. Çdo setup vleresohet me score 0-100 bazuar ne RSI, proximitet EMA, volum, dhe RS.',
+   130→    ideal: 'Zakonisht 5-25 kompani kane setup te vlefshem. Nese asnje nuk ka, tregu mund te jete ne faze tranzicioni ose te gjithe aksionet jane ose te te ekstenduara ose ne rije.',
+   131→    why: 'Pa nje setup te qarte, nuk ka arsye per te hyr. Pullback-i i kontrolluar ne trend rrites eshte njeri nga setup-et me te besueshme ne swing trading, sepse rreziku eshte i definuar (swing low) dhe shperblimi eshte i qarte (rijet e trendit).',
+   132→  },
+   133→  'Risk Gate': {
+   134→    title: '5. Risk Gate — Kontrolli i fundit',
+   135→    icon: AlertTriangle,
+   136→    desc: 'Hapa i fundit me para se te shfaqet ne liste. Kontrollohet: (1) Reward-to-Risk >= 1:2 (fitimi potential te jete te pakten 2x rrezikun), (2) RSI 30-75 (jo i mbivleresuar), (3) Risk per aksion <= 8% (jo shume i larte), (4) Regjimi i tregut OK (SPY/QQQ mbi SMA 50/200). Kompanite qe kalojneohen kategorizojne si READY ose WATCHLIST.',
+   137→    ideal: 'Sa me shume READY aq me i mire. 2-10 kompani ne fund eshte normalja. Nese keni shume WATCHLIST pa READY, rreziu i tregut (regime) mund te jete problemi.',
+   138→    why: 'Edhe nje setup i persosur nuk eshte i mire nese R:R eshte i ulet (riskum me i madh se shperblimi) ose nese tregu i pergjithshem nuk eshte mbeshtetes. Ky gate mbron nga marja e trades me probabilitet te ulet.',
+   139→  },
+   140→  'Top Stocks': {
+   141→    title: '6. Top Stocks — Kandidatet Finale',
+   142→    icon: Target,
+   143→    desc: 'Keto jane 5-10 kompanite me score me te larte qe kane kaluar te gjithe funnel-in. Ato renditen sipas totalScore (0-100) dhe statusit (READY para WATCHLIST para EVENT_RISK). Secila ka Entry, Stop, Target 1R dhe Target 2R te llogaritur automatikisht.',
+   144→    ideal: 'READY = Gati per tregtim me rreziqet e percaktuara. WATCHLIST = Setup i mire por tregu ose kushtet nuk lejojne hyrje tani — vërehtu. EVENT_RISK = RSI i larte, rrezik kthimi.',
+   145→    why: 'Ne tregjtojme vetem keto kompani. Cdo gje tjeter eshte te dhena ose analize, por jo sinjal tregtimi.',
+   146→  },
+   147→};
+   148→
+   149→// ── Funnel Visualization ──
+   150→function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
+   151→  const steps = [
+   152→    { label: 'Universe', count: funnel.universe, color: 'bg-blue-500/20 text-blue-400' },
+   153→    { label: 'Liquidity', count: funnel.passedLiquidity, color: 'bg-cyan-500/20 text-cyan-400' },
+   154→    { label: 'Trend + RS', count: funnel.passedTrend, color: 'bg-emerald-500/20 text-emerald-400' },
+   155→    { label: 'Setup', count: funnel.passedSetup, color: 'bg-violet-500/20 text-violet-400' },
+   156→    { label: 'Risk Gate', count: funnel.passedRisk, color: 'bg-amber-500/20 text-amber-400' },
+   157→    { label: 'Top Stocks', count: funnel.displayed, color: 'bg-emerald-500/20 text-emerald-400' },
+   158→  ];
+   159→
+   160→  return (
+   161→    <div className="flex items-center gap-1 flex-wrap">
+   162→      {steps.map((s, i) => {
+   163→        const detail = FUNNEL_DETAILS[s.label];
+   164→        return (
+   165→          <div key={s.label} className="flex items-center gap-1">
+   166→            <Popover>
+   167→              <PopoverTrigger asChild>
+   168→                <button className={`rounded-md px-2.5 py-1.5 text-center ${s.color} hover:brightness-125 transition-all cursor-pointer group relative`}>
+   169→                  <div className="flex items-center justify-center gap-1">
+   170→                    <p className="text-[11px] font-medium opacity-70">{s.label}</p>
+   171→                    <Info className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+   172→                  </div>
+   173→                  <p className="text-[15px] font-bold">{s.count}</p>
+   174→                </button>
+   175→              </PopoverTrigger>
+   176→              <PopoverContent side="bottom" align="center" className="w-80 sm:w-96 p-0 overflow-hidden">
+   177→                <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+   178→                  <div className="flex items-center gap-2">
+   179→                    {detail && <detail.icon className={`w-4.5 h-4.5 ${s.color.split(' ')[1]}`} />}
+   180→                    <h3 className="text-sm font-bold text-foreground">{detail?.title}</h3>
+   181→                  </div>
+   182→                </div>
+   183→                <div className="px-4 pb-4 space-y-3">
+   184→                  <div>
+   185→                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën kjo fazë?</p>
+   186→                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.desc}</p>
+   187→                  </div>
+   188→                  <div>
+   189→                    <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
+   190→                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
+   191→                  </div>
+   192→                  <div>
+   193→                    <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Pse është e rëndësishme?</p>
+   194→                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.why}</p>
+   195→                  </div>
+   196→                </div>
+   197→              </PopoverContent>
+   198→            </Popover>
+   199→            {i < steps.length - 1 && <ArrowDown className="w-3.5 h-3.5 text-muted-foreground/40" />}
+   200→          </div>
+   201→        );
+   202→      })}
+   203→    </div>
+   204→  );
+   205→}
+   206→
+   207→// ── Stock Card ──
+   208→function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
+   209→  const [expanded, setExpanded] = useState(false);
+   210→  const ds = DECISION_STYLE[stock.decision];
+   211→  const setupColor = stock.setup === 'PULLBACK' ? 'text-amber-400' : stock.setup === 'BREAKOUT' ? 'text-blue-400' : stock.setup === 'TREND_CONT' ? 'text-emerald-400' : 'text-muted-foreground';
+   212→  const setupBg = stock.setup === 'PULLBACK' ? 'bg-amber-500/15 border-amber-500/30' : stock.setup === 'BREAKOUT' ? 'bg-blue-500/15 border-blue-500/30' : 'bg-emerald-500/15 border-emerald-500/30';
+   213→
+   214→  return (
+   215→    <Card className={`border-border/50 bg-card hover:border-border transition-all ${stock.decision === 'READY' ? 'border-emerald-500/30' : ''}`}>
+   216→      <CardContent className="p-4">
+   217→        {/* Top row */}
+   218→        <div className="flex items-center gap-3">
+   219→          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${rank <= 3 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/30 text-muted-foreground'}`}>{rank}</div>
+   220→          <div className="flex-1 min-w-0">
+   221→            <div className="flex items-center gap-2 flex-wrap">
+   222→              <span className="font-bold text-base text-foreground">{stock.symbol}</span>
+   223→              <Badge className={`${setupBg} ${setupColor} text-[12px] px-2.5 py-0.5 font-semibold`} variant="outline">
+   224→                {stock.setup === 'TREND_CONT' ? 'TREND CONT' : stock.setup}
+   225→              </Badge>
+   226→              <Badge className={`${ds.bg} ${ds.text} ${ds.border} text-[12px] px-2.5 py-0.5 font-semibold`} variant="outline">
+   227→                {ds.label}
+   228→              </Badge>
+   229→              <Badge variant="outline" className="text-[11px] border-border/30 text-muted-foreground px-2 py-0.5">{stock.horizon}</Badge>
+   230→            </div>
+   231→            <p className="text-[13px] text-muted-foreground mt-1">
+   232→              ${stock.price.toFixed(2)} · Pullback {stock.pullbackDays}d ({stock.pullbackPct > 0 ? '+' : ''}{stock.pullbackPct.toFixed(1)}%)
+   233→            </p>
+   234→          </div>
+   235→          <div className="text-right flex-shrink-0">
+   236→            <div className={`text-2xl font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}</div>
+   237→            <div className="text-[12px] text-muted-foreground">Score</div>
+   238→          </div>
+   239→        </div>
+   240→
+   241→        {/* Score breakdown - 6 sub-scores */}
+   242→        <div className="mt-3 grid grid-cols-6 gap-1.5">
+   243→          <ScoreCell label="Trend" value={stock.trendScore} />
+   244→          <ScoreCell label="RS" value={stock.rsScore} />
+   245→          <ScoreCell label="Momentum" value={stock.momentumScore} />
+   246→          <ScoreCell label="Volum" value={stock.volConfScore} />
+   247→          <ScoreCell label="Setup" value={stock.setupScore} />
+   248→          <ScoreCell label="Risk" value={stock.riskScore} />
+   249→        </div>
+   250→
+   251→        {/* Entry / Stop / Target */}
+   252→        <div className="mt-3 grid grid-cols-4 gap-2">
+   253→          <EntryBox label="ENTRY" value={stock.entry} color="text-blue-400" bg="bg-blue-500/5 border-blue-500/15" />
+   254→          <EntryBox label="STOP" value={stock.stop} color="text-red-400" bg="bg-red-500/5 border-red-500/15" />
+   255→          <EntryBox label="TARGET 1R" value={stock.target1R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/15" />
+   256→          <EntryBox label="TARGET 2R" value={stock.target2R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/20" />
+   257→        </div>
+   258→
+   259→        {/* Quick stats row */}
+   260→        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+   261→          <span>RSI <strong className={stock.rsi >= 40 && stock.rsi <= 65 ? 'text-emerald-400' : 'text-amber-400'}>{stock.rsi}</strong></span>
+   262→          <span>R:R <strong className={stock.rewardRiskRatio >= 2 ? 'text-emerald-400' : 'text-amber-400'}>1:{stock.rewardRiskRatio}</strong></span>
+   263→          <span>Risk <strong className={stock.riskPct <= 4 ? 'text-emerald-400' : stock.riskPct <= 6 ? 'text-amber-400' : 'text-red-400'}>{stock.riskPct}%</strong></span>
+   264→          <span>RS SPY <strong className={stock.rsVsSPY > 0 ? 'text-emerald-400' : 'text-red-400'}>{stock.rsVsSPY > 0 ? '+' : ''}{stock.rsVsSPY.toFixed(1)}%</strong></span>
+   265→          <span>ATR {stock.atrPct}%</span>
+   266→          <span>DolVol ${(stock.avgDolVol20d / 1e6).toFixed(0)}M</span>
+   267→        </div>
+   268→
+   269→        {/* Reasons */}
+   270→        {stock.reasons.length > 0 && (
+   271→          <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-blue-500/5 border border-blue-500/15">
+   272→            <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+   273→            <div className="space-y-1 min-w-0">
+   274→              {stock.reasons.map((r, i) => <p key={i} className="text-[13px] text-blue-300/80 leading-relaxed">· {r}</p>)}
+   275→            </div>
+   276→          </div>
+   277→        )}
+   278→
+   279→        {/* Warnings */}
+   280→        {stock.warnings.length > 0 && (
+   281→          <div className="mt-2 flex items-start gap-2.5 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/15">
+   282→            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+   283→            <div className="space-y-1 min-w-0">
+   284→              {stock.warnings.map((w, i) => <p key={i} className="text-[13px] text-amber-300/80 leading-relaxed">· {w}</p>)}
+   285→            </div>
+   286→          </div>
+   287→        )}
+   288→
+   289→        {/* Expanded detail */}
+   290→        {expanded && (
+   291→          <div className="mt-3 border-t border-border/50 pt-3 space-y-2 text-[13px] text-muted-foreground">
+   292→            <div className="grid grid-cols-2 gap-2">
+   293→              <div>SMA 50: <span className={stock.aboveSMA50 ? 'text-emerald-400' : 'text-red-400'}>{stock.aboveSMA50 ? 'Mbi' : 'Nen'}</span></div>
+   294→              <div>SMA 200: <span className={stock.aboveSMA200 ? 'text-emerald-400' : 'text-red-400'}>{stock.aboveSMA200 ? 'Mbi' : 'Nen'}</span></div>
+   295→              <div>50/200: <span className={stock.sma50Above200 ? 'text-emerald-400' : 'text-red-400'}>{stock.sma50Above200 ? 'Golden' : 'Death'}</span></div>
+   296→              <div>ATR: ${stock.atr.toFixed(2)}</div>
+   297→              <div>Dist EMA10: {stock.distFromEMA10 > 0 ? '+' : ''}{stock.distFromEMA10.toFixed(1)}%</div>
+   298→              <div>Dist EMA20: {stock.distFromEMA20 > 0 ? '+' : ''}{stock.distFromEMA20.toFixed(1)}%</div>
+   299→              <div>RS vs QQQ: {stock.rsVsQQQ > 0 ? '+' : ''}{stock.rsVsQQQ.toFixed(1)}%</div>
+   300→              <div>RS 60d vs SPY: {stock.rsVsSPY60d > 0 ? '+' : ''}{stock.rsVsSPY60d.toFixed(1)}%</div>
+   301→              <div>Swing Low: ${stock.swingLow.toFixed(2)}</div>
+   302→              <div>Vol Ratio: {stock.volRatio}x</div>
+   303→            </div>
+   304→          </div>
+   305→        )}
+   306→
+   307→        <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-center gap-1.5 mt-2.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
+   308→          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+   309→          {expanded ? 'Fshi detajet' : 'Shiko detajet'}
+   310→        </button>
+   311→      </CardContent>
+   312→    </Card>
+   313→  );
+   314→}
+   315→
+   316→function ScoreCell({ label, value }: { label: string; value: number }) {
+   317→  const c = value >= 70 ? 'text-emerald-400' : value >= 50 ? 'text-amber-400' : 'text-red-400';
+   318→  return (
+   319→    <div className="rounded-md p-1.5 text-center bg-muted/5">
+   320→      <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+   321→      <p className={`text-[14px] font-bold ${c}`}>{value}</p>
+   322→    </div>
+   323→  );
+   324→}
+   325→
+   326→function EntryBox({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
+   327→  return (
+   328→    <div className={`rounded-lg ${bg} border p-2.5 text-center`}>
+   329→      <p className={`text-[11px] ${color} font-medium`}>{label}</p>
+   330→      <p className={`text-[14px] font-bold ${color}`}>${value.toFixed(2)}</p>
+   331→    </div>
+   332→  );
+   333→}
+   334→
+   335→// ── Regime Banner ──
+   336→function RegimeBanner({ data }: { data: FunnelResponse }) {
+   337→  const { regimeDetail, regimeOk } = data;
+   338→  return (
+   339→    <Card className={`${regimeOk ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+   340→      <CardContent className="p-4">
+   341→        <div className="flex items-center gap-3">
+   342→          <Shield className={`w-5 h-5 ${regimeOk ? 'text-emerald-400' : 'text-red-400'} flex-shrink-0`} />
+   343→          <div className="flex-1">
+   344→            <p className={`text-[14px] font-semibold ${regimeOk ? 'text-emerald-400' : 'text-red-400'}`}>
+   345→              {regimeOk ? 'REGJIMI OK — Mund te besh Long Trades' : 'REGJIMI JO OK — Vetem WATCHLIST'}
+   346→            </p>
+   347→            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[13px]">
+   348→              <span className="text-muted-foreground">SPY: <span className={regimeDetail.spy.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.spy.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above200 ? 'Mbi 200' : 'Nen 200'}</span></span>
+   349→              <span className="text-muted-foreground">QQQ: <span className={regimeDetail.qqq.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.qqq.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above200 ? 'Mbi 200' : 'Nen 200'}</span></span>
+   350→            </div>
+   351→          </div>
+   352→        </div>
+   353→      </CardContent>
+   354→    </Card>
+   355→  );
+   356→}
+   357→
+   358→// ═══════════════════════════════════════════════════════════════
+   359→// MAIN
+   360→// ═══════════════════════════════════════════════════════════════
+   361→export function IBKRStrategy() {
+   362→  const [data, setData] = useState<FunnelResponse | null>(null);
+   363→  const [loading, setLoading] = useState(false);
+   364→  const [error, setError] = useState<string | null>(null);
+   365→  const [hasScanned, setHasScanned] = useState(false);
+   366→
+   367→  const runScan = useCallback(async () => {
+   368→    setLoading(true); setError(null);
+   369→    try {
+   370→      const res = await fetch('/api/ibkr-scan?_t=' + Date.now(), { cache: 'no-store' });
+   371→      const json = await res.json();
+   372→      if (!res.ok) throw new Error(json.error || 'Gabim');
+   373→      setData(json); setHasScanned(true);
+   374→    } catch (err: any) {
+   375→      setError(err?.message || 'Gabim rrjeti');
+   376→    } finally { setLoading(false); }
+   377→  }, []);
+   378→
+   379→  useEffect(() => { runScan(); }, [runScan]);
+   380→
+   381→  const readyStocks = data?.results.filter(r => r.decision === 'READY') || [];
+   382→  const otherStocks = data?.results.filter(r => r.decision !== 'READY') || [];
+   383→
+   384→  return (
+   385→    <div className="space-y-4">
+   386→      {/* Overview */}
+   387→      <Card className="border-emerald-500/20 bg-emerald-500/5">
+   388→        <CardContent className="p-5">
+   389→          <div className="flex items-center gap-3 mb-3">
+   390→            <div className="bg-emerald-500/15 rounded-lg p-2.5"><TrendingUp className="w-6 h-6 text-emerald-400" /></div>
+   391→            <div>
+   392→              <h2 className="text-lg font-bold text-foreground">Strategjia: Trend Pullback Swing</h2>
+   393→              <p className="text-[13px] text-muted-foreground">Funnel: 200 → Liquidity → Trend → Setup → Risk Gate → 5-10 Top Stocks</p>
+   394→            </div>
+   395→          </div>
+   396→          <p className="text-[14px] text-muted-foreground leading-relaxed">
+   397→            Swing trading i rregulluar nga trendi per <strong className="text-foreground">IBKR</strong>.
+   398→            Komponimi: <Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">25% Trend</Badge> +
+   399→            <Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">20% RS</Badge> +
+   400→            <Badge variant="outline" className="mx-0.5 text-[11px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">15% Momentum</Badge> +
+   401→            <Badge variant="outline" className="mx-0.5 text-[11px] border-cyan-500/30 text-cyan-400 bg-cyan-500/10">15% Volum</Badge> +
+   402→            <Badge variant="outline" className="mx-0.5 text-[11px] border-amber-500/30 text-amber-400 bg-amber-500/10">10% Setup</Badge> +
+   403→            <Badge variant="outline" className="mx-0.5 text-[11px] border-red-500/30 text-red-400 bg-red-500/10">5% Risk</Badge>
+   404→          </p>
+   405→        </CardContent>
+   406→      </Card>
+   407→
+   408→      {/* Live Scan */}
+   409→      <Card className="border-blue-500/20 bg-blue-500/5">
+   410→        <CardContent className="p-5">
+   411→          <div className="flex items-center justify-between flex-wrap gap-3">
+   412→            <div className="flex items-center gap-3">
+   413→              <Activity className="w-5 h-5 text-blue-400" />
+   414→              <div>
+   415→                <h3 className="text-[15px] font-bold text-foreground">Funnel Scanner — 200 Aksione</h3>
+   416→                <p className="text-[13px] text-muted-foreground">200 → likuiditet → trend → setup → risk gate → top stocks</p>
+   417→              </div>
+   418→            </div>
+   419→            <button onClick={runScan} disabled={loading} className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50">
+   420→              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+   421→              {loading ? 'Duke skanuar...' : 'Rifresko'}
+   422→            </button>
+   423→          </div>
+   424→        </CardContent>
+   425→      </Card>
+   426→
+   427→      {/* Loading */}
+   428→      {loading && <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-[200px] rounded-xl" />)}</div>}
+   429→
+   430→      {/* Error */}
+   431→      {error && !loading && (
+   432→        <Card className="border-red-500/20 bg-red-500/5">
+   433→          <CardContent className="flex items-center gap-3 py-4">
+   434→            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
+   435→            <span className="text-sm text-red-400">{error}</span>
+   436→            <button onClick={runScan} className="ml-auto text-sm text-red-500 hover:underline">Provo perseri</button>
+   437→          </CardContent>
+   438→        </Card>
+   439→      )}
+   440→
+   441→      {/* Results */}
+   442→      {data && !loading && (<>
+   443→        <RegimeBanner data={data} />
+   444→
+   445→        {/* Funnel */}
+   446→        {data.funnel && <FunnelViz funnel={data.funnel} />}
+   447→
+   448→        {/* Scan time */}
+   449→        <div className="flex items-center gap-4 text-[13px] text-muted-foreground flex-wrap">
+   450→          <span><strong className="text-emerald-400">{readyStocks.length}</strong> READY</span>
+   451→          <span>·</span>
+   452→          <span><strong className="text-amber-400">{otherStocks.length}</strong> WATCHLIST / OTHER</span>
+   453→          {data.scannedAt && (<><span>·</span><span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(data.scannedAt).toLocaleTimeString('sq-AL')}</span></>)}
+   454→        </div>
+   455→
+   456→        {/* READY stocks */}
+   457→        {readyStocks.length > 0 && (
+   458→          <div className="space-y-3">
+   459→            <p className="text-[13px] text-emerald-400 font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> READY — Kandidate per IBKR Bracket Order ({readyStocks.length})</p>
+   460→            {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} />)}
+   461→          </div>
+   462→        )}
+   463→
+   464→        {/* Other stocks */}
+   465→        {otherStocks.length > 0 && (
+   466→          <div className="space-y-3">
+   467→            <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2"><Eye className="w-4 h-4" /> WATCHLIST / EVENT RISK ({otherStocks.length})</p>
+   468→            {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} />)}
+   469→          </div>
+   470→        )}
+   471→
+   472→        {/* No results */}
+   473→        {data.results.length === 0 && hasScanned && (
+   474→          <Card className="border-border/50 bg-muted/5">
+   475→            <CardContent className="py-8 text-center">
+   476→              <Target className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+   477→              <p className="text-[14px] text-muted-foreground font-medium">Asnje setup i pershtatshem</p>
+   478→              <p className="text-[13px] text-muted-foreground/60 mt-1.5">Asnje aksion nuk kaloi te gjithe fazet e funnel-it. Provo perseri me vone.</p>
+   479→            </CardContent>
+   480→          </Card>
+   481→        )}
+   482→      </>)}
+   483→
+   484→      {/* Strategy Reference (collapsed after scan) */}
+   485→      <Section title="Rregullat e Filtrit (Funnel Steps)" icon={Calculator} color="text-blue-400" defaultOpen={!hasScanned}>
+   486→        <div className="overflow-x-auto">
+   487→          <table className="w-full text-left">
+   488→            <thead><tr className="border-b border-border/50"><th className="pb-2 text-[13px] font-semibold text-muted-foreground w-36">Elementi</th><th className="pb-2 text-[13px] font-semibold text-muted-foreground">Rregulli</th></tr></thead>
+   489→            <tbody>{STRATEGY_RULES.map((r, i) => (
+   490→              <tr key={i} className="border-b border-border/30 last:border-0">
+   491→                <td className="py-3 pr-4"><div className="flex items-center gap-2"><r.icon className={`w-4 h-4 ${r.color} flex-shrink-0`} /><span className="font-semibold text-[13px] text-foreground">{r.element}</span></div></td>
+   492→                <td className="py-3 text-[13px] text-muted-foreground leading-relaxed">{r.rule}</td>
+   493→              </tr>
+   494→            ))}</tbody>
+   495→          </table>
+   496→        </div>
+   497→      </Section>
+   498→
+   499→      <Section title="Rregullat e Hyrjes" icon={Target} color="text-emerald-400" defaultOpen={false}>
+   500→        <ul className="space-y-2.5">{ENTRY_RULES.map((r, i) => (
+   501→          <li key={i} className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" /><span className="text-[13px] text-muted-foreground leading-relaxed">{r}</span></li>
+   502→        ))}</ul>
+   503→        <div className="mt-4 rounded-lg bg-blue-500/5 border border-blue-500/15 p-4">
+   504→          <div className="flex items-start gap-2.5"><BarChart3 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" /><p className="text-[13px] text-blue-300/90 leading-relaxed"><strong>Shembull:</strong> NVDA mbi 50/200 SMA, SMH/QQQ bullish, bie 4d te 20 EMA me volum ne renie, pastaj mbyllet fort. Hyrja pak mbi high; stop nen swing-low. Nese distanca 4%, target 8% per R:R 1:2.</p></div>
+   505→        </div>
+   506→      </Section>
+   507→
+   508→      <Section title="Cka te Mos Bejesh" icon={XCircle} color="text-red-400" defaultOpen={false}>
+   509→        <ul className="space-y-2.5">{DONT_RULES.map((r, i) => (
+   510→          <li key={i} className="flex items-start gap-2.5"><XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" /><span className="text-[13px] text-muted-foreground leading-relaxed">{r}</span></li>
+   511→        ))}</ul>
+   512→      </Section>
+   513→
+   514→      <Section title="Si ta Perdorosh IBKR" icon={Zap} color="text-violet-400" defaultOpen={false}>
+   515→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   516→          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Entry</p><p className="text-[13px] text-muted-foreground leading-relaxed">Buy limit per pullback ose buy stop-limit per breakout.</p></div>
+   517→          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Stop-Loss</p><p className="text-[13px] text-muted-foreground leading-relaxed">Sipas struktures se chart-it, jo nje perqindje arbitrare.</p></div>
+   518→          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-4"><p className="font-semibold text-[13px] text-emerald-400 mb-1.5">Take-Profit</p><p className="text-[13px] text-muted-foreground leading-relaxed">Target 2R; ne 1R shesh 25-50%, cosh stop-in ne breakeven.</p></div>
+   519→          <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-4"><p className="font-semibold text-[13px] text-amber-400 mb-1.5">Trailing Stop</p><p className="text-[13px] text-muted-foreground leading-relaxed">Vetem ne fitim, trend i forte. Stop-i nuk leviz prapa.</p></div>
+   520→        </div>
+   521→      </Section>
+   522→
+   523→      <Section title="Sistemi (NO_TRADE-first Gates)" icon={Layers} color="text-emerald-400" defaultOpen={false}>
+   524→        <p className="text-[13px] text-muted-foreground leading-relaxed mb-3">Sistemi vepron vetem kur tregu, sektori dhe setup-i jane ne harmoni.</p>
+   525→        <div className="space-y-2">{SYSTEM_GATES.map((g, i) => (
+   526→          <div key={i} className="flex items-start gap-3 rounded-lg bg-muted/5 p-3">
+   527→            <g.icon className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+   528→            <div><p className="font-semibold text-[13px] text-foreground">{g.gate}</p><p className="text-[13px] text-muted-foreground leading-relaxed">{g.desc}</p></div>
+   529→            <ArrowRight className="w-4 h-4 text-emerald-400/50 mt-1 flex-shrink-0" />
+   530→          </div>
+   531→        ))}</div>
+   532→      </Section>
+   533→
+   534→      {/* Score formula reference */}
+   535→      <div className="border border-blue-500/20 rounded-lg px-4 py-3 bg-blue-500/5">
+   536→        <p className="text-[12px] text-blue-400/70 leading-relaxed">
+   537→          <strong>Score =</strong> 25% Trend Quality + 20% Relative Strength + 15% Momentum + 15% Volume Confirmation + 10% Setup Quality + 10% Fundamentals (placeholder) + 5% Risk Quality. Nje score i larte teknik nuk e kompensoj event-risk-un. Nje aksion me score 88 por earnings neserr marre <strong>EVENT_RISK</strong> ose <strong>NO_TRADE</strong>.
+   538→        </p>
+   539→      </div>
+   540→    </div>
+   541→  );
+   542→}
+   543→
