@@ -372,7 +372,7 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             )}
 
             {/* Event Risk */}
-            {stock.eventRisk && stock.eventRisk !== 'No events detected' && (
+            {stock.eventRisk && !/^(No events detected|Asnjë ngjarje)/.test(stock.eventRisk) && (
               <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/15">
                 <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                 <div><p className="text-[12px] font-semibold text-red-400">Event Risk</p><p className="text-[13px] text-red-300/80">{stock.eventRisk}</p></div>
