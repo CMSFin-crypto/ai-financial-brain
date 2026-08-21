@@ -4,84 +4,57 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Shield,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  Target,
-  BarChart3,
-  DollarSign,
-  Clock,
-  Layers,
-  Zap,
-  ArrowRight,
-  Calculator,
-  ChevronDown,
-  ChevronUp,
-  RefreshCw,
-  Eye,
-  EyeOff,
-  Activity,
+  Shield, TrendingUp, AlertTriangle, CheckCircle2, XCircle, Target,
+  BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
+  ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
+  Filter, ArrowDown, CircleDot,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 // ── Types ──
-interface ScanResult {
-  symbol: string;
-  price: number;
-  setup: 'PULLBACK' | 'BREAKOUT' | 'NONE';
-  setupScore: number;
-  aboveSMA50: boolean;
-  aboveSMA200: boolean;
-  sma50Above200: boolean;
-  trendScore: number;
-  pullbackDays: number;
-  pullbackPct: number;
-  distFromEMA10: number;
-  distFromEMA20: number;
-  rsi: number;
-  atr: number;
-  volRatio: number;
-  volDeclining: boolean;
-  lastDaySpike: boolean;
-  rsVsSPY: number;
-  rsVsQQQ: number;
-  entry: number;
-  stop: number;
-  target1R: number;
-  target2R: number;
-  riskPct: number;
-  rewardRiskRatio: number;
-  swingLow: number;
-  spyAbove50: boolean;
-  spyAbove200: boolean;
-  qqqAbove50: boolean;
-  qqqAbove200: boolean;
-  regimeOk: boolean;
-  passed: boolean;
-  reasons: string[];
-  warnings: string[];
+type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
+
+interface FunnelStock {
+  symbol: string; price: number;
+  avgVol20d: number; avgDolVol20d: number;
+  passedLiquidity: boolean; passedTrend: boolean;
+  trendScore: number; rsScore: number; momentumScore: number;
+  volConfScore: number; setupScore: number; riskScore: number; totalScore: number;
+  setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
+  horizon: string; rsi: number; atr: number; atrPct: number;
+  volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
+  pullbackDays: number; pullbackPct: number;
+  distFromEMA10: number; distFromEMA20: number;
+  aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean;
+  rsVsSPY: number; rsVsQQQ: number; rsVsSPY60d: number;
+  entry: number; stop: number; target1R: number; target2R: number;
+  riskPct: number; rewardRiskRatio: number; swingLow: number;
+  decision: Decision; reasons: string[]; warnings: string[];
 }
 
-interface ScanResponse {
-  scannedAt: string;
-  regimeOk: boolean;
+interface FunnelResponse {
+  scannedAt: string; regimeOk: boolean;
   regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
-  results: ScanResult[];
-  summary: { total: number; passed: number; rejected: number };
+  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; };
+  results: FunnelStock[];
 }
 
-// ── Strategy Data ──
+// ── Decision styling ──
+const DECISION_STYLE: Record<Decision, { bg: string; text: string; border: string; label: string }> = {
+  READY:        { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', label: 'READY' },
+  WATCHLIST:    { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', label: 'WATCHLIST' },
+  EVENT_RISK:   { bg: 'bg-red-500/15', text: 'text-red-400', border: 'border-red-500/30', label: 'EVENT RISK' },
+  EXTENDED:     { bg: 'bg-orange-500/15', text: 'text-orange-400', border: 'border-orange-500/30', label: 'EXTENDED' },
+  NO_TRADE:     { bg: 'bg-muted/15', text: 'text-muted-foreground', border: 'border-muted/30', label: 'NO TRADE' },
+};
+
+// ── Strategy Reference Data ──
 const STRATEGY_RULES = [
-  { element: 'Universe', icon: Layers, rule: 'Large-cap ose ETF likuide: NVDA, AMD, MSFT, AAPL, AMZN, META, GOOGL, ETF si QQQ/SPY/SMH', color: 'text-blue-400' },
-  { element: 'Regjimi', icon: Shield, rule: 'Long vetem kur SPY dhe QQQ jane mesataren 50-ditore dhe 200-ditore', color: 'text-emerald-400' },
-  { element: 'Trend', icon: TrendingUp, rule: 'Aksioni mbi 50 SMA dhe 200 SMA; 50 SMA mbi 200 SMA', color: 'text-emerald-400' },
-  { element: 'Relative Strength', icon: BarChart3, rule: 'Aksioni duhet te jete me i forte se SPY/QQQ ne 1-3 muaj', color: 'text-blue-400' },
-  { element: 'Setup Hyrjeje', icon: Target, rule: 'Pullback 3-8 dite drejt 10/20 EMA ose breakout mbi rezistencen', color: 'text-amber-400' },
-  { element: 'Konfirmimi', icon: CheckCircle2, rule: 'Volum mbi mesataren ne diten e kthimit/breakout; RSI aferesisht 45-65, jo ekstrem', color: 'text-emerald-400' },
-  { element: 'Risku', icon: AlertTriangle, rule: 'Maksimum 0.5-1% e llogarise ne nje trade', color: 'text-red-400' },
-  { element: 'Dalja', icon: Zap, rule: 'Stop nen swing-low/1-1.5 ATR; target fillestar te pakten 2R', color: 'text-amber-400' },
+  { element: 'Universe', icon: Layers, rule: '200 kompani te medha, likuide, tregtueshme ne IBKR', color: 'text-blue-400' },
+  { element: 'Filtri mekanik', icon: Filter, rule: 'Cmimi >= $10, Vol >= 1M, DolVol >= $20M, mbi SMA50, SMA50 > SMA200, RS > SPY', color: 'text-emerald-400' },
+  { element: 'Analize teknike', icon: BarChart3, rule: 'Trend, momentum, RS, ATR, setup quality, volum konfirmim', color: 'text-blue-400' },
+  { element: 'Event-risk gate', icon: AlertTriangle, rule: 'R:R >= 1:2, RSI 30-75, risk <= 8%, regjimi i tregut, jo extended', color: 'text-red-400' },
+  { element: 'Top Stocks', icon: Target, rule: '5-10 kandidate me score me te larte, READY ose WATCHLIST', color: 'text-amber-400' },
 ];
 
 const ENTRY_RULES = [
@@ -89,38 +62,34 @@ const ENTRY_RULES = [
   'Kompania ka raport te mire earnings, rritje te te ardhurave/fitimit ose katalizator te qarte.',
   'Cmimi eshte mbi 50 SMA dhe 200 SMA.',
   'Ka bere pullback te kontrolluar me volum me te ulet, pastaj jep candle rikthimi me volum.',
-  'Entry vendose mbi high-in e candle-it te konfirmimit, zakonisht me buy stop-limit ose limit ne pullback; mos e ndiq cmimin pas nje qiriu shume te zgjeruar.',
+  'Entry vendose mbi high-in e candle-it te konfirmimit, zakonisht me buy stop-limit ose limit ne pullback.',
 ];
 
 const DONT_RULES = [
   'Mos bej day trading te rastessishem vetem sepse IBKR e ben execution-in te lehte.',
-  'Mos hy para earnings nese nuk je duke tregtuar qellimisht event risk; gap-i mund ta kaloje stop-in.',
+  'Mos hy para earnings nese nuk je duke tregtuar qellimisht event risk.',
   'Mos ble aksione qe jane 10-15% mbi 10/20 EMA pas nje rally te shpejte.',
-  'Mos perdor leverage/margin derisa strategjia te jete e testuar me journal, paper trading dhe pozicione te vogla live.',
-  'Mos u mbeshtet vetem te RSI ose MACD; keta jane filtra, jo edge i mjaftueshem me vete.',
+  'Mos perdor leverage/margin derisa strategjia te jete e testuar.',
+  'Mos u mbeshtet vetem te RSI ose MACD; keta jane filtra, jo edge i vetem.',
 ];
 
 const SYSTEM_GATES = [
   { gate: 'Market Regime', desc: 'SPY/QQQ mbi 50 dhe 200 SMA', icon: Shield },
-  { gate: 'Sector Confirmation', desc: 'Sektori perkates (p.sh. SMH per NVDA/AMD) duhet te jete i forte', icon: Layers },
-  { gate: 'Stock Trend + RS', desc: 'Mbi 50/200 SMA dhe outperform ndaj SPY', icon: TrendingUp },
-  { gate: 'Pullback Quality', desc: 'ATR, volum, distance nga EMA dhe strukture support/resistance', icon: BarChart3 },
-  { gate: 'Event-Risk Gate', desc: 'Earnings, CPI, FOMC, jobs report', icon: AlertTriangle },
-  { gate: 'Position Sizing', desc: 'IBKR bracket order automatik', icon: DollarSign },
-  { gate: 'Auto-Pause', desc: 'Nese slippage, drawdown ose performanca out-of-sample degradojne', icon: Clock },
+  { gate: 'Liquidity', desc: 'Vol > 1M, DolVol > $20M, cmimi > $10', icon: DollarSign },
+  { gate: 'Trend + RS', desc: 'Mbi 50/200 SMA, RS > SPY ne 60d', icon: TrendingUp },
+  { gate: 'Setup Quality', desc: 'Pullback/Breakout me volum, RSI, EMA proximity', icon: BarChart3 },
+  { gate: 'Risk Gate', desc: 'R:R >= 1:2, risk <= 8%, RSI 30-75', icon: AlertTriangle },
+  { gate: 'IBKR Bracket', desc: 'Entry + Stop + Take-profit automatik', icon: Target },
 ];
 
-// ── Section wrapper ──
+// ── Section ──
 function Section({ title, icon: Icon, children, color = 'text-emerald-400', defaultOpen = true }: {
   title: string; icon: any; children: React.ReactNode; color?: string; defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Card className="border-border/50 bg-card">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/5 transition-colors rounded-t-lg"
-      >
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/5 transition-colors rounded-t-lg">
         <Icon className={`w-5 h-5 ${color} flex-shrink-0`} />
         <span className="font-semibold text-[15px] text-foreground flex-1">{title}</span>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
@@ -130,96 +99,92 @@ function Section({ title, icon: Icon, children, color = 'text-emerald-400', defa
   );
 }
 
-// ── Setup Card ──
-function SetupCard({ stock, rank, showRejected }: { stock: ScanResult; rank: number; showRejected: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const isGood = stock.passed;
-  const setupColor = stock.setup === 'PULLBACK' ? 'text-amber-400' : stock.setup === 'BREAKOUT' ? 'text-blue-400' : 'text-muted-foreground';
-  const setupBg = stock.setup === 'PULLBACK' ? 'bg-amber-500/15 border-amber-500/30' : 'bg-blue-500/15 border-blue-500/30';
-
-  if (!showRejected && !isGood) return null;
+// ── Funnel Visualization ──
+function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
+  const steps = [
+    { label: 'Universe', count: funnel.universe, color: 'bg-blue-500/20 text-blue-400' },
+    { label: 'Liquidity', count: funnel.passedLiquidity, color: 'bg-cyan-500/20 text-cyan-400' },
+    { label: 'Trend + RS', count: funnel.passedTrend, color: 'bg-emerald-500/20 text-emerald-400' },
+    { label: 'Setup', count: funnel.passedSetup, color: 'bg-violet-500/20 text-violet-400' },
+    { label: 'Risk Gate', count: funnel.passedRisk, color: 'bg-amber-500/20 text-amber-400' },
+    { label: 'Top Stocks', count: funnel.displayed, color: 'bg-emerald-500/20 text-emerald-400' },
+  ];
 
   return (
-    <Card className={`${isGood ? 'border-emerald-500/30' : 'border-border/30'} bg-card hover:border-border transition-all`}>
+    <div className="flex items-center gap-1 flex-wrap">
+      {steps.map((s, i) => (
+        <div key={s.label} className="flex items-center gap-1">
+          <div className={`rounded-md px-2.5 py-1.5 text-center ${s.color}`}>
+            <p className="text-[11px] font-medium opacity-70">{s.label}</p>
+            <p className="text-[15px] font-bold">{s.count}</p>
+          </div>
+          {i < steps.length - 1 && <ArrowDown className="w-3.5 h-3.5 text-muted-foreground/40" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Stock Card ──
+function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const ds = DECISION_STYLE[stock.decision];
+  const setupColor = stock.setup === 'PULLBACK' ? 'text-amber-400' : stock.setup === 'BREAKOUT' ? 'text-blue-400' : stock.setup === 'TREND_CONT' ? 'text-emerald-400' : 'text-muted-foreground';
+  const setupBg = stock.setup === 'PULLBACK' ? 'bg-amber-500/15 border-amber-500/30' : stock.setup === 'BREAKOUT' ? 'bg-blue-500/15 border-blue-500/30' : 'bg-emerald-500/15 border-emerald-500/30';
+
+  return (
+    <Card className={`border-border/50 bg-card hover:border-border transition-all ${stock.decision === 'READY' ? 'border-emerald-500/30' : ''}`}>
       <CardContent className="p-4">
         {/* Top row */}
         <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${rank <= 3 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/30 text-muted-foreground'}`}>
-            {rank}
-          </div>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${rank <= 3 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/30 text-muted-foreground'}`}>{rank}</div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-base text-foreground">{stock.symbol}</span>
               <Badge className={`${setupBg} ${setupColor} text-[12px] px-2.5 py-0.5 font-semibold`} variant="outline">
-                {stock.setup === 'PULLBACK' ? 'PULLBACK' : 'BREAKOUT'}
+                {stock.setup === 'TREND_CONT' ? 'TREND CONT' : stock.setup}
               </Badge>
-              <Badge className={`${isGood ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-red-500/15 text-red-400 border-red-500/30'} text-[12px] px-2.5 py-0.5 font-semibold`} variant="outline">
-                {isGood ? 'GATE PASS' : 'WATCHER'}
+              <Badge className={`${ds.bg} ${ds.text} ${ds.border} text-[12px] px-2.5 py-0.5 font-semibold`} variant="outline">
+                {ds.label}
               </Badge>
-              {!stock.regimeOk && (
-                <Badge className="bg-red-500/10 text-red-400/80 border-red-500/20 text-[11px] px-2 py-0.5" variant="outline">
-                  REGJIMI JO OK
-                </Badge>
-              )}
+              <Badge variant="outline" className="text-[11px] border-border/30 text-muted-foreground px-2 py-0.5">{stock.horizon}</Badge>
             </div>
             <p className="text-[13px] text-muted-foreground mt-1">
-              ${stock.price.toFixed(2)} · {stock.pullbackDays}d pullback ({stock.pullbackPct > 0 ? '+' : ''}{stock.pullbackPct.toFixed(1)}%)
+              ${stock.price.toFixed(2)} · Pullback {stock.pullbackDays}d ({stock.pullbackPct > 0 ? '+' : ''}{stock.pullbackPct.toFixed(1)}%)
             </p>
           </div>
           <div className="text-right flex-shrink-0">
-            <div className={`text-2xl font-bold ${stock.setupScore >= 70 ? 'text-emerald-400' : stock.setupScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
-              {stock.setupScore}
-            </div>
-            <div className="text-[12px] text-muted-foreground">Setup Score</div>
+            <div className={`text-2xl font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}</div>
+            <div className="text-[12px] text-muted-foreground">Score</div>
           </div>
         </div>
 
-        {/* Quick metrics row */}
-        <div className="mt-3 grid grid-cols-6 gap-2">
-          <div className="rounded-md p-2 text-center bg-muted/5">
-            <p className="text-[11px] text-muted-foreground font-medium">Trend</p>
-            <p className={`text-[14px] font-bold ${stock.trendScore >= 70 ? 'text-emerald-400' : stock.trendScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.trendScore}</p>
-          </div>
-          <div className="rounded-md p-2 text-center bg-muted/5">
-            <p className="text-[11px] text-muted-foreground font-medium">RSI</p>
-            <p className={`text-[14px] font-bold ${stock.rsi >= 45 && stock.rsi <= 65 ? 'text-emerald-400' : stock.rsi > 65 ? 'text-amber-400' : 'text-red-400'}`}>{stock.rsi}</p>
-          </div>
-          <div className="rounded-md p-2 text-center bg-muted/5">
-            <p className="text-[11px] text-muted-foreground font-medium">RS vs SPY</p>
-            <p className={`text-[14px] font-bold ${stock.rsVsSPY > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{stock.rsVsSPY > 0 ? '+' : ''}{stock.rsVsSPY.toFixed(1)}%</p>
-          </div>
-          <div className="rounded-md p-2 text-center bg-muted/5">
-            <p className="text-[11px] text-muted-foreground font-medium">Risk</p>
-            <p className={`text-[14px] font-bold ${stock.riskPct <= 4 ? 'text-emerald-400' : stock.riskPct <= 6 ? 'text-amber-400' : 'text-red-400'}`}>{stock.riskPct.toFixed(1)}%</p>
-          </div>
-          <div className="rounded-md p-2 text-center bg-muted/5">
-            <p className="text-[11px] text-muted-foreground font-medium">Vol</p>
-            <p className={`text-[14px] font-bold ${stock.volDeclining ? 'text-emerald-400' : 'text-muted-foreground'}`}>{stock.volDeclining ? 'Bije' : 'Normale'}</p>
-          </div>
-          <div className="rounded-md p-2 text-center bg-muted/5">
-            <p className="text-[11px] text-muted-foreground font-medium">R:R</p>
-            <p className="text-[14px] font-bold text-emerald-400">1:{stock.rewardRiskRatio}</p>
-          </div>
+        {/* Score breakdown - 6 sub-scores */}
+        <div className="mt-3 grid grid-cols-6 gap-1.5">
+          <ScoreCell label="Trend" value={stock.trendScore} />
+          <ScoreCell label="RS" value={stock.rsScore} />
+          <ScoreCell label="Momentum" value={stock.momentumScore} />
+          <ScoreCell label="Volum" value={stock.volConfScore} />
+          <ScoreCell label="Setup" value={stock.setupScore} />
+          <ScoreCell label="Risk" value={stock.riskScore} />
         </div>
 
-        {/* Entry/Stop/Target box */}
+        {/* Entry / Stop / Target */}
         <div className="mt-3 grid grid-cols-4 gap-2">
-          <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 p-3 text-center">
-            <p className="text-[11px] text-blue-400 font-medium">ENTRY</p>
-            <p className="text-[15px] font-bold text-foreground">${stock.entry.toFixed(2)}</p>
-          </div>
-          <div className="rounded-lg bg-red-500/5 border border-red-500/15 p-3 text-center">
-            <p className="text-[11px] text-red-400 font-medium">STOP</p>
-            <p className="text-[15px] font-bold text-red-400">${stock.stop.toFixed(2)}</p>
-          </div>
-          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-3 text-center">
-            <p className="text-[11px] text-emerald-400 font-medium">TARGET 1R</p>
-            <p className="text-[15px] font-bold text-emerald-400">${stock.target1R.toFixed(2)}</p>
-          </div>
-          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3 text-center">
-            <p className="text-[11px] text-emerald-400 font-medium">TARGET 2R</p>
-            <p className="text-[15px] font-bold text-emerald-400">${stock.target2R.toFixed(2)}</p>
-          </div>
+          <EntryBox label="ENTRY" value={stock.entry} color="text-blue-400" bg="bg-blue-500/5 border-blue-500/15" />
+          <EntryBox label="STOP" value={stock.stop} color="text-red-400" bg="bg-red-500/5 border-red-500/15" />
+          <EntryBox label="TARGET 1R" value={stock.target1R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/15" />
+          <EntryBox label="TARGET 2R" value={stock.target2R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/20" />
+        </div>
+
+        {/* Quick stats row */}
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+          <span>RSI <strong className={stock.rsi >= 40 && stock.rsi <= 65 ? 'text-emerald-400' : 'text-amber-400'}>{stock.rsi}</strong></span>
+          <span>R:R <strong className={stock.rewardRiskRatio >= 2 ? 'text-emerald-400' : 'text-amber-400'}>1:{stock.rewardRiskRatio}</strong></span>
+          <span>Risk <strong className={stock.riskPct <= 4 ? 'text-emerald-400' : stock.riskPct <= 6 ? 'text-amber-400' : 'text-red-400'}>{stock.riskPct}%</strong></span>
+          <span>RS SPY <strong className={stock.rsVsSPY > 0 ? 'text-emerald-400' : 'text-red-400'}>{stock.rsVsSPY > 0 ? '+' : ''}{stock.rsVsSPY.toFixed(1)}%</strong></span>
+          <span>ATR {stock.atrPct}%</span>
+          <span>DolVol ${(stock.avgDolVol20d / 1e6).toFixed(0)}M</span>
         </div>
 
         {/* Reasons */}
@@ -227,9 +192,7 @@ function SetupCard({ stock, rank, showRejected }: { stock: ScanResult; rank: num
           <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-blue-500/5 border border-blue-500/15">
             <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
             <div className="space-y-1 min-w-0">
-              {stock.reasons.map((r, i) => (
-                <p key={i} className="text-[13px] text-blue-300/80 leading-relaxed">· {r}</p>
-              ))}
+              {stock.reasons.map((r, i) => <p key={i} className="text-[13px] text-blue-300/80 leading-relaxed">· {r}</p>)}
             </div>
           </div>
         )}
@@ -239,9 +202,7 @@ function SetupCard({ stock, rank, showRejected }: { stock: ScanResult; rank: num
           <div className="mt-2 flex items-start gap-2.5 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/15">
             <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
             <div className="space-y-1 min-w-0">
-              {stock.warnings.map((w, i) => (
-                <p key={i} className="text-[13px] text-amber-300/80 leading-relaxed">· {w}</p>
-              ))}
+              {stock.warnings.map((w, i) => <p key={i} className="text-[13px] text-amber-300/80 leading-relaxed">· {w}</p>)}
             </div>
           </div>
         )}
@@ -252,30 +213,48 @@ function SetupCard({ stock, rank, showRejected }: { stock: ScanResult; rank: num
             <div className="grid grid-cols-2 gap-2">
               <div>SMA 50: <span className={stock.aboveSMA50 ? 'text-emerald-400' : 'text-red-400'}>{stock.aboveSMA50 ? 'Mbi' : 'Nen'}</span></div>
               <div>SMA 200: <span className={stock.aboveSMA200 ? 'text-emerald-400' : 'text-red-400'}>{stock.aboveSMA200 ? 'Mbi' : 'Nen'}</span></div>
-              <div>50 / 200 SMA: <span className={stock.sma50Above200 ? 'text-emerald-400' : 'text-red-400'}>{stock.sma50Above200 ? 'Po' : 'Jo'}</span></div>
+              <div>50/200: <span className={stock.sma50Above200 ? 'text-emerald-400' : 'text-red-400'}>{stock.sma50Above200 ? 'Golden' : 'Death'}</span></div>
               <div>ATR: ${stock.atr.toFixed(2)}</div>
-              <div>Distanca EMA10: {stock.distFromEMA10 > 0 ? '+' : ''}{stock.distFromEMA10.toFixed(1)}%</div>
-              <div>Distanca EMA20: {stock.distFromEMA20 > 0 ? '+' : ''}{stock.distFromEMA20.toFixed(1)}%</div>
+              <div>Dist EMA10: {stock.distFromEMA10 > 0 ? '+' : ''}{stock.distFromEMA10.toFixed(1)}%</div>
+              <div>Dist EMA20: {stock.distFromEMA20 > 0 ? '+' : ''}{stock.distFromEMA20.toFixed(1)}%</div>
               <div>RS vs QQQ: {stock.rsVsQQQ > 0 ? '+' : ''}{stock.rsVsQQQ.toFixed(1)}%</div>
+              <div>RS 60d vs SPY: {stock.rsVsSPY60d > 0 ? '+' : ''}{stock.rsVsSPY60d.toFixed(1)}%</div>
               <div>Swing Low: ${stock.swingLow.toFixed(2)}</div>
+              <div>Vol Ratio: {stock.volRatio}x</div>
             </div>
           </div>
         )}
 
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-center gap-1.5 mt-2.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
-        >
+        <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-center gap-1.5 mt-2.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          {expanded ? 'Fshi detajet' : 'Shiko me shume detaje'}
+          {expanded ? 'Fshi detajet' : 'Shiko detajet'}
         </button>
       </CardContent>
     </Card>
   );
 }
 
+function ScoreCell({ label, value }: { label: string; value: number }) {
+  const c = value >= 70 ? 'text-emerald-400' : value >= 50 ? 'text-amber-400' : 'text-red-400';
+  return (
+    <div className="rounded-md p-1.5 text-center bg-muted/5">
+      <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+      <p className={`text-[14px] font-bold ${c}`}>{value}</p>
+    </div>
+  );
+}
+
+function EntryBox({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
+  return (
+    <div className={`rounded-lg ${bg} border p-2.5 text-center`}>
+      <p className={`text-[11px] ${color} font-medium`}>{label}</p>
+      <p className={`text-[14px] font-bold ${color}`}>${value.toFixed(2)}</p>
+    </div>
+  );
+}
+
 // ── Regime Banner ──
-function RegimeBanner({ data }: { data: ScanResponse }) {
+function RegimeBanner({ data }: { data: FunnelResponse }) {
   const { regimeDetail, regimeOk } = data;
   return (
     <Card className={`${regimeOk ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
@@ -284,15 +263,11 @@ function RegimeBanner({ data }: { data: ScanResponse }) {
           <Shield className={`w-5 h-5 ${regimeOk ? 'text-emerald-400' : 'text-red-400'} flex-shrink-0`} />
           <div className="flex-1">
             <p className={`text-[14px] font-semibold ${regimeOk ? 'text-emerald-400' : 'text-red-400'}`}>
-              {regimeOk ? 'REGJIMI OK — Mund te besh Long Trades' : 'REGJIMI JO OK — Vetem Watcher Mode'}
+              {regimeOk ? 'REGJIMI OK — Mund te besh Long Trades' : 'REGJIMI JO OK — Vetem WATCHLIST'}
             </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[13px]">
-              <span className="text-muted-foreground">
-                SPY: <span className={regimeDetail.spy.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.spy.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above200 ? 'Mbi 200' : 'Nen 200'}</span>
-              </span>
-              <span className="text-muted-foreground">
-                QQQ: <span className={regimeDetail.qqq.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.qqq.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above200 ? 'Mbi 200' : 'Nen 200'}</span>
-              </span>
+              <span className="text-muted-foreground">SPY: <span className={regimeDetail.spy.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.spy.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above200 ? 'Mbi 200' : 'Nen 200'}</span></span>
+              <span className="text-muted-foreground">QQQ: <span className={regimeDetail.qqq.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.qqq.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above200 ? 'Mbi 200' : 'Nen 200'}</span></span>
             </div>
           </div>
         </div>
@@ -301,102 +276,77 @@ function RegimeBanner({ data }: { data: ScanResponse }) {
   );
 }
 
-// ── Main Component ──
+// ═══════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════
 export function IBKRStrategy() {
-  const [data, setData] = useState<ScanResponse | null>(null);
+  const [data, setData] = useState<FunnelResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showRejected, setShowRejected] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
 
   const runScan = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const res = await fetch('/api/ibkr-scan?_t=' + Date.now(), { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Gabim');
-      setData(json);
-      setHasScanned(true);
+      setData(json); setHasScanned(true);
     } catch (err: any) {
       setError(err?.message || 'Gabim rrjeti');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
-  // Auto-scan on mount
   useEffect(() => { runScan(); }, [runScan]);
 
-  const passedStocks = data?.results.filter(r => r.passed) || [];
-  const rejectedStocks = data?.results.filter(r => !r.passed) || [];
+  const readyStocks = data?.results.filter(r => r.decision === 'READY') || [];
+  const otherStocks = data?.results.filter(r => r.decision !== 'READY') || [];
 
   return (
     <div className="space-y-4">
-      {/* Strategy Overview */}
+      {/* Overview */}
       <Card className="border-emerald-500/20 bg-emerald-500/5">
         <CardContent className="p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="bg-emerald-500/15 rounded-lg p-2.5">
-              <TrendingUp className="w-6 h-6 text-emerald-400" />
-            </div>
+            <div className="bg-emerald-500/15 rounded-lg p-2.5"><TrendingUp className="w-6 h-6 text-emerald-400" /></div>
             <div>
               <h2 className="text-lg font-bold text-foreground">Strategjia: Trend Pullback Swing</h2>
-              <p className="text-[13px] text-muted-foreground">Syno trade 5-20 ditore, jo day trading te vazhdueshme</p>
+              <p className="text-[13px] text-muted-foreground">Funnel: 200 → Liquidity → Trend → Setup → Risk Gate → 5-10 Top Stocks</p>
             </div>
           </div>
           <p className="text-[14px] text-muted-foreground leading-relaxed">
-            Per ty, strategjia me e mire ne IBKR eshte <strong className="text-foreground">swing trading i rregulluar nga trendi</strong>, duke kombinuar
-            <Badge variant="outline" className="mx-1 text-[12px] border-blue-500/30 text-blue-400 bg-blue-500/10">fundamentet</Badge> +
-            <Badge variant="outline" className="mx-1 text-[12px] border-violet-500/30 text-violet-400 bg-violet-500/10">momentum/relative strength</Badge> +
-            <Badge variant="outline" className="mx-1 text-[12px] border-red-500/30 text-red-400 bg-red-500/10">risk management strikt</Badge>.
-            Kjo i pershtatet mire aksioneve likuide amerikane dhe mund te zbatohet paster me bracket orders ne IBKR.
+            Swing trading i rregulluar nga trendi per <strong className="text-foreground">IBKR</strong>.
+            Komponimi: <Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">25% Trend</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">20% RS</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">15% Momentum</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-cyan-500/30 text-cyan-400 bg-cyan-500/10">15% Volum</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-amber-500/30 text-amber-400 bg-amber-500/10">10% Setup</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-red-500/30 text-red-400 bg-red-500/10">5% Risk</Badge>
           </p>
         </CardContent>
       </Card>
 
-      {/* ── LIVE SCAN SECTION ── */}
+      {/* Live Scan */}
       <Card className="border-blue-500/20 bg-blue-500/5">
         <CardContent className="p-5">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <Activity className="w-5 h-5 text-blue-400" />
               <div>
-                <h3 className="text-[15px] font-bold text-foreground">Skanimi Live i Setup-eve</h3>
-                <p className="text-[13px] text-muted-foreground">Aksione qe plotesojne kriteret e strategjise ne kohe reale</p>
+                <h3 className="text-[15px] font-bold text-foreground">Funnel Scanner — 200 Aksione</h3>
+                <p className="text-[13px] text-muted-foreground">200 → likuiditet → trend → setup → risk gate → top stocks</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {data && (
-                <button
-                  onClick={() => setShowRejected(!showRejected)}
-                  className={`flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md border transition-colors ${showRejected ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-border/50 text-muted-foreground hover:text-foreground'}`}
-                >
-                  {showRejected ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  {showRejected ? 'Fshi Watcher' : 'Shiko Watcher'}
-                </button>
-              )}
-              <button
-                onClick={runScan}
-                disabled={loading}
-                className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                {loading ? 'Duke skanuar...' : 'Rifresko' }
-              </button>
-            </div>
+            <button onClick={runScan} disabled={loading} className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Duke skanuar...' : 'Rifresko'}
+            </button>
           </div>
         </CardContent>
       </Card>
 
       {/* Loading */}
-      {loading && (
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-[200px] rounded-xl" />
-          ))}
-        </div>
-      )}
+      {loading && <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-[200px] rounded-xl" />)}</div>}
 
       {/* Error */}
       {error && !loading && (
@@ -409,213 +359,103 @@ export function IBKRStrategy() {
         </Card>
       )}
 
-      {/* Scan Results */}
-      {data && !loading && (
-        <>
-          {/* Regime Check */}
-          <RegimeBanner data={data} />
+      {/* Results */}
+      {data && !loading && (<>
+        <RegimeBanner data={data} />
 
-          {/* Summary */}
-          <div className="flex items-center gap-4 text-[13px] text-muted-foreground">
-            <span><strong className="text-foreground">{data.summary.total}</strong> aksione te skanuar</span>
-            <span>·</span>
-            <span><strong className="text-emerald-400">{data.summary.passed}</strong> plotesojne kriteret</span>
-            <span>·</span>
-            <span><strong className="text-amber-400">{data.summary.rejected}</strong> ne watcher list</span>
-            {data.scannedAt && (
-              <>
-                <span>·</span>
-                <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(data.scannedAt).toLocaleTimeString('sq-AL')}</span>
-              </>
-            )}
+        {/* Funnel */}
+        {data.funnel && <FunnelViz funnel={data.funnel} />}
+
+        {/* Scan time */}
+        <div className="flex items-center gap-4 text-[13px] text-muted-foreground flex-wrap">
+          <span><strong className="text-emerald-400">{readyStocks.length}</strong> READY</span>
+          <span>·</span>
+          <span><strong className="text-amber-400">{otherStocks.length}</strong> WATCHLIST / OTHER</span>
+          {data.scannedAt && (<><span>·</span><span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(data.scannedAt).toLocaleTimeString('sq-AL')}</span></>)}
+        </div>
+
+        {/* READY stocks */}
+        {readyStocks.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-[13px] text-emerald-400 font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> READY — Kandidate per IBKR Bracket Order ({readyStocks.length})</p>
+            {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} />)}
           </div>
+        )}
 
-          {/* Passed setups */}
-          {passedStocks.length > 0 && (
-            <div className="space-y-3">
-              {passedStocks.map((stock, i) => (
-                <SetupCard key={stock.symbol} stock={stock} rank={i + 1} showRejected={true} />
-              ))}
-            </div>
-          )}
+        {/* Other stocks */}
+        {otherStocks.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2"><Eye className="w-4 h-4" /> WATCHLIST / EVENT RISK ({otherStocks.length})</p>
+            {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} />)}
+          </div>
+        )}
 
-          {/* Watcher setups (rejected but notable) */}
-          {showRejected && rejectedStocks.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2">
-                <Eye className="w-4 h-4" />
-                Watcher List ({rejectedStocks.length} aksione)
-              </p>
-              {rejectedStocks.map((stock, i) => (
-                <SetupCard key={stock.symbol} stock={stock} rank={passedStocks.length + i + 1} showRejected={true} />
-              ))}
-            </div>
-          )}
+        {/* No results */}
+        {data.results.length === 0 && hasScanned && (
+          <Card className="border-border/50 bg-muted/5">
+            <CardContent className="py-8 text-center">
+              <Target className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-[14px] text-muted-foreground font-medium">Asnje setup i pershtatshem</p>
+              <p className="text-[13px] text-muted-foreground/60 mt-1.5">Asnje aksion nuk kaloi te gjithe fazet e funnel-it. Provo perseri me vone.</p>
+            </CardContent>
+          </Card>
+        )}
+      </>)}
 
-          {/* No results */}
-          {data.results.length === 0 && hasScanned && (
-            <Card className="border-border/50 bg-muted/5">
-              <CardContent className="py-8 text-center">
-                <Target className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-[14px] text-muted-foreground font-medium">Asnje setup i pershtatshem tani</p>
-                <p className="text-[13px] text-muted-foreground/60 mt-1.5">
-                  Asnje aksion nuk ploteson kriteret e strategjise ne momentin. Provo perseri me vone.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
-
-      {/* Strategy Reference (collapsed by default after scan) */}
-      <Section title="Tabela e Rregullave" icon={Calculator} color="text-blue-400" defaultOpen={!hasScanned}>
+      {/* Strategy Reference (collapsed after scan) */}
+      <Section title="Rregullat e Filtrit (Funnel Steps)" icon={Calculator} color="text-blue-400" defaultOpen={!hasScanned}>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-border/50">
-                <th className="pb-2 text-[13px] font-semibold text-muted-foreground w-44">Elementi</th>
-                <th className="pb-2 text-[13px] font-semibold text-muted-foreground">Rregulli Praktik</th>
+            <thead><tr className="border-b border-border/50"><th className="pb-2 text-[13px] font-semibold text-muted-foreground w-36">Elementi</th><th className="pb-2 text-[13px] font-semibold text-muted-foreground">Rregulli</th></tr></thead>
+            <tbody>{STRATEGY_RULES.map((r, i) => (
+              <tr key={i} className="border-b border-border/30 last:border-0">
+                <td className="py-3 pr-4"><div className="flex items-center gap-2"><r.icon className={`w-4 h-4 ${r.color} flex-shrink-0`} /><span className="font-semibold text-[13px] text-foreground">{r.element}</span></div></td>
+                <td className="py-3 text-[13px] text-muted-foreground leading-relaxed">{r.rule}</td>
               </tr>
-            </thead>
-            <tbody>
-              {STRATEGY_RULES.map((r, i) => (
-                <tr key={i} className="border-b border-border/30 last:border-0">
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center gap-2">
-                      <r.icon className={`w-4 h-4 ${r.color} flex-shrink-0`} />
-                      <span className="font-semibold text-[13px] text-foreground">{r.element}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 text-[13px] text-muted-foreground leading-relaxed">{r.rule}</td>
-                </tr>
-              ))}
-            </tbody>
+            ))}</tbody>
           </table>
         </div>
       </Section>
 
-      {/* Entry Rules */}
       <Section title="Rregullat e Hyrjes" icon={Target} color="text-emerald-400" defaultOpen={false}>
-        <p className="text-[13px] text-muted-foreground mb-3">Hyn vetem kur plotesohen keto kushte:</p>
-        <ul className="space-y-2.5">
-          {ENTRY_RULES.map((rule, i) => (
-            <li key={i} className="flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <span className="text-[13px] text-muted-foreground leading-relaxed">{rule}</span>
-            </li>
-          ))}
-        </ul>
+        <ul className="space-y-2.5">{ENTRY_RULES.map((r, i) => (
+          <li key={i} className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" /><span className="text-[13px] text-muted-foreground leading-relaxed">{r}</span></li>
+        ))}</ul>
         <div className="mt-4 rounded-lg bg-blue-500/5 border border-blue-500/15 p-4">
-          <div className="flex items-start gap-2.5">
-            <BarChart3 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-            <p className="text-[13px] text-blue-300/90 leading-relaxed">
-              <strong>Shembull:</strong> NVDA eshte mbi 50/200 SMA, SMH dhe QQQ jane bullish, NVDA bie 4 dite te 20 EMA me volum ne renie dhe pastaj mbyllet fort mbi high-in e dites paraprake. Hyrja mund te jete pak mbi at high; stop-i nen low-in e pullback-ut. Nese distanca deri te stop-i eshte 4%, targeti minimal duhet te jete rreth 8% per nje raport risk/reward 1:2.
-            </p>
-          </div>
+          <div className="flex items-start gap-2.5"><BarChart3 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" /><p className="text-[13px] text-blue-300/90 leading-relaxed"><strong>Shembull:</strong> NVDA mbi 50/200 SMA, SMH/QQQ bullish, bie 4d te 20 EMA me volum ne renie, pastaj mbyllet fort. Hyrja pak mbi high; stop nen swing-low. Nese distanca 4%, target 8% per R:R 1:2.</p></div>
         </div>
       </Section>
 
-      {/* Position Sizing */}
-      <Section title="Madhesia e Pozicionit" icon={DollarSign} color="text-amber-400" defaultOpen={false}>
-        <div className="space-y-4">
-          <p className="text-[13px] text-muted-foreground leading-relaxed">
-            Mos zgjidh numrin e aksioneve sipas ndjenjes; llogarite nga rreziku:
-          </p>
-          <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-4 text-center">
-            <p className="text-[14px] font-mono font-semibold text-amber-300">
-              Shares = Risku ne dollar / (Entry - Stop)
-            </p>
-          </div>
-          <p className="text-[13px] text-muted-foreground leading-relaxed">
-            Nese llogaria eshte $10,000 dhe rrezikon 0.75% per trade, rreziku maksimal eshte $75. Nese entry eshte $150 dhe stop $144, rreziku per aksion eshte $6, prandaj pozicioni maksimal eshte afersisht 12 aksione.
-          </p>
-          <ul className="space-y-2.5">
-            <li className="flex items-start gap-2.5">
-              <DollarSign className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-              <span className="text-[13px] text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Rrezik per trade:</strong> 0.5% ne fillim; maksimum 1% vetem pasi ke statistike te provuar.
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-              <span className="text-[13px] text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Ekspozim total:</strong> Mos i vendos 5 trade te gjitha ne semiconductors, sepse jane realisht nje bast i vetem sektorial.
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-              <span className="text-[13px] text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Auto-pause:</strong> Ndal hyrjet e reja nese ke 3 humbje radhazi ose drawdown javor mbi 2-3%.
-              </span>
-            </li>
-          </ul>
-        </div>
-      </Section>
-
-      {/* How to use IBKR */}
-      <Section title="Si ta Perdorosh IBKR" icon={Zap} color="text-violet-400" defaultOpen={false}>
-        <div className="space-y-4">
-          <p className="text-[13px] text-muted-foreground leading-relaxed">
-            Per cdo trade perdor <strong className="text-foreground">Bracket Order</strong>: entry, take-profit dhe stop-loss te lidhur. Kur mbushet njerja dalje, tjetra anulohet automatikisht; kjo e ben disiplinen shume me te lehte.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4">
-              <p className="font-semibold text-[13px] text-violet-400 mb-1.5">Entry</p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">Buy limit per pullback ose buy stop-limit per breakout.</p>
-            </div>
-            <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4">
-              <p className="font-semibold text-[13px] text-violet-400 mb-1.5">Stop-Loss</p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">Vendose sipas struktures se chart-it, jo nje perqindje arbitrare.</p>
-            </div>
-            <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-4">
-              <p className="font-semibold text-[13px] text-emerald-400 mb-1.5">Take-Profit</p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">Vendos target fillestar 2R; ne 1R mund te shesh 25-50% dhe stop-in e pjeses se mbetur ta cosh ne breakeven.</p>
-            </div>
-            <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-4">
-              <p className="font-semibold text-[13px] text-amber-400 mb-1.5">Trailing Stop</p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">Perdore vetem kur trade-i eshte tashme ne fitim dhe trendi eshte i forte; IBKR e leviz stop-in lart me cmimin, por stop-i nuk leviz prapa kur cmimi bie.</p>
-            </div>
-          </div>
-        </div>
-      </Section>
-
-      {/* What NOT to do */}
       <Section title="Cka te Mos Bejesh" icon={XCircle} color="text-red-400" defaultOpen={false}>
-        <ul className="space-y-2.5">
-          {DONT_RULES.map((rule, i) => (
-            <li key={i} className="flex items-start gap-2.5">
-              <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-              <span className="text-[13px] text-muted-foreground leading-relaxed">{rule}</span>
-            </li>
-          ))}
-        </ul>
+        <ul className="space-y-2.5">{DONT_RULES.map((r, i) => (
+          <li key={i} className="flex items-start gap-2.5"><XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" /><span className="text-[13px] text-muted-foreground leading-relaxed">{r}</span></li>
+        ))}</ul>
       </Section>
 
-      {/* System Version */}
-      <Section title="Versioni per Sistemin tend (CMS Finance)" icon={Layers} color="text-emerald-400" defaultOpen={false}>
-        <div className="space-y-4">
-          <p className="text-[13px] text-muted-foreground leading-relaxed">
-            Per CMS Finance, ktheje kete ne nje <strong className="text-foreground">NO_TRADE-first gate</strong>: sistemi vepron vetem kur tregu, sektori dhe setup-i jane ne harmoni.
-          </p>
-          <div className="space-y-2">
-            {SYSTEM_GATES.map((g, i) => (
-              <div key={i} className="flex items-start gap-3 rounded-lg bg-muted/5 p-3">
-                <g.icon className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-[13px] text-foreground">{g.gate}</p>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">{g.desc}</p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-emerald-400/50 mt-1 flex-shrink-0" />
-              </div>
-            ))}
-          </div>
+      <Section title="Si ta Perdorosh IBKR" icon={Zap} color="text-violet-400" defaultOpen={false}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Entry</p><p className="text-[13px] text-muted-foreground leading-relaxed">Buy limit per pullback ose buy stop-limit per breakout.</p></div>
+          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Stop-Loss</p><p className="text-[13px] text-muted-foreground leading-relaxed">Sipas struktures se chart-it, jo nje perqindje arbitrare.</p></div>
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-4"><p className="font-semibold text-[13px] text-emerald-400 mb-1.5">Take-Profit</p><p className="text-[13px] text-muted-foreground leading-relaxed">Target 2R; ne 1R shesh 25-50%, cosh stop-in ne breakeven.</p></div>
+          <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-4"><p className="font-semibold text-[13px] text-amber-400 mb-1.5">Trailing Stop</p><p className="text-[13px] text-muted-foreground leading-relaxed">Vetem ne fitim, trend i forte. Stop-i nuk leviz prapa.</p></div>
         </div>
       </Section>
 
-      {/* Footer disclaimer */}
-      <div className="border border-amber-500/20 rounded-lg px-4 py-3 bg-amber-500/5">
-        <p className="text-[12px] text-amber-400/70 leading-relaxed">
-          <strong>Evidenca historike</strong> sugjeron se trend-following/time-series momentum ka funksionuar ne shume tregje dhe horizonte kohore, por nuk garanton fitim ne cdo periudhe. Kjo nuk permban keshille financiare.
+      <Section title="Sistemi (NO_TRADE-first Gates)" icon={Layers} color="text-emerald-400" defaultOpen={false}>
+        <p className="text-[13px] text-muted-foreground leading-relaxed mb-3">Sistemi vepron vetem kur tregu, sektori dhe setup-i jane ne harmoni.</p>
+        <div className="space-y-2">{SYSTEM_GATES.map((g, i) => (
+          <div key={i} className="flex items-start gap-3 rounded-lg bg-muted/5 p-3">
+            <g.icon className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+            <div><p className="font-semibold text-[13px] text-foreground">{g.gate}</p><p className="text-[13px] text-muted-foreground leading-relaxed">{g.desc}</p></div>
+            <ArrowRight className="w-4 h-4 text-emerald-400/50 mt-1 flex-shrink-0" />
+          </div>
+        ))}</div>
+      </Section>
+
+      {/* Score formula reference */}
+      <div className="border border-blue-500/20 rounded-lg px-4 py-3 bg-blue-500/5">
+        <p className="text-[12px] text-blue-400/70 leading-relaxed">
+          <strong>Score =</strong> 25% Trend Quality + 20% Relative Strength + 15% Momentum + 15% Volume Confirmation + 10% Setup Quality + 10% Fundamentals (placeholder) + 5% Risk Quality. Nje score i larte teknik nuk e kompensoj event-risk-un. Nje aksion me score 88 por earnings neserr marre <strong>EVENT_RISK</strong> ose <strong>NO_TRADE</strong>.
         </p>
       </div>
     </div>
