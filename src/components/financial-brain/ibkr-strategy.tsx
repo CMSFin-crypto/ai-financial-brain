@@ -325,13 +325,66 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
   );
 }
 
+const SCORE_DETAILS: Record<string, { ideal: string; desc: string }> = {
+  'Trend': {
+    desc: 'Mat cilësinë e trendit rrites: cmimi mbi SMA50 (+25), cmimi mbi SMA200 (+25), SMA50 mbi SMA200 / Golden Cross (+25), dhe higher-high structure — high 20d i fundit me i larte se i pari (+25). Nje score i larte tregon nje trend te forte dhe te qete rrites.',
+    ideal: 'mbi 75 = trend i forte. Nen 50 = trend i dobet ose i perzier.',
+  },
+  'RS': {
+    desc: 'Relative Strength — sa me mire ka performuar aksioni krah SPY ne 22d dhe 60d te fundit. RS 22d ka 25 pike peshe, RS 60d ka 25 pike. Nese RS > 0, aksioni po e tebin tregun. Institucionet po akumulojne — kjo jep edge.',
+    ideal: 'mbi 60 = outperformer i qarte. 40-60 = ne rregull. Nen 40 = underperformer.',
+  },
+  'Momentum': {
+    desc: 'Mat forcen e lëvizjes se fundit: nese 5d change eshte me i vogel se 2% (+10), 10d positive (+15), 22d positive (+15), dhe nuk eshte i ekstenduar — 5d nen 8% (+10). Momentum i mire pa ekstension tregon nje aksion ne rritje te shendetshme.',
+    ideal: 'mbi 65 = momentum i forte. Nen 40 = rihet ose i ftohte.',
+  },
+  'Volum': {
+    desc: 'Konfirmon lëvizjen me volum: volumi ne renie gjate pullback-it (+20), spike volumi ne diten e fundit (+15), volumi relativ 0.8-1.5x mesatarja (+10), dhe volumn mesatar mbaltes mbi 5M (+5). Pullback me volum ne renie + rikthim me volum = konfirmim.',
+    ideal: 'mbi 65 = volum i mire. Nen 40 = pa konfirmim volumi.',
+  },
+  'Setup': {
+    desc: 'Vlereson cilësinë e setup-it konkret: Pullback 3-6d ideal (+20), afer EMA 10/20 (+20), volum ne renie (+15), spike konfirmimi (+15), RSI 40-65 (+10). Breakout 20d high + volum. Me i larte score-i, aq me i besueshem setup-i.',
+    ideal: 'mbi 60 = setup i fort. 40-60 = i mesem. Nen 40 = i dobët.',
+  },
+  'Risk': {
+    desc: 'Mat cilësinë e risk-reward: risk per aksion nen 3% (+20) ose 3-5% (+10), R:R mbi 2 (+15) ose 1.5-2 (+5), ATR nen 2% (+10) ose mbi 4% (-10). Risk score i larte = stop i ngushte me target te gjere.',
+    ideal: 'mbi 60 = kushtet e mira risk. Nen 40 = rrezik i larte ose R:R i dobet.',
+  },
+};
+
 function ScoreCell({ label, value }: { label: string; value: number }) {
   const c = value >= 70 ? 'text-emerald-400' : value >= 50 ? 'text-amber-400' : 'text-red-400';
+  const detail = SCORE_DETAILS[label];
   return (
-    <div className="rounded-md p-1.5 text-center bg-muted/5">
-      <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
-      <p className={`text-[14px] font-bold ${c}`}>{value}</p>
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="rounded-md p-1.5 text-center bg-muted/5 hover:bg-muted/10 transition-all cursor-pointer group w-full">
+          <div className="flex items-center justify-center gap-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+            <Info className="w-2.5 h-2.5 opacity-0 group-hover:opacity-50 transition-opacity" />
+          </div>
+          <p className={`text-[14px] font-bold ${c}`}>{value}</p>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="center" className="w-72 sm:w-80 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold text-foreground">Score: {label}</p>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${value >= 70 ? 'bg-emerald-500/15 text-emerald-400' : value >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'}`}>{value}/100</span>
+          </div>
+        </div>
+        <div className="px-4 pb-4 space-y-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Si llogaritet?</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.desc}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
+            <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
