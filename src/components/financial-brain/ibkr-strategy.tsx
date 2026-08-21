@@ -3,11 +3,12 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import {
   Shield, TrendingUp, AlertTriangle, CheckCircle2, XCircle, Target,
   BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
-  Filter, ArrowDown, CircleDot,
+  Filter, ArrowDown, CircleDot, Info,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -99,6 +100,52 @@ function Section({ title, icon: Icon, children, color = 'text-emerald-400', defa
   );
 }
 
+// ── Funnel step detail popups ──
+const FUNNEL_DETAILS: Record<string, { title: string; desc: string; ideal: string; why: string; icon: any }> = {
+  'Universe': {
+    title: '1. Universe — 200 Kompanite Me te Medha',
+    icon: Layers,
+    desc: 'Kjo eshte hapa e pare e funnel-it. Ne fillojme me 200 kompanite me te medha sipas kapitalizimit ne tregun amerikan (S&P 500 top). Keto kompani jane te zgjedhura sepse kane likuiditet te larte, jane te disponueshme per tregtim ne IBKR, dhe zakonisht kane volatilite me te mire per swing trading.',
+    ideal: 'Idealisht 200 kompani. Ceshtje nese keni me pak se 150 (some tickers nuk u morren nga API).',
+    why: 'Nuk ka rendesi sa kompani kalojne — qellimi eshte te kete nje base te ampler per te gjetur cfaredo setup-i i mire qe ekziston ne treg.',
+  },
+  'Liquidity': {
+    title: '2. Liquidity — Filtri Mekanik',
+    icon: DollarSign,
+    desc: 'Filtri i pare qe heq kompanite qe nuk jane te tregtueshme. Nje aksion duhet te kete cmim minimal $10, volumn mesatar ditor > 1M aksione, dhe volumn ditor ne dollare > $20M. Kjo siguron qe mund te hysh dhe te dalish pa problem likuiditeti, dhe se spread-i bid/ask eshte i ngushte.',
+    ideal: 'Sa me shume kompani te kalojne, aq me i mire. Nje treg i shendetshem duhet te kaloje 70-90% te universe-it. Nese kalojne me pak se 50%, tregu mund te jete shume i dobet ose keni probleme te dhena.',
+    why: 'Kompanite me likuiditet te ulet kane spread te gjere, slippage te larte, dhe jane te veshtira per te vendosur stop-loss efektiv. Ne duam vetem aksione qe ne mund te tregtojme me besoje.',
+  },
+  'Trend + RS': {
+    title: '3. Trend + Relative Strength',
+    icon: TrendingUp,
+    desc: 'Ketu kontrollojme nese aksioni eshte ne trend rrites (bullish). Kushtet jane: (1) cmimi mbi SMA 50, (2) SMA 50 mbi SMA 200 (Golden Cross), dhe (3) performanca ne 60 ditet e fundit eshte me e mire sesa SPY (Relative Strength pozitiv). Vetem aksione ne trend rrites kalojne ne fazen tjeter.',
+    ideal: 'Normalisht 20-60 kompani kalojne kete filter (10-30% te universe). Nese asnje nuk kalon, tregu mund te jete ne rnie te pergjithshme — aso kohe rreziu i long trades eshte i larte.',
+    why: 'Strategjia jonse Trend Pullback Swing punon vetem ne aksione qe jane ne trend rrites. Nje pullback ne nje aksion ne rnie eshte thjesht rije e vazhdueshme, jo oportunite. RS > SPY do te thote se aksioni eshte me i fort se tregu — kjo jep nje edge shtese.',
+  },
+  'Setup': {
+    title: '4. Setup Quality — Pullback / Breakout',
+    icon: BarChart3,
+    desc: 'Ketu identifikojme nese aksioni ka nje setup konkret: (1) PULLBACK: renie e kontrolluar 2-8 dite drejt EMA 10/20 me volum ne renie, pastaj candle rikthimi. (2) BREAKOUT: cmimi afeer 20d high me volum spike. (3) TREND CONTINUATION: konsolidim afat te larte me trend i forte. Çdo setup vleresohet me score 0-100 bazuar ne RSI, proximitet EMA, volum, dhe RS.',
+    ideal: 'Zakonisht 5-25 kompani kane setup te vlefshem. Nese asnje nuk ka, tregu mund te jete ne faze tranzicioni ose te gjithe aksionet jane ose te te ekstenduara ose ne rije.',
+    why: 'Pa nje setup te qarte, nuk ka arsye per te hyr. Pullback-i i kontrolluar ne trend rrites eshte njeri nga setup-et me te besueshme ne swing trading, sepse rreziku eshte i definuar (swing low) dhe shperblimi eshte i qarte (rijet e trendit).',
+  },
+  'Risk Gate': {
+    title: '5. Risk Gate — Kontrolli i fundit',
+    icon: AlertTriangle,
+    desc: 'Hapa i fundit me para se te shfaqet ne liste. Kontrollohet: (1) Reward-to-Risk >= 1:2 (fitimi potential te jete te pakten 2x rrezikun), (2) RSI 30-75 (jo i mbivleresuar), (3) Risk per aksion <= 8% (jo shume i larte), (4) Regjimi i tregut OK (SPY/QQQ mbi SMA 50/200). Kompanite qe kalojneohen kategorizojne si READY ose WATCHLIST.',
+    ideal: 'Sa me shume READY aq me i mire. 2-10 kompani ne fund eshte normalja. Nese keni shume WATCHLIST pa READY, rreziu i tregut (regime) mund te jete problemi.',
+    why: 'Edhe nje setup i persosur nuk eshte i mire nese R:R eshte i ulet (riskum me i madh se shperblimi) ose nese tregu i pergjithshem nuk eshte mbeshtetes. Ky gate mbron nga marja e trades me probabilitet te ulet.',
+  },
+  'Top Stocks': {
+    title: '6. Top Stocks — Kandidatet Finale',
+    icon: Target,
+    desc: 'Keto jane 5-10 kompanite me score me te larte qe kane kaluar te gjithe funnel-in. Ato renditen sipas totalScore (0-100) dhe statusit (READY para WATCHLIST para EVENT_RISK). Secila ka Entry, Stop, Target 1R dhe Target 2R te llogaritur automatikisht.',
+    ideal: 'READY = Gati per tregtim me rreziqet e percaktuara. WATCHLIST = Setup i mire por tregu ose kushtet nuk lejojne hyrje tani — vërehtu. EVENT_RISK = RSI i larte, rrezik kthimi.',
+    why: 'Ne tregjtojme vetem keto kompani. Cdo gje tjeter eshte te dhena ose analize, por jo sinjal tregtimi.',
+  },
+};
+
 // ── Funnel Visualization ──
 function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
   const steps = [
@@ -112,15 +159,47 @@ function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
-      {steps.map((s, i) => (
-        <div key={s.label} className="flex items-center gap-1">
-          <div className={`rounded-md px-2.5 py-1.5 text-center ${s.color}`}>
-            <p className="text-[11px] font-medium opacity-70">{s.label}</p>
-            <p className="text-[15px] font-bold">{s.count}</p>
+      {steps.map((s, i) => {
+        const detail = FUNNEL_DETAILS[s.label];
+        return (
+          <div key={s.label} className="flex items-center gap-1">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className={`rounded-md px-2.5 py-1.5 text-center ${s.color} hover:brightness-125 transition-all cursor-pointer group relative`}>
+                  <div className="flex items-center justify-center gap-1">
+                    <p className="text-[11px] font-medium opacity-70">{s.label}</p>
+                    <Info className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                  </div>
+                  <p className="text-[15px] font-bold">{s.count}</p>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="center" className="w-80 sm:w-96 p-0 overflow-hidden">
+                <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+                  <div className="flex items-center gap-2">
+                    {detail && <detail.icon className={`w-4.5 h-4.5 ${s.color.split(' ')[1]}`} />}
+                    <h3 className="text-sm font-bold text-foreground">{detail?.title}</h3>
+                  </div>
+                </div>
+                <div className="px-4 pb-4 space-y-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën kjo fazë?</p>
+                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.desc}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
+                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Pse është e rëndësishme?</p>
+                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.why}</p>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            {i < steps.length - 1 && <ArrowDown className="w-3.5 h-3.5 text-muted-foreground/40" />}
           </div>
-          {i < steps.length - 1 && <ArrowDown className="w-3.5 h-3.5 text-muted-foreground/40" />}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
