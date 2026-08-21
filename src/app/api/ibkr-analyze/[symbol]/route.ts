@@ -180,7 +180,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     sScore = Math.min(100, sScore);
 
     // Entry / Stop / Target
-    const entry = Math.round((price * 1.005) * 100) / 100;
+    // Per pullback: entry = cmimi aktual (je beje buy ne nivelin e supportit)
+    // Per breakout: entry = high 20d + 0.2% (konfirmim i thyerjes)
+    const isBreakout = setup === 'BREAKOUT';
+    const high20 = Math.max(...highs.slice(-20));
+    const entry = isBreakout
+      ? Math.round((high20 * 1.002) * 100) / 100
+      : Math.round(price * 100) / 100;
     const stop = Math.round((swLow - atr * 0.2) * 100) / 100;
     const riskPerShare = entry - stop;
     const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
