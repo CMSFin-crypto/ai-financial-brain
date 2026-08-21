@@ -34,3 +34,35 @@ Stage Summary:
 - Watchlist tab fully replaced by IBKR Strategy tab with Briefcase icon
 - All font sizes in top-swing-predictions.tsx increased by 1-2px for laptop readability
 - Build successful, pushed to main
+---
+Task ID: 1
+Agent: main
+Task: Gap analysis + UI updates for IBKR Trend Pullback Swing strategy per user spec
+
+Work Log:
+- Read full scanner code (ibkr-scan/route.ts), analyze endpoint, indicators.ts, and ibkr-strategy.tsx
+- Identified all gaps: scanner backend already had everything (ADX, stacked MA, bracket orders, position sizing, 3R targets, event risk, sector limits)
+- All gaps were in the UI layer (ibkr-strategy.tsx)
+- Fixed duplicate interface properties in FunnelStock type
+- Fixed duplicate SYSTEM_GATES entry
+- Added bracketOrder field to FunnelStock interface
+- Added Copy, Check, Briefcase, FileText icons import
+- Added BracketOrderBlock component with copy-to-clipboard for IBKR bracket order JSON
+- Added TARGET 3R column to entry/stop/target grid (now 5 columns)
+- Added ADX to quick stats row with full popover explanation
+- Added Stacked MA detail popover in expanded details
+- Added Entry Type (A: Breakout / B: Pullback) detail popover
+- Added Position Sizing block (shares, position value, risk dollars)
+- Added Event Risk display in expanded details
+- Added IBKR Bracket Order JSON display in expanded details for READY stocks
+- Added Sector Exposure summary (chips) between scan time and stock list
+- Updated Trend score description to mention Stacked MA + ADX bonus
+- Updated IBKR usage section with Entry Type A/B, 1.5 ATR stop, 3R targets, position sizing
+- Updated ATR stop description to mention both 1.5 ATR and swing-low methods
+- Fixed pre-existing TS error (useRef without initial value)
+- Fixed Score formula reference text
+
+Stage Summary:
+- All spec features now visible in UI
+- No TypeScript errors in IBKR files
+- Key new UI sections: BracketOrderBlock, position sizing, sector exposure, 3R target, ADX stat, Stacked MA detail, Entry Type detail

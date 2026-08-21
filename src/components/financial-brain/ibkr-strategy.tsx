@@ -9,6 +9,7 @@ import {
   BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
+  Copy, Check, Briefcase, FileText,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -20,24 +21,22 @@ interface FunnelStock {
   avgVol20d: number; avgDolVol20d: number;
   passedLiquidity: boolean; passedTrend: boolean;
   passedStackedMA: boolean; passedADX: boolean; passedEventRisk: boolean;
-  passedStackedMA: boolean; passedADX: boolean; passedEventRisk: boolean;
   trendScore: number; rsScore: number; momentumScore: number;
   volConfScore: number; setupScore: number; riskScore: number; totalScore: number;
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string; rsi: number; atr: number; atrPct: number; adx: number;
-  adx: number;
   volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
   pullbackDays: number; pullbackPct: number;
   distFromEMA10: number; distFromEMA20: number;
   aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean; stackedMA: boolean;
-  stackedMA: boolean;
   rsVsSPY: number; rsVsQQQ: number; rsVsSPY60d: number;
   entry: number; stop: number; target1R: number; target2R: number; target3R: number;
   riskPct: number; rewardRiskRatio: number; swingLow: number;
   sector: string;
   positionSize: number; positionValue: number; riskDollars: number;
   eventRisk: string; eventRiskSeverity: string;
- decision: Decision; reasons: string[]; warnings: string[];
+  bracketOrder?: object | null;
+  decision: Decision; reasons: string[]; warnings: string[];
 }
 
 interface FunnelResponse {
@@ -88,9 +87,8 @@ const SYSTEM_GATES = [
   { gate: 'Trend + RS', desc: 'Mbi 50/200 SMA, Stacked MA, ADX > 25, RS > SPY ne 60d', icon: TrendingUp },
   { gate: 'Setup Quality', desc: 'Pullback/Breakout me volum, RSI, EMA proximity', icon: BarChart3 },
   { gate: 'Risk Gate', desc: 'R:R >= 1:2 (3R target), risk <= 8%, RSI 30-75', icon: AlertTriangle },
-          { gate: 'Sector Limit', desc: 'Max 2 aksione per sektor (diversifikim)', icon: Layers },
-          { gate: 'IBKR Bracket', desc: 'Entry + Stop (1.5 ATR) + Take-profit 3R automatik', icon: Target },
-  { gate: 'IBKR Bracket', desc: 'Entry + Stop + Take-profit automatik', icon: Target },
+  { gate: 'Sector Limit', desc: 'Max 2 aksione per sektor (diversifikim)', icon: Layers },
+  { gate: 'IBKR Bracket', desc: 'Entry + Stop (1.5 ATR) + Take-profit 3R automatik', icon: Target },
 ];
 
 // ── Section ──
@@ -216,6 +214,32 @@ function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
   );
 }
 
+// ── Bracket Order Block ──
+function BracketOrderBlock({ order }: { order: object }) {
+  const [copied, setCopied] = useState(false);
+  const jsonStr = JSON.stringify(order, null, 2);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(jsonStr);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="mt-2 rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-emerald-400" />
+          <p className="text-[13px] font-semibold text-emerald-400">IBKR Bracket Order</p>
+        </div>
+        <button onClick={handleCopy} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
+          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          {copied ? 'Kopjuar!' : 'Kopjo JSON'}
+        </button>
+      </div>
+      <pre className="text-[11px] text-foreground/70 bg-black/20 rounded p-2.5 overflow-x-auto max-h-40 leading-relaxed">{jsonStr}</pre>
+    </div>
+  );
+}
+
 // ── Stock Card ──
 function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -260,12 +284,13 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
           <ScoreCell label="Risk" value={stock.riskScore} />
         </div>
 
-        {/* Entry / Stop / Target */}
-        <div className="mt-3 grid grid-cols-4 gap-2">
+        {/* Entry / Stop / Target — 5 columns with 3R */}
+        <div className="mt-3 grid grid-cols-5 gap-1.5">
           <EntryBox label="ENTRY" value={stock.entry} color="text-blue-400" bg="bg-blue-500/5 border-blue-500/15" />
           <EntryBox label="STOP" value={stock.stop} color="text-red-400" bg="bg-red-500/5 border-red-500/15" />
           <EntryBox label="TARGET 1R" value={stock.target1R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/15" />
           <EntryBox label="TARGET 2R" value={stock.target2R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/20" />
+          <EntryBox label="TARGET 3R" value={stock.target3R} color="text-emerald-300" bg="bg-emerald-500/10 border-emerald-500/30" />
         </div>
 
         {/* Quick stats row */}
@@ -287,7 +312,10 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             desc="Average True Range — mat volatilitetin mesatar ditor. Nje ATR 2% do te thote se aksioni lëviz mesatarisht 2% ne dite. ATR perdoret per te vendosur stop-loss (nen swing-low minus 0.2 x ATR). ATR i ulet = lëvizje me te qete dhe me te parashikueshme = stop i ngushte = me i mire per ne." />
           <StatPopover label="DolVol" value={`$${(stock.avgDolVol20d / 1e6).toFixed(0)}M`} good={stock.avgDolVol20d >= 50e6} warn={stock.avgDolVol20d < 20e6}
             ideal="mbi $50M/dite" warnRange="nen $20M/dite (likuiditet i ulet, spread i gjere)"
-            desc="Dollar Volume mesatar 20-ditor — sa dollarra tregtohen ne dite. DolVol i larte siguron qe mund te hysh dhe te dalish pa prekur cmimin. Nen $20M/dite, bid-ask spread bëhet probleme dhe slippage rritet. Kompanit me DolVol mbaltes jane me te besueshme per stop-loss efektiv." />
+            desc="Dollar Volume mesatar 20-ditor — sa dollarra tregtohen ne dite. DolVol i larte siguron qe mund te hysh dhe te dalish pa prekur cmimin. Nen $20M/dite, bid-ask spread behet probleme dhe slippage rritet. Kompanite me DolVol mbaltes jane me te besueshme per stop-loss efektiv." />
+          <StatPopover label="ADX" value={stock.adx} good={stock.adx > 25} warn={stock.adx < 20}
+            ideal="mbi 25 (trend i forte)" warnRange="nen 20 (pa trend ose trend i dobet)"
+            desc="Average Directional Index — mat forcen e trendit pa marre parasysh drejtimin. ADX 0-20 = trend i dobet/ases, 20-25 = trend po formohet, 25-50 = trend i forte, 50+ = trend shume i forte. Ne kerkim ADX > 25 sepse strategjia jonse funksionon vetem ne trenda te forta. ADX i larte + RS pozitiv = kombinim i mire." />
         </div>
 
         {/* Reasons */}
@@ -317,14 +345,44 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
               <DetailPopover label="SMA 50" value={stock.aboveSMA50 ? 'Mbi' : 'Nen'} good={stock.aboveSMA50} desc="Simple Moving Average 50-ditor — mesatarja e cmimeve te mbylljes per 50 dite tregtimi. Aksioni ne trend rrites duhet te jete mbi SMA50. Nese cmimi bie nen SMA50, shpesh tregon nje ndryshim trendi apo nje korektim te thelle." ideal="Cmimi mbi SMA50 per swing long trades." />
               <DetailPopover label="SMA 200" value={stock.aboveSMA200 ? 'Mbi' : 'Nen'} good={stock.aboveSMA200} desc="Simple Moving Average 200-ditor — mesatarja e gjate. Kjo eshte linja me e rendesishme e trendit institucional. Shumica e fondeve te medha shikojne SMA200. Nese cmimi eshte mbi, aksioni eshte ne secular bull trend." ideal="Cmimi mbi SMA200 per konfirmim trendi afatgjate." />
               <DetailPopover label="50/200" value={stock.sma50Above200 ? 'Golden Cross' : 'Death Cross'} good={stock.sma50Above200} desc="Kur SMA50 kalon mbi SMA200 quhet Golden Cross — sinjal i fuqishem bullish. Kur SMA50 bie nen SMA200 quhet Death Cross — sinjal bearish. Kjo cross tregon drejtimin e trendit afatmesem." ideal="Golden Cross (SMA50 mbi SMA200) per trend rrites." />
-              <DetailPopover label="ATR" value={'$' + stock.atr.toFixed(2)} good={stock.atrPct <= 2} warn={stock.atrPct > 3.5} desc="Average True Range — levizja mesatare ditorne e aksionit, llogaritur nga high-low, high-prev_close, dhe low-prev_close per 14 dite. Perdoret per te vendosur stop-loss: stop vendoset nen swing-low minus 0.2 x ATR." ideal="Me i ulet aq me i mire. ATR 1-2% per stop te ngushte." />
+              <DetailPopover label="Stacked MA" value={stock.stackedMA ? 'Po ( perfekte )' : 'Jo'} good={stock.stackedMA} desc="Stacked Moving Averages — kur cmimi eshte mbi EMA20, EMA20 mbi SMA50, dhe SMA50 mbi SMA200. Kjo eshte struktura me e forte e trendit rrites: te gjithe mesataret jane ne rradhe te sakte, tregojne nje trend te shendetshem multi-timeframe. Aksione me stacked MA kane probabilitet me te larte per te vazhduar rritjen." ideal="Po — te gjithe mesataret ne rradhe (Close > EMA20 > SMA50 > SMA200)." />
+              <DetailPopover label="Entry Type" value={stock.setup === 'BREAKOUT' ? 'A: Breakout' : 'B: Pullback'} good={stock.setup === 'PULLBACK'} desc={stock.setup === 'BREAKOUT' ? 'Entry Type A (Breakout) — cmimi thyen 20d high me volum me te larte se mesatarja. Hyrja vendoset pak mbi 20d high (high20 x 1.002) me buy stop-limit. Kerkon volum konfirmim sepse pa te, breakout-i mund te jete false.' : 'Entry Type B (Pullback) — aksioni ne trend rrites ben nje renie te kontrolluar 2-8 dite drejt EMA10/20, pastaj jep candle rikthimi. Hyrja vendoset ne cmimin aktual (limit order). Kjo eshte entry-y me e besueshme e strategjise.'} ideal="Pullback (B) eshte me i besueshem. Breakout (A) kerkon volum te larte." />
+              <DetailPopover label="ATR" value={'$' + stock.atr.toFixed(2)} good={stock.atrPct <= 2} warn={stock.atrPct > 3.5} desc="Average True Range — levizja mesatare ditorne e aksionit, llogaritur nga high-low, high-prev_close, dhe low-prev_close per 14 dite. Perdoret per te vendosur stop-loss: 1.5 x ATR nen entry, ose nen swing-low minus 0.2 x ATR (cdofer eshte me i ngushte)." ideal="Me i ulet aq me i mire. ATR 1-2% per stop te ngushte." />
               <DetailPopover label="Dist EMA10" value={(stock.distFromEMA10 > 0 ? '+' : '') + stock.distFromEMA10.toFixed(1) + '%'} good={Math.abs(stock.distFromEMA10) < 3} warn={Math.abs(stock.distFromEMA10) > 6} desc="Distanca e cmimit aktual nga EMA (Exponential Moving Average) 10-ditore si perqindje. Ne nje pullback ideal, cmimi afrohet EMA10. Nese distanca eshte negative e madhe, aksioni eshte shume larg mesatares se shkurter." ideal="-3% deri +3%. Pullback ideal afrohet EMA10." />
               <DetailPopover label="Dist EMA20" value={(stock.distFromEMA20 > 0 ? '+' : '') + stock.distFromEMA20.toFixed(1) + '%'} good={Math.abs(stock.distFromEMA20) < 3} warn={Math.abs(stock.distFromEMA20) > 6} desc="Distanca nga EMA 20-ditore. EMA20 eshte mesatarja e shkurter qe institucionet ndiqne. Nje pullback qe teston EMA20 pa e thyer eshte nje zone e mire hyrjeje. Distancat e medha tregojne te bizhnozuar." ideal="-3% deri +3%. Test i EMA20 pa thyer = i mire." />
               <DetailPopover label="RS vs QQQ" value={(stock.rsVsQQQ > 0 ? '+' : '') + stock.rsVsQQQ.toFixed(1) + '%'} good={stock.rsVsQQQ > 0} warn={stock.rsVsQQQ < -3} desc="Relative Strength vs QQQ (Nasdaq 100) ne 22 dite te fundit. Nese pozitiv, aksioni po performon me mire se sektori teknologjik. I rendesishem per aksione tech/AI — nese RS vs QQQ eshte negativ, aksioni po humbet terren krah te njejten klas." ideal="Positive (mbi 0%). Outperformance ndaj QQQ = fute me te fort." />
               <DetailPopover label="RS 60d vs SPY" value={(stock.rsVsSPY60d > 0 ? '+' : '') + stock.rsVsSPY60d.toFixed(1) + '%'} good={stock.rsVsSPY60d > 0} warn={stock.rsVsSPY60d < -5} desc="Relative Strength vs SPY (S&P 500) ne 60 dite te fundit. Ky eshte nje indikator me afatgjate se RS 22d. Nje aksion me RS 60d pozitiv ka nje trend outperformance qe zgjat me shume se nje spike te shkurter." ideal="Positive (mbi 0%). Me i larte aq me i mire per swing." />
-              <DetailPopover label="Swing Low" value={'$' + stock.swingLow.toFixed(2)} desc="Cmimi me i ulet qe aksioni ka arritur qe nga fillimi i pullback-it (prej peak-it te fundit 10-ditor). Kjo eshte baza per vendosjen e stop-loss: stop-i vendoset pak nen swing-low minus 0.2 x ATR." ideal="Nje swing-low i qarte (i persosur) jep nje stop te definuar sakte." />
+              <DetailPopover label="Swing Low" value={'$' + stock.swingLow.toFixed(2)} desc="Cmimi me i ulet qe aksioni ka arritur qe nga fillimi i pullback-it (prej peak-it te fundit 10-ditor). Kjo eshte baza per vendosjen e stop-loss: stop vendoset nen swing-low minus 0.2 x ATR, ose 1.5 x ATR nen entry — cdofer eshte me i ngushte (me i larte)." ideal="Nje swing-low i qarte (i persosur) jep nje stop te definuar sakte." />
               <DetailPopover label="Vol Ratio" value={stock.volRatio + 'x'} good={stock.volRatio >= 0.8 && stock.volRatio <= 1.5} warn={stock.volRatio > 2} desc="Raporti i volumit 3-ditor te fundit ndaj mesatares 20-ditore. 1.0x = volum normal. Nen 1.0x tregon volum te ulet (i mire gjate pullback-it). Mbi 1.5x tregon interes te larte (i mire per konfirmim)." ideal="0.8x - 1.5x. Pullback: nen 1.0x. Konfirmim: mbi 1.2x." />
             </div>
+
+            {/* Position Sizing */}
+            {stock.positionSize > 0 && (
+              <div className="mt-2 rounded-lg bg-violet-500/5 border border-violet-500/15 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Briefcase className="w-4 h-4 text-violet-400" />
+                  <p className="text-[13px] font-semibold text-violet-400">Pozicionimi (1% risk per trade, $25K account)</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div><p className="text-[11px] text-muted-foreground">Shares</p><p className="text-[14px] font-bold text-foreground">{stock.positionSize}</p></div>
+                  <div><p className="text-[11px] text-muted-foreground">Pozicioni</p><p className="text-[14px] font-bold text-foreground">${stock.positionValue.toLocaleString()}</p></div>
+                  <div><p className="text-[11px] text-muted-foreground">Risk $</p><p className="text-[14px] font-bold text-red-400">${stock.riskDollars.toLocaleString()}</p></div>
+                </div>
+              </div>
+            )}
+
+            {/* Event Risk */}
+            {stock.eventRisk && stock.eventRisk !== 'No events detected' && (
+              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/15">
+                <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                <div><p className="text-[12px] font-semibold text-red-400">Event Risk</p><p className="text-[13px] text-red-300/80">{stock.eventRisk}</p></div>
+              </div>
+            )}
+
+            {/* IBKR Bracket Order */}
+            {stock.bracketOrder && (
+              <BracketOrderBlock order={stock.bracketOrder} />
+            )}
           </div>
         )}
 
@@ -338,10 +396,7 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
 }
 
 const SCORE_DETAILS: Record<string, { ideal: string; desc: string }> = {
-  'Trend': {
-    desc: 'Mat cilësinë e trendit rrites: cmimi mbi SMA50 (+25), cmimi mbi SMA200 (+25), SMA50 mbi SMA200 / Golden Cross (+25), dhe higher-high structure — high 20d i fundit me i larte se i pari (+25). Nje score i larte tregon nje trend te forte dhe te qete rrites.',
-    ideal: 'mbi 75 = trend i forte. Nen 50 = trend i dobet ose i perzier.',
-  },
+  'Trend': {    desc: 'Mat cilesine e trendit rrites: cmimi mbi SMA50 (+20), cmimi mbi SMA200 (+20), SMA50 mbi SMA200 / Golden Cross (+15), Stacked MA — Close > EMA20 > SMA50 > SMA200 (+15), higher-high structure (+15), dhe ADX > 25 — trend i forte (+15). Nje score i larte tregon nje trend te forte, te shendetshem, multi-timeframe.',    ideal: 'mbi 75 = trend i forte. Nen 50 = trend i dobet ose i perzier.',  },
   'RS': {
     desc: 'Relative Strength — sa me mire ka performuar aksioni krah SPY ne 22d dhe 60d te fundit. RS 22d ka 25 pike peshe, RS 60d ka 25 pike. Nese RS > 0, aksioni po e tebin tregun. Institucionet po akumulojne — kjo jep edge.',
     ideal: 'mbi 60 = outperformer i qarte. 40-60 = ne rregull. Nen 40 = underperformer.',
@@ -516,7 +571,7 @@ function StockSearchBox() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [regimeOk, setRegimeOk] = useState(true);
   const [funnelPhases, setFunnelPhases] = useState({ passedLiquidity: 0, passedTrend: 0, passedSetup: 0, passedRisk: 0 });
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Search with debounce
@@ -738,6 +793,18 @@ export function IBKRStrategy() {
           {data.scannedAt && (<><span>·</span><span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(data.scannedAt).toLocaleTimeString('sq-AL')}</span></>)}
         </div>
 
+        {/* Sector Exposure */}
+        {data.sectorExposure && Object.keys(data.sectorExposure).length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted-foreground">
+            <Layers className="w-3.5 h-3.5 text-muted-foreground/50" />
+            {Object.entries(data.sectorExposure).map(([sec, count]) => (
+              <span key={sec} className="px-2 py-0.5 rounded bg-muted/10 border border-border/30">
+                {sec} <strong className="text-foreground">{count}</strong>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* READY stocks */}
         {readyStocks.length > 0 && (
           <div className="space-y-3">
@@ -828,10 +895,10 @@ export function IBKRStrategy() {
 
       <Section title="Si ta Perdorosh IBKR" icon={Zap} color="text-violet-400" defaultOpen={false}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Entry</p><p className="text-[13px] text-muted-foreground leading-relaxed">Buy limit per pullback ose buy stop-limit per breakout.</p></div>
-          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Stop-Loss</p><p className="text-[13px] text-muted-foreground leading-relaxed">Sipas struktures se chart-it, jo nje perqindje arbitrare.</p></div>
-          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-4"><p className="font-semibold text-[13px] text-emerald-400 mb-1.5">Take-Profit</p><p className="text-[13px] text-muted-foreground leading-relaxed">Target 2R; ne 1R shesh 25-50%, cosh stop-in ne breakeven.</p></div>
-          <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-4"><p className="font-semibold text-[13px] text-amber-400 mb-1.5">Trailing Stop</p><p className="text-[13px] text-muted-foreground leading-relaxed">Vetem ne fitim, trend i forte. Stop-i nuk leviz prapa.</p></div>
+          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Entry</p><p className="text-[13px] text-muted-foreground leading-relaxed">Entry Type A (Breakout): buy stop-limit pak mbi 20d high. Entry Type B (Pullback): buy limit ne cmimin aktual afër EMA20.</p></div>
+          <div className="rounded-lg bg-violet-500/5 border border-violet-500/15 p-4"><p className="font-semibold text-[13px] text-violet-400 mb-1.5">Stop-Loss</p><p className="text-[13px] text-muted-foreground leading-relaxed">1.5 x ATR nen entry, ose nen swing-low minus 0.2 x ATR — cdofer eshte me i ngushte (me i larte). Stop struktural, jo perqindje arbitrare.</p></div>
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-4"><p className="font-semibold text-[13px] text-emerald-400 mb-1.5">Take-Profit</p><p className="text-[13px] text-muted-foreground leading-relaxed">Target 3R (shperblimi 3x rrezikun). Ne 1R shesh 25-50%, cosh stop-in ne breakeven. Target 2R = partial exit 2te. Target 3R = full exit.</p></div>
+          <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-4"><p className="font-semibold text-[13px] text-amber-400 mb-1.5">Position Sizing</p><p className="text-[13px] text-muted-foreground leading-relaxed">1% risk per trade ($250 per $25K account). Shares = risk budget / (entry - stop). Max 2 aksione per sektor. Stop nuk leviz prapa.</p></div>
         </div>
       </Section>
 
