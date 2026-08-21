@@ -87,7 +87,7 @@ function KontrolTab({ icon, title, desc, pageUrl }: { icon: React.ReactNode; tit
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('top-movers');
+  const [activeTab, setActiveTab] = useState('ibkr');
   const [quantTicker, setQuantTicker] = useState('');
 
   return (
