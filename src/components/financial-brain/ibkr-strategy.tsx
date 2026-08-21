@@ -8,9 +8,9 @@ import {
   Shield, TrendingUp, AlertTriangle, CheckCircle2, XCircle, Target,
   BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
-  Filter, ArrowDown, CircleDot, Info,
+  Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
 } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // ── Types ──
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
@@ -460,6 +460,133 @@ function RegimeBanner({ data }: { data: FunnelResponse }) {
 // ═══════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════
+interface SearchResult { ticker: string; company: string; exchange: string; price: number; change: number; volume: number; }
+
+// ── Single Stock Search Component ──
+function StockSearchBox() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [analyzedStock, setAnalyzedStock] = useState<FunnelStock | null>(null);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [regimeOk, setRegimeOk] = useState(true);
+  const [funnelPhases, setFunnelPhases] = useState({ passedLiquidity: 0, passedTrend: 0, passedSetup: 0, passedRisk: 0 });
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Search with debounce
+  const handleInput = (val: string) => {
+    setQuery(val);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (val.length < 2) { setResults([]); setShowDropdown(false); return; }
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/ticker-search?q=${encodeURIComponent(val)}`);
+        const json = await res.json();
+        setResults(json.results || []);
+        setShowDropdown(true);
+      } catch { setResults([]); }
+    }, 350);
+  };
+
+  const selectTicker = async (ticker: string) => {
+    setShowDropdown(false); setQuery(ticker);
+    setAnalyzedStock(null); setAnalyzeError(null);
+    setAnalyzing(ticker);
+    try {
+      const res = await fetch(`/api/ibkr-analyze/${ticker}?_t=${Date.now()}`, { cache: 'no-store' });
+      const json = await res.json();
+      setRegimeOk(json.regimeOk);
+      setFunnelPhases(json.funnel || { passedLiquidity: 0, passedTrend: 0, passedSetup: 0, passedRisk: 0 });
+      if (json.error && !json.stock) {
+        setAnalyzeError(json.error);
+      } else if (json.stock) {
+        setAnalyzedStock(json.stock);
+      }
+    } catch { setAnalyzeError('Gabim rrjeti'); }
+    setAnalyzing(null);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => handleInput(e.target.value)}
+              onFocus={() => results.length > 0 && setShowDropdown(true)}
+              placeholder="Kerko nje aksion (p.sh. AAPL, TSLA, COIN...)"
+              className="w-full pl-9 pr-9 py-2.5 rounded-lg bg-muted/10 border border-border/50 text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+            />
+            {query && (
+              <button onClick={() => { setQuery(''); setResults([]); setShowDropdown(false); setAnalyzedStock(null); setAnalyzeError(null); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="w-3.5 h-3.5 text-muted-foreground/50 hover:text-muted-foreground" /></button>
+            )}
+          </div>
+          {query.length >= 1 && !analyzing && (
+            <button onClick={() => selectTicker(query.toUpperCase())} className="flex items-center gap-1.5 text-[13px] px-3 py-2.5 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors whitespace-nowrap">
+              <Activity className="w-3.5 h-3.5" /> Analizo
+            </button>
+          )}
+          {analyzing && (
+            <div className="flex items-center gap-1.5 text-[13px] px-3 py-2.5 text-violet-400 whitespace-nowrap">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Duke analizuar {analyzing}...
+            </div>
+          )}
+        </div>
+        {/* Dropdown */}
+        {showDropdown && results.length > 0 && (
+          <div className="absolute z-50 top-full mt-1 w-full bg-popover border border-border/60 rounded-lg shadow-xl overflow-hidden">
+            {results.map(r => (
+              <button key={r.ticker} onClick={() => selectTicker(r.ticker)} className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-muted/10 transition-colors text-left">
+                <div className="flex-1 min-w-0">
+                  <span className="font-bold text-[13px] text-foreground">{r.ticker}</span>
+                  <span className="text-[12px] text-muted-foreground ml-2 truncate">{r.company}</span>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <span className="text-[13px] text-foreground font-medium">${r.price}</span>
+                  <span className={`text-[12px] ml-1.5 ${r.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.change >= 0 ? '+' : ''}{r.change.toFixed(1)}%</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Analyze Error */}
+      {analyzeError && (
+        <Card className="border-red-500/20 bg-red-500/5">
+          <CardContent className="flex items-center gap-3 py-3 px-4">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <span className="text-[13px] text-red-400">{analyzeError}</span>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Analyzed Stock Result */}
+      {analyzedStock && (
+        <div className="space-y-2">
+          {/* Funnel diagnostic for single stock */}
+          <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+            <span className={`px-2 py-1 rounded-md ${funnelPhases.passedLiquidity ? 'bg-cyan-500/20 text-cyan-400' : 'bg-red-500/10 text-red-400/60 line-through'}`}>Likuiditet {funnelPhases.passedLiquidity ? '✓' : '✗'}</span>
+            <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+            <span className={`px-2 py-1 rounded-md ${funnelPhases.passedTrend ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/10 text-red-400/60 line-through'}`}>Trend + RS {funnelPhases.passedTrend ? '✓' : '✗'}</span>
+            <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+            <span className={`px-2 py-1 rounded-md ${funnelPhases.passedSetup ? 'bg-violet-500/20 text-violet-400' : 'bg-red-500/10 text-red-400/60 line-through'}`}>Setup {funnelPhases.passedSetup ? '✓' : '✗'}</span>
+            <ArrowDown className="w-3 h-3 text-muted-foreground/30" />
+            <span className={`px-2 py-1 rounded-md ${funnelPhases.passedRisk ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/10 text-red-400/60 line-through'}`}>Risk Gate {funnelPhases.passedRisk ? '✓' : '✗'}</span>
+            {!regimeOk && <span className="text-[11px] text-red-400/70 ml-1">(Regjimi JO OK)</span>}
+          </div>
+          <StockCard stock={analyzedStock} rank={0} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function IBKRStrategy() {
   const [data, setData] = useState<FunnelResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -523,6 +650,18 @@ export function IBKRStrategy() {
               {loading ? 'Duke skanuar...' : 'Rifresko'}
             </button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Search single stock */}
+      <Card className="border-violet-500/20 bg-violet-500/5">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Search className="w-4 h-4 text-violet-400" />
+            <h3 className="text-[14px] font-bold text-foreground">Kerko Aksion</h3>
+            <span className="text-[11px] text-muted-foreground">— Analizo cfaredo aksion me strategjine IBKR</span>
+          </div>
+          <StockSearchBox />
         </CardContent>
       </Card>
 
