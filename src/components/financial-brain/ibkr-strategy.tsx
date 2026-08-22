@@ -154,11 +154,25 @@ const FUNNEL_DETAILS: Record<string, { title: string; desc: string; ideal: strin
     why: 'Edhe nje setup i persosur nuk eshte i mire nese R:R eshte i ulet (riskum me i madh se shperblimi) ose nese tregu i pergjithshem nuk eshte mbeshtetes. Ky gate mbron nga marja e trades me probabilitet te ulet.',
   },
   'Top Stocks': {
-    title: '6. Top Stocks — Kandidatet Finale',
+    title: '8. Top Stocks — Kandidatet Finale',
     icon: Target,
-    desc: 'Keto jane 5-10 kompanite me score me te larte qe kane kaluar te gjithe funnel-in. Ato renditen sipas totalScore (0-100) dhe statusit (READY para WATCHLIST para EVENT_RISK). Secila ka Entry, Stop, Target 1R dhe Target 2R te llogaritur automatikisht.',
-    ideal: 'READY = Gati per tregtim me rreziqet e percaktuara. WATCHLIST = Setup i mire por tregu ose kushtet nuk lejojne hyrje tani — vërehtu. EVENT_RISK = RSI i larte, rrezik kthimi.',
+    desc: 'Keto jane 5-10 kompanite me score me te larte qe kane kaluar te gjithe funnel-in. Ato renditen sipas totalScore (0-100) dhe statusit (READY para WATCHLIST para EVENT_RISK). Secila ka Entry, Stop, Target 1R, 2R dhe 3R te llogaritur automatikisht.',
+    ideal: 'READY = Gati per tregtim me rreziqet e percaktuara. WATCHLIST = Setup i mire por tregu ose kushtet nuk lejojne hyrje tani — vërehtu. EVENT_RISK = Ngjarje kritike prane, mos hyr.',
     why: 'Ne tregjtojme vetem keto kompani. Cdo gje tjeter eshte te dhena ose analize, por jo sinjal tregtimi.',
+  },
+  'Event Risk': {
+    title: '6. Event & Catalyst Gate',
+    icon: ShieldAlert,
+    desc: 'Kjo faze kontrollon ngjarje qe chart-i nuk mund t\'i parashikoje: earnings brenda 3 diteve (mos hap long), earnings 4-7 dite (pozicion 50%), FOMC/CPI/NFP brenda 24h (kujdes), 8-K material negative (NO_TRADE), dhe rrezik fundjave. Kategorizohen si CLEAR, POSITIVE, MIXED, EVENT_RISK, ose NO_TRADE.',
+    ideal: 'Catalyst Status: CLEAR = asnje ngjarje, hyrje normale. POSITIVE = katalizator pozitiv (8-K positive). MIXED = ul pozicionin (50-75%). EVENT_RISK / NO_TRADE = mos hap.',
+    why: 'Nje breakout i persosur teknik mund te shkatërrohet nga nje earnings gap 8-10%. Event gate-i nuk prodhon sinjale — ai mbron setup-in teknik nga gap risk dhe volatilite te papritur.',
+  },
+  'Sector Limit': {
+    title: '7. Sector Limit — Diversifikim',
+    icon: Layers,
+    desc: 'Max 2 aksione per sektor ne listen finale. Kjo siguron qe nuk je i ekspozuar shume ne nje sektor te vetem (p.sh. 5 aksione tech). Nese nje sektor ka tashme 2 aksione me score me te larte, aksioni i trete hidhet jashe edhe nese ka score te larte.',
+    ideal: '2 aksione per sektor maksimum. Nese shikon 3+ aksione ne te njejten sektor, disa u hoqen nga limiti.',
+    why: 'Diversifikim i rëndësishëm: nese sektori i teknologjise bie 5% ne nje dite, nuk duhet te kesh 60% te portofolit atje. Max 2 per sektor te siguron nje shperndarje me te shendetshme.',
   },
 };
 
