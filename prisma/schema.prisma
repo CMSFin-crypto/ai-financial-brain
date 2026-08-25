@@ -628,3 +628,72 @@ model ModelRelease {
   @@index([modelVersion, createdAt])
   @@index([approvalStatus])
 }
+
+// ═══════ HISTORICAL NEWS IMPACT PIPELINE ═══════
+// Learns from historical news events: what moved stocks, for how long,
+// and in which market regime. Uses event-study methodology.
+
+model HistoricalNewsEvent {
+  id                     String   @id @default(cuid())
+  ticker                 String
+  publishedAtUtc         DateTime
+  source                 String
+  headline               String
+  summary                String   @default("")
+  eventType              String   @default("other") // see EVENT_TYPES in news-event-classifier.ts
+  sentimentScore         Float    @default(0) // -1 to +1
+  sentimentLabel         String   @default("neutral") // positive / negative / neutral
+  noveltyScore           Float    @default(0) // 0-1, how surprising vs recent news for same ticker
+  macroVsMicro           String   @default("micro") // macro / micro / both
+  sector                 String   @default("")
+
+  // Market regime at time of news
+  marketRegime           String   @default("UNKNOWN")
+  vixLevel               Float?
+  benchmarkSymbol        String   @default("SPY")
+
+  // Market reaction (filled by recompute-returns job)
+  return1d               Float?   @default(0)
+  return3d               Float?   @default(0)
+  return7d               Float?   @default(0)
+  abnormalReturn1d       Float?   @default(0) // stock_return - benchmark_return
+  abnormalReturn3d       Float?   @default(0)
+  abnormalReturn7d       Float?   @default(0)
+  maxUpsideWindow       Float?   @default(0) // max % gain within 7d
+  maxDrawdownWindow      Float?   @default(0) // max % loss within 7d
+  sectorReturnSameWindow Float?   @default(0)
+
+  // Classification flags
+  impactHit1d            Boolean? @default(false) // true if |abnormalReturn1d| > 2%
+  horizonClass           String?  @default("none") // intraday / 1d / 3d / 5d_plus / none
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([ticker, publishedAtUtc])
+  @@index([eventType, publishedAtUtc])
+  @@index([ticker, eventType])
+  @@index([sentimentLabel, eventType])
+  @@index([publishedAtUtc])
+  @@index([marketRegime, publishedAtUtc])
+  @@index([impactHit1d])
+}
+
+model MarketRegimeDaily {
+  id                String   @id @default(cuid())
+  date              DateTime @unique @db.Date
+  spyTrendState     String   @default("UNKNOWN") // BULL / BEAR / RANGING
+  qqqTrendState     String   @default("UNKNOWN")
+  vixLevel          Float    @default(0)
+  spyReturn1d       Float    @default(0)
+  spyReturn5d       Float    @default(0)
+  sectorStrengthRank Json?    // { "TECHNOLOGY": 3, "FINANCE": 7, ... }
+  riskMode          String   @default("NEUTRAL") // RISK_ON / RISK_OFF / NEUTRAL
+  dxyState          String?  // rising / falling / stable
+  oilState          String?  // rising / falling / stable
+  ratesDirection    String?  // hiking / cutting / neutral
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([date])
+}

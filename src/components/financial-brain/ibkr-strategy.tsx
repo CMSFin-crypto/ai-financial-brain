@@ -274,6 +274,61 @@ function BracketOrderBlock({ order }: { order: object }) {
   );
 }
 
+// ── News Impact Block ──
+function NewsImpactBlock({ symbol }: { symbol: string }) {
+  const [signal, setSignal] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!symbol) return;
+    setLoading(true);
+    fetch(`/api/news/signal?ticker=${symbol}`)
+      .then(r => r.json())
+      .then(setSignal)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [symbol]);
+
+  if (loading) {
+    return (
+      <div className="mt-2 rounded-lg bg-orange-500/5 border border-orange-500/15 p-3">
+        <div className="flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 text-orange-400 animate-spin" /><span className="text-[12px] text-orange-400">Duke ngarkuar news signal...</span></div>
+      </div>
+    );
+  }
+
+  if (!signal || signal.confidence < 0.15) return null;
+
+  return (
+    <div className="mt-2 rounded-lg bg-orange-500/5 border border-orange-500/15 p-3">
+      <div className="flex items-center gap-1.5 mb-2">
+        <FileText className="w-3.5 h-3.5 text-orange-400" />
+        <p className="text-[12px] font-semibold text-orange-400">News Impact Signal</p>
+        <Badge variant="outline" className="ml-auto text-[10px] border-orange-500/30 text-orange-300">{Math.round(signal.confidence * 100)}% konfidencë</Badge>
+      </div>
+      <div className="grid grid-cols-4 gap-x-3 gap-y-1.5 text-[12px]">
+        <div className="flex justify-between"><span className="text-muted-foreground">Impakt Prob.</span><span className={signal.impactProbability > 0.5 ? 'text-orange-300 font-medium' : 'text-foreground/80'}>{Math.round(signal.impactProbability * 100)}%</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Move 1D</span><span className={signal.expectedMove1d > 0 ? 'text-emerald-300' : 'text-red-300'}>{signal.expectedMove1d > 0 ? '+' : ''}{(signal.expectedMove1d * 100).toFixed(1)}%</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Move 3D</span><span className={signal.expectedMove3d > 0 ? 'text-emerald-300' : 'text-red-300'}>{signal.expectedMove3d > 0 ? '+' : ''}{(signal.expectedMove3d * 100).toFixed(1)}%</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Horizon</span><span className="text-foreground/80">{signal.bestHorizon}</span></div>
+      </div>
+      {signal.similarCases && signal.similarCases.length > 0 && (
+        <div className="mt-2 space-y-1">
+          <p className="text-[11px] text-muted-foreground">Raste të ngjashme:</p>
+          {signal.similarCases.slice(0, 3).map((c: any, i: number) => (
+            <div key={i} className="flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">{c.date} {c.ticker}</span>
+              <span className={c.abnormalReturn1d > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                1D: {c.abnormalReturn1d > 0 ? '+' : ''}{(c.abnormalReturn1d * 100).toFixed(1)}% | 3D: {c.abnormalReturn3d > 0 ? '+' : ''}{(c.abnormalReturn3d * 100).toFixed(1)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Stock Card ──
 function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -553,6 +608,9 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             {stock.bracketOrder && (
               <BracketOrderBlock order={stock.bracketOrder} />
             )}
+
+            {/* News Impact Signal */}
+            <NewsImpactBlock symbol={stock.symbol} />
           </div>
         )}
 
