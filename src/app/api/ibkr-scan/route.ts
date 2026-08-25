@@ -48,6 +48,23 @@ const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
 
 const ETF_SET = new Set(['SPY','QQQ','SMH','XLF','XLE','XLK','XLV','XLY','XLP','XLI','XLB','XLU','XLRE','XLC','GLD','TLT','IWM','VTI','ARKK','SCHD']);
 
+// Sector → ETF mapping
+const SECTOR_ETF_MAP: Record<string, string> = {
+  Tech: 'XLK',
+  Consumer: 'XLY',
+  Staples: 'XLP',
+  Healthcare: 'XLV',
+  Finance: 'XLF',
+  Energy: 'XLE',
+  Industrial: 'XLI',
+  REITs: 'XLRE',
+  Utilities: 'XLU',
+  Communication: 'XLC',
+  Materials: 'XLB',
+};
+
+const SECTOR_ETFS = [...new Set(Object.values(SECTOR_ETF_MAP))];
+
 // ── Sector map ──
 const SECTOR_MAP: Record<string, string> = {
   // Tech / AI / Semiconductors
@@ -257,6 +274,11 @@ interface FunnelStock {
   material8KSentiment: string;          // none | positive | negative
   positionSizeMultiplier: number;       // 1.0 = full size, 0.5 = half
   allowNewEntry: boolean;
+  // NEW: RS vs Sector ETF
+  sectorEtf: string;
+  rsVsSector20d: number;
+  sectorAboveSma50: boolean;
+  sectorRsStatus: string;               // LEADING | INLINE | LAGGING
   // NEW: IBKR bracket order
   bracketOrder: object | null;
   // Verdict
@@ -285,12 +307,23 @@ export async function GET() {
   const MAX_PER_SECTOR = 2;   // max 2 stocks per sector
 
   try {
-    // ── 0. Fetch benchmarks ──
-    const [spyData, qqqData] = await Promise.all([
+    // ── 0. Fetch benchmarks + sector ETFs ──
+    const [spyData, qqqData, ...sectorDataArr] = await Promise.all([
       fetchHistoricalData('SPY', '1y'),
       fetchHistoricalData('QQQ', '1y'),
+      ...SECTOR_ETFS.map(etf => fetchHistoricalData(etf, '1y')),
     ]);
     if (!spyData || !qqqData) return NextResponse.json({ error: 'Te dhena SPY/QQQ mungojne' }, { status: 500 });
+
+    // Build sector ETF data map
+    const sectorEtfData: Record<string, { closes: number[]; sma50: number[] }> = {};
+    SECTOR_ETFS.forEach((etf, i) => {
+      const d = sectorDataArr[i];
+      if (d) {
+        const closes = d.map(dd => dd.close);
+        sectorEtfData[etf] = { closes, sma50: calculateSMA(closes, 50) };
+      }
+    });
 
     const spyC = spyData.map(d => d.close), qqqC = qqqData.map(d => d.close);
     const spyS50 = calculateSMA(spyC, 50), spyS200 = calculateSMA(spyC, 200);
@@ -389,6 +422,10 @@ export async function GET() {
         material8KSentiment: eventResult.material8KSentiment,
         positionSizeMultiplier: eventResult.positionSizeMultiplier,
         allowNewEntry: eventResult.allowNewEntry,
+        sectorEtf: SECTOR_ETF_MAP[sector] || '',
+        rsVsSector20d: 0,
+        sectorAboveSma50: false,
+        sectorRsStatus: 'INLINE',
         bracketOrder: null,
         decision: 'NO_TRADE', reasons: [], warnings: [],
       });
@@ -447,6 +484,32 @@ export async function GET() {
       stock.rsVsSPY = Math.round(rsSpy22 * 100) / 100;
       stock.rsVsQQQ = Math.round(rsQqq22 * 100) / 100;
       stock.rsVsSPY60d = Math.round(rsSpy60 * 100) / 100;
+
+      // ── B2) RS vs Sector ETF (20D) ──
+      const sector = stock.sector;
+      const sectorEtf = SECTOR_ETF_MAP[sector] || '';
+      const etfInfo = sectorEtf ? sectorEtfData[sectorEtf] : null;
+      let rsVsSector20d = 0;
+      let sectorAboveSma50 = false;
+      let sectorRsStatus = 'INLINE' as string;
+      if (etfInfo && etfInfo.closes.length >= 21) {
+        const stockRet20d = pct(closes, 20);
+        const sectorRet20d = pct(etfInfo.closes, 20);
+        rsVsSector20d = Math.round((stockRet20d - sectorRet20d) * 100) / 100;
+        const etfLast = etfInfo.closes.length - 1;
+        sectorAboveSma50 = etfInfo.closes[etfLast] > (etfInfo.sma50[etfLast] || 0);
+        if (rsVsSector20d >= 3) sectorRsStatus = 'LEADING';
+        else if (rsVsSector20d <= -3) sectorRsStatus = 'LAGGING';
+        else sectorRsStatus = 'INLINE';
+      }
+      stock.sectorEtf = sectorEtf;
+      stock.rsVsSector20d = rsVsSector20d;
+      stock.sectorAboveSma50 = sectorAboveSma50;
+      stock.sectorRsStatus = sectorRsStatus;
+
+      // Blend RS vs Sector into rsScore: bonus/penalty
+      if (sectorRsStatus === 'LEADING' && sectorAboveSma50) stock.rsScore = Math.min(100, stock.rsScore + 8);
+      else if (sectorRsStatus === 'LAGGING' && !sectorAboveSma50) stock.rsScore = Math.max(0, stock.rsScore - 8);
 
       // ── C) Momentum (0-100) — 15% weight ──
       const mom5 = pct(closes, 5), mom10 = pct(closes, 10), mom22 = pct(closes, 22);
@@ -655,26 +718,33 @@ export async function GET() {
         warnings.push('MA jo te stackuara (close/EMA20/SMA50/SMA200)');
       }
 
+      // Sector RS gate
+      if (stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50) {
+        warnings.push(`SECTOR RS: ${stock.rsVsSector20d}% vs ${stock.sectorEtf} — sektori i dobet`);
+      }
+
       // Extended (chasing)
       if (stock.pullbackPct > -0.5 && stock.setup === 'PULLBACK') {
         warnings.push('Jo te vertete nje pullback — extended');
       }
 
-      // Determine decision (catalyst gate affects READY)
+      // Determine decision (catalyst gate + sector RS affects READY)
       const hasRR = stock.rewardRiskRatio >= 2.0;
       const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
       const riskOk = stock.riskPct <= 8;
       const scoreOk = stock.totalScore >= 45;
       const eventOk = stock.passedEventRisk;
       const catalystOk = stock.allowNewEntry;
+      const sectorRsOk = !(stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50);
 
-      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk && catalystOk) {
+      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk && catalystOk && sectorRsOk) {
         decision = 'READY';
       } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
         decision = 'WATCHLIST';
         if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
         if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
         if (!catalystOk) warnings.push('WATCHLIST: Catalyst gate — prit');
+        if (!sectorRsOk) warnings.push('WATCHLIST: Sector RS i dobet — prit');
       } else if (!hasRR || stock.riskPct > 6) {
         if (stock.setupScore >= 50) decision = 'WATCHLIST';
         else decision = 'NO_TRADE';

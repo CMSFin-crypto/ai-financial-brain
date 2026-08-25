@@ -36,6 +36,11 @@ interface FunnelStock {
   positionSize: number; positionValue: number; riskDollars: number;
   eventRisk: string; eventRiskSeverity: string;
   // Catalyst Gate
+  // RS vs Sector ETF
+  sectorEtf: string;
+  rsVsSector20d: number;
+  sectorAboveSma50: boolean;
+  sectorRsStatus: string;
   catalystStatus: string;
   daysToEarnings: number | null;
   macroEventWithin24h: string | null;
@@ -475,6 +480,48 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
                           : 'READY'}
                     </span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {stock.sectorEtf && (
+              <div className="mt-2 rounded-lg border p-3 space-y-1.5" style={{
+                backgroundColor: stock.sectorRsStatus === 'LEADING' ? 'rgba(16, 185, 129, 0.05)' :
+                  stock.sectorRsStatus === 'LAGGING' ? 'rgba(239, 68, 68, 0.05)' :
+                  'rgba(100, 116, 139, 0.05)',
+                borderColor: stock.sectorRsStatus === 'LEADING' ? 'rgba(16, 185, 129, 0.2)' :
+                  stock.sectorRsStatus === 'LAGGING' ? 'rgba(239, 68, 68, 0.2)' :
+                  'rgba(100, 116, 139, 0.15)',
+              }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] text-muted-foreground">Sector ETF</span>
+                  <span className="text-[13px] font-semibold text-foreground">{stock.sectorEtf}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] text-muted-foreground">RS vs Sector (20D)</span>
+                  <span className="text-[13px] font-semibold" style={{
+                    color: stock.rsVsSector20d > 0 ? '#10b981' : stock.rsVsSector20d < 0 ? '#ef4444' : 'var(--muted-foreground)',
+                  }}>
+                    {stock.rsVsSector20d > 0 ? '+' : ''}{stock.rsVsSector20d}%
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] text-muted-foreground">Sector Trend</span>
+                  <span className="text-[13px] font-medium" style={{
+                    color: stock.sectorAboveSma50 ? '#10b981' : '#ef4444',
+                  }}>
+                    {stock.sectorAboveSma50 ? 'Bullish' : 'Weak'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] text-muted-foreground">Status</span>
+                  <span className="text-[13px] font-bold" style={{
+                    color: stock.sectorRsStatus === 'LEADING' ? '#10b981' :
+                      stock.sectorRsStatus === 'LAGGING' ? '#ef4444' :
+                      '#f59e0b',
+                  }}>
+                    {stock.sectorRsStatus}
+                  </span>
                 </div>
               </div>
             )}
