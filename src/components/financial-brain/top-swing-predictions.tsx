@@ -24,6 +24,7 @@ import {
   Activity,
   Play,
   Loader2,
+  Newspaper,
 } from 'lucide-react';
 
 // ── Types ──
@@ -68,6 +69,17 @@ interface TopStockCard {
   topReasons: string[];
   riskFlags: string[];
   updatedAt: string;
+  newsImpact?: {
+    headline: string;
+    sentiment: string;
+    newsType: string;
+    hitRate1d: number;
+    avgReturn1d: number;
+    avgReturn2d: number;
+    score: number;
+    label: string;
+    publishedAt: string;
+  };
 }
 
 interface TopStocksResponse {
@@ -216,6 +228,33 @@ function SwingCard({ stock, rank }: { stock: TopStockCard; rank: number }) {
           <ScoreCell icon={DollarSign} label="Trade" value={stock.tradabilityScore} color={scoreColor(stock.tradabilityScore, 40, 60)} bg={scoreBg(stock.tradabilityScore, 40, 60)} />
           <ScoreCell icon={Activity} label="Analyst" value={stock.analystRevisionScore || '—'} color={stock.analystRevisionScore > 0 ? 'text-emerald-400' : stock.analystRevisionScore < 0 ? 'text-red-400' : 'text-muted-foreground/50'} bg={stock.analystRevisionScore > 20 ? 'bg-emerald-500/10' : stock.analystRevisionScore < -20 ? 'bg-red-500/10' : 'bg-muted/5'} active={stock.analystRevisionScore !== 0} />
         </div>
+
+        {/* News Impact MVP */}
+        {stock.newsImpact && stock.newsImpact.label !== 'ignore' && (
+          <div className={`mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg border ${stock.newsImpact.label === 'watchlist_high' ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+            <Newspaper className={`w-4 h-4 mt-0.5 flex-shrink-0 ${stock.newsImpact.label === 'watchlist_high' ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[12px] font-semibold text-muted-foreground">News Impact</span>
+                <Badge className={`text-[11px] px-2 py-0 ${stock.newsImpact.label === 'watchlist_high' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`} variant="outline">
+                  {stock.newsImpact.label === 'watchlist_high' ? 'HIGH' : 'MEDIUM'}
+                </Badge>
+                <Badge className={`text-[11px] px-2 py-0 ${stock.newsImpact.sentiment === 'positive' ? 'bg-emerald-500/10 text-emerald-400/80 border-emerald-500/20' : stock.newsImpact.sentiment === 'negative' ? 'bg-red-500/10 text-red-400/80 border-red-500/20' : 'bg-muted/20 text-muted-foreground border-muted/30'}`} variant="outline">
+                  {stock.newsImpact.sentiment}
+                </Badge>
+                <Badge className="text-[11px] px-2 py-0 bg-muted/20 text-muted-foreground border-muted/30" variant="outline">
+                  {stock.newsImpact.newsType}
+                </Badge>
+              </div>
+              <p className="text-[12px] text-muted-foreground/70 mt-1 truncate">{stock.newsImpact.headline}</p>
+              <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground/60">
+                <span>Hit rate 1D: <strong className="text-foreground/80">{Math.round(stock.newsImpact.hitRate1d * 100)}%</strong></span>
+                <span>Avg 1D: <strong className={`${(stock.newsImpact.avgReturn1d || 0) > 0 ? 'text-emerald-400/80' : 'text-red-400/80'}`}>{stock.newsImpact.avgReturn1d > 0 ? '+' : ''}{(stock.newsImpact.avgReturn1d * 100).toFixed(1)}%</strong></span>
+                <span>Score: <strong className="text-foreground/80">{stock.newsImpact.score}</strong></span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Why this stock? */}
         <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-blue-500/5 border border-blue-500/15">
@@ -369,6 +408,8 @@ export function TopSwingPredictions() {
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState('');
+  const [ingesting, setIngesting] = useState(false);
+  const [ingestProgress, setIngestProgress] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -394,13 +435,37 @@ export function TopSwingPredictions() {
       if (!res.ok) throw new Error(json.error || 'Gabim skanimi');
       const count = json.successful ?? 0;
       setScanProgress(`Skanim i perfunduar: ${count} aksione te analizuara. Duke rifreskuar...`);
-      // Wait a moment then refresh
       await new Promise(r => setTimeout(r, 1500));
       await fetchData();
     } catch (err) {
       setScanProgress(err instanceof Error ? err.message : 'Gabim');
     } finally {
       setScanning(false);
+    }
+  }, [fetchData]);
+
+  const ingestNews = useCallback(async () => {
+    setIngesting(true);
+    setIngestProgress('Duke marre lajme...');
+    try {
+      const res = await fetch('/api/news/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'universe' }),
+        cache: 'no-store',
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Gabim');
+      const count = json.newEvents ?? 0;
+      setIngestProgress(`U marre ${count} lajme te reja. Duke llogaritur return-et...`);
+      // Trigger return computation
+      await fetch('/api/news/recompute-returns', { method: 'POST', cache: 'no-store' });
+      setIngestProgress(`${count} lajme te reja + return-et. Rifresko predictions...`);
+      await fetchData();
+    } catch (err) {
+      setIngestProgress(err instanceof Error ? err.message : 'Gabim');
+    } finally {
+      setIngesting(false);
     }
   }, [fetchData]);
 
@@ -452,7 +517,13 @@ export function TopSwingPredictions() {
                 <span>{scanProgress}</span>
               </div>
             )}
-            <div className="mt-5">
+            {ingestProgress && (
+              <div className={`mt-2 text-sm ${ingestProgress.includes('Gabim') ? 'text-red-400' : 'text-blue-400/80'} flex items-center justify-center gap-2`}>
+                {ingesting && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{ingestProgress}</span>
+              </div>
+            )}
+            <div className="mt-5 flex items-center justify-center gap-3">
               <button
                 onClick={runScan}
                 disabled={scanning}
@@ -461,10 +532,18 @@ export function TopSwingPredictions() {
                 {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                 {scanning ? 'Duke skanuar...' : 'Ekzekuto Skanim ML'}
               </button>
-              <p className="text-[12px] text-muted-foreground/40 mt-2">
-                ~3-5 min · 100+ aksione · 5 faktor · ruhet ne DB
-              </p>
+              <button
+                onClick={ingestNews}
+                disabled={ingesting}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white transition-colors"
+              >
+                {ingesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Newspaper className="w-4 h-4" />}
+                {ingesting ? 'Duke marre...' : 'Ingesto Lajme'}
+              </button>
             </div>
+            <p className="text-[12px] text-muted-foreground/40 mt-2">
+              ML Scan: ~3-5 min, 100+ aksione, 5 faktor · News: ~1 min, 50 tickers
+            </p>
             <div className="mt-4 flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground/50">
               <Info className="w-4 h-4" />
               Ky seksion shfaq vetem rezultatet e modelit ML me 7 shtresa (Trend, Sektor, TF Align, PEAD, Universe Rank, Tradability, Analyst). Per kandidate live te skanuar tani, shiko tab-in <strong className="text-emerald-400/70">IBKR</strong>.

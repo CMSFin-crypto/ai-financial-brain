@@ -65,6 +65,18 @@ interface TopStockCard {
     sectorStrengthFloor: number;
     tradabilityFloor: number;
   };
+  // Layer 6: News Impact MVP
+  newsImpact?: {
+    headline: string;
+    sentiment: string;
+    newsType: string;
+    hitRate1d: number;
+    avgReturn1d: number;
+    avgReturn2d: number;
+    score: number;
+    label: string;
+    publishedAt: string;
+  };
   // Display
   topReasons: string[];
   riskFlags: string[];
@@ -381,6 +393,57 @@ export async function GET() {
     }
     const universeRankMap = computeRelativeRanking(momentumProfiles, spyReturn20d, spyReturn60d);
 
+    // 8b. Fetch latest news impact for candidates (MVP news signal)
+    console.log(`[TOP-STOCKS] Fetching news impact for ${candidateSymbols.length} symbols...`);
+    const newsImpactMap = new Map<string, {
+      headline: string; sentiment: string; newsType: string;
+      hitRate1d: number; avgReturn1d: number; avgReturn2d: number;
+      score: number; label: string; publishedAt: string;
+    }>();
+    try {
+      const recentNews = await db.historicalNewsEvent.findMany({
+        where: { ticker: { in: candidateSymbols } },
+        orderBy: { publishedAtUtc: 'desc' },
+        distinct: ['ticker'],
+        take: candidateSymbols.length * 3,
+      });
+      // Deduplicate by ticker (keep latest)
+      for (const n of recentNews) {
+        if (newsImpactMap.has(n.ticker)) continue;
+        // Quick historical hit rate: count events with same type + positive sentiment + 1d return > 2%
+        const typeCount = recentNews.filter(e =>
+          e.ticker === n.ticker && e.eventType === n.eventType && e.abnormalReturn1d !== null && e.abnormalReturn1d !== 0
+        );
+        const hitCount = typeCount.filter(e => Math.abs(e.abnormalReturn1d ?? 0) > 0.02).length;
+        const hitRate = typeCount.length > 0 ? hitCount / typeCount.length : 0;
+        const avgRet1d = typeCount.length > 0 ? typeCount.reduce((s, e) => s + (e.return1d ?? 0), 0) / typeCount.length : 0;
+        const avgRet3d = typeCount.length > 0 ? typeCount.reduce((s, e) => s + (e.return3d ?? 0), 0) / typeCount.length : 0;
+        // MVP score
+        let score = 0;
+        if (n.sentimentLabel === 'positive') score += 2;
+        else if (n.sentimentLabel === 'negative') score -= 2;
+        if (['earnings', 'guidance'].includes(n.eventType)) score += 2;
+        else if (['analyst', 'product_or_partnership'].includes(n.eventType)) score += 1;
+        if (hitRate > 0.6) score += 2;
+        else if (hitRate > 0.4) score += 1;
+        const label = score >= 4 ? 'watchlist_high' : score >= 2 ? 'watchlist_medium' : 'ignore';
+        newsImpactMap.set(n.ticker, {
+          headline: n.headline,
+          sentiment: n.sentimentLabel,
+          newsType: n.eventType,
+          hitRate1d: Math.round(hitRate * 100) / 100,
+          avgReturn1d: Math.round(avgRet1d * 10000) / 100,
+          avgReturn2d: Math.round(avgRet3d * 10000) / 100,
+          score,
+          label,
+          publishedAt: n.publishedAtUtc?.toISOString() || '',
+        });
+      }
+      console.log(`[TOP-STOCKS] News impact for ${newsImpactMap.size} symbols`);
+    } catch (err: any) {
+      console.log(`[TOP-STOCKS] News impact failed: ${err.message}`);
+    }
+
     // 9. Build cards with ALL scoring layers
     const cards: TopStockCard[] = [];
     const sectorCounts = new Map<string, number>();
@@ -529,6 +592,13 @@ export async function GET() {
       // Tradability reason
       if (tradabilityRecommendation === 'EXCELLENT') topReasons.push('Likuiditet i lartë, slippage i ulët');
 
+      // News impact reasons
+      const newsImp = newsImpactMap.get(p.symbol);
+      if (newsImp && newsImp.label !== 'ignore') {
+        if (newsImp.hitRate1d > 0.5) topReasons.push(`Lajme ${newsImp.newsType} pozitiv — hit rate 1D: ${Math.round(newsImp.hitRate1d * 100)}%`);
+        if (newsImp.avgReturn1d > 0.015) topReasons.push(`Avg move 1D pas lajme: +${(newsImp.avgReturn1d * 100).toFixed(1)}%`);
+      }
+
       // Universe rank reasons
       if (uniRank?.reasons) topReasons.push(...uniRank.reasons.slice(0, 1));
 
@@ -608,6 +678,8 @@ export async function GET() {
         // Layer 5: Analyst Revision
         analystRevisionScore,
         analystRevisionTrend,
+        // Layer 6: News Impact MVP
+        newsImpact: newsImpactMap.get(p.symbol) || undefined,
         // Regime-aware
         activeRegimeThresholds: {
           confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
