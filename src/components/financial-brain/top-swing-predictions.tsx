@@ -425,7 +425,7 @@ export function TopSwingPredictions() {
             )}
             <div className="mt-4 flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground/50">
               <Info className="w-4 h-4" />
-              Ky seksion shfaq vetem BUY predictions me confidence, trend, PEAD, universe rank dhe tradability te kontrolluar. Ekzekuto nje scan te ri.
+              Ky seksion shfaq vetem rezultatet e modelit ML me 7 shtresa (Trend, Sektor, TF Align, PEAD, Universe Rank, Tradability, Analyst). Per kandidate live te skanuar tani, shiko tab-in <strong className="text-emerald-400/70">IBKR</strong>.
             </div>
           </CardContent>
         </Card>
@@ -441,20 +441,14 @@ export function TopSwingPredictions() {
           <TrendingUp className="w-5 h-5 text-emerald-500" />
           <span className="text-sm text-muted-foreground">
             {data.topStocks.length} kandidate swing
-            {data.modelVersion === 'ibkr-fallback'
-              ? <span className="text-muted-foreground/50"> (prej {data.totalScanned} aksionesh te skanuar)</span>
-              : data.totalScanned > 0 && <span className="text-muted-foreground/50"> (prej {data.totalScanned} prediction-eve, {data.filteredOut} te filtruar)</span>
-            }
+            {data.totalScanned > 0 && <span className="text-muted-foreground/50"> (prej {data.totalScanned} prediction-eve, {data.filteredOut} te filtruar)</span>}
           </span>
           {data.activeRegime && data.activeRegime !== 'UNKNOWN' && (
             <Badge variant="secondary" className="text-[12px] bg-muted/50 px-2.5 py-0.5">
               {data.activeRegime.replace(/_/g, ' ')}
             </Badge>
           )}
-          {data.modelVersion === 'ibkr-fallback' && (
-            <Badge className="text-[12px] bg-cyan-500/15 text-cyan-400 border-cyan-500/30 px-2.5 py-0.5" variant="outline">IBKR FALLBACK</Badge>
-          )}
-          {data.modelVersion !== 'N/A' && data.modelVersion !== 'ibkr-fallback' && (
+          {data.modelVersion !== 'N/A' && (
             <Badge variant="secondary" className="text-[12px] bg-muted/50 px-2.5 py-0.5">{data.modelVersion}</Badge>
           )}
         </div>

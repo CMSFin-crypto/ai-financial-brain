@@ -1,0 +1,896 @@
+     1→import { NextResponse } from 'next/server';
+     2→import { db } from '@/lib/db';
+     3→import { fetchHistoricalData, type HistoricalDataPoint } from '@/lib/alpha-vantage';
+     4→import {
+     5→  computeTrendQualityScore,
+     6→  computeSectorRelativeStrengthScore,
+     7→  computeTimeframeAlignmentScore,
+     8→  computeDisplayRankScore,
+     9→  computeSMA,
+    10→  computeReturn,
+    11→  detectHigherHighsHigherLows,
+    12→  inferTimeframeAlignment,
+    13→} from '@/lib/swing-quality-scores';
+    14→import { fetchEarnings, computePEADScore } from '@/lib/pead-engine';
+    15→import { computeRelativeRanking, type StockMomentumProfile } from '@/lib/universe-ranking';
+    16→import { computeTradabilityScore } from '@/lib/tradability-score';
+    17→import { getRegimePolicy } from '@/lib/regime-policy';
+    18→import type { MarketRegimeState } from '@/lib/regime-intelligence';
+    19→import { computeAnalystRevisionScore } from '@/lib/analyst-revision-engine';
+    20→import { runIBKRScan, type FunnelStock } from '@/app/api/ibkr-scan/route';
+    21→
+    22→export const maxDuration = 120;
+    23→
+    24→// ── Response Types ──
+    25→interface TopStockCard {
+    26→  symbol: string;
+    27→  company?: string;
+    28→  sector: string;
+    29→  horizonDays: 1 | 3 | 7;
+    30→  finalDecision: 'BUY';
+    31→  rawScore: number;
+    32→  hybridConfidence: number;
+    33→  displayRankScore: number;
+    34→  regime: string;
+    35→  regimeConfidence?: number;
+    36→  transitionRisk?: number;
+    37→  // Layer 1: Swing Quality
+    38→  trendQualityScore: number;
+    39→  sectorStrengthScore: number;
+    40→  timeframeAlignmentScore: number;
+    41→  timeframeAlignmentStatus: string;
+    42→  // Layer 2: PEAD
+    43→  peadScore: number;
+    44→  peadSignal: string;
+    45→  peadDriftActive: boolean;
+    46→  peadDaysSince: number | null;
+    47→  peadSurprisePct: number | null;
+    48→  // Layer 3: Universe Rank
+    49→  universeRankScore: number;
+    50→  universePercentile: number;
+    51→  isTopDecile: boolean;
+    52→  isTopQuintile: boolean;
+    53→  momentumRegime: string;
+    54→  // Layer 4: Tradability
+    55→  tradabilityScore: number;
+    56→  isTradeable: boolean;
+    57→  tradabilityRecommendation: string;
+    58→  estSlippageBps: number;
+    59→  // Layer 5: Analyst Revision
+    60→  analystRevisionScore: number;
+    61→  analystRevisionTrend: string;
+    62→  // Regime-aware
+    63→  activeRegimeThresholds: {
+    64→    confidenceFloor: number;
+    65→    trendQualityFloor: number;
+    66→    sectorStrengthFloor: number;
+    67→    tradabilityFloor: number;
+    68→  };
+    69→  // Display
+    70→  topReasons: string[];
+    71→  riskFlags: string[];
+    72→  updatedAt: string;
+    73→}
+    74→
+    75→interface TopStocksResponse {
+    76→  generatedAt: string;
+    77→  modelVersion: string;
+    78→  topStocks: TopStockCard[];
+    79→  totalScanned: number;
+    80→  filteredOut: number;
+    81→  activeRegime?: string;
+    82→  regimeThresholdsApplied?: Record<string, number>;
+    83→  message?: string;
+    84→}
+    85→
+    86→// ── Base Config ──
+    87→const BASE_CONFIG = {
+    88→  maxTotal: 9,
+    89→  maxPerHorizon: 3,
+    90→  maxPerSector: 2,
+    91→  minRawScore: 25,
+    92→  minConfidence: 0.58,
+    93→  maxTransitionRisk: 0.65,
+    94→  maxPredictionAgeHours: 24,
+    95→  minTrendQuality: 40,
+    96→  minSectorStrength: 35,
+    97→  minTradability: 35,
+    98→  minUniverseRank: 30,
+    99→};
+   100→
+   101→// ── Horizon remap: DB (1/5/20) → display (1/3/7) ──
+   102→const HORIZON_REMAP: Record<number, 1 | 3 | 7> = { 1: 1, 3: 3, 5: 3, 7: 7, 20: 7 };
+   103→
+   104→// ── Regime-Aware Thresholds ──
+   105→// In BULL_LOW_VOL: more permissive (lower floors, wider funnel)
+   106→// In BEAR_HIGH_VOL / PANIC: much more selective (higher floors, tighter gates)
+   107→// In RANGE_NEUTRAL: moderate selectivity
+   108→
+   109→type RegimeThresholds = {
+   110→  confidenceFloor: number;
+   111→  trendQualityFloor: number;
+   112→  sectorStrengthFloor: number;
+   113→  tradabilityFloor: number;
+   114→  universeRankFloor: number;
+   115→  maxTransitionRisk: number;
+   116→  peadBonusWeight: number;  // extra weight for PEAD in display score
+   117→};
+   118→
+   119→function getRegimeThresholds(regime: string): RegimeThresholds {
+   120→  // Map regime to thresholds
+   121→  switch (regime) {
+   122→    case 'BULL_LOW_VOL':
+   123→      return {
+   124→        confidenceFloor: 0.55,    // more permissive
+   125→        trendQualityFloor: 30,
+   126→        sectorStrengthFloor: 25,
+   127→        tradabilityFloor: 30,
+   128→        universeRankFloor: 25,
+   129→        maxTransitionRisk: 0.70,
+   130→        peadBonusWeight: 0.06,    // PEAD bonus matters more in trending markets
+   131→      };
+   132→    case 'BULL_HIGH_VOL':
+   133→      return {
+   134→        confidenceFloor: 0.58,
+   135→        trendQualityFloor: 35,
+   136→        sectorStrengthFloor: 30,
+   137→        tradabilityFloor: 35,
+   138→        universeRankFloor: 30,
+   139→        maxTransitionRisk: 0.60,
+   140→        peadBonusWeight: 0.05,
+   141→      };
+   142→    case 'BEAR_LOW_VOL':
+   143→      return {
+   144→        confidenceFloor: 0.65,    // much more selective
+   145→        trendQualityFloor: 55,
+   146→        sectorStrengthFloor: 50,
+   147→        tradabilityFloor: 45,
+   148→        universeRankFloor: 50,
+   149→        maxTransitionRisk: 0.50,
+   150→        peadBonusWeight: 0.03,
+   151→      };
+   152→    case 'BEAR_HIGH_VOL':
+   153→      return {
+   154→        confidenceFloor: 0.72,    // very selective
+   155→        trendQualityFloor: 60,
+   156→        sectorStrengthFloor: 55,
+   157→        tradabilityFloor: 50,
+   158→        universeRankFloor: 55,
+   159→        maxTransitionRisk: 0.45,
+   160→        peadBonusWeight: 0.02,
+   161→      };
+   162→    case 'PANIC_CAPITULATION':
+   163→      return {
+   164→        confidenceFloor: 0.80,    // extreme selectivity
+   165→        trendQualityFloor: 70,
+   166→        sectorStrengthFloor: 60,
+   167→        tradabilityFloor: 55,
+   168→        universeRankFloor: 60,
+   169→        maxTransitionRisk: 0.35,
+   170→        peadBonusWeight: 0.01,
+   171→      };
+   172→    case 'RELIEF_RALLY':
+   173→      return {
+   174→        confidenceFloor: 0.56,    // allow slightly lower — relief rallies create opportunities
+   175→        trendQualityFloor: 30,
+   176→        sectorStrengthFloor: 30,
+   177→        tradabilityFloor: 30,
+   178→        universeRankFloor: 25,
+   179→        maxTransitionRisk: 0.65,
+   180→        peadBonusWeight: 0.07,    // PEAD very valuable in relief rallies
+   181→      };
+   182→    case 'RANGE_NEUTRAL':
+   183→    default:
+   184→      return {
+   185→        confidenceFloor: 0.58,
+   186→        trendQualityFloor: 40,
+   187→        sectorStrengthFloor: 35,
+   188→        tradabilityFloor: 35,
+   189→        universeRankFloor: 30,
+   190→        maxTransitionRisk: 0.65,
+   191→        peadBonusWeight: 0.04,
+   192→      };
+   193→  }
+   194→}
+   195→
+   196→// ── IBKR Fallback: when no DB predictions, use IBKR scan as live candidates ──
+   197→async function buildFallbackFromIBKRScan(activeRegime: string, regimeThresholds: RegimeThresholds): Promise<TopStocksResponse> {
+   198→  const empty: TopStocksResponse = {
+   199→    generatedAt: new Date().toISOString(),
+   200→    modelVersion: 'ibkr-fallback',
+   201→    topStocks: [],
+   202→    totalScanned: 0,
+   203→    filteredOut: 0,
+   204→    activeRegime,
+   205→  };
+   206→
+   207→  try {
+   208→    // Call IBKR scan DIRECTLY (no HTTP) — reuses same data cache
+   209→    console.log('[TOP-STOCKS] Running IBKR scan directly as fallback...');
+   210→    const scanData = await runIBKRScan();
+   211→
+   212→    const candidates = (scanData.results || [])
+   213→      .filter((s: FunnelStock) => s.decision === 'READY' || s.decision === 'WATCHLIST')
+   214→      .sort((a: FunnelStock, b: FunnelStock) => b.totalScore - a.totalScore);
+   215→
+   216→    if (candidates.length === 0) return empty;
+   217→
+   218→    // Deduplicate by symbol, keep top score
+   219→    const seen = new Map<string, FunnelStock>();
+   220→    for (const c of candidates) {
+   221→      const ex = seen.get(c.symbol);
+   222→      if (!ex || c.totalScore > ex.totalScore) seen.set(c.symbol, c);
+   223→    }
+   224→
+   225→    const cards: TopStockCard[] = [];
+   226→    const sectorCounts = new Map<string, number>();
+   227→    const horizonCounts = new Map<number, number>();
+   228→
+   229→    const regimePolicy = getRegimePolicy(activeRegime as MarketRegimeState);
+   230→    const regimeMultiplier = regimePolicy.scoreMultiplier;
+   231→
+   232→    for (const s of Array.from(seen.values())) {
+   233→      if (cards.length >= BASE_CONFIG.maxTotal) break;
+   234→
+   235→      const sector = s.sector || 'Unknown';
+   236→      if ((sectorCounts.get(sector) || 0) >= BASE_CONFIG.maxPerSector) continue;
+   237→
+   238→      // Estimate horizon from days to targets
+   239→      let horizon: 1 | 3 | 7 = 5 as 1 | 3 | 7;
+   240→      if (s.daysTo3R <= 3) horizon = 1;
+   241→      else if (s.daysTo3R <= 7) horizon = 3;
+   242→      else horizon = 7;
+   243→
+   244→      if ((horizonCounts.get(horizon) || 0) >= BASE_CONFIG.maxPerHorizon) continue;
+   245→
+   246→      // ── Layer 1: Trend Quality (from IBKR scan scores) ──
+   247→      const trendQualityScore = Math.round(
+   248→        (s.trendScore * 0.40) +
+   249→        (s.stackedMA ? 20 : 0) +
+   250→        (s.adx > 25 ? 15 : s.adx > 20 ? 8 : 0) +
+   251→        (s.aboveSMA50 ? 10 : 0) +
+   252→        (s.sma50Above200 ? 10 : 0) +
+   253→        Math.min(15, s.adx * 0.3)
+   254→      );
+   255→
+   256→      // ── Layer 1b: Sector Strength ──
+   257→      const sectorStrengthScore = Math.round(
+   258→        Math.max(0, Math.min(100, 50 + s.rsVsSPY * 2 + s.rsVsSector20d * 1.5 +
+   259→        (s.sectorRsStatus === 'LEADING' ? 15 : s.sectorRsStatus === 'INLINE' ? 5 : -10)))
+   260→      );
+   261→
+   262→      // ── Layer 1c: Timeframe Alignment ──
+   263→      let tfScore = 40;
+   264→      let tfStatus = 'MIXED';
+   265→      if (s.stackedMA && s.aboveSMA50 && s.sma50Above200) {
+   266→        tfScore = 85; tfStatus = 'ALIGNED';
+   267→      } else if (s.aboveSMA50 && s.sma50Above200) {
+   268→        tfScore = 65; tfStatus = 'MIXED';
+   269→      } else if (s.aboveSMA50) {
+   270→        tfScore = 45; tfStatus = 'MIXED';
+   271→      } else {
+   272→        tfScore = 25; tfStatus = 'CONFLICTED';
+   273→      }
+   274→
+   275→      // Skip CONFLICTED alignment
+   276→      if (tfStatus === 'CONFLICTED') continue;
+   277→
+   278→      // ── Apply regime gates ──
+   279→      if (trendQualityScore < regimeThresholds.trendQualityFloor) continue;
+   280→      if (sectorStrengthScore < regimeThresholds.sectorStrengthFloor) continue;
+   281→
+   282→      // ── Layer 2: PEAD (not available from IBKR scan) ──
+   283→      const peadScore = 0;
+   284→      const peadSignal = 'NO_DATA';
+   285→      const peadDriftActive = false;
+   286→
+   287→      // ── Layer 3: Universe Rank (approximate from RS) ──
+   288→      const universeRankScore = Math.round(Math.max(0, Math.min(100, 50 + s.rsScore * 0.8)));
+   289→      const universePercentile = Math.round(Math.max(5, Math.min(95, 50 + s.rsVsSPY * 3)));
+   290→      const isTopDecile = s.rsScore >= 75;
+   291→      const isTopQuintile = s.rsScore >= 60;
+   292→      const momentumRegime = s.rsScore >= 65 ? 'LEADING' : s.rsScore >= 40 ? 'FOLLOWING' : 'DECLINING';
+   293→
+   294→      if (universeRankScore < regimeThresholds.universeRankFloor) continue;
+   295→
+   296→      // ── Layer 4: Tradability (from IBKR data) ──
+   297→      const tradScore = Math.round(
+   298→        Math.min(100,
+   299→          (s.avgDolVol20d > 50_000_000 ? 30 : s.avgDolVol20d > 10_000_000 ? 20 : 10) +
+   300→          (s.atrPct < 4 ? 25 : s.atrPct < 6 ? 18 : 10) +
+   301→          (s.volRatio > 0.7 ? 20 : 10) +
+   302→          (s.rsi > 30 && s.rsi < 70 ? 25 : 15)
+   303→        )
+   304→      );
+   305→      const tradabilityScore = tradScore;
+   306→      const isTradeable = tradScore >= 35;
+   307→      const tradabilityRecommendation = tradScore >= 60 ? 'EXCELLENT' : tradScore >= 45 ? 'GOOD' : tradScore >= 35 ? 'ACCEPTABLE' : 'POOR';
+   308→      const estSlippageBps = s.atrPct < 2 ? 2 : s.atrPct < 4 ? 4 : 6;
+   309→
+   310→      if (!isTradeable || tradabilityScore < regimeThresholds.tradabilityFloor) continue;
+   311→
+   312→      // ── Layer 5: Analyst Revision (not available) ──
+   313→      const analystRevisionScore = 0;
+   314→      const analystRevisionTrend = 'NO_DATA';
+   315→
+   316→      // ── Derive confidence from total score ──
+   317→      const hybridConfidence = Math.round(Math.max(55, Math.min(95, 40 + s.totalScore * 0.55)));
+   318→
+   319→      // ── Risk flags ──
+   320→      const riskFlags: string[] = [];
+   321→      if (s.warnings) riskFlags.push(...s.warnings.slice(0, 2));
+   322→      if (s.rsi > 75) riskFlags.push('RSI i larte');
+   323→      if (s.decision === 'WATCHLIST') riskFlags.push('WATCHLIST — jo READY');
+   324→      if (momentumRegime === 'DECLINING') riskFlags.push('Momentum ne rënie');
+   325→      const uniqueFlags = [...new Set(riskFlags)];
+   326→      if (uniqueFlags.length > 4) continue;
+   327→
+   328→      // ── Top reasons ──
+   329→      const topReasons: string[] = [];
+   330→      if (s.decision === 'READY') topReasons.push(`IBKR READY — ${s.setup || 'setup'} detected`);
+   331→      else topReasons.push(`IBKR WATCHLIST — ${s.setup || 'potential'}`);
+   332→      if (s.stackedMA) topReasons.push('Stacked MAs: EMA20 > SMA50 > SMA200');
+   333→      if (s.projectedUpsidePct > 0) topReasons.push(`Upside potential: +${s.projectedUpsidePct}% ne 3R`);
+   334→      if (s.pullbackZone) topReasons.push(`Pullback zone: ${s.pullbackZone}`);
+   335→      if (s.rewardRiskRatio > 2) topReasons.push(`R:R ${s.rewardRiskRatio.toFixed(1)}:1`);
+   336→      if (topReasons.length === 0) topReasons.push('Multiple bullish indicators aligned');
+   337→
+   338→      // ── Display Rank Score ──
+   339→      const baseScore =
+   340→        s.totalScore * 0.25 +
+   341→        hybridConfidence * 0.20 +
+   342→        trendQualityScore * 0.12 +
+   343→        sectorStrengthScore * 0.08 +
+   344→        tfScore * 0.08 +
+   345→        universeRankScore * 0.07 +
+   346→        tradabilityScore * 0.06;
+   347→
+   348→      const riskPenalty = uniqueFlags.length === 0 ? 3 : uniqueFlags.length <= 1 ? 1 : uniqueFlags.length <= 2 ? -1 : -4;
+   349→
+   350→      const displayRankScore = Math.round(
+   351→        Math.max(0, Math.min(100, (baseScore + riskPenalty) * regimeMultiplier))
+   352→      );
+   353→
+   354→      cards.push({
+   355→        symbol: s.symbol,
+   356→        sector,
+   357→        horizonDays: horizon,
+   358→        finalDecision: 'BUY',
+   359→        rawScore: Math.round(s.totalScore),
+   360→        hybridConfidence,
+   361→        displayRankScore,
+   362→        regime: activeRegime,
+   363→        regimeConfidence: undefined,
+   364→        transitionRisk: undefined,
+   365→        trendQualityScore,
+   366→        sectorStrengthScore,
+   367→        timeframeAlignmentScore: tfScore,
+   368→        timeframeAlignmentStatus: tfStatus,
+   369→        peadScore,
+   370→        peadSignal,
+   371→        peadDriftActive,
+   372→        peadDaysSince: null,
+   373→        peadSurprisePct: null,
+   374→        universeRankScore,
+   375→        universePercentile,
+   376→        isTopDecile,
+   377→        isTopQuintile,
+   378→        momentumRegime,
+   379→        tradabilityScore,
+   380→        isTradeable,
+   381→        tradabilityRecommendation,
+   382→        estSlippageBps,
+   383→        analystRevisionScore,
+   384→        analystRevisionTrend,
+   385→        activeRegimeThresholds: {
+   386→          confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
+   387→          trendQualityFloor: regimeThresholds.trendQualityFloor,
+   388→          sectorStrengthFloor: regimeThresholds.sectorStrengthFloor,
+   389→          tradabilityFloor: regimeThresholds.tradabilityFloor,
+   390→        },
+   391→        topReasons: topReasons.slice(0, 4),
+   392→        riskFlags: uniqueFlags,
+   393→        updatedAt: 'tani',
+   394→      });
+   395→
+   396→      horizonCounts.set(horizon, (horizonCounts.get(horizon) || 0) + 1);
+   397→      sectorCounts.set(sector, (sectorCounts.get(sector) || 0) + 1);
+   398→    }
+   399→
+   400→    cards.sort((a, b) => b.displayRankScore - a.displayRankScore);
+   401→
+   402→    return {
+   403→      generatedAt: scanData.scannedAt || new Date().toISOString(),
+   404→      modelVersion: 'ibkr-fallback',
+   405→      topStocks: cards,
+   406→      totalScanned: scanData.funnel?.universe || 0,
+   407→      filteredOut: (scanData.funnel?.universe || 0) - cards.length,
+   408→      activeRegime,
+   409→      regimeThresholdsApplied: {
+   410→        confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
+   411→        trendQualityFloor: regimeThresholds.trendQualityFloor,
+   412→        sectorStrengthFloor: regimeThresholds.sectorStrengthFloor,
+   413→        tradabilityFloor: regimeThresholds.tradabilityFloor,
+   414→        universeRankFloor: regimeThresholds.universeRankFloor,
+   415→      },
+   416→      message: `Fallback nga IBKR Scan — ${cards.length} kandidate READY/WATCHLIST me ${activeRegime} gates.`,
+   417→    };
+   418→  } catch (err: any) {
+   419→    console.error('[TOP-STOCKS] IBKR fallback error:', err.message);
+   420→    return empty;
+   421→  }
+   422→}
+   423→
+   424→export async function GET() {
+   425→  try {
+   426→    // 0. Detect current regime for dynamic thresholds
+   427→    let activeRegime = 'UNKNOWN';
+   428→    let regimeThresholds = getRegimeThresholds('RANGE_NEUTRAL');
+   429→    
+   430→    try {
+   431→      const latestRegime = await db.regimeSnapshot.findFirst({
+   432→        orderBy: { date: 'desc' },
+   433→      });
+   434→      if (latestRegime) {
+   435→        activeRegime = latestRegime.regimeState;
+   436→        regimeThresholds = getRegimeThresholds(activeRegime);
+   437→        console.log(`[TOP-STOCKS] Active regime: ${activeRegime}, thresholds: conf≥${(regimeThresholds.confidenceFloor * 100).toFixed(0)}% TQ≥${regimeThresholds.trendQualityFloor} TRAD≥${regimeThresholds.tradabilityFloor}`);
+   438→      }
+   439→    } catch (err: any) {
+   440→      console.log(`[TOP-STOCKS] Regime detection failed, using defaults: ${err.message}`);
+   441→    }
+   442→
+   443→    // 1. Fetch recent BUY predictions (PENDING, fresh)
+   444→    const cutoff = new Date(Date.now() - BASE_CONFIG.maxPredictionAgeHours * 60 * 60 * 1000);
+   445→
+   446→    const predictions = await db.prediction.findMany({
+   447→      where: {
+   448→        finalDecision: 'BUY',
+   449→        evaluationStatus: 'PENDING',
+   450→        predictedAt: { gte: cutoff },
+   451→        rawScore: { gte: BASE_CONFIG.minRawScore },
+   452→        calibratedConfidence: { gte: regimeThresholds.confidenceFloor },
+   453→        transitionRisk: { lte: regimeThresholds.maxTransitionRisk },
+   454→      },
+   455→      include: {
+   456→        factors: true,
+   457→        spilloverSignal: {
+   458→          select: {
+   459→            riskAlignment: true,
+   460→            asiaConsensus: true,
+   461→            vixDirection: true,
+   462→            sectorTrend: true,
+   463→            spilloverScore: true,
+   464→            confidence: true,
+   465→          },
+   466→        },
+   467→        marketSnapshots: {
+   468→          select: {
+   469→            regime: true,
+   470→            regimeConfidence: true,
+   471→            vixLevel: true,
+   472→          },
+   473→          take: 1,
+   474→        },
+   475→      },
+   476→      orderBy: { predictedAt: 'desc' },
+   477→    });
+   478→
+   479→    if (predictions.length === 0) {
+   480→      // ═══════ FALLBACK: IBKR SCAN ═══════
+   481→      // When no DB predictions exist, use IBKR scan results as swing candidates
+   482→      console.log('[TOP-STOCKS] No DB predictions, falling back to IBKR scan...');
+   483→      const fallback = await buildFallbackFromIBKRScan(activeRegime, regimeThresholds);
+   484→      if (fallback.topStocks.length > 0) return NextResponse.json(fallback);
+   485→      // If even fallback is empty, return empty with message
+   486→      return NextResponse.json({
+   487→        generatedAt: new Date().toISOString(),
+   488→        modelVersion: 'N/A',
+   489→        topStocks: [],
+   490→        totalScanned: 0,
+   491→        filteredOut: 0,
+   492→        activeRegime,
+   493→        message: `Asnje kandidat swing. Nuk ka prediction-e ne DB dhe IBKR scan nuk gjeti kandidate READY/WATCHLIST.`,
+   494→      } satisfies TopStocksResponse);
+   495→    }
+   496→
+   497→    const modelVersion = predictions[0]?.modelVersion || 'unknown';
+   498→
+   499→    // 2. Event risk map
+   500→    const symbols = [...new Set(predictions.map(p => p.symbol))];
+   501→    const now = new Date();
+   502→    const events = await db.eventSnapshot.findMany({
+   503→      where: { ticker: { in: symbols }, eventDate: { gte: now }, severity: { in: ['HIGH', 'CRITICAL'] } },
+   504→      orderBy: { daysUntil: 'asc' },
+   505→    });
+   506→
+   507→    const eventRiskMap = new Map<string, { severity: string; daysUntil: number | null; eventType: string }[]>();
+   508→    for (const e of events) {
+   509→      if (!eventRiskMap.has(e.ticker)) eventRiskMap.set(e.ticker, []);
+   510→      eventRiskMap.get(e.ticker)!.push({ severity: e.severity, daysUntil: e.daysUntil, eventType: e.eventType });
+   511→    }
+   512→
+   513→    // 3. Deduplicate by symbol:displayHorizon
+   514→    const latestByKey = new Map<string, typeof predictions[0]>();
+   515→    for (const p of predictions) {
+   516→      const displayH = HORIZON_REMAP[p.horizonDays] ?? (p.horizonDays as 1 | 3 | 7);
+   517→      const key = `${p.symbol}:${displayH}`;
+   518→      const existing = latestByKey.get(key);
+   519→      if (!existing || p.predictedAt > existing.predictedAt) latestByKey.set(key, p);
+   520→    }
+   521→
+   522→    // 4. Fetch historical data (full OHLCV for all scoring layers)
+   523→    const candidateSymbols = [...new Set(Array.from(latestByKey.values()).map(p => p.symbol))];
+   524→    console.log(`[TOP-STOCKS] Fetching chart data for ${candidateSymbols.length} symbols...`);
+   525→
+   526→    const priceDataMap = new Map<string, HistoricalDataPoint[]>(); // symbol → full OHLCV
+   527→    const closeDataMap = new Map<string, number[]>(); // symbol → closes[]
+   528→    const fetchPromises = candidateSymbols.map(async (sym) => {
+   529→      try {
+   530→        const data = await fetchHistoricalData(sym, '6mo', { forceRefresh: false });
+   531→        if (data && data.length >= 60) {
+   532→          priceDataMap.set(sym, data);
+   533→          closeDataMap.set(sym, data.map(d => d.close));
+   534→        }
+   535→      } catch (err: any) {
+   536→        console.log(`[TOP-STOCKS] No chart data for ${sym}: ${err.message}`);
+   537→      }
+   538→    });
+   539→    await Promise.allSettled(fetchPromises);
+   540→    console.log(`[TOP-STOCKS] Got chart data for ${priceDataMap.size}/${candidateSymbols.length} symbols`);
+   541→
+   542→    // 5. Fetch SPY data
+   543→    let spyCloses: number[] = [];
+   544→    let spyReturn20d = 0;
+   545→    let spyReturn60d = 0;
+   546→    try {
+   547→      const spyData = await fetchHistoricalData('SPY', '6mo', { forceRefresh: false });
+   548→      if (spyData && spyData.length >= 60) {
+   549→        spyCloses = spyData.map(d => d.close);
+   550→        spyReturn20d = computeReturn(spyCloses, 20);
+   551→        spyReturn60d = computeReturn(spyCloses, 60);
+   552→      }
+   553→    } catch {}
+   554→
+   555→    // 6. Fetch PEAD data (earnings) in parallel
+   556→    console.log(`[TOP-STOCKS] Fetching PEAD data for ${candidateSymbols.length} symbols...`);
+   557→    const peadMap = new Map<string, Awaited<ReturnType<typeof computePEADScore>>>();
+   558→    const peadPromises = candidateSymbols.map(async (sym) => {
+   559→      try {
+   560→        const reports = await fetchEarnings(sym);
+   561→        const prices = priceDataMap.get(sym) || [];
+   562→        const pead = computePEADScore({
+   563→          symbol: sym,
+   564→          earningsReports: reports,
+   565→          priceHistory: prices,
+   566→          currentPrice: prices[prices.length - 1]?.close || 0,
+   567→        });
+   568→        peadMap.set(sym, pead);
+   569→      } catch (err: any) {
+   570→        console.log(`[TOP-STOCKS] PEAD failed for ${sym}: ${err.message}`);
+   571→      }
+   572→    });
+   573→    await Promise.allSettled(peadPromises);
+   574→    console.log(`[TOP-STOCKS] PEAD computed for ${peadMap.size} symbols`);
+   575→
+   576→    // 6b. Compute Analyst Revision scores (reuses PEAD earnings cache)
+   577→    const analystMap = new Map<string, Awaited<ReturnType<typeof computeAnalystRevisionScore>>>();
+   578→    for (const sym of candidateSymbols) {
+   579→      try {
+   580→        const reports = await fetchEarnings(sym);
+   581→        if (reports.length >= 2) {
+   582→          analystMap.set(sym, computeAnalystRevisionScore({ symbol: sym, earningsReports: reports }));
+   583→        }
+   584→      } catch {}
+   585→    }
+   586→
+   587→    // 7. Compute Tradability scores
+   588→    const tradabilityMap = new Map<string, Awaited<ReturnType<typeof computeTradabilityScore>>>();
+   589→    for (const sym of candidateSymbols) {
+   590→      const prices = priceDataMap.get(sym);
+   591→      if (prices && prices.length >= 20) {
+   592→        tradabilityMap.set(sym, computeTradabilityScore({
+   593→          symbol: sym,
+   594→          priceHistory: prices,
+   595→          currentPrice: prices[prices.length - 1].close,
+   596→        }));
+   597→      }
+   598→    }
+   599→
+   600→    // 8. Compute Universe-Relative Ranking
+   601→    const momentumProfiles: StockMomentumProfile[] = [];
+   602→    for (const p of Array.from(latestByKey.values())) {
+   603→      const closes = closeDataMap.get(p.symbol);
+   604→      if (closes && closes.length >= 60) {
+   605→        momentumProfiles.push({
+   606→          symbol: p.symbol,
+   607→          sector: p.sector || 'Unknown',
+   608→          return5d: computeReturn(closes, 5),
+   609→          return20d: computeReturn(closes, 20),
+   610→          return60d: computeReturn(closes, 60),
+   611→          volume: priceDataMap.get(p.symbol)?.slice(-1)[0]?.volume || 0,
+   612→          marketCap: 0,
+   613→        });
+   614→      }
+   615→    }
+   616→    const universeRankMap = computeRelativeRanking(momentumProfiles, spyReturn20d, spyReturn60d);
+   617→
+   618→    // 9. Build cards with ALL scoring layers
+   619→    const cards: TopStockCard[] = [];
+   620→    const sectorCounts = new Map<string, number>();
+   621→    const horizonCounts = new Map<number, number>();
+   622→    const candidates = Array.from(latestByKey.values()).sort((a, b) => b.rawScore - a.rawScore);
+   623→
+   624→    for (const p of candidates) {
+   625→      if (cards.length >= BASE_CONFIG.maxTotal) break;
+   626→
+   627→      const horizon = HORIZON_REMAP[p.horizonDays] ?? (p.horizonDays as 1 | 3 | 7);
+   628→      const sector = p.sector || 'Unknown';
+   629→      const tickerEvents = eventRiskMap.get(p.symbol) || [];
+   630→      const hasCriticalEvent = tickerEvents.some(e => e.severity === 'CRITICAL' && (e.daysUntil ?? 999) <= 2);
+   631→
+   632→      // ── Layer 1: Swing Quality Scores ──
+   633→      const closes = closeDataMap.get(p.symbol);
+   634→      let trendQualityScore = 50;
+   635→      let sectorStrengthScore = 50;
+   636→      let tfScore = 40;
+   637→      let tfStatus = 'MIXED';
+   638→
+   639→      if (closes && closes.length >= 60) {
+   640→        const price = closes[closes.length - 1];
+   641→        const sma20 = computeSMA(closes, 20);
+   642→        const sma50 = computeSMA(closes, 50);
+   643→        const sma200 = computeSMA(closes, 200);
+   644→        const ret20d = computeReturn(closes, 20);
+   645→        const ret60d = computeReturn(closes, 60);
+   646→        const hhhl = detectHigherHighsHigherLows(closes);
+   647→
+   648→        trendQualityScore = computeTrendQualityScore({
+   649→          price, sma20, sma50, sma200, return20d: ret20d, return60d: ret60d, isHigherHighsHigherLows: hhhl,
+   650→        });
+   651→
+   652→        sectorStrengthScore = computeSectorRelativeStrengthScore({
+   653→          stockReturn20d: ret20d, stockReturn60d: ret60d,
+   654→          spyReturn20d, spyReturn60d,
+   655→          sectorReturn20d: ret20d * 0.85,
+   656→          sectorReturn60d: ret60d * 0.85,
+   657→        });
+   658→
+   659→        const tfInput = inferTimeframeAlignment(closes, sma20, sma50, sma200);
+   660→        const tfResult = computeTimeframeAlignmentScore(tfInput);
+   661→        tfScore = tfResult.score;
+   662→        tfStatus = tfResult.status;
+   663→      }
+   664→
+   665→      // ── Layer 2: PEAD ──
+   666→      const pead = peadMap.get(p.symbol);
+   667→      const peadScore = pead?.peadScore ?? 0;
+   668→      const peadSignal = pead?.signal ?? 'NO_DATA';
+   669→      const peadDriftActive = pead?.driftActive ?? false;
+   670→      const peadDaysSince = pead?.daysSinceEarnings ?? null;
+   671→      const peadSurprisePct = pead?.lastSurprisePct ?? null;
+   672→
+   673→      // ── Layer 3: Universe Rank ──
+   674→      const uniRank = universeRankMap.get(p.symbol);
+   675→      const universeRankScore = uniRank?.rankScore ?? 50;
+   676→      const universePercentile = uniRank?.universePercentile ?? 50;
+   677→      const isTopDecile = uniRank?.isTopDecile ?? false;
+   678→      const isTopQuintile = uniRank?.isTopQuintile ?? false;
+   679→      const momentumRegime = uniRank?.momentumRegime ?? 'FOLLOWING';
+   680→
+   681→      // ── Layer 5: Analyst Revision ──
+   682→      const analyst = analystMap.get(p.symbol);
+   683→      const analystRevisionScore = analyst?.revisionScore ?? 0;
+   684→      const analystRevisionTrend = analyst?.trend ?? 'NO_DATA';
+   685→
+   686→      // Analyst revision gate: STRONG_DOWN = filter out
+   687→      if (analystRevisionTrend === 'STRONG_DOWN') continue;
+   688→
+   689→      // ── Layer 4: Tradability ──
+   690→      const trad = tradabilityMap.get(p.symbol);
+   691→      const tradabilityScore = trad?.tradabilityScore ?? 50;
+   692→      const isTradeable = trad?.isTradeable ?? true;
+   693→      const tradabilityRecommendation = trad?.recommendation ?? 'ACCEPTABLE';
+   694→      const estSlippageBps = trad?.estimatedSlippageBps ?? 5;
+   695→
+   696→      // ═══════ REGIME-AWARE QUALITY GATES ═══════
+   697→      // Apply dynamic thresholds based on current market regime
+   698→      if (trendQualityScore < regimeThresholds.trendQualityFloor) continue;
+   699→      if (sectorStrengthScore < regimeThresholds.sectorStrengthFloor) continue;
+   700→      if (tfStatus === 'CONFLICTED') continue;
+   701→      if (hasCriticalEvent) continue;
+   702→      if (!isTradeable || tradabilityScore < regimeThresholds.tradabilityFloor) continue;
+   703→      if (universeRankScore < regimeThresholds.universeRankFloor) continue;
+   704→
+   705→      // PEAD gate: if PEAD is actively negative (SELL/STRONG_SELL), filter out
+   706→      if (peadDriftActive && (peadSignal === 'SELL' || peadSignal === 'STRONG_SELL')) continue;
+   707→
+   708→      // Per-horizon / per-sector limits
+   709→      if ((horizonCounts.get(horizon) || 0) >= BASE_CONFIG.maxPerHorizon) continue;
+   710→      if ((sectorCounts.get(sector) || 0) >= BASE_CONFIG.maxPerSector) continue;
+   711→
+   712→      // ── Risk Flags (enhanced) ──
+   713→      const riskFlags: string[] = [];
+   714→      if (tickerEvents.length > 0) {
+   715→        const ne = tickerEvents[0];
+   716→        riskFlags.push(`${ne.eventType} in ${ne.daysUntil}d`);
+   717→      }
+   718→      if ((p.transitionRisk ?? 0) > 0.5) riskFlags.push('High transition risk');
+   719→      if (p.regime?.includes('BEAR') || p.regime?.includes('PANIC')) riskFlags.push('Bearish regime');
+   720→      if ((p.regimeConfidence ?? 0) < 0.4) riskFlags.push('Low regime confidence');
+   721→      if (!isTradeable) riskFlags.push('Tradability issue');
+   722→      if (tradabilityRecommendation === 'POOR' || tradabilityRecommendation === 'UNTRADEABLE') {
+   723→        riskFlags.push(`Tradability: ${tradabilityRecommendation}`);
+   724→      }
+   725→      if (momentumRegime === 'DECLINING') riskFlags.push('Momentum në rënie');
+   726→      if (analyst?.riskFlags) riskFlags.push(...analyst.riskFlags.slice(0, 1));
+   727→      if (pead?.riskFlags) riskFlags.push(...pead.riskFlags.slice(0, 2));
+   728→      if (trad?.riskFlags) riskFlags.push(...trad.riskFlags.slice(0, 1));
+   729→      const sp = p.spilloverSignal;
+   730→      if (sp) {
+   731→        if ((sp.riskAlignment ?? 0) < -0.3) riskFlags.push('Negative spillover');
+   732→        if (sp.vixDirection === 'rising') riskFlags.push('VIX rising');
+   733→        if (sp.sectorTrend === 'weak') riskFlags.push('Weak sector');
+   734→      }
+   735→      // Deduplicate
+   736→      const uniqueFlags = [...new Set(riskFlags)];
+   737→      if (uniqueFlags.length > 4) continue;
+   738→
+   739→      // ── Top Reasons (all-layers) ──
+   740→      const topReasons: string[] = [];
+   741→
+   742→      // PEAD reasons (highest priority when active)
+   743→      if (peadDriftActive && peadScore >= 15) {
+   744→        topReasons.push(`PEAD drift aktiv: +${peadSurprisePct?.toFixed(1)}% surprise, ${peadDaysSince}d pas earnings`);
+   745→      }
+   746→      if (isTopDecile) topReasons.push('Top decile i universit');
+   747→      else if (isTopQuintile) topReasons.push('Top quintile — lider relativ');
+   748→
+   749→      // Trend + Quality reasons
+   750→      const c = closeDataMap.get(p.symbol);
+   751→      if (c && c.length >= 60) {
+   752→        const price = c[c.length - 1];
+   753→        const s20 = computeSMA(c, 20);
+   754→        const s50 = computeSMA(c, 50);
+   755→        if (price > s50 && s50 > computeSMA(c, 200)) topReasons.push('Price above SMA50 > SMA200');
+   756→        if (trendQualityScore >= 70) topReasons.push('Trend quality i lartë');
+   757→        if (sectorStrengthScore >= 70) topReasons.push(`${sector} outperformon SPY`);
+   758→        if (tfStatus === 'ALIGNED') topReasons.push('Multi-timeframe i alignuar');
+   759→        if (sp && (sp.asiaConsensus ?? 0) > 0.2) topReasons.push('Asia + sector aligned');
+   760→        if (sp && (sp.riskAlignment ?? 0) > 0.2) topReasons.push('Positive spillover signal');
+   761→      }
+   762→
+   763→      // Analyst revision reasons
+   764→      if (analyst?.reasons) topReasons.push(...analyst.reasons.slice(0, 1));
+   765→      if (analystRevisionTrend === 'STRONG_UP') topReasons.push('Konsensusi i analystëve po ngrihet fort');
+   766→      else if (analystRevisionTrend === 'UP') topReasons.push('Revisionet pozitive — nxitje konsensusi');
+   767→
+   768→      // Tradability reason
+   769→      if (tradabilityRecommendation === 'EXCELLENT') topReasons.push('Likuiditet i lartë, slippage i ulët');
+   770→
+   771→      // Universe rank reasons
+   772→      if (uniRank?.reasons) topReasons.push(...uniRank.reasons.slice(0, 1));
+   773→
+   774→      // Factor-based reasons
+   775→      const bullishFactors = p.factors
+   776→        .filter(f => f.score > 0.5 && f.signal !== 'BEARISH')
+   777→        .sort((a, b) => b.score - a.score);
+   778→      for (const f of bullishFactors) {
+   779→        if (topReasons.length >= 4) break;
+   780→        const desc = f.description || `${f.factorName}: ${f.signal || 'bullish'}`;
+   781→        if (!topReasons.includes(desc)) topReasons.push(desc);
+   782→      }
+   783→      if (topReasons.length === 0) topReasons.push('Multiple bullish factors aligned');
+   784→
+   785→      // ── Display Rank Score (ENHANCED with 6 layers) ──
+   786→      // Base: rawScore*0.30 + confidence*0.20 + trendQuality*0.12 + sectorStrength*0.08 + alignment*0.08
+   787→      // New: pead*0.07 + universeRank*0.08 + tradability*0.07 — minus risk penalty
+   788→      const baseScore =
+   789→        p.rawScore * 0.30 +
+   790→        p.calibratedConfidence * 100 * 0.20 +
+   791→        trendQualityScore * 0.12 +
+   792→        sectorStrengthScore * 0.08 +
+   793→        tfScore * 0.08 +
+   794→        (peadDriftActive ? peadScore * regimeThresholds.peadBonusWeight : 0) +
+   795→        universeRankScore * 0.07 +
+   796→        tradabilityScore * 0.06 +
+   797→        (analystRevisionScore > 0 ? analystRevisionScore * 0.04 : 0);
+   798→
+   799→      // Risk penalty
+   800→      const riskPenalty = uniqueFlags.length === 0 ? 3 : uniqueFlags.length <= 1 ? 1 : uniqueFlags.length <= 2 ? -1 : -4;
+   801→
+   802→      // Regime transition penalty (from regime-policy scoreMultiplier)
+   803→      const regimePolicy = getRegimePolicy(activeRegime as MarketRegimeState);
+   804→      const regimeMultiplier = regimePolicy.scoreMultiplier;
+   805→
+   806→      const displayRankScore = Math.round(
+   807→        Math.max(0, Math.min(100, (baseScore + riskPenalty) * regimeMultiplier))
+   808→      );
+   809→
+   810→      const ageMs = Date.now() - p.predictedAt.getTime();
+   811→      const ageMin = Math.round(ageMs / 60000);
+   812→      const updatedAt = ageMin < 60 ? `${ageMin} min ago` : `${Math.round(ageMin / 60)}h ago`;
+   813→
+   814→      cards.push({
+   815→        symbol: p.symbol,
+   816→        sector,
+   817→        horizonDays: horizon,
+   818→        finalDecision: 'BUY',
+   819→        rawScore: Math.round(p.rawScore),
+   820→        hybridConfidence: Math.round(p.calibratedConfidence * 100),
+   821→        displayRankScore,
+   822→        regime: p.regime || 'UNKNOWN',
+   823→        regimeConfidence: p.regimeConfidence ? Math.round(p.regimeConfidence * 100) : undefined,
+   824→        transitionRisk: p.transitionRisk ? Math.round(p.transitionRisk * 100) : undefined,
+   825→        // Layer 1
+   826→        trendQualityScore,
+   827→        sectorStrengthScore,
+   828→        timeframeAlignmentScore: tfScore,
+   829→        timeframeAlignmentStatus: tfStatus,
+   830→        // Layer 2: PEAD
+   831→        peadScore,
+   832→        peadSignal,
+   833→        peadDriftActive,
+   834→        peadDaysSince,
+   835→        peadSurprisePct,
+   836→        // Layer 3: Universe Rank
+   837→        universeRankScore,
+   838→        universePercentile,
+   839→        isTopDecile,
+   840→        isTopQuintile,
+   841→        momentumRegime,
+   842→        // Layer 4: Tradability
+   843→        tradabilityScore,
+   844→        isTradeable,
+   845→        tradabilityRecommendation,
+   846→        estSlippageBps,
+   847→        // Layer 5: Analyst Revision
+   848→        analystRevisionScore,
+   849→        analystRevisionTrend,
+   850→        // Regime-aware
+   851→        activeRegimeThresholds: {
+   852→          confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
+   853→          trendQualityFloor: regimeThresholds.trendQualityFloor,
+   854→          sectorStrengthFloor: regimeThresholds.sectorStrengthFloor,
+   855→          tradabilityFloor: regimeThresholds.tradabilityFloor,
+   856→        },
+   857→        // Display
+   858→        topReasons: topReasons.slice(0, 4),
+   859→        riskFlags: uniqueFlags,
+   860→        updatedAt,
+   861→      });
+   862→
+   863→      horizonCounts.set(horizon, (horizonCounts.get(horizon) || 0) + 1);
+   864→      sectorCounts.set(sector, (sectorCounts.get(sector) || 0) + 1);
+   865→    }
+   866→
+   867→    cards.sort((a, b) => b.displayRankScore - a.displayRankScore);
+   868→
+   869→    return NextResponse.json({
+   870→      generatedAt: new Date().toISOString(),
+   871→      modelVersion,
+   872→      topStocks: cards,
+   873→      totalScanned: predictions.length,
+   874→      filteredOut: predictions.length - cards.length,
+   875→      activeRegime,
+   876→      regimeThresholdsApplied: {
+   877→        confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
+   878→        trendQualityFloor: regimeThresholds.trendQualityFloor,
+   879→        sectorStrengthFloor: regimeThresholds.sectorStrengthFloor,
+   880→        tradabilityFloor: regimeThresholds.tradabilityFloor,
+   881→        universeRankFloor: regimeThresholds.universeRankFloor,
+   882→      },
+   883→    } satisfies TopStocksResponse);
+   884→  } catch (error) {
+   885→    console.error('[TOP-STOCKS] Error:', error);
+   886→    return NextResponse.json({
+   887→      generatedAt: new Date().toISOString(),
+   888→      modelVersion: 'N/A',
+   889→      topStocks: [],
+   890→      totalScanned: 0,
+   891→      filteredOut: 0,
+   892→      message: 'DB nuk eshte i disponueshem. Konfiguro DATABASE_URL ne Vercel.',
+   893→    } satisfies TopStocksResponse);
+   894→  }
+   895→}
+   896→
