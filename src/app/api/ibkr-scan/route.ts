@@ -3,6 +3,9 @@ import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
 import { checkMultiEventRisk } from '@/lib/event-risk';
 
+export { runIBKRScan };
+export type { FunnelStock, FunnelResponse };
+
 // ═══════════════════════════════════════════════════════════════
 // IBKR FUNNEL SCANNER v2 — Blueprint-aligned
 // 5 shtresa: Data → Signal → Execution → Risk → Reporting
@@ -311,577 +314,516 @@ interface FunnelResponse {
 // ═══════════════════════════════════════════════════════════════
 // MAIN GET HANDLER
 // ═══════════════════════════════════════════════════════════════
-export async function GET() {
+export const maxDuration = 120;
+
+// Exported core scan function (reusable by other routes)
+export async function runIBKRScan(): Promise<FunnelResponse> {
   const t0 = Date.now();
   const ACCOUNT_EQUITY = 25000; // default demo account
   const MAX_RISK_PCT = 1.0;   // max 1% of equity per trade
   const MAX_PER_SECTOR = 2;   // max 2 stocks per sector
 
-  try {
-    // ── 0. Fetch benchmarks + sector ETFs ──
-    const [spyData, qqqData, ...sectorDataArr] = await Promise.all([
-      fetchHistoricalData('SPY', '1y'),
-      fetchHistoricalData('QQQ', '1y'),
-      ...SECTOR_ETFS.map(etf => fetchHistoricalData(etf, '1y')),
-    ]);
-    if (!spyData || !qqqData) return NextResponse.json({ error: 'Te dhena SPY/QQQ mungojne' }, { status: 500 });
+  // ── 0. Fetch benchmarks + sector ETFs ──
+  const [spyData, qqqData, ...sectorDataArr] = await Promise.all([
+    fetchHistoricalData('SPY', '1y'),
+    fetchHistoricalData('QQQ', '1y'),
+    ...SECTOR_ETFS.map(etf => fetchHistoricalData(etf, '1y')),
+  ]);
+  if (!spyData || !qqqData) throw new Error('Te dhena SPY/QQQ mungojne');
 
-    // Build sector ETF data map
-    const sectorEtfData: Record<string, { closes: number[]; sma50: number[] }> = {};
-    SECTOR_ETFS.forEach((etf, i) => {
-      const d = sectorDataArr[i];
-      if (d) {
-        const closes = d.map(dd => dd.close);
-        sectorEtfData[etf] = { closes, sma50: calculateSMA(closes, 50) };
-      }
+  // Build sector ETF data map
+  const sectorEtfData: Record<string, { closes: number[]; sma50: number[] }> = {};
+  SECTOR_ETFS.forEach((etf, i) => {
+    const d = sectorDataArr[i];
+    if (d) {
+      const closes = d.map(dd => dd.close);
+      sectorEtfData[etf] = { closes, sma50: calculateSMA(closes, 50) };
+    }
+  });
+
+  const spyC = spyData.map(d => d.close), qqqC = qqqData.map(d => d.close);
+  const spyS50 = calculateSMA(spyC, 50), spyS200 = calculateSMA(spyC, 200);
+  const qqqS50 = calculateSMA(qqqC, 50), qqqS200 = calculateSMA(qqqC, 200);
+  const sL = spyC.length - 1, qL = qqqC.length - 1;
+  const spyA50 = spyC[sL] > (spyS50[sL]||0), spyA200 = spyC[sL] > (spyS200[sL]||0);
+  const qqqA50 = qqqC[qL] > (qqqS50[qL]||0), qqqA200 = qqqC[qL] > (qqqS200[qL]||0);
+  const regimeOk = spyA50 && spyA200 && qqqA50 && qqqA200;
+  const spyRS60 = pct(spyC, 60);
+
+  // ── 1. Fetch all universe OHLCV ──
+  const syms = DEDUPED_UNIVERSE.filter(s => !ETF_SET.has(s));
+  const hist: Record<string, HistoricalDataPoint[] | null> = {};
+
+  const BATCH = 8;
+  for (let i = 0; i < syms.length; i += BATCH) {
+    const batch = syms.slice(i, i + BATCH);
+    const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '1y') })));
+    for (const r of res) if (r.status === 'fulfilled' && r.value.d) hist[r.value.s] = r.value.d;
+    if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 250));
+  }
+
+  console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
+
+  // ── 2. PHASE 1 — Mechanical filter (liquidity + trend + ADX + stacked MA + event risk) ──
+  const phase1: FunnelStock[] = [];
+  let passedEventRiskCount = 0;
+
+  for (const sym of syms) {
+    const data = hist[sym];
+    if (!data || data.length < 200) continue;
+
+    const closes = data.map(d => d.close);
+    const highs = data.map(d => d.high);
+    const lows = data.map(d => d.low);
+    const vols = data.map(d => d.volume);
+    const last = closes.length - 1;
+    const price = closes[last];
+
+    // Liquidity checks
+    const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
+    const avgDolVol = price * avgVol20;
+    const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
+
+    // Trend checks (existing)
+    const sma50 = calculateSMA(closes, 50);
+    const sma200 = calculateSMA(closes, 200);
+    const above50 = price > (sma50[last] || 0);
+    const above200 = price > (sma200[last] || 0);
+    const golden = (sma50[last] || 0) > (sma200[last] || 0);
+    const rs60 = pct(closes, 60);
+    const passedTrend = above50 && golden && rs60 > spyRS60;
+
+    // NEW: Stacked MA — close > EMA20 > SMA50 > SMA200
+    const ema20 = calcEMA(closes, 20);
+    const ema20Val = ema20[last] || 0;
+    const sma50Val = sma50[last] || 0;
+    const sma200Val = sma200[last] || 0;
+    const stackedMA = price > ema20Val && ema20Val > sma50Val && sma50Val > sma200Val;
+
+    // NEW: ADX 14 > 25 (trend strength)
+    const adxArr = calculateADX(highs, lows, closes, 14);
+    const adx = adxArr[last] || 0;
+    const passedADX = adx > 25;
+
+    // NEW: Event risk check
+    const eventResult = checkMultiEventRisk(sym);
+    const hasCriticalEvent = eventResult.hasCriticalEvent || eventResult.compositeRiskScore <= -50;
+    const passedEventRisk = !hasCriticalEvent;
+    if (passedEventRisk) passedEventRiskCount++;
+
+    const sector = SECTOR_MAP[sym] || 'Other';
+
+    // Store basic info for all stocks (funnel counts)
+    phase1.push({
+      symbol: sym, price, sector,
+      avgVol20d: avgVol20, avgDolVol20d: avgDolVol,
+      passedLiquidity: passedLiq, passedTrend,
+      passedStackedMA: stackedMA, passedADX, passedEventRisk,
+      trendScore: 0, rsScore: 0, momentumScore: 0, volConfScore: 0, setupScore: 0,
+      riskScore: 0, totalScore: 0,
+      setup: 'NONE', horizon: '',
+      rsi: 0, atr: 0, atrPct: 0, adx: Math.round(adx * 10) / 10,
+      volRatio: 0, volDeclining: false, lastDaySpike: false,
+      pullbackDays: 0, pullbackPct: 0, distFromEMA10: 0, distFromEMA20: 0,
+      aboveSMA50: above50, aboveSMA200: above200, sma50Above200: golden, stackedMA,
+      rsVsSPY: 0, rsVsQQQ: 0, rsVsSPY60d: rs60 - spyRS60,
+      entry: 0, stop: 0, target1R: 0, target2R: 0, target3R: 0,
+      riskPct: 0, rewardRiskRatio: 0, swingLow: 0,
+      positionSize: 0, positionValue: 0, riskDollars: 0,
+      eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
+      catalystStatus: eventResult.catalystStatus,
+      daysToEarnings: eventResult.daysToEarnings,
+      macroEventWithin24h: eventResult.macroEventWithin24h,
+      material8KLast30d: eventResult.material8KLast30d,
+      material8KSentiment: eventResult.material8KSentiment,
+      positionSizeMultiplier: eventResult.positionSizeMultiplier,
+      allowNewEntry: eventResult.allowNewEntry,
+      sectorEtf: SECTOR_ETF_MAP[sector] || '',
+      rsVsSector20d: 0,
+      sectorAboveSma50: false,
+      sectorRsStatus: 'INLINE',
+      bracketOrder: null,
+      decision: 'NO_TRADE', reasons: [], warnings: [],
+      ema10Val: 0, ema20Val: 0, sma50Val: 0,
+      pullbackZone: '', nextResistance: 0, projectedUpsidePct: 0,
+      dailyExpRange: '', daysTo1R: 0, daysTo2R: 0, daysTo3R: 0,
     });
+  }
 
-    const spyC = spyData.map(d => d.close), qqqC = qqqData.map(d => d.close);
-    const spyS50 = calculateSMA(spyC, 50), spyS200 = calculateSMA(spyC, 200);
-    const qqqS50 = calculateSMA(qqqC, 50), qqqS200 = calculateSMA(qqqC, 200);
-    const sL = spyC.length - 1, qL = qqqC.length - 1;
-    const spyA50 = spyC[sL] > (spyS50[sL]||0), spyA200 = spyC[sL] > (spyS200[sL]||0);
-    const qqqA50 = qqqC[qL] > (qqqS50[qL]||0), qqqA200 = qqqC[qL] > (qqqS200[qL]||0);
-    const regimeOk = spyA50 && spyA200 && qqqA50 && qqqA200;
-    const spyRS60 = pct(spyC, 60);
+  const passedLiquidity = phase1.filter(s => s.passedLiquidity).length;
+  const passedTrend = phase1.filter(s => s.passedTrend).length;
 
-    // ── 1. Fetch all universe OHLCV ──
-    const syms = DEDUPED_UNIVERSE.filter(s => !ETF_SET.has(s));
-    const hist: Record<string, HistoricalDataPoint[] | null> = {};
+  // ── 3. PHASE 2 — Technical analysis on trend-passed stocks ──
+  const phase2: FunnelStock[] = [];
 
-    const BATCH = 8;
-    for (let i = 0; i < syms.length; i += BATCH) {
-      const batch = syms.slice(i, i + BATCH);
-      const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '1y') })));
-      for (const r of res) if (r.status === 'fulfilled' && r.value.d) hist[r.value.s] = r.value.d;
-      if (i + BATCH < syms.length) await new Promise(r => setTimeout(r, 250));
+  for (const stock of phase1) {
+    if (!stock.passedTrend) continue;
+
+    const data = hist[stock.symbol];
+    if (!data) continue;
+    const closes = data.map(d => d.close), highs = data.map(d => d.high), lows = data.map(d => d.low);
+    const vols = data.map(d => d.volume);
+    const last = closes.length - 1;
+    const price = closes[last];
+
+    const ema10 = calcEMA(closes, 10);
+    const ema20 = calcEMA(closes, 20);
+    const rsiArr = calculateRSI(closes, 14);
+    const rsi = rsiArr[last] || 50;
+    const atr = calcATR(data, 14);
+    const atrPct = price > 0 ? (atr / price) * 100 : 0;
+
+    // ── A) Trend Quality (0-100) — 25% weight ──
+    const sma50 = calculateSMA(closes, 50);
+    const sma200 = calculateSMA(closes, 200);
+    let tScore = 0;
+    if (price > (sma50[last]||0)) tScore += 20;
+    if (price > (sma200[last]||0)) tScore += 20;
+    if ((sma50[last]||0) > (sma200[last]||0)) tScore += 15;
+    if (stock.stackedMA) tScore += 15;
+    const h20a = Math.max(...highs.slice(-40, -20));
+    const h20b = Math.max(...highs.slice(-20));
+    if (h20b > h20a) tScore += 15;
+    if (stock.adx > 25) tScore += 15;
+    stock.trendScore = Math.min(100, tScore);
+
+    // ── B) Relative Strength (0-100) — 20% weight ──
+    const rsSpy22 = pct(closes, 22) - pct(spyC, 22);
+    const rsQqq22 = pct(closes, 22) - pct(qqqC, 22);
+    const rsSpy60 = pct(closes, 60) - pct(spyC, 60);
+    let rsScore = 50;
+    if (rsSpy22 > 0) rsScore += Math.min(25, rsSpy22 * 3);
+    else rsScore -= Math.min(25, Math.abs(rsSpy22) * 3);
+    if (rsSpy60 > 0) rsScore += Math.min(25, rsSpy60 * 2);
+    else rsScore -= Math.min(25, Math.abs(rsSpy60) * 2);
+    stock.rsScore = Math.round(Math.max(0, Math.min(100, rsScore)));
+    stock.rsVsSPY = Math.round(rsSpy22 * 100) / 100;
+    stock.rsVsQQQ = Math.round(rsQqq22 * 100) / 100;
+    stock.rsVsSPY60d = Math.round(rsSpy60 * 100) / 100;
+
+    // ── B2) RS vs Sector ETF (20D) ──
+    const sector = stock.sector;
+    const sectorEtf = SECTOR_ETF_MAP[sector] || '';
+    const etfInfo = sectorEtf ? sectorEtfData[sectorEtf] : null;
+    let rsVsSector20d = 0;
+    let sectorAboveSma50 = false;
+    let sectorRsStatus = 'INLINE' as string;
+    if (etfInfo && etfInfo.closes.length >= 21) {
+      const stockRet20d = pct(closes, 20);
+      const sectorRet20d = pct(etfInfo.closes, 20);
+      rsVsSector20d = Math.round((stockRet20d - sectorRet20d) * 100) / 100;
+      const etfLast = etfInfo.closes.length - 1;
+      sectorAboveSma50 = etfInfo.closes[etfLast] > (etfInfo.sma50[etfLast] || 0);
+      if (rsVsSector20d >= 3) sectorRsStatus = 'LEADING';
+      else if (rsVsSector20d <= -3) sectorRsStatus = 'LAGGING';
+      else sectorRsStatus = 'INLINE';
+    }
+    stock.sectorEtf = sectorEtf;
+    stock.rsVsSector20d = rsVsSector20d;
+    stock.sectorAboveSma50 = sectorAboveSma50;
+    stock.sectorRsStatus = sectorRsStatus;
+    if (sectorRsStatus === 'LEADING' && sectorAboveSma50) stock.rsScore = Math.min(100, stock.rsScore + 8);
+    else if (sectorRsStatus === 'LAGGING' && !sectorAboveSma50) stock.rsScore = Math.max(0, stock.rsScore - 8);
+
+    // ── C) Momentum (0-100) — 15% weight ──
+    const mom5 = pct(closes, 5), mom10 = pct(closes, 10), mom22 = pct(closes, 22);
+    let mScore = 50;
+    if (mom5 > -2) mScore += 10; else mScore -= 10;
+    if (mom10 > 0) mScore += 15; else mScore -= 10;
+    if (mom22 > 0) mScore += 15; else mScore -= 10;
+    if (mom5 < 8) mScore += 10; else mScore -= 15;
+    stock.momentumScore = Math.round(Math.max(0, Math.min(100, mScore)));
+
+    // ── D) Volume Confirmation (0-100) — 15% weight ──
+    const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
+    const recent3 = vols.slice(-3).reduce((a,b) => a+b, 0) / 3;
+    const pbVol = vols.slice(-5, -1);
+    const priorVol = vols.slice(-10, -5);
+    const avgPb = pbVol.length > 0 ? pbVol.reduce((a,b) => a+b, 0)/pbVol.length : 0;
+    const avgPrior = priorVol.length > 0 ? priorVol.reduce((a,b) => a+b, 0)/priorVol.length : 0;
+    const volDeclining = avgPb < avgPrior * 0.95;
+    const lastDaySpike = vols[last] > avgVol20 * 1.1;
+    const volRatio = avgVol20 > 0 ? recent3 / avgVol20 : 1;
+    let vScore = 50;
+    if (volDeclining) vScore += 20;
+    if (lastDaySpike) vScore += 15;
+    if (volRatio > 0.8 && volRatio < 1.5) vScore += 10;
+    if (avgVol20 > 5_000_000) vScore += 5;
+    stock.volConfScore = Math.round(Math.max(0, Math.min(100, vScore)));
+    stock.volRatio = Math.round(volRatio * 100) / 100;
+    stock.volDeclining = volDeclining;
+    stock.lastDaySpike = lastDaySpike;
+
+    // ── E) Setup Quality (0-100) — 10% weight ──
+    const ema10Val = ema10[last], ema20Val = ema20[last];
+    const dist10 = !isNaN(ema10Val) ? ((price - ema10Val) / ema10Val) * 100 : 99;
+    const dist20 = !isNaN(ema20Val) ? ((price - ema20Val) / ema20Val) * 100 : 99;
+    stock.distFromEMA10 = Math.round(dist10 * 100) / 100;
+    stock.distFromEMA20 = Math.round(dist20 * 100) / 100;
+
+    let highIdx = last;
+    for (let i = last; i >= Math.max(0, last - 10); i--) if (closes[i] >= closes[highIdx]) highIdx = i;
+    const peakPrice = closes[highIdx];
+    const pbPct = peakPrice > 0 ? ((price - peakPrice) / peakPrice) * 100 : 0;
+    const swLow = Math.min(...lows.slice(highIdx, last + 1));
+    let pbDays = 0;
+    for (let i = highIdx + 1; i <= last; i++) if (closes[i] < closes[i-1]) pbDays++;
+
+    stock.pullbackDays = pbDays;
+    stock.pullbackPct = Math.round(pbPct * 100) / 100;
+    stock.swingLow = Math.round(swLow * 100) / 100;
+
+    let setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE' = 'NONE';
+    let sScore = 0;
+    const reasons: string[] = [];
+
+    if (pbDays >= 2 && pbDays <= 8 && pbPct >= -8 && pbPct <= -0.5) {
+      setup = 'PULLBACK';
+      sScore += 30;
+      if (pbDays >= 3 && pbDays <= 6) { sScore += 20; reasons.push(`Pullback ${pbDays}d (ideal)`); }
+      else { sScore += 10; reasons.push(`Pullback ${pbDays}d`); }
+      if (Math.abs(dist10) < 3 || Math.abs(dist20) < 3) { sScore += 20; reasons.push('Afer EMA 10/20'); }
+      if (volDeclining) { sScore += 15; reasons.push('Volumi ne renie (i mire)'); }
+      if (lastDaySpike) { sScore += 15; reasons.push('Volum konfirmim'); }
+      if (rsi >= 40 && rsi <= 65) { sScore += 10; reasons.push(`RSI ${rsi.toFixed(0)}`); }
     }
 
-    console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
-
-    // ── 2. PHASE 1 — Mechanical filter (liquidity + trend + ADX + stacked MA + event risk) ──
-    const phase1: FunnelStock[] = [];
-    let passedEventRiskCount = 0;
-
-    for (const sym of syms) {
-      const data = hist[sym];
-      if (!data || data.length < 200) continue;
-
-      const closes = data.map(d => d.close);
-      const highs = data.map(d => d.high);
-      const lows = data.map(d => d.low);
-      const vols = data.map(d => d.volume);
-      const last = closes.length - 1;
-      const price = closes[last];
-
-      // Liquidity checks
-      const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
-      const avgDolVol = price * avgVol20;
-      const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
-
-      // Trend checks (existing)
-      const sma50 = calculateSMA(closes, 50);
-      const sma200 = calculateSMA(closes, 200);
-      const above50 = price > (sma50[last] || 0);
-      const above200 = price > (sma200[last] || 0);
-      const golden = (sma50[last] || 0) > (sma200[last] || 0);
-      const rs60 = pct(closes, 60);
-      const passedTrend = above50 && golden && rs60 > spyRS60;
-
-      // NEW: Stacked MA — close > EMA20 > SMA50 > SMA200
-      const ema20 = calcEMA(closes, 20);
-      const ema20Val = ema20[last] || 0;
-      const sma50Val = sma50[last] || 0;
-      const sma200Val = sma200[last] || 0;
-      const stackedMA = price > ema20Val && ema20Val > sma50Val && sma50Val > sma200Val;
-
-      // NEW: ADX 14 > 25 (trend strength)
-      const adxArr = calculateADX(highs, lows, closes, 14);
-      const adx = adxArr[last] || 0;
-      const passedADX = adx > 25;
-
-      // NEW: Event risk check
-      const eventResult = checkMultiEventRisk(sym);
-      const hasCriticalEvent = eventResult.hasCriticalEvent || eventResult.compositeRiskScore <= -50;
-      const passedEventRisk = !hasCriticalEvent;
-      if (passedEventRisk) passedEventRiskCount++;
-
-      const sector = SECTOR_MAP[sym] || 'Other';
-
-      // Store basic info for all stocks (funnel counts)
-      phase1.push({
-        symbol: sym, price, sector,
-        avgVol20d: avgVol20, avgDolVol20d: avgDolVol,
-        passedLiquidity: passedLiq, passedTrend,
-        passedStackedMA: stackedMA, passedADX, passedEventRisk,
-        trendScore: 0, rsScore: 0, momentumScore: 0, volConfScore: 0, setupScore: 0,
-        riskScore: 0, totalScore: 0,
-        setup: 'NONE', horizon: '',
-        rsi: 0, atr: 0, atrPct: 0, adx: Math.round(adx * 10) / 10,
-        volRatio: 0, volDeclining: false, lastDaySpike: false,
-        pullbackDays: 0, pullbackPct: 0, distFromEMA10: 0, distFromEMA20: 0,
-        aboveSMA50: above50, aboveSMA200: above200, sma50Above200: golden, stackedMA,
-        rsVsSPY: 0, rsVsQQQ: 0, rsVsSPY60d: rs60 - spyRS60,
-        entry: 0, stop: 0, target1R: 0, target2R: 0, target3R: 0,
-        riskPct: 0, rewardRiskRatio: 0, swingLow: 0,
-        positionSize: 0, positionValue: 0, riskDollars: 0,
-        eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
-        catalystStatus: eventResult.catalystStatus,
-        daysToEarnings: eventResult.daysToEarnings,
-        macroEventWithin24h: eventResult.macroEventWithin24h,
-        material8KLast30d: eventResult.material8KLast30d,
-        material8KSentiment: eventResult.material8KSentiment,
-        positionSizeMultiplier: eventResult.positionSizeMultiplier,
-        allowNewEntry: eventResult.allowNewEntry,
-        sectorEtf: SECTOR_ETF_MAP[sector] || '',
-        rsVsSector20d: 0,
-        sectorAboveSma50: false,
-        sectorRsStatus: 'INLINE',
-        bracketOrder: null,
-        decision: 'NO_TRADE', reasons: [], warnings: [],
-        ema10Val: 0, ema20Val: 0, sma50Val: 0,
-        pullbackZone: '', nextResistance: 0, projectedUpsidePct: 0,
-        dailyExpRange: '', daysTo1R: 0, daysTo2R: 0, daysTo3R: 0,
-      });
-    }
-
-    const passedLiquidity = phase1.filter(s => s.passedLiquidity).length;
-    const passedTrend = phase1.filter(s => s.passedTrend).length;
-
-    // ── 3. PHASE 2 — Technical analysis on trend-passed stocks ──
-    const phase2: FunnelStock[] = [];
-
-    for (const stock of phase1) {
-      if (!stock.passedTrend) continue;
-
-      const data = hist[stock.symbol];
-      if (!data) continue;
-      const closes = data.map(d => d.close), highs = data.map(d => d.high), lows = data.map(d => d.low);
-      const vols = data.map(d => d.volume);
-      const last = closes.length - 1;
-      const price = closes[last];
-
-      const ema10 = calcEMA(closes, 10);
-      const ema20 = calcEMA(closes, 20);
-      const rsiArr = calculateRSI(closes, 14);
-      const rsi = rsiArr[last] || 50;
-      const atr = calcATR(data, 14);
-      const atrPct = price > 0 ? (atr / price) * 100 : 0;
-
-      // ── A) Trend Quality (0-100) — 25% weight ──
-      const sma50 = calculateSMA(closes, 50);
-      const sma200 = calculateSMA(closes, 200);
-      let tScore = 0;
-      if (price > (sma50[last]||0)) tScore += 20;
-      if (price > (sma200[last]||0)) tScore += 20;
-      if ((sma50[last]||0) > (sma200[last]||0)) tScore += 15;
-      // NEW: Stacked MA bonus (+15)
-      if (stock.stackedMA) tScore += 15;
-      // Higher-high structure
-      const h20a = Math.max(...highs.slice(-40, -20));
-      const h20b = Math.max(...highs.slice(-20));
-      if (h20b > h20a) tScore += 15;
-      // NEW: ADX bonus (+15 if > 25)
-      if (stock.adx > 25) tScore += 15;
-      stock.trendScore = Math.min(100, tScore);
-
-      // ── B) Relative Strength (0-100) — 20% weight ──
-      const rsSpy22 = pct(closes, 22) - pct(spyC, 22);
-      const rsQqq22 = pct(closes, 22) - pct(qqqC, 22);
-      const rsSpy60 = pct(closes, 60) - pct(spyC, 60);
-      let rsScore = 50;
-      if (rsSpy22 > 0) rsScore += Math.min(25, rsSpy22 * 3);
-      else rsScore -= Math.min(25, Math.abs(rsSpy22) * 3);
-      if (rsSpy60 > 0) rsScore += Math.min(25, rsSpy60 * 2);
-      else rsScore -= Math.min(25, Math.abs(rsSpy60) * 2);
-      stock.rsScore = Math.round(Math.max(0, Math.min(100, rsScore)));
-      stock.rsVsSPY = Math.round(rsSpy22 * 100) / 100;
-      stock.rsVsQQQ = Math.round(rsQqq22 * 100) / 100;
-      stock.rsVsSPY60d = Math.round(rsSpy60 * 100) / 100;
-
-      // ── B2) RS vs Sector ETF (20D) ──
-      const sector = stock.sector;
-      const sectorEtf = SECTOR_ETF_MAP[sector] || '';
-      const etfInfo = sectorEtf ? sectorEtfData[sectorEtf] : null;
-      let rsVsSector20d = 0;
-      let sectorAboveSma50 = false;
-      let sectorRsStatus = 'INLINE' as string;
-      if (etfInfo && etfInfo.closes.length >= 21) {
-        const stockRet20d = pct(closes, 20);
-        const sectorRet20d = pct(etfInfo.closes, 20);
-        rsVsSector20d = Math.round((stockRet20d - sectorRet20d) * 100) / 100;
-        const etfLast = etfInfo.closes.length - 1;
-        sectorAboveSma50 = etfInfo.closes[etfLast] > (etfInfo.sma50[etfLast] || 0);
-        if (rsVsSector20d >= 3) sectorRsStatus = 'LEADING';
-        else if (rsVsSector20d <= -3) sectorRsStatus = 'LAGGING';
-        else sectorRsStatus = 'INLINE';
-      }
-      stock.sectorEtf = sectorEtf;
-      stock.rsVsSector20d = rsVsSector20d;
-      stock.sectorAboveSma50 = sectorAboveSma50;
-      stock.sectorRsStatus = sectorRsStatus;
-
-      // Blend RS vs Sector into rsScore: bonus/penalty
-      if (sectorRsStatus === 'LEADING' && sectorAboveSma50) stock.rsScore = Math.min(100, stock.rsScore + 8);
-      else if (sectorRsStatus === 'LAGGING' && !sectorAboveSma50) stock.rsScore = Math.max(0, stock.rsScore - 8);
-
-      // ── C) Momentum (0-100) — 15% weight ──
-      const mom5 = pct(closes, 5), mom10 = pct(closes, 10), mom22 = pct(closes, 22);
-      let mScore = 50;
-      if (mom5 > -2) mScore += 10; else mScore -= 10;
-      if (mom10 > 0) mScore += 15; else mScore -= 10;
-      if (mom22 > 0) mScore += 15; else mScore -= 10;
-      if (mom5 < 8) mScore += 10; else mScore -= 15;
-      stock.momentumScore = Math.round(Math.max(0, Math.min(100, mScore)));
-
-      // ── D) Volume Confirmation (0-100) — 15% weight ──
-      const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
-      const recent3 = vols.slice(-3).reduce((a,b) => a+b, 0) / 3;
-      const pbVol = vols.slice(-5, -1);
-      const priorVol = vols.slice(-10, -5);
-      const avgPb = pbVol.length > 0 ? pbVol.reduce((a,b) => a+b, 0)/pbVol.length : 0;
-      const avgPrior = priorVol.length > 0 ? priorVol.reduce((a,b) => a+b, 0)/priorVol.length : 0;
-      const volDeclining = avgPb < avgPrior * 0.95;
-      const lastDaySpike = vols[last] > avgVol20 * 1.1;
-      const volRatio = avgVol20 > 0 ? recent3 / avgVol20 : 1;
-      let vScore = 50;
-      if (volDeclining) vScore += 20;
-      if (lastDaySpike) vScore += 15;
-      if (volRatio > 0.8 && volRatio < 1.5) vScore += 10;
-      if (avgVol20 > 5_000_000) vScore += 5;
-      stock.volConfScore = Math.round(Math.max(0, Math.min(100, vScore)));
-      stock.volRatio = Math.round(volRatio * 100) / 100;
-      stock.volDeclining = volDeclining;
-      stock.lastDaySpike = lastDaySpike;
-
-      // ── E) Setup Quality (0-100) — 10% weight ──
-      const ema10Val = ema10[last], ema20Val = ema20[last];
-      const dist10 = !isNaN(ema10Val) ? ((price - ema10Val) / ema10Val) * 100 : 99;
-      const dist20 = !isNaN(ema20Val) ? ((price - ema20Val) / ema20Val) * 100 : 99;
-      stock.distFromEMA10 = Math.round(dist10 * 100) / 100;
-      stock.distFromEMA20 = Math.round(dist20 * 100) / 100;
-
-      // Find pullback
-      let highIdx = last;
-      for (let i = last; i >= Math.max(0, last - 10); i--) if (closes[i] >= closes[highIdx]) highIdx = i;
-      const peakPrice = closes[highIdx];
-      const pbPct = peakPrice > 0 ? ((price - peakPrice) / peakPrice) * 100 : 0;
-      const swLow = Math.min(...lows.slice(highIdx, last + 1));
-      let pbDays = 0;
-      for (let i = highIdx + 1; i <= last; i++) if (closes[i] < closes[i-1]) pbDays++;
-
-      stock.pullbackDays = pbDays;
-      stock.pullbackPct = Math.round(pbPct * 100) / 100;
-      stock.swingLow = Math.round(swLow * 100) / 100;
-
-      let setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE' = 'NONE';
-      let sScore = 0;
-      const reasons: string[] = [];
-
-      // Pullback
-      if (pbDays >= 2 && pbDays <= 8 && pbPct >= -8 && pbPct <= -0.5) {
-        setup = 'PULLBACK';
-        sScore += 30;
-        if (pbDays >= 3 && pbDays <= 6) { sScore += 20; reasons.push(`Pullback ${pbDays}d (ideal)`); }
-        else { sScore += 10; reasons.push(`Pullback ${pbDays}d`); }
-        if (Math.abs(dist10) < 3 || Math.abs(dist20) < 3) { sScore += 20; reasons.push('Afer EMA 10/20'); }
-        if (volDeclining) { sScore += 15; reasons.push('Volumi ne renie (i mire)'); }
-        if (lastDaySpike) { sScore += 15; reasons.push('Volum konfirmim'); }
-        if (rsi >= 40 && rsi <= 65) { sScore += 10; reasons.push(`RSI ${rsi.toFixed(0)}`); }
-      }
-
-      // Breakout
-      if (setup === 'NONE') {
-        const high20 = Math.max(...highs.slice(-20));
-        if (price >= high20 * 0.98 && lastDaySpike && rsi >= 45 && rsi <= 70) {
-          setup = 'BREAKOUT'; sScore = 55;
-          reasons.push('Breakout 20d + volum');
-          if (rsi >= 45 && rsi <= 65) { sScore += 15; reasons.push(`RSI ${rsi.toFixed(0)}`); }
-        }
-      }
-
-      // Trend continuation
-      if (setup === 'NONE' && pbPct > -0.5 && pbPct < 2 && price > (sma50[last]||0)) {
-        setup = 'TREND_CONT'; sScore = 40;
-        reasons.push('Trend continuation');
-        if (rsi >= 50 && rsi <= 65) { sScore += 15; reasons.push(`RSI ${rsi.toFixed(0)}`); }
-        if (lastDaySpike) { sScore += 10; reasons.push('Volum konfirmim'); }
-      }
-
-      stock.setup = setup;
-      stock.setupScore = Math.min(100, sScore);
-      stock.rsi = Math.round(rsi * 10) / 10;
-      stock.atr = Math.round(atr * 100) / 100;
-      stock.atrPct = Math.round(atrPct * 100) / 100;
-      stock.reasons = reasons;
-
-      // Entry / Stop / Target (BLUEPRINT-ALIGNED)
-      const isBreakout = setup === 'BREAKOUT';
+    if (setup === 'NONE') {
       const high20 = Math.max(...highs.slice(-20));
-      const entry = isBreakout
-        ? Math.round((high20 * 1.002) * 100) / 100
-        : Math.round(price * 100) / 100;
+      if (price >= high20 * 0.98 && lastDaySpike && rsi >= 45 && rsi <= 70) {
+        setup = 'BREAKOUT'; sScore = 55;
+        reasons.push('Breakout 20d + volum');
+        if (rsi >= 45 && rsi <= 65) { sScore += 15; reasons.push(`RSI ${rsi.toFixed(0)}`); }
+      }
+    }
 
-      // NEW: Stop = max(entry - 1.5*ATR, swingLow - 0.2*ATR) — use the tighter (higher) one
-      const stopAtr = Math.round((entry - atr * 1.5) * 100) / 100;
-      const stopSwing = Math.round((swLow - atr * 0.2) * 100) / 100;
-      const stop = Math.max(stopAtr, stopSwing); // tighter stop = higher price
+    if (setup === 'NONE' && pbPct > -0.5 && pbPct < 2 && price > (sma50[last]||0)) {
+      setup = 'TREND_CONT'; sScore = 40;
+      reasons.push('Trend continuation');
+      if (rsi >= 50 && rsi <= 65) { sScore += 15; reasons.push(`RSI ${rsi.toFixed(0)}`); }
+      if (lastDaySpike) { sScore += 10; reasons.push('Volum konfirmim'); }
+    }
 
-      const riskPerShare = entry - stop;
-      const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
-      const target1R = Math.round((entry + riskPerShare) * 100) / 100;
-      const target2R = Math.round((entry + riskPerShare * 2) * 100) / 100;
-      const target3R = Math.round((entry + riskPerShare * 3) * 100) / 100;
-      const rr = riskPerShare > 0 ? (riskPerShare * 3) / riskPerShare : 0; // based on 3R now
+    stock.setup = setup;
+    stock.setupScore = Math.min(100, sScore);
+    stock.rsi = Math.round(rsi * 10) / 10;
+    stock.atr = Math.round(atr * 100) / 100;
+    stock.atrPct = Math.round(atrPct * 100) / 100;
+    stock.reasons = reasons;
 
-      stock.entry = entry;
-      stock.stop = stop;
-      stock.target1R = target1R;
-      stock.target2R = target2R;
-      stock.target3R = target3R;
-      stock.riskPct = Math.round(riskPct * 100) / 100;
-      stock.rewardRiskRatio = Math.round(rr * 10) / 10;
+    // Entry / Stop / Target
+    const isBreakout = setup === 'BREAKOUT';
+    const high20 = Math.max(...highs.slice(-20));
+    const entry = isBreakout
+      ? Math.round((high20 * 1.002) * 100) / 100
+      : Math.round(price * 100) / 100;
 
-      // NEW: Position sizing (apply catalyst multiplier)
-      const multiplier = stock.positionSizeMultiplier > 0 ? stock.positionSizeMultiplier : 1;
-      const pos = calcPositionSize(entry, stop, MAX_RISK_PCT * multiplier, ACCOUNT_EQUITY);
-      stock.positionSize = pos.shares;
-      stock.positionValue = pos.positionValue;
-      stock.riskDollars = pos.riskDollars;
+    const stopAtr = Math.round((entry - atr * 1.5) * 100) / 100;
+    const stopSwing = Math.round((swLow - atr * 0.2) * 100) / 100;
+    const stop = Math.max(stopAtr, stopSwing);
 
-      // Swing Prediction fields
-      const ema10Val = ema10[last] || 0;
-      const ema20Val = ema20[last] || 0;
-      const sma50Val = sma50[last] || 0;
-      stock.ema10Val = Math.round(ema10Val * 100) / 100;
-      stock.ema20Val = Math.round(ema20Val * 100) / 100;
-      stock.sma50Val = Math.round(sma50Val * 100) / 100;
+    const riskPerShare = entry - stop;
+    const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
+    const target1R = Math.round((entry + riskPerShare) * 100) / 100;
+    const target2R = Math.round((entry + riskPerShare * 2) * 100) / 100;
+    const target3R = Math.round((entry + riskPerShare * 3) * 100) / 100;
+    const rr = riskPerShare > 0 ? (riskPerShare * 3) / riskPerShare : 0;
 
-      // Pullback zone: between EMA10 and EMA20 (where bounce is expected)
-      const pbZoneLow = Math.min(ema10Val, ema20Val);
-      const pbZoneHigh = Math.max(ema10Val, ema20Val);
-      stock.pullbackZone = `$${pbZoneLow.toFixed(2)} – $${pbZoneHigh.toFixed(2)}`;
+    stock.entry = entry;
+    stock.stop = stop;
+    stock.target1R = target1R;
+    stock.target2R = target2R;
+    stock.target3R = target3R;
+    stock.riskPct = Math.round(riskPct * 100) / 100;
+    stock.rewardRiskRatio = Math.round(rr * 10) / 10;
 
-      // Next resistance: 20d high (or recent peak)
-      stock.nextResistance = Math.round(Math.max(...highs.slice(-20)) * 100) / 100;
+    const multiplier = stock.positionSizeMultiplier > 0 ? stock.positionSizeMultiplier : 1;
+    const pos = calcPositionSize(entry, stop, MAX_RISK_PCT * multiplier, ACCOUNT_EQUITY);
+    stock.positionSize = pos.shares;
+    stock.positionValue = pos.positionValue;
+    stock.riskDollars = pos.riskDollars;
 
-      // Projected upside: from current price to 3R target
-      stock.projectedUpsidePct = price > 0 ? Math.round(((target3R - price) / price) * 10000) / 100 : 0;
+    // Swing Prediction fields
+    const ema10V = ema10[last] || 0;
+    const ema20V = ema20[last] || 0;
+    const sma50V = sma50[last] || 0;
+    stock.ema10Val = Math.round(ema10V * 100) / 100;
+    stock.ema20Val = Math.round(ema20V * 100) / 100;
+    stock.sma50Val = Math.round(sma50V * 100) / 100;
+    const pbZoneLow = Math.min(ema10V, ema20V);
+    const pbZoneHigh = Math.max(ema10V, ema20V);
+    stock.pullbackZone = `$${pbZoneLow.toFixed(2)} – $${pbZoneHigh.toFixed(2)}`;
+    stock.nextResistance = Math.round(Math.max(...highs.slice(-20)) * 100) / 100;
+    stock.projectedUpsidePct = price > 0 ? Math.round(((target3R - price) / price) * 10000) / 100 : 0;
+    stock.dailyExpRange = `$${Math.round((price - atr) * 100) / 100} – $${Math.round((price + atr) * 100) / 100}`;
+    const dailyPace = atr > 0 ? atr : price * 0.015;
+    stock.daysTo1R = dailyPace > 0 ? Math.round(riskPerShare / dailyPace) : 0;
+    stock.daysTo2R = dailyPace > 0 ? Math.round((riskPerShare * 2) / dailyPace) : 0;
+    stock.daysTo3R = dailyPace > 0 ? Math.round((riskPerShare * 3) / dailyPace) : 0;
 
-      // Daily expected range: price +/- ATR
-      stock.dailyExpRange = `$${Math.round((price - atr) * 100) / 100} – $${Math.round((price + atr) * 100) / 100}`;
+    if (atrPct < 1.5) stock.horizon = '10D';
+    else if (atrPct < 3) stock.horizon = '5D';
+    else stock.horizon = '5D';
 
-      // Estimated days to target (based on daily ATR pace)
-      const dailyPace = atr > 0 ? atr : price * 0.015;
-      stock.daysTo1R = dailyPace > 0 ? Math.round(riskPerShare / dailyPace) : 0;
-      stock.daysTo2R = dailyPace > 0 ? Math.round((riskPerShare * 2) / dailyPace) : 0;
-      stock.daysTo3R = dailyPace > 0 ? Math.round((riskPerShare * 3) / dailyPace) : 0;
+    // ── F) Risk Quality (0-100) — 5% weight ──
+    let rScore = 50;
+    if (riskPct <= 3) rScore += 20;
+    else if (riskPct <= 5) rScore += 10;
+    else if (riskPct > 7) rScore -= 20;
+    if (rr >= 2) rScore += 15;
+    else if (rr >= 1.5) rScore += 5;
+    else rScore -= 15;
+    if (atrPct < 2) rScore += 10;
+    else if (atrPct > 4) rScore -= 10;
+    if (!stock.passedEventRisk) rScore -= 25;
+    stock.riskScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
-      // Horizon based on ATR
-      if (atrPct < 1.5) stock.horizon = '10D';
-      else if (atrPct < 3) stock.horizon = '5D';
-      else stock.horizon = '5D';
+    // ── Total Score ──
+    stock.totalScore = Math.round(
+      stock.trendScore * 0.25 +
+      stock.rsScore * 0.20 +
+      stock.momentumScore * 0.15 +
+      stock.volConfScore * 0.15 +
+      sScore * 0.10 +
+      50 * 0.10 +
+      stock.riskScore * 0.05
+    );
 
-      // ── F) Risk Quality (0-100) — 5% weight ──
-      let rScore = 50;
-      if (riskPct <= 3) rScore += 20;
-      else if (riskPct <= 5) rScore += 10;
-      else if (riskPct > 7) rScore -= 20;
-      if (rr >= 2) rScore += 15; // 2R+ is good
-      else if (rr >= 1.5) rScore += 5;
-      else rScore -= 15;
-      if (atrPct < 2) rScore += 10;
-      else if (atrPct > 4) rScore -= 10;
-      // NEW: Event risk penalty
-      if (!stock.passedEventRisk) rScore -= 25;
-      stock.riskScore = Math.round(Math.max(0, Math.min(100, rScore)));
+    if (setup !== 'NONE') phase2.push(stock);
+  }
 
-      // ── Total Score ──
-      stock.totalScore = Math.round(
-        stock.trendScore * 0.25 +
-        stock.rsScore * 0.20 +
-        stock.momentumScore * 0.15 +
-        stock.volConfScore * 0.15 +
-        sScore * 0.10 +
-        50 * 0.10 + // fundamentals placeholder (neutral)
-        stock.riskScore * 0.05
+  const passedSetup = phase2.length;
+
+  // ── 4. PHASE 3 — Risk gate + Decision + Event risk ──
+  const phase3: FunnelStock[] = [];
+
+  for (const stock of phase2) {
+    const warnings: string[] = [...stock.warnings];
+    let decision: Decision = 'NO_TRADE';
+
+    if (stock.rewardRiskRatio < 2.0) warnings.push(`R:R ${stock.rewardRiskRatio} — i ulet (duhet 1:2 me 3R target)`);
+    if (stock.rsi > 75) warnings.push(`RSI ${stock.rsi} — i mbivleresuar`);
+    if (stock.riskPct > 8) warnings.push(`Rreziku ${stock.riskPct}% — shume i larte`);
+    if (stock.adx < 20) warnings.push(`ADX ${stock.adx} — trendi i dobet (duhet > 25)`);
+    if (!regimeOk) warnings.push('REGJIMI jo OK — vetem watcher');
+    if (!stock.passedEventRisk) warnings.push(`EVENT RISK: ${stock.eventRisk}`);
+    if (!stock.allowNewEntry) warnings.push(`CATALYST GATE: ${stock.catalystStatus} — mos hap long te ri`);
+    else if (stock.positionSizeMultiplier < 1) warnings.push(`CATALYST GATE: ${stock.catalystStatus} — pozicion ${Math.round(stock.positionSizeMultiplier * 100)}%`);
+    if (!stock.stackedMA) warnings.push('MA jo te stackuara (close/EMA20/SMA50/SMA200)');
+    if (stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50) warnings.push(`SECTOR RS: ${stock.rsVsSector20d}% vs ${stock.sectorEtf} — sektori i dobet`);
+    if (stock.pullbackPct > -0.5 && stock.setup === 'PULLBACK') warnings.push('Jo te vertete nje pullback — extended');
+
+    const hasRR = stock.rewardRiskRatio >= 2.0;
+    const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
+    const riskOk = stock.riskPct <= 8;
+    const scoreOk = stock.totalScore >= 45;
+    const eventOk = stock.passedEventRisk;
+    const catalystOk = stock.allowNewEntry;
+    const sectorRsOk = !(stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50);
+
+    if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk && catalystOk && sectorRsOk) {
+      decision = 'READY';
+    } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
+      decision = 'WATCHLIST';
+      if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
+      if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
+      if (!catalystOk) warnings.push('WATCHLIST: Catalyst gate — prit');
+      if (!sectorRsOk) warnings.push('WATCHLIST: Sector RS i dobet — prit');
+    } else if (!hasRR || stock.riskPct > 6) {
+      if (stock.setupScore >= 50) decision = 'WATCHLIST';
+      else decision = 'NO_TRADE';
+    } else if (stock.rsi > 72 || stock.pullbackPct > -0.3) {
+      decision = 'EXTENDED';
+    } else {
+      decision = 'WATCHLIST';
+    }
+
+    if (!eventOk && decision === 'READY') {
+      decision = 'EVENT_RISK';
+      warnings.push('EVENT_RISK: Ngjarje kritike — mos hyr');
+    }
+    if (stock.rsi > 70 && stock.totalScore >= 55) {
+      decision = 'EVENT_RISK';
+      warnings.push('EVENT_RISK: RSI i larte, rrezik kthimi');
+    }
+
+    stock.decision = decision;
+    stock.warnings = warnings;
+
+    if (decision === 'READY' && stock.positionSize > 0) {
+      stock.bracketOrder = generateBracketOrder(
+        stock.symbol, 'BUY', stock.entry, stock.stop, stock.target3R, stock.positionSize
       );
-
-      // Only keep stocks with valid setups
-      if (setup !== 'NONE') phase2.push(stock);
     }
 
-    const passedSetup = phase2.length;
-
-    // ── 4. PHASE 3 — Risk gate + Decision + Event risk ──
-    const phase3: FunnelStock[] = [];
-
-    for (const stock of phase2) {
-      const warnings: string[] = [...stock.warnings];
-      let decision: Decision = 'NO_TRADE';
-
-      // R:R gate (based on 3R now, so 2.0+ is the threshold)
-      if (stock.rewardRiskRatio < 2.0) {
-        warnings.push(`R:R ${stock.rewardRiskRatio} — i ulet (duhet 1:2 me 3R target)`);
-      }
-
-      // RSI gate
-      if (stock.rsi > 75) {
-        warnings.push(`RSI ${stock.rsi} — i mbivleresuar`);
-      }
-
-      // Risk % gate
-      if (stock.riskPct > 8) {
-        warnings.push(`Rreziku ${stock.riskPct}% — shume i larte`);
-      }
-
-      // ADX gate
-      if (stock.adx < 20) {
-        warnings.push(`ADX ${stock.adx} — trendi i dobet (duhet > 25)`);
-      }
-
-      // Regime gate
-      if (!regimeOk) {
-        warnings.push('REGJIMI jo OK — vetem watcher');
-      }
-
-      // NEW: Event risk gate (enhanced with catalyst status)
-      if (!stock.passedEventRisk) {
-        warnings.push(`EVENT RISK: ${stock.eventRisk}`);
-      }
-      if (!stock.allowNewEntry) {
-        warnings.push(`CATALYST GATE: ${stock.catalystStatus} — mos hap long të ri`);
-      } else if (stock.positionSizeMultiplier < 1) {
-        warnings.push(`CATALYST GATE: ${stock.catalystStatus} — pozicion ${Math.round(stock.positionSizeMultiplier * 100)}%`);
-      }
-
-      // Stacked MA bonus/penalty
-      if (!stock.stackedMA) {
-        warnings.push('MA jo te stackuara (close/EMA20/SMA50/SMA200)');
-      }
-
-      // Sector RS gate
-      if (stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50) {
-        warnings.push(`SECTOR RS: ${stock.rsVsSector20d}% vs ${stock.sectorEtf} — sektori i dobet`);
-      }
-
-      // Extended (chasing)
-      if (stock.pullbackPct > -0.5 && stock.setup === 'PULLBACK') {
-        warnings.push('Jo te vertete nje pullback — extended');
-      }
-
-      // Determine decision (catalyst gate + sector RS affects READY)
-      const hasRR = stock.rewardRiskRatio >= 2.0;
-      const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
-      const riskOk = stock.riskPct <= 8;
-      const scoreOk = stock.totalScore >= 45;
-      const eventOk = stock.passedEventRisk;
-      const catalystOk = stock.allowNewEntry;
-      const sectorRsOk = !(stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50);
-
-      if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk && catalystOk && sectorRsOk) {
-        decision = 'READY';
-      } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
-        decision = 'WATCHLIST';
-        if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
-        if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
-        if (!catalystOk) warnings.push('WATCHLIST: Catalyst gate — prit');
-        if (!sectorRsOk) warnings.push('WATCHLIST: Sector RS i dobet — prit');
-      } else if (!hasRR || stock.riskPct > 6) {
-        if (stock.setupScore >= 50) decision = 'WATCHLIST';
-        else decision = 'NO_TRADE';
-      } else if (stock.rsi > 72 || stock.pullbackPct > -0.3) {
-        decision = 'EXTENDED';
-      } else {
-        decision = 'WATCHLIST';
-      }
-
-      // Event risk override
-      if (!eventOk && decision === 'READY') {
-        decision = 'EVENT_RISK';
-        warnings.push('EVENT_RISK: Ngjarje kritike — mos hyr');
-      }
-
-      // RSI overbought override
-      if (stock.rsi > 70 && stock.totalScore >= 55) {
-        decision = 'EVENT_RISK';
-        warnings.push('EVENT_RISK: RSI i larte, rrezik kthimi');
-      }
-
-      stock.decision = decision;
-      stock.warnings = warnings;
-
-      // NEW: Generate bracket order for READY trades
-      if (decision === 'READY' && stock.positionSize > 0) {
-        stock.bracketOrder = generateBracketOrder(
-          stock.symbol, 'BUY', stock.entry, stock.stop, stock.target3R, stock.positionSize
-        );
-      }
-
-      if (decision === 'READY' || decision === 'WATCHLIST' || decision === 'EVENT_RISK') {
-        phase3.push(stock);
-      }
+    if (decision === 'READY' || decision === 'WATCHLIST' || decision === 'EVENT_RISK') {
+      phase3.push(stock);
     }
+  }
 
-    const passedRisk = phase3.length;
+  const passedRisk = phase3.length;
 
-    // ── 5. PHASE 4 — Sector exposure limit + Top 10 final ──
-    const sectorCount: Record<string, number> = {};
-    const afterSectorLimit: FunnelStock[] = [];
+  // ── 5. PHASE 4 — Sector exposure limit + Top 10 final ──
+  const sectorCount: Record<string, number> = {};
+  const afterSectorLimit: FunnelStock[] = [];
 
-    // Sort by totalScore descending first
-    phase3.sort((a, b) => b.totalScore - a.totalScore);
+  phase3.sort((a, b) => b.totalScore - a.totalScore);
 
-    for (const stock of phase3) {
-      const sec = stock.sector;
-      if (!sectorCount[sec]) sectorCount[sec] = 0;
-      if (sectorCount[sec] < MAX_PER_SECTOR) {
-        afterSectorLimit.push(stock);
-        sectorCount[sec]++;
-      } else {
-        stock.warnings.push(`Sector limit: ${sec} ka tashme ${MAX_PER_SECTOR} aksione`);
-      }
+  for (const stock of phase3) {
+    const sec = stock.sector;
+    if (!sectorCount[sec]) sectorCount[sec] = 0;
+    if (sectorCount[sec] < MAX_PER_SECTOR) {
+      afterSectorLimit.push(stock);
+      sectorCount[sec]++;
+    } else {
+      stock.warnings.push(`Sector limit: ${sec} ka tashme ${MAX_PER_SECTOR} aksione`);
     }
+  }
 
-    const passedSectorLimit = afterSectorLimit.length;
-    const topStocks = afterSectorLimit.slice(0, 10);
-    // READY first, then WATCHLIST, then others
-    topStocks.sort((a, b) => {
-      const order: Record<Decision, number> = { READY: 0, WATCHLIST: 1, EVENT_RISK: 2, EXTENDED: 3, NO_TRADE: 4 };
-      const diff = (order[a.decision] || 5) - (order[b.decision] || 5);
-      return diff !== 0 ? diff : b.totalScore - a.totalScore;
-    });
+  const passedSectorLimit = afterSectorLimit.length;
+  const topStocks = afterSectorLimit.slice(0, 10);
+  topStocks.sort((a, b) => {
+    const order: Record<Decision, number> = { READY: 0, WATCHLIST: 1, EVENT_RISK: 2, EXTENDED: 3, NO_TRADE: 4 };
+    const diff = (order[a.decision] || 5) - (order[b.decision] || 5);
+    return diff !== 0 ? diff : b.totalScore - a.totalScore;
+  });
 
-    // Build sector exposure summary
-    const sectorExposure: Record<string, number> = {};
-    for (const s of topStocks) {
-      if (!sectorExposure[s.sector]) sectorExposure[s.sector] = 0;
-      sectorExposure[s.sector]++;
-    }
+  const sectorExposure: Record<string, number> = {};
+  for (const s of topStocks) {
+    if (!sectorExposure[s.sector]) sectorExposure[s.sector] = 0;
+    sectorExposure[s.sector]++;
+  }
 
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    console.log(`[IBKR v2] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${passedSectorLimit} → ${topStocks.length} (${elapsed}s)`);
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(`[IBKR v2] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${passedSectorLimit} → ${topStocks.length} (${elapsed}s)`);
 
-    return NextResponse.json({
-      scannedAt: new Date().toISOString(),
-      regimeOk,
-      regimeDetail: {
-        spy: { above50: spyA50, above200: spyA200 },
-        qqq: { above50: qqqA50, above200: qqqA200 },
-      },
-      funnel: {
-        universe: syms.length,
-        passedLiquidity,
-        passedTrend,
-        passedSetup,
-        passedRisk,
-        passedEventRisk: passedEventRiskCount,
-        passedSectorLimit,
-        displayed: topStocks.length,
-      },
-      results: topStocks,
-      sectorExposure,
-    } satisfies FunnelResponse);
+  return {
+    scannedAt: new Date().toISOString(),
+    regimeOk,
+    regimeDetail: {
+      spy: { above50: spyA50, above200: spyA200 },
+      qqq: { above50: qqqA50, above200: qqqA200 },
+    },
+    funnel: {
+      universe: syms.length,
+      passedLiquidity,
+      passedTrend,
+      passedSetup,
+      passedRisk,
+      passedEventRisk: passedEventRiskCount,
+      passedSectorLimit,
+      displayed: topStocks.length,
+    },
+    results: topStocks,
+    sectorExposure,
+  };
+}
+
+// HTTP wrapper
+export async function GET() {
+  try {
+    const result = await runIBKRScan();
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('[IBKR v2] Error:', err);
     return NextResponse.json({ error: err?.message || 'Gabim skaneri' }, { status: 500 });

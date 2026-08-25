@@ -17,8 +17,9 @@ import { computeTradabilityScore } from '@/lib/tradability-score';
 import { getRegimePolicy } from '@/lib/regime-policy';
 import type { MarketRegimeState } from '@/lib/regime-intelligence';
 import { computeAnalystRevisionScore } from '@/lib/analyst-revision-engine';
+import { runIBKRScan, type FunnelStock } from '@/app/api/ibkr-scan/route';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 // ── Response Types ──
 interface TopStockCard {
@@ -204,44 +205,18 @@ async function buildFallbackFromIBKRScan(activeRegime: string, regimeThresholds:
   };
 
   try {
-    // Call IBKR scan endpoint internally
-    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
-    const scanRes = await fetch(`${baseUrl}/api/ibkr-scan?_t=${Date.now()}`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(55000), // leave 5s buffer under maxDuration
-    });
-    if (!scanRes.ok) return empty;
+    // Call IBKR scan DIRECTLY (no HTTP) — reuses same data cache
+    console.log('[TOP-STOCKS] Running IBKR scan directly as fallback...');
+    const scanData = await runIBKRScan();
 
-    const scanData = await scanRes.json() as {
-      results: Array<{
-        symbol: string; price: number; sector: string;
-        decision: string; totalScore: number;
-        trendScore: number; rsScore: number; momentumScore: number;
-        volConfScore: number; setupScore: number; riskScore: number;
-        rsi: number; atr: number; atrPct: number; adx: number;
-        volRatio: number; avgDolVol20d: number;
-        aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean; stackedMA: boolean;
-        rsVsSPY: number; rsVsSector20d: number; sectorRsStatus: string;
-        entry: number; stop: number; target1R: number; target2R: number; target3R: number;
-        rewardRiskRatio: number; pullbackZone: string; nextResistance: number;
-        projectedUpsidePct: number; dailyExpRange: string;
-        daysTo1R: number; daysTo2R: number; daysTo3R: number;
-        ema10Val: number; ema20Val: number; sma50Val: number;
-        setup: string; horizon: string;
-        warnings: string[]; reasons: string[];
-      }>;
-      scannedAt: string;
-      funnel: { displayed: number; universe: number };
-    };
-
-    const candidates = scanData.results
-      .filter(s => s.decision === 'READY' || s.decision === 'WATCHLIST')
-      .sort((a, b) => b.totalScore - a.totalScore);
+    const candidates = (scanData.results || [])
+      .filter((s: FunnelStock) => s.decision === 'READY' || s.decision === 'WATCHLIST')
+      .sort((a: FunnelStock, b: FunnelStock) => b.totalScore - a.totalScore);
 
     if (candidates.length === 0) return empty;
 
     // Deduplicate by symbol, keep top score
-    const seen = new Map<string, typeof candidates[0]>();
+    const seen = new Map<string, FunnelStock>();
     for (const c of candidates) {
       const ex = seen.get(c.symbol);
       if (!ex || c.totalScore > ex.totalScore) seen.set(c.symbol, c);
