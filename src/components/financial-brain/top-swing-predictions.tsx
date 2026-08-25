@@ -22,6 +22,8 @@ import {
   Trophy,
   Target,
   Activity,
+  Play,
+  Loader2,
 } from 'lucide-react';
 
 // ── Types ──
@@ -365,6 +367,8 @@ export function TopSwingPredictions() {
   const [data, setData] = useState<TopStocksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -380,6 +384,25 @@ export function TopSwingPredictions() {
       setLoading(false);
     }
   }, []);
+
+  const runScan = useCallback(async () => {
+    setScanning(true);
+    setScanProgress('Duke filluar skanimin ML...');
+    try {
+      const res = await fetch('/api/ai-predict-scan?_t=' + Date.now(), { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Gabim skanimi');
+      const count = json.successful ?? 0;
+      setScanProgress(`Skanim i perfunduar: ${count} aksione te analizuara. Duke rifreskuar...`);
+      // Wait a moment then refresh
+      await new Promise(r => setTimeout(r, 1500));
+      await fetchData();
+    } catch (err) {
+      setScanProgress(err instanceof Error ? err.message : 'Gabim');
+    } finally {
+      setScanning(false);
+    }
+  }, [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -423,6 +446,25 @@ export function TopSwingPredictions() {
                 </Badge>
               </div>
             )}
+            {scanProgress && (
+              <div className={`mt-4 text-sm ${scanProgress.includes('Gabim') ? 'text-red-400' : 'text-emerald-400/80'} flex items-center justify-center gap-2`}>
+                {scanning && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{scanProgress}</span>
+              </div>
+            )}
+            <div className="mt-5">
+              <button
+                onClick={runScan}
+                disabled={scanning}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 disabled:cursor-not-allowed px-5 py-2.5 text-sm font-semibold text-white transition-colors"
+              >
+                {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                {scanning ? 'Duke skanuar...' : 'Ekzekuto Skanim ML'}
+              </button>
+              <p className="text-[12px] text-muted-foreground/40 mt-2">
+                ~3-5 min · 100+ aksione · 5 faktor · ruhet ne DB
+              </p>
+            </div>
             <div className="mt-4 flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground/50">
               <Info className="w-4 h-4" />
               Ky seksion shfaq vetem rezultatet e modelit ML me 7 shtresa (Trend, Sektor, TF Align, PEAD, Universe Rank, Tradability, Analyst). Per kandidate live te skanuar tani, shiko tab-in <strong className="text-emerald-400/70">IBKR</strong>.
