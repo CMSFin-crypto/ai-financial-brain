@@ -181,12 +181,12 @@ function getRegimeThresholds(regime: string): RegimeThresholds {
     case 'RANGE_NEUTRAL':
     default:
       return {
-        confidenceFloor: 0.58,
-        trendQualityFloor: 40,
-        sectorStrengthFloor: 35,
-        tradabilityFloor: 35,
-        universeRankFloor: 30,
-        maxTransitionRisk: 0.65,
+        confidenceFloor: 0.50,
+        trendQualityFloor: 25,
+        sectorStrengthFloor: 20,
+        tradabilityFloor: 25,
+        universeRankFloor: 20,
+        maxTransitionRisk: 0.75,
         peadBonusWeight: 0.04,
       };
   }
@@ -221,9 +221,7 @@ export async function GET() {
         finalDecision: 'BUY',
         evaluationStatus: 'PENDING',
         predictedAt: { gte: cutoff },
-        rawScore: { gte: BASE_CONFIG.minRawScore },
-        calibratedConfidence: { gte: regimeThresholds.confidenceFloor },
-        transitionRisk: { lte: regimeThresholds.maxTransitionRisk },
+        rawScore: { gte: 0 },
       },
       include: {
         factors: true,
@@ -461,36 +459,27 @@ export async function GET() {
       const tradabilityRecommendation = trad?.recommendation ?? 'ACCEPTABLE';
       const estSlippageBps = trad?.estimatedSlippageBps ?? 5;
 
-      // ═══════ REGIME-AWARE QUALITY GATES ═══════
-      // Apply dynamic thresholds based on current market regime
-      if (trendQualityScore < regimeThresholds.trendQualityFloor) continue;
-      if (sectorStrengthScore < regimeThresholds.sectorStrengthFloor) continue;
-      if (tfStatus === 'CONFLICTED') continue;
+      // ═══════ HARD GATES ONLY ═══════
       if (hasCriticalEvent) continue;
-      if (!isTradeable || tradabilityScore < regimeThresholds.tradabilityFloor) continue;
-      if (universeRankScore < regimeThresholds.universeRankFloor) continue;
-
-      // PEAD gate: if PEAD is actively negative (SELL/STRONG_SELL), filter out
       if (peadDriftActive && (peadSignal === 'SELL' || peadSignal === 'STRONG_SELL')) continue;
 
-      // Per-horizon / per-sector limits
-      if ((horizonCounts.get(horizon) || 0) >= BASE_CONFIG.maxPerHorizon) continue;
-      if ((sectorCounts.get(sector) || 0) >= BASE_CONFIG.maxPerSector) continue;
-
-      // ── Risk Flags (enhanced) ──
+      // ── Risk Flags (enhanced) — includes soft gate warnings ──
       const riskFlags: string[] = [];
       if (tickerEvents.length > 0) {
         const ne = tickerEvents[0];
         riskFlags.push(`${ne.eventType} in ${ne.daysUntil}d`);
       }
+      // Soft gates as warnings (not filters)
+      if (trendQualityScore < regimeThresholds.trendQualityFloor) riskFlags.push(`Trend i dobet (${trendQualityScore})`);
+      if (sectorStrengthScore < regimeThresholds.sectorStrengthFloor) riskFlags.push(`Sektor i dobet (${sectorStrengthScore})`);
+      if (tfStatus === 'CONFLICTED') riskFlags.push('TF i konfliktuar');
+      if (!isTradeable || tradabilityScore < regimeThresholds.tradabilityFloor) riskFlags.push(`Tradability e ulet (${tradabilityScore})`);
+      if (universeRankScore < regimeThresholds.universeRankFloor) riskFlags.push(`Rank i ulet (${universeRankScore})`);
       if ((p.transitionRisk ?? 0) > 0.5) riskFlags.push('High transition risk');
       if (p.regime?.includes('BEAR') || p.regime?.includes('PANIC')) riskFlags.push('Bearish regime');
       if ((p.regimeConfidence ?? 0) < 0.4) riskFlags.push('Low regime confidence');
-      if (!isTradeable) riskFlags.push('Tradability issue');
-      if (tradabilityRecommendation === 'POOR' || tradabilityRecommendation === 'UNTRADEABLE') {
-        riskFlags.push(`Tradability: ${tradabilityRecommendation}`);
-      }
-      if (momentumRegime === 'DECLINING') riskFlags.push('Momentum në rënie');
+      if (tradabilityRecommendation === 'POOR' || tradabilityRecommendation === 'UNTRADEABLE') riskFlags.push(`Tradability: ${tradabilityRecommendation}`);
+      if (momentumRegime === 'DECLINING') riskFlags.push('Momentum ne rënie');
       if (analyst?.riskFlags) riskFlags.push(...analyst.riskFlags.slice(0, 1));
       if (pead?.riskFlags) riskFlags.push(...pead.riskFlags.slice(0, 2));
       if (trad?.riskFlags) riskFlags.push(...trad.riskFlags.slice(0, 1));
@@ -502,7 +491,11 @@ export async function GET() {
       }
       // Deduplicate
       const uniqueFlags = [...new Set(riskFlags)];
-      if (uniqueFlags.length > 4) continue;
+      if (uniqueFlags.length > 6) continue;
+
+      // Per-horizon / per-sector limits
+      if ((horizonCounts.get(horizon) || 0) >= BASE_CONFIG.maxPerHorizon) continue;
+      if ((sectorCounts.get(sector) || 0) >= BASE_CONFIG.maxPerSector) continue;
 
       // ── Top Reasons (all-layers) ──
       const topReasons: string[] = [];
