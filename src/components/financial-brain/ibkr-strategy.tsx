@@ -50,6 +50,13 @@ interface FunnelStock {
   allowNewEntry: boolean;
   bracketOrder?: object | null;
   decision: Decision; reasons: string[]; warnings: string[];
+  // Swing Prediction
+  ema10Val: number; ema20Val: number; sma50Val: number;
+  pullbackZone: string;
+  nextResistance: number;
+  projectedUpsidePct: number;
+  dailyExpRange: string;
+  daysTo1R: number; daysTo2R: number; daysTo3R: number;
 }
 
 interface FunnelResponse {
@@ -318,6 +325,22 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
           <EntryBox label="TARGET 1R" value={stock.target1R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/15" />
           <EntryBox label="TARGET 2R" value={stock.target2R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/20" />
           <EntryBox label="TARGET 3R" value={stock.target3R} color="text-emerald-300" bg="bg-emerald-500/10 border-emerald-500/30" />
+        </div>
+
+        <div className="mt-2.5 rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2.5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Activity className="w-3.5 h-3.5 text-cyan-400" />
+            <p className="text-[12px] font-semibold text-cyan-400">Swing Prediction</p>
+          </div>
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-[12px]">
+            <div className="flex justify-between"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium">{stock.pullbackZone}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${stock.nextResistance.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Upside 3R</span><span className={stock.projectedUpsidePct > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{stock.projectedUpsidePct > 0 ? '+' : ''}{stock.projectedUpsidePct}%</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80">{stock.dailyExpRange}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80">{stock.daysTo1R}d</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80">{stock.daysTo2R}d</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80">{stock.daysTo3R}d</span></div>
+          </div>
         </div>
 
         {/* Quick stats row */}

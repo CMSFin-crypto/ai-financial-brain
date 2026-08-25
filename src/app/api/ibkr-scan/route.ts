@@ -285,6 +285,17 @@ interface FunnelStock {
   decision: Decision;
   reasons: string[];
   warnings: string[];
+  // NEW: Swing Prediction
+  ema10Val: number;
+  ema20Val: number;
+  sma50Val: number;
+  pullbackZone: string;       // e.g. "$338.50 - $341.20"
+  nextResistance: number;     // 20d high or recent peak
+  projectedUpsidePct: number; // % from current price to 3R target
+  dailyExpRange: string;      // e.g. "$338 - $345" (price +/- ATR)
+  daysTo1R: number;           // estimated trading days to 1R target
+  daysTo2R: number;
+  daysTo3R: number;
 }
 
 interface FunnelResponse {
@@ -428,6 +439,9 @@ export async function GET() {
         sectorRsStatus: 'INLINE',
         bracketOrder: null,
         decision: 'NO_TRADE', reasons: [], warnings: [],
+        ema10Val: 0, ema20Val: 0, sma50Val: 0,
+        pullbackZone: '', nextResistance: 0, projectedUpsidePct: 0,
+        dailyExpRange: '', daysTo1R: 0, daysTo2R: 0, daysTo3R: 0,
       });
     }
 
@@ -634,6 +648,34 @@ export async function GET() {
       stock.positionSize = pos.shares;
       stock.positionValue = pos.positionValue;
       stock.riskDollars = pos.riskDollars;
+
+      // Swing Prediction fields
+      const ema10Val = ema10[last] || 0;
+      const ema20Val = ema20[last] || 0;
+      const sma50Val = sma50[last] || 0;
+      stock.ema10Val = Math.round(ema10Val * 100) / 100;
+      stock.ema20Val = Math.round(ema20Val * 100) / 100;
+      stock.sma50Val = Math.round(sma50Val * 100) / 100;
+
+      // Pullback zone: between EMA10 and EMA20 (where bounce is expected)
+      const pbZoneLow = Math.min(ema10Val, ema20Val);
+      const pbZoneHigh = Math.max(ema10Val, ema20Val);
+      stock.pullbackZone = `$${pbZoneLow.toFixed(2)} – $${pbZoneHigh.toFixed(2)}`;
+
+      // Next resistance: 20d high (or recent peak)
+      stock.nextResistance = Math.round(Math.max(...highs.slice(-20)) * 100) / 100;
+
+      // Projected upside: from current price to 3R target
+      stock.projectedUpsidePct = price > 0 ? Math.round(((target3R - price) / price) * 10000) / 100 : 0;
+
+      // Daily expected range: price +/- ATR
+      stock.dailyExpRange = `$${Math.round((price - atr) * 100) / 100} – $${Math.round((price + atr) * 100) / 100}`;
+
+      // Estimated days to target (based on daily ATR pace)
+      const dailyPace = atr > 0 ? atr : price * 0.015;
+      stock.daysTo1R = dailyPace > 0 ? Math.round(riskPerShare / dailyPace) : 0;
+      stock.daysTo2R = dailyPace > 0 ? Math.round((riskPerShare * 2) / dailyPace) : 0;
+      stock.daysTo3R = dailyPace > 0 ? Math.round((riskPerShare * 3) / dailyPace) : 0;
 
       // Horizon based on ATR
       if (atrPct < 1.5) stock.horizon = '10D';
