@@ -113,7 +113,7 @@ export async function GET() {
           const currentPrice = live?.price && live.price > 0 ? live.price : (historicalData[historicalData.length - 1]?.close ?? 0);
 
           return predictHybridV2(ticker, historicalData, fundamentals, currentPrice, {
-            horizonDays: 1,
+            horizons: [1, 5, 20],
             sector: SECTOR_MAP[ticker],
             saveToDb: true,
             skipSpillover: true, // scan speed: skip expensive spillover per-symbol
@@ -169,30 +169,36 @@ export async function GET() {
       },
       topPicks: ranked.topPicks.map(r => ({
         symbol: r.symbol, sector: r.sector, score: r.rawScore,
-        direction: r.direction, confidence: r.calibratedConfidence,
+        direction: r.direction, confidence: r.hybridConfidence,
         topReasons: r.topReasons,
         spilloverSummary: r.spilloverAssessment ? `${r.spilloverAssessment.setupType} (${r.spilloverAssessment.spilloverScore.toFixed(1)})` : undefined,
         regimeState: r.regimeAssessment?.regime,
-        eventRisk: r.eventRisk?.eventType !== 'none' ? r.eventRisk.description : undefined,
+        eventRisk: r.eventRisk?.hasCriticalEvent ? r.eventRisk.summary : undefined,
       })),
       topShorts: ranked.topShorts.map(r => ({
         symbol: r.symbol, sector: r.sector, score: r.rawScore,
-        direction: r.direction, confidence: r.calibratedConfidence,
+        direction: r.direction, confidence: r.hybridConfidence,
         topReasons: r.topReasons,
       })),
       mostConfident: ranked.mostConfident.map(r => ({
         symbol: r.symbol, score: r.rawScore,
-        direction: r.direction, confidence: r.calibratedConfidence,
+        direction: r.direction, confidence: r.hybridConfidence,
       })),
-      allResults: ranked.allResults.map(r => ({
-        symbol: r.symbol, sector: r.sector,
-        score: r.rawScore, direction: r.direction,
-        confidence: r.calibratedConfidence,
-        technicalScore: r.technicalScore, fundamentalScore: r.fundamentalScore,
-        spilloverScore: r.spilloverScore, regimeScore: r.regimeScore, eventScore: r.eventScore,
-        topReasons: r.topReasons, aiInsight: r.aiInsight,
-        saved: r.saved, predictionId: r.predictionId,
-      })),
+      allResults: ranked.allResults.map(r => {
+        const h1 = r.horizons?.find(h => h.horizonDays === 1);
+        return {
+          symbol: r.symbol, sector: r.sector,
+          score: r.rawScore, direction: r.direction,
+          confidence: r.hybridConfidence,
+          technicalScore: h1?.technicalScore ?? 0,
+          fundamentalScore: h1?.fundamentalScore ?? 0,
+          spilloverScore: h1?.spilloverScore ?? 0,
+          regimeScore: h1?.regimeScore ?? 0,
+          eventScore: h1?.eventScore ?? 0,
+          topReasons: r.topReasons, aiInsight: r.aiInsight,
+          saved: r.saved, predictionIds: r.predictionIds,
+        };
+      }),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gabim i panjohur';
