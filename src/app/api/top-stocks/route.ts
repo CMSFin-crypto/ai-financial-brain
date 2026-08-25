@@ -192,6 +192,260 @@ function getRegimeThresholds(regime: string): RegimeThresholds {
   }
 }
 
+// ── IBKR Fallback: when no DB predictions, use IBKR scan as live candidates ──
+async function buildFallbackFromIBKRScan(activeRegime: string, regimeThresholds: RegimeThresholds): Promise<TopStocksResponse> {
+  const empty: TopStocksResponse = {
+    generatedAt: new Date().toISOString(),
+    modelVersion: 'ibkr-fallback',
+    topStocks: [],
+    totalScanned: 0,
+    filteredOut: 0,
+    activeRegime,
+  };
+
+  try {
+    // Call IBKR scan endpoint internally
+    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+    const scanRes = await fetch(`${baseUrl}/api/ibkr-scan?_t=${Date.now()}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(55000), // leave 5s buffer under maxDuration
+    });
+    if (!scanRes.ok) return empty;
+
+    const scanData = await scanRes.json() as {
+      results: Array<{
+        symbol: string; price: number; sector: string;
+        decision: string; totalScore: number;
+        trendScore: number; rsScore: number; momentumScore: number;
+        volConfScore: number; setupScore: number; riskScore: number;
+        rsi: number; atr: number; atrPct: number; adx: number;
+        volRatio: number; avgDolVol20d: number;
+        aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean; stackedMA: boolean;
+        rsVsSPY: number; rsVsSector20d: number; sectorRsStatus: string;
+        entry: number; stop: number; target1R: number; target2R: number; target3R: number;
+        rewardRiskRatio: number; pullbackZone: string; nextResistance: number;
+        projectedUpsidePct: number; dailyExpRange: string;
+        daysTo1R: number; daysTo2R: number; daysTo3R: number;
+        ema10Val: number; ema20Val: number; sma50Val: number;
+        setup: string; horizon: string;
+        warnings: string[]; reasons: string[];
+      }>;
+      scannedAt: string;
+      funnel: { displayed: number; universe: number };
+    };
+
+    const candidates = scanData.results
+      .filter(s => s.decision === 'READY' || s.decision === 'WATCHLIST')
+      .sort((a, b) => b.totalScore - a.totalScore);
+
+    if (candidates.length === 0) return empty;
+
+    // Deduplicate by symbol, keep top score
+    const seen = new Map<string, typeof candidates[0]>();
+    for (const c of candidates) {
+      const ex = seen.get(c.symbol);
+      if (!ex || c.totalScore > ex.totalScore) seen.set(c.symbol, c);
+    }
+
+    const cards: TopStockCard[] = [];
+    const sectorCounts = new Map<string, number>();
+    const horizonCounts = new Map<number, number>();
+
+    const regimePolicy = getRegimePolicy(activeRegime as MarketRegimeState);
+    const regimeMultiplier = regimePolicy.scoreMultiplier;
+
+    for (const s of Array.from(seen.values())) {
+      if (cards.length >= BASE_CONFIG.maxTotal) break;
+
+      const sector = s.sector || 'Unknown';
+      if ((sectorCounts.get(sector) || 0) >= BASE_CONFIG.maxPerSector) continue;
+
+      // Estimate horizon from days to targets
+      let horizon: 1 | 3 | 7 = 5 as 1 | 3 | 7;
+      if (s.daysTo3R <= 3) horizon = 1;
+      else if (s.daysTo3R <= 7) horizon = 3;
+      else horizon = 7;
+
+      if ((horizonCounts.get(horizon) || 0) >= BASE_CONFIG.maxPerHorizon) continue;
+
+      // ── Layer 1: Trend Quality (from IBKR scan scores) ──
+      const trendQualityScore = Math.round(
+        (s.trendScore * 0.40) +
+        (s.stackedMA ? 20 : 0) +
+        (s.adx > 25 ? 15 : s.adx > 20 ? 8 : 0) +
+        (s.aboveSMA50 ? 10 : 0) +
+        (s.sma50Above200 ? 10 : 0) +
+        Math.min(15, s.adx * 0.3)
+      );
+
+      // ── Layer 1b: Sector Strength ──
+      const sectorStrengthScore = Math.round(
+        Math.max(0, Math.min(100, 50 + s.rsVsSPY * 2 + s.rsVsSector20d * 1.5 +
+        (s.sectorRsStatus === 'LEADING' ? 15 : s.sectorRsStatus === 'INLINE' ? 5 : -10)))
+      );
+
+      // ── Layer 1c: Timeframe Alignment ──
+      let tfScore = 40;
+      let tfStatus = 'MIXED';
+      if (s.stackedMA && s.aboveSMA50 && s.sma50Above200) {
+        tfScore = 85; tfStatus = 'ALIGNED';
+      } else if (s.aboveSMA50 && s.sma50Above200) {
+        tfScore = 65; tfStatus = 'MIXED';
+      } else if (s.aboveSMA50) {
+        tfScore = 45; tfStatus = 'MIXED';
+      } else {
+        tfScore = 25; tfStatus = 'CONFLICTED';
+      }
+
+      // Skip CONFLICTED alignment
+      if (tfStatus === 'CONFLICTED') continue;
+
+      // ── Apply regime gates ──
+      if (trendQualityScore < regimeThresholds.trendQualityFloor) continue;
+      if (sectorStrengthScore < regimeThresholds.sectorStrengthFloor) continue;
+
+      // ── Layer 2: PEAD (not available from IBKR scan) ──
+      const peadScore = 0;
+      const peadSignal = 'NO_DATA';
+      const peadDriftActive = false;
+
+      // ── Layer 3: Universe Rank (approximate from RS) ──
+      const universeRankScore = Math.round(Math.max(0, Math.min(100, 50 + s.rsScore * 0.8)));
+      const universePercentile = Math.round(Math.max(5, Math.min(95, 50 + s.rsVsSPY * 3)));
+      const isTopDecile = s.rsScore >= 75;
+      const isTopQuintile = s.rsScore >= 60;
+      const momentumRegime = s.rsScore >= 65 ? 'LEADING' : s.rsScore >= 40 ? 'FOLLOWING' : 'DECLINING';
+
+      if (universeRankScore < regimeThresholds.universeRankFloor) continue;
+
+      // ── Layer 4: Tradability (from IBKR data) ──
+      const tradScore = Math.round(
+        Math.min(100,
+          (s.avgDolVol20d > 50_000_000 ? 30 : s.avgDolVol20d > 10_000_000 ? 20 : 10) +
+          (s.atrPct < 4 ? 25 : s.atrPct < 6 ? 18 : 10) +
+          (s.volRatio > 0.7 ? 20 : 10) +
+          (s.rsi > 30 && s.rsi < 70 ? 25 : 15)
+        )
+      );
+      const tradabilityScore = tradScore;
+      const isTradeable = tradScore >= 35;
+      const tradabilityRecommendation = tradScore >= 60 ? 'EXCELLENT' : tradScore >= 45 ? 'GOOD' : tradScore >= 35 ? 'ACCEPTABLE' : 'POOR';
+      const estSlippageBps = s.atrPct < 2 ? 2 : s.atrPct < 4 ? 4 : 6;
+
+      if (!isTradeable || tradabilityScore < regimeThresholds.tradabilityFloor) continue;
+
+      // ── Layer 5: Analyst Revision (not available) ──
+      const analystRevisionScore = 0;
+      const analystRevisionTrend = 'NO_DATA';
+
+      // ── Derive confidence from total score ──
+      const hybridConfidence = Math.round(Math.max(55, Math.min(95, 40 + s.totalScore * 0.55)));
+
+      // ── Risk flags ──
+      const riskFlags: string[] = [];
+      if (s.warnings) riskFlags.push(...s.warnings.slice(0, 2));
+      if (s.rsi > 75) riskFlags.push('RSI i larte');
+      if (s.decision === 'WATCHLIST') riskFlags.push('WATCHLIST — jo READY');
+      if (momentumRegime === 'DECLINING') riskFlags.push('Momentum ne rënie');
+      const uniqueFlags = [...new Set(riskFlags)];
+      if (uniqueFlags.length > 4) continue;
+
+      // ── Top reasons ──
+      const topReasons: string[] = [];
+      if (s.decision === 'READY') topReasons.push(`IBKR READY — ${s.setup || 'setup'} detected`);
+      else topReasons.push(`IBKR WATCHLIST — ${s.setup || 'potential'}`);
+      if (s.stackedMA) topReasons.push('Stacked MAs: EMA20 > SMA50 > SMA200');
+      if (s.projectedUpsidePct > 0) topReasons.push(`Upside potential: +${s.projectedUpsidePct}% ne 3R`);
+      if (s.pullbackZone) topReasons.push(`Pullback zone: ${s.pullbackZone}`);
+      if (s.rewardRiskRatio > 2) topReasons.push(`R:R ${s.rewardRiskRatio.toFixed(1)}:1`);
+      if (topReasons.length === 0) topReasons.push('Multiple bullish indicators aligned');
+
+      // ── Display Rank Score ──
+      const baseScore =
+        s.totalScore * 0.25 +
+        hybridConfidence * 0.20 +
+        trendQualityScore * 0.12 +
+        sectorStrengthScore * 0.08 +
+        tfScore * 0.08 +
+        universeRankScore * 0.07 +
+        tradabilityScore * 0.06;
+
+      const riskPenalty = uniqueFlags.length === 0 ? 3 : uniqueFlags.length <= 1 ? 1 : uniqueFlags.length <= 2 ? -1 : -4;
+
+      const displayRankScore = Math.round(
+        Math.max(0, Math.min(100, (baseScore + riskPenalty) * regimeMultiplier))
+      );
+
+      cards.push({
+        symbol: s.symbol,
+        sector,
+        horizonDays: horizon,
+        finalDecision: 'BUY',
+        rawScore: Math.round(s.totalScore),
+        hybridConfidence,
+        displayRankScore,
+        regime: activeRegime,
+        regimeConfidence: undefined,
+        transitionRisk: undefined,
+        trendQualityScore,
+        sectorStrengthScore,
+        timeframeAlignmentScore: tfScore,
+        timeframeAlignmentStatus: tfStatus,
+        peadScore,
+        peadSignal,
+        peadDriftActive,
+        peadDaysSince: null,
+        peadSurprisePct: null,
+        universeRankScore,
+        universePercentile,
+        isTopDecile,
+        isTopQuintile,
+        momentumRegime,
+        tradabilityScore,
+        isTradeable,
+        tradabilityRecommendation,
+        estSlippageBps,
+        analystRevisionScore,
+        analystRevisionTrend,
+        activeRegimeThresholds: {
+          confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
+          trendQualityFloor: regimeThresholds.trendQualityFloor,
+          sectorStrengthFloor: regimeThresholds.sectorStrengthFloor,
+          tradabilityFloor: regimeThresholds.tradabilityFloor,
+        },
+        topReasons: topReasons.slice(0, 4),
+        riskFlags: uniqueFlags,
+        updatedAt: 'tani',
+      });
+
+      horizonCounts.set(horizon, (horizonCounts.get(horizon) || 0) + 1);
+      sectorCounts.set(sector, (sectorCounts.get(sector) || 0) + 1);
+    }
+
+    cards.sort((a, b) => b.displayRankScore - a.displayRankScore);
+
+    return {
+      generatedAt: scanData.scannedAt || new Date().toISOString(),
+      modelVersion: 'ibkr-fallback',
+      topStocks: cards,
+      totalScanned: scanData.funnel?.universe || 0,
+      filteredOut: (scanData.funnel?.universe || 0) - cards.length,
+      activeRegime,
+      regimeThresholdsApplied: {
+        confidenceFloor: Math.round(regimeThresholds.confidenceFloor * 100),
+        trendQualityFloor: regimeThresholds.trendQualityFloor,
+        sectorStrengthFloor: regimeThresholds.sectorStrengthFloor,
+        tradabilityFloor: regimeThresholds.tradabilityFloor,
+        universeRankFloor: regimeThresholds.universeRankFloor,
+      },
+      message: `Fallback nga IBKR Scan — ${cards.length} kandidate READY/WATCHLIST me ${activeRegime} gates.`,
+    };
+  } catch (err: any) {
+    console.error('[TOP-STOCKS] IBKR fallback error:', err.message);
+    return empty;
+  }
+}
+
 export async function GET() {
   try {
     // 0. Detect current regime for dynamic thresholds
@@ -248,6 +502,12 @@ export async function GET() {
     });
 
     if (predictions.length === 0) {
+      // ═══════ FALLBACK: IBKR SCAN ═══════
+      // When no DB predictions exist, use IBKR scan results as swing candidates
+      console.log('[TOP-STOCKS] No DB predictions, falling back to IBKR scan...');
+      const fallback = await buildFallbackFromIBKRScan(activeRegime, regimeThresholds);
+      if (fallback.topStocks.length > 0) return NextResponse.json(fallback);
+      // If even fallback is empty, return empty with message
       return NextResponse.json({
         generatedAt: new Date().toISOString(),
         modelVersion: 'N/A',
@@ -255,7 +515,7 @@ export async function GET() {
         totalScanned: 0,
         filteredOut: 0,
         activeRegime,
-        message: `Modeli nuk ka gjetur kandidate me kriteret e regjimit ${activeRegime} (confidence ≥ ${(regimeThresholds.confidenceFloor * 100).toFixed(0)}%).`,
+        message: `Asnje kandidat swing. Nuk ka prediction-e ne DB dhe IBKR scan nuk gjeti kandidate READY/WATCHLIST.`,
       } satisfies TopStocksResponse);
     }
 

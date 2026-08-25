@@ -441,14 +441,20 @@ export function TopSwingPredictions() {
           <TrendingUp className="w-5 h-5 text-emerald-500" />
           <span className="text-sm text-muted-foreground">
             {data.topStocks.length} kandidate swing
-            {data.totalScanned > 0 && <span className="text-muted-foreground/50"> (prej {data.totalScanned} prediction-eve, {data.filteredOut} te filtruar)</span>}
+            {data.modelVersion === 'ibkr-fallback'
+              ? <span className="text-muted-foreground/50"> (prej {data.totalScanned} aksionesh te skanuar)</span>
+              : data.totalScanned > 0 && <span className="text-muted-foreground/50"> (prej {data.totalScanned} prediction-eve, {data.filteredOut} te filtruar)</span>
+            }
           </span>
           {data.activeRegime && data.activeRegime !== 'UNKNOWN' && (
             <Badge variant="secondary" className="text-[12px] bg-muted/50 px-2.5 py-0.5">
               {data.activeRegime.replace(/_/g, ' ')}
             </Badge>
           )}
-          {data.modelVersion !== 'N/A' && (
+          {data.modelVersion === 'ibkr-fallback' && (
+            <Badge className="text-[12px] bg-cyan-500/15 text-cyan-400 border-cyan-500/30 px-2.5 py-0.5" variant="outline">IBKR FALLBACK</Badge>
+          )}
+          {data.modelVersion !== 'N/A' && data.modelVersion !== 'ibkr-fallback' && (
             <Badge variant="secondary" className="text-[12px] bg-muted/50 px-2.5 py-0.5">{data.modelVersion}</Badge>
           )}
         </div>
