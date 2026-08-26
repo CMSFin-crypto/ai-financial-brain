@@ -299,6 +299,16 @@ interface FunnelStock {
   daysTo1R: number;           // estimated trading days to 1R target
   daysTo2R: number;
   daysTo3R: number;
+  // NEW: Overnight Risk
+  avgOvernightGap20: number;
+  avgOvernightGap60: number;
+  overnightGapUpPct: number;
+  maxOvernightGapDown: number;
+  maxOvernightGapUp: number;
+  overnightRiskLevel: string;
+  overnightBias: string;
+  gapCanSkipStop: boolean;
+  stopDistPct: number;
 }
 
 interface FunnelResponse {
@@ -447,6 +457,10 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       ema10Val: 0, ema20Val: 0, sma50Val: 0,
       pullbackZone: '', nextResistance: 0, projectedUpsidePct: 0,
       dailyExpRange: '', daysTo1R: 0, daysTo2R: 0, daysTo3R: 0,
+      avgOvernightGap20: 0, avgOvernightGap60: 0,
+      overnightGapUpPct: 0, maxOvernightGapDown: 0, maxOvernightGapUp: 0,
+      overnightRiskLevel: 'SAFE', overnightBias: 'NEUTRAL',
+      gapCanSkipStop: false, stopDistPct: 0,
     });
   }
 
@@ -664,6 +678,40 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (atrPct < 1.5) stock.horizon = '10D';
     else if (atrPct < 3) stock.horizon = '5D';
     else stock.horizon = '5D';
+
+    // ── Overnight Risk Analysis ──
+    const opens = data.map(d => d.open);
+    const overnightGaps: number[] = [];
+    for (let i = 1; i < data.length; i++) {
+      if (closes[i-1] > 0) {
+        overnightGaps.push(((opens[i] - closes[i-1]) / closes[i-1]) * 100);
+      }
+    }
+    const last60Gaps = overnightGaps.slice(-60);
+    const last20Gaps = overnightGaps.slice(-20);
+    const avgOG20 = last20Gaps.length > 0 ? last20Gaps.reduce((a,b) => a + Math.abs(b), 0) / last20Gaps.length : 0;
+    const avgOG60 = last60Gaps.length > 0 ? last60Gaps.reduce((a,b) => a + Math.abs(b), 0) / last60Gaps.length : 0;
+    const gapUpPct = last60Gaps.length > 0 ? (last60Gaps.filter(g => g > 0).length / last60Gaps.length) * 100 : 50;
+    const maxOGDown = last60Gaps.length > 0 ? Math.min(...last60Gaps) : 0;
+    const maxOGUp = last60Gaps.length > 0 ? Math.max(...last60Gaps) : 0;
+    const stopDistPctVal = entry > 0 ? ((entry - stop) / entry) * 100 : 99;
+    const gapCanSkip = avgOG60 > stopDistPctVal * 0.7;
+    let oRiskLevel: 'SAFE' | 'MODERATE' | 'HIGH' = 'SAFE';
+    if (avgOG20 > stopDistPctVal * 0.8 || Math.abs(maxOGDown) > stopDistPctVal * 1.5) {
+      oRiskLevel = 'HIGH';
+    } else if (avgOG20 > stopDistPctVal * 0.5 || Math.abs(maxOGDown) > stopDistPctVal) {
+      oRiskLevel = 'MODERATE';
+    }
+    const oBias = gapUpPct >= 55 ? 'BULLISH' : gapUpPct <= 45 ? 'BEARISH' : 'NEUTRAL';
+    stock.avgOvernightGap20 = Math.round(avgOG20 * 100) / 100;
+    stock.avgOvernightGap60 = Math.round(avgOG60 * 100) / 100;
+    stock.overnightGapUpPct = Math.round(gapUpPct);
+    stock.maxOvernightGapDown = Math.round(maxOGDown * 100) / 100;
+    stock.maxOvernightGapUp = Math.round(maxOGUp * 100) / 100;
+    stock.overnightRiskLevel = oRiskLevel;
+    stock.overnightBias = oBias;
+    stock.gapCanSkipStop = gapCanSkip;
+    stock.stopDistPct = Math.round(stopDistPctVal * 100) / 100;
 
     // ── F) Risk Quality (0-100) — 5% weight ──
     let rScore = 50;

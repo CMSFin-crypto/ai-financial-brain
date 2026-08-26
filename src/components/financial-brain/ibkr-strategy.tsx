@@ -726,8 +726,8 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
           </div>
         )}
 
-        {/* Overnight Risk — always visible when data available */}
-        {(stock.avgOvernightGap20 ?? 0) > 0 && (
+        {/* Overnight Risk */}
+        {stock.avgOvernightGap20 !== undefined && (
           <div className="mt-2.5 rounded-lg border p-3 space-y-1.5" style={{
             backgroundColor: stock.overnightRiskLevel === 'SAFE' ? 'rgba(16, 185, 129, 0.05)' :
               stock.overnightRiskLevel === 'MODERATE' ? 'rgba(245, 158, 11, 0.05)' :
