@@ -336,6 +336,61 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
   const setupColor = stock.setup === 'PULLBACK' ? 'text-amber-400' : stock.setup === 'BREAKOUT' ? 'text-blue-400' : stock.setup === 'TREND_CONT' ? 'text-emerald-400' : 'text-muted-foreground';
   const setupBg = stock.setup === 'PULLBACK' ? 'bg-amber-500/15 border-amber-500/30' : stock.setup === 'BREAKOUT' ? 'bg-blue-500/15 border-blue-500/30' : 'bg-emerald-500/15 border-emerald-500/30';
 
+  // ── Dynamic verdicts for each indicator ──
+  const vRSI = stock.rsi >= 40 && stock.rsi <= 65
+    ? `RSI ${stock.rsi.toFixed(0)} eshte ne zone ideale (40-65). Aksioni ka bere nje pullback te kontrolluar — forca e bleres eshte akoma e pranishme por jo e mbivleresuar. Kjo eshte zona me e mire per entry ne strategjine Pullback Swing.`
+    : stock.rsi > 70
+    ? `RSI ${stock.rsi.toFixed(0)} eshte i larte (mbi 70). Aksioni eshte ne rrezik te mbivleresuar — bleresit kane qene shume agresiv. Nje pullback ose korektim eshte i mundshem. Mos hyr tani, prit nje rikthim drejt EMA 10/20.`
+    : stock.rsi < 30
+    ? `RSI ${stock.rsi.toFixed(0)} eshte shume i ulet (nen 30). Aksioni eshte ne zone nje shitje te tepruar. Ka potentiale per rikthim, por shpesh tregon nje trend te dobet.`
+    : `RSI ${stock.rsi.toFixed(0)} eshte jashte zones ideale (40-65). Nuk eshte i keq, por nuk eshte ne zone optimale per pullback entry.`;
+
+  const vRR = stock.rewardRiskRatio >= 3
+    ? `1:${stock.rewardRiskRatio} eshte shume i mire (mbi 1:3). Per cdo $1 rrezik, target 3R jep $${stock.rewardRiskRatio} fitim. Edhe me 40% winrate, keshtu fiton ne fund.`
+    : stock.rewardRiskRatio >= 2
+    ? `1:${stock.rewardRiskRatio} eshte i mjaftueshem (mbi 1:2). Stop-i eshte i ngushte sa duhet ndaj target 3R. Me nje winrate 50%+, kjo jep edge pozitiv.`
+    : `1:${stock.rewardRiskRatio} eshte i ulet (nen 1:2). Rreziku eshte me i madh se shperblimi potential. Nje R:R i ulet do te thote qe stop-i eshte shume gjere ose target-i 3R eshte shume afer.`;
+
+  const vRisk = stock.riskPct <= 3
+    ? `Risku ${stock.riskPct}% eshte shume i ulet. Stop-i eshte i ngushte — cmimi duhet te leveze vetem ${stock.riskPct}% kunder teje per te goditur stop. Kjo eshte e shkelqyer per pengese minimale dhe R:R te larte.`
+    : stock.riskPct <= 5
+    ? `Risku ${stock.riskPct}% eshte akoma i pranueshem. Stop-i eshte i arsyeshem per nje swing trade 5-10 ditor. Jo ideal, por funksional nese setup-i teknik eshte i forte.`
+    : `Risku ${stock.riskPct}% eshte i larte. Nese stop goditet, humb ${stock.riskPct}% nga kapitali. Konsidero te prisesh nje pullback me i thelle per nje stop me te ngushte.`;
+
+  const rsSign = stock.rsVsSPY > 0 ? '+' : '';
+  const vRS = stock.rsVsSPY > 3
+    ? `RS ${rsSign}${stock.rsVsSPY.toFixed(1)}% eshte shume i forte. Aksioni po outperformon S&P 500 ne 22 dite. Institucionet po akumulojne — kjo tregon besim te larte.`
+    : stock.rsVsSPY > 0
+    ? `RS ${rsSign}${stock.rsVsSPY.toFixed(1)}% eshte pozitiv. Aksioni po performon me mire se S&P 500. Kjo eshte e pranueshme per pullback swing — trendi institucional eshte akoma i pranishem.`
+    : stock.rsVsSPY > -3
+    ? `RS ${stock.rsVsSPY.toFixed(1)}% eshte negativ por jo shume i keq. Mund te jete nje pullback i perkohshem. Verehtu — nese RS nuk rimerr, trendi mund te jete ne ndryshim.`
+    : `RS ${stock.rsVsSPY.toFixed(1)}% eshte i dobet. Aksioni po underperformon S&P 500. Kjo tregon humbje interesi institucional. Shmang per momentin.`;
+
+  const vATR = stock.atrPct <= 1.5
+    ? `ATR ${stock.atrPct}% eshte shume i ulet. Aksioni leveze mesatarisht vetem $${stock.atr.toFixed(2)} ne dite. Stop-loss mund te jete shume i ngushte, lëvizjet drejt target 3R jane me te parashikueshme.`
+    : stock.atrPct <= 2.5
+    ? `ATR ${stock.atrPct}% eshte ne rregull. Levizja mesatare ditorne eshte $${stock.atr.toFixed(2)}. Volatiliteti i arsyeshem per swing trading.`
+    : stock.atrPct <= 3.5
+    ? `ATR ${stock.atrPct}% eshte i larte. Levizje $${stock.atr.toFixed(2)} ne dite. Stop-loss do te jete i gjere, rreziku i gap overnight rritet.`
+    : `ATR ${stock.atrPct}% eshte shume i larte. Aksioni eshte shume volatil — nuk eshte i pershtatshem per strategjine Pullback Swing.`;
+
+  const dolVolM = `$${(stock.avgDolVol20d / 1e6).toFixed(0)}M`;
+  const vDolVol = stock.avgDolVol20d >= 100e6
+    ? `${dolVolM}/dite eshte likuiditet shume i larte. Mund te hysh e te dalish me ordra te medha pa asnje ndikim ne cmim. Spread-i minimal, stop-loss ekzekutohet me precision.`
+    : stock.avgDolVol20d >= 50e6
+    ? `${dolVolM}/dite eshte i mire. Likuiditet i mjaftueshem per stop-loss pa problem. I pershtatshem per swing trading.`
+    : stock.avgDolVol20d >= 20e6
+    ? `${dolVolM}/dite eshte i pranueshem por jo ideal. Perdor limit ordere, jo market ordera.`
+    : `${dolVolM}/dite eshte i ulet. Rrezik per slippage te larte. Nuk rekomandohet per swing trading.`;
+
+  const vADX = stock.adx >= 50
+    ? `ADX ${stock.adx} eshte shume i larte. Aksioni ka nje trend shume te forte, pothuaj ne fazen e eksplozimit. Hyr vetem nese R:R eshte shume i mire.`
+    : stock.adx >= 25
+    ? `ADX ${stock.adx} tregon nje trend te forte. Aksioni ka nje drejtim te qarte — pullback-i ka me shume probabilitet te jete i perkohshem. Zona optimale.`
+    : stock.adx >= 20
+    ? `ADX ${stock.adx} tregon nje trend po formohet. Forca eshte akoma ne zhvillim. Konsidero pozicion me te vogel ose prit konfirmim.`
+    : `ADX ${stock.adx} eshte i ulet. Aksioni nuk ka trend te qarte — strategjia Pullback Swing nuk funksionon ketu. Shmang.`;
+
   return (
     <Card className={`border-border/50 bg-card hover:border-border transition-all ${stock.decision === 'READY' ? 'border-emerald-500/30' : ''}`}>
       <CardContent className="p-4">
@@ -401,27 +456,40 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
         {/* Quick stats row */}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
           <StatPopover label="RSI" value={stock.rsi} good={stock.rsi >= 40 && stock.rsi <= 65} warn={stock.rsi > 70 || stock.rsi < 30}
-            ideal="40 - 65 (pullback zone)" warnRange="mbi 70 (mbivleresuar) ose nen 30 (nje shitje e tepruar)"
-            desc="Relative Strength Index — mat forcen e lëvizjes se fundit ne nje shkalle 0-100. Ne pullback swing, duam RSI 40-65: aksioni eshte ne renie te kontrolluar por jo i mbivleresuar. RSI nen 30 do te thote nje shitje e tepruar (oversold) por shpesh tregon nje trend te dobet." />
+            ideal="40 - 65 (pullback zone)" warnRange="mbi 70 (mbivleresuar) ose nen 30"
+            desc="Relative Strength Index — mat forcen e levizjes se fundit ne nje shkalle 0-100. Ne pullback swing, duam RSI 40-65."
+            verdict={vRSI}
+          />
           <StatPopover label="R:R" value={`1:${stock.rewardRiskRatio}`} good={stock.rewardRiskRatio >= 2} warn={stock.rewardRiskRatio < 1.5}
             ideal="1:2.0 ose me i larte" warnRange="nen 1:1.5 (rrezik me i madh se shperblimi)"
-            desc="Reward-to-Risk Ratio — sa dollar fitimi per cdo dollar rreziqi. Nje R:R 1:2 do te thote qe nese stop-i bie, humb 1 njesi, por nese target-i arrihet, fiton 2 njesi. Me R:R te larte, edhe nje winrate me te ulet jep fitim ne fund. Ne pranojme minimum 1:1.5." />
+            desc="Reward-to-Risk Ratio — sa dollar fitimi per cdo dollar rreziqi. Me R:R te larte, edhe nje winrate me te ulet jep fitim."
+            verdict={vRR}
+          />
           <StatPopover label="Risk" value={`${stock.riskPct}%`} good={stock.riskPct <= 4} warn={stock.riskPct > 6}
             ideal="2% - 4%" warnRange="mbi 6% (shume i larte per nje swing trade)"
-            desc="Rreziku per aksion — distances nga Entry deri te Stop si perqindje e cmimit te hyrjes. Nese hyresh ne NVDA ne $130 me stop ne $124, risku eshte 4.6%. Me i ulet aq me i mire: rreziku i larte do te thote stop i gjere dhe probabilitet me te ulet per fitim. Maximum 8%." />
+            desc="Rreziku per aksion — distance nga Entry deri te Stop si perqindje e cmimit te hyrjes. Maximum 8%."
+            verdict={vRisk}
+          />
           <StatPopover label="RS SPY" value={`${stock.rsVsSPY > 0 ? '+' : ''}${stock.rsVsSPY.toFixed(1)}%`} good={stock.rsVsSPY > 0} warn={stock.rsVsSPY < -3}
             ideal="Positive (mbi 0%)" warnRange="nen -3% (aksioni eshte me i dobet se tregu)"
-            desc="Relative Strength vs SPY — sa me mire ka performuar aksioni ne 22 dite te fundit krah SPY. RS +5% do te thote se aksioni u rrit 5% me shume se S&P 500. RS pozitiv tregon se institucionet po blejne kete aksion me agresivitet. Ne preferojme aksione me RS pozitiv sepse kane probabilitet me te larte per te vazhduar." />
+            desc="Relative Strength vs SPY — sa me mire ka performuar aksioni ne 22 dite krah SPY."
+            verdict={vRS}
+          />
           <StatPopover label="ATR" value={`${stock.atrPct}%`} good={stock.atrPct <= 2} warn={stock.atrPct > 3.5}
             ideal="1% - 2.5%" warnRange="mbi 3.5% (shume volatil, i pakontrollueshem)"
-            desc="Average True Range — mat volatilitetin mesatar ditor. Nje ATR 2% do te thote se aksioni lëviz mesatarisht 2% ne dite. ATR perdoret per te vendosur stop-loss (nen swing-low minus 0.2 x ATR). ATR i ulet = lëvizje me te qete dhe me te parashikueshme = stop i ngushte = me i mire per ne." />
-          <StatPopover label="DolVol" value={`$${(stock.avgDolVol20d / 1e6).toFixed(0)}M`} good={stock.avgDolVol20d >= 50e6} warn={stock.avgDolVol20d < 20e6}
+            desc="Average True Range — mat volatilitetin mesatar ditor. Perdoret per te vendosur stop-loss."
+            verdict={vATR}
+          />
+          <StatPopover label="DolVol" value={`${(stock.avgDolVol20d / 1e6).toFixed(0)}M`} good={stock.avgDolVol20d >= 50e6} warn={stock.avgDolVol20d < 20e6}
             ideal="mbi $50M/dite" warnRange="nen $20M/dite (likuiditet i ulet, spread i gjere)"
-            desc="Dollar Volume mesatar 20-ditor — sa dollarra tregtohen ne dite. DolVol i larte siguron qe mund te hysh dhe te dalish pa prekur cmimin. Nen $20M/dite, bid-ask spread behet probleme dhe slippage rritet. Kompanite me DolVol mbaltes jane me te besueshme per stop-loss efektiv." />
+            desc="Dollar Volume mesatar 20-ditor — sa dollarra tregtohen ne dite. DolVol i larte siguron ekzekutim pa problem."
+            verdict={vDolVol}
+          />
           <StatPopover label="ADX" value={stock.adx} good={stock.adx > 25} warn={stock.adx < 20}
             ideal="mbi 25 (trend i forte)" warnRange="nen 20 (pa trend ose trend i dobet)"
-            desc="Average Directional Index — mat forcen e trendit pa marre parasysh drejtimin. ADX 0-20 = trend i dobet/ases, 20-25 = trend po formohet, 25-50 = trend i forte, 50+ = trend shume i forte. Ne kerkim ADX > 25 sepse strategjia jonse funksionon vetem ne trenda te forta. ADX i larte + RS pozitiv = kombinim i mire." />
-        </div>
+            desc="Average Directional Index — mat forcen e trendit pa marre parasysh drejtimin. 25-50 = trend i forte."
+            verdict={vADX}
+          />        </div>
 
         {/* Reasons */}
         {stock.reasons.length > 0 && (
@@ -692,9 +760,9 @@ function EntryBox({ label, value, color, bg }: { label: string; value: number; c
   );
 }
 
-function StatPopover({ label, value, good, warn, ideal, warnRange, desc }: {
+function StatPopover({ label, value, good, warn, ideal, warnRange, desc, verdict }: {
   label: string; value: string | number; good: boolean; warn: boolean;
-  ideal: string; warnRange: string; desc: string;
+  ideal: string; warnRange: string; desc: string; verdict?: string;
 }) {
   const colorCls = good ? 'text-emerald-400' : warn ? 'text-red-400' : 'text-amber-400';
   return (
@@ -706,13 +774,19 @@ function StatPopover({ label, value, good, warn, ideal, warnRange, desc }: {
           <Info className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
         </button>
       </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className="w-72 sm:w-80 p-0 overflow-hidden">
+      <PopoverContent side="bottom" align="start" className="w-80 sm:w-96 p-0 overflow-hidden">
         <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
           <h3 className="text-sm font-bold text-foreground">{label}</h3>
         </div>
         <div className="px-4 pb-4 space-y-3">
+          {verdict && (
+            <div className="rounded-md p-2.5" style={{ backgroundColor: good ? 'rgba(16,185,129,0.08)' : warn ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)' }}>
+              <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: good ? '#10b981' : warn ? '#ef4444' : '#f59e0b' }}>Vlerësimi për këtë aksion</p>
+              <p className="text-[13px] leading-relaxed text-foreground/90">{verdict}</p>
+            </div>
+          )}
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Cka eshte?</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën?</p>
             <p className="text-[13px] leading-relaxed text-foreground/85">{desc}</p>
           </div>
           <div>
