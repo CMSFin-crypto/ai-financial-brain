@@ -277,6 +277,31 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const passedSetupPhase = (setup !== 'NONE') ? 1 : 0;
     const passedRiskPhase = (decision === 'READY' || decision === 'WATCHLIST' || decision === 'EVENT_RISK') ? 1 : 0;
 
+    // ── Overnight Risk Analysis ──
+    const opens = stockData.map(d => d.open);
+    const overnightGaps: number[] = [];
+    for (let i = 1; i < stockData.length; i++) {
+      if (closes[i-1] > 0) {
+        overnightGaps.push(((opens[i] - closes[i-1]) / closes[i-1]) * 100);
+      }
+    }
+    const last60Gaps = overnightGaps.slice(-60);
+    const last20Gaps = overnightGaps.slice(-20);
+    const avgOvernightGap20 = last20Gaps.length > 0 ? last20Gaps.reduce((a,b) => a + Math.abs(b), 0) / last20Gaps.length : 0;
+    const avgOvernightGap60 = last60Gaps.length > 0 ? last60Gaps.reduce((a,b) => a + Math.abs(b), 0) / last60Gaps.length : 0;
+    const gapUpPct = last60Gaps.length > 0 ? (last60Gaps.filter(g => g > 0).length / last60Gaps.length) * 100 : 50;
+    const maxOvernightGapDown = last60Gaps.length > 0 ? Math.min(...last60Gaps) : 0;
+    const maxOvernightGapUp = last60Gaps.length > 0 ? Math.max(...last60Gaps) : 0;
+    const stopDistPct = entry > 0 ? ((entry - stop) / entry) * 100 : 99;
+    const gapCanSkipStop = avgOvernightGap60 > stopDistPct * 0.7;
+    let overnightRiskLevel: 'SAFE' | 'MODERATE' | 'HIGH' = 'SAFE';
+    if (avgOvernightGap20 > stopDistPct * 0.8 || Math.abs(maxOvernightGapDown) > stopDistPct * 1.5) {
+      overnightRiskLevel = 'HIGH';
+    } else if (avgOvernightGap20 > stopDistPct * 0.5 || Math.abs(maxOvernightGapDown) > stopDistPct) {
+      overnightRiskLevel = 'MODERATE';
+    }
+    const overnightBias = gapUpPct >= 55 ? 'BULLISH' : gapUpPct <= 45 ? 'BEARISH' : 'NEUTRAL';
+
     return NextResponse.json({
       symbol: sym, regimeOk, regimeDetail: { spy: { above50: spyA50, above200: spyA200 }, qqq: { above50: qqqA50, above200: qqqA200 } },
       stock: {
@@ -321,6 +346,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         sectorAboveSma50: above50,
         sectorRsStatus: 'INLINE' as const,
         bracketOrder: null,
+        // Overnight Risk
+        avgOvernightGap20: Math.round(avgOvernightGap20 * 100) / 100,
+        avgOvernightGap60: Math.round(avgOvernightGap60 * 100) / 100,
+        overnightGapUpPct: Math.round(gapUpPct),
+        maxOvernightGapDown: Math.round(maxOvernightGapDown * 100) / 100,
+        maxOvernightGapUp: Math.round(maxOvernightGapUp * 100) / 100,
+        overnightRiskLevel,
+        overnightBias,
+        gapCanSkipStop,
+        stopDistPct: Math.round(stopDistPct * 100) / 100,
       },
       funnel: { passedLiquidity, passedTrend: passedTrendPhase, passedSetup: passedSetupPhase, passedRisk: passedRiskPhase },
     });

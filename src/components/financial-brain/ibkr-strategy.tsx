@@ -9,7 +9,7 @@ import {
   BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
-  Copy, Check, Briefcase, FileText, ShieldAlert,
+  Copy, Check, Briefcase, FileText, ShieldAlert, Moon,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -57,6 +57,16 @@ interface FunnelStock {
   projectedUpsidePct: number;
   dailyExpRange: string;
   daysTo1R: number; daysTo2R: number; daysTo3R: number;
+  // Overnight Risk
+  avgOvernightGap20: number;
+  avgOvernightGap60: number;
+  overnightGapUpPct: number;
+  maxOvernightGapDown: number;
+  maxOvernightGapUp: number;
+  overnightRiskLevel: string;
+  overnightBias: string;
+  gapCanSkipStop: boolean;
+  stopDistPct: number;
 }
 
 interface FunnelResponse {
@@ -700,6 +710,90 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
                     }}>
                       {stock.sectorRsStatus}
                     </span>
+                  </div>
+                </MiniPopover>
+              </div>
+            )}
+
+            {/* Overnight Risk */}
+            {stock.avgOvernightGap20 > 0 && (
+              <div className="mt-2 rounded-lg border p-3 space-y-1.5" style={{
+                backgroundColor: stock.overnightRiskLevel === 'SAFE' ? 'rgba(16, 185, 129, 0.05)' :
+                  stock.overnightRiskLevel === 'MODERATE' ? 'rgba(245, 158, 11, 0.05)' :
+                  'rgba(239, 68, 68, 0.05)',
+                borderColor: stock.overnightRiskLevel === 'SAFE' ? 'rgba(16, 185, 129, 0.2)' :
+                  stock.overnightRiskLevel === 'MODERATE' ? 'rgba(245, 158, 11, 0.2)' :
+                  'rgba(239, 68, 68, 0.2)',
+              }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Moon className="w-4 h-4" style={{
+                      color: stock.overnightRiskLevel === 'SAFE' ? '#10b981' :
+                        stock.overnightRiskLevel === 'MODERATE' ? '#f59e0b' :
+                        '#ef4444',
+                    }} />
+                    <p className="text-[13px] font-semibold" style={{
+                      color: stock.overnightRiskLevel === 'SAFE' ? '#10b981' :
+                        stock.overnightRiskLevel === 'MODERATE' ? '#f59e0b' :
+                        '#ef4444',
+                    }}>Overnight Risk</p>
+                  </div>
+                  <span className="text-[13px] font-bold" style={{
+                    color: stock.overnightRiskLevel === 'SAFE' ? '#10b981' :
+                      stock.overnightRiskLevel === 'MODERATE' ? '#f59e0b' :
+                      '#ef4444',
+                  }}>{stock.overnightRiskLevel === 'SAFE' ? 'SIGURË' : stock.overnightRiskLevel === 'MODERATE' ? 'MESATARE' : 'E LARTË'}</span>
+                </div>
+                <MiniPopover label="Avg Gap (20d)" desc={"Mesatarja e gap-it overnight (nga close i ditës në open tjetër) për 20 ditët e fundit, në perqindje. Kjo tregon sa lëviz zakonisht aksioni gjatë natës. Nëse kjo vlerë është e vogël (< 0.3%), aksioni është i qetë gjatë natës. Nëse është e madhe (> 1%), ekziston rreziku që stop-i të kapërcyhet nga një gap overnight."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Avg Gap (20d)</span>
+                    <span className="font-medium text-foreground">{stock.avgOvernightGap20}%</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Avg Gap (60d)" desc={"Mesatarja e gap-it overnight për 60 ditët e fundit. Një pamje më e gjerë se 20d. Nëse 20d dhe 60d janë afër, aksioni ka gap overnight të konsistent. Nëse 60d është më i lartë, tregon se ka pasur periudha me volatilitet të lartë recently."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Avg Gap (60d)</span>
+                    <span className="font-medium text-foreground">{stock.avgOvernightGap60}%</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Max Gap Down (60d)" desc={"Gap-i më i keq (më negativ) overnight në 60 ditët e fundit. Kjo është «skenari më i keq» — sa ka rënë aksioni një natë. Nëse kjo vlerë është më e madhe se distanca e stop-it, ekziston rreziku që stop-i të mos ekzekutohet (gap skip) dhe humbja të jetë më e madhe se planifikuar."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Max Gap Down (60d)</span>
+                    <span className="font-medium" style={{ color: Math.abs(stock.maxOvernightGapDown) > stock.stopDistPct ? '#ef4444' : 'var(--foreground)' }}>{stock.maxOvernightGapDown}%</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Max Gap Up (60d)" desc={"Gap-i më i mirë (më pozitiv) overnight në 60 ditët e fundit. Tregon potentialin e fitimit overnight. Një gap up është i mirë nëse je long — çmimi hap më lart se sa e mbylleve. Kjo vlerë ndihmon në pritjet realiste."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Max Gap Up (60d)</span>
+                    <span className="font-medium text-emerald-400">+{stock.maxOvernightGapUp}%</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Direksioni i Gap-it" desc={"Përqindja e netëve që aksioni ka hapur me gap UP vs DOWN. Nëse > 55% UP, aksioni ka një tendencë pozitive overnight (i mirë për long). Nëse > 55% DOWN, ka tendencë negative (rrezik shtesë). 45-55% = neutral."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Gap Up %</span>
+                    <span className="font-medium text-foreground">{stock.overnightGapUpPct}%</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Overnight Bias" desc={"Tendenca e përgjithshme overnight: BULLISH = gap-i është pozitiv më shpesh (mbi 55% të netëve), BEARISH = gap-i është negativ më shpesh (nën 45%), NEUTRAL = pa drejtim të qartë. Kjo nuk garanton lëvizjen e nesërmes, por tregon sjelljen historike."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Overnight Bias</span>
+                    <span className="font-semibold" style={{
+                      color: stock.overnightBias === 'BULLISH' ? '#10b981' : stock.overnightBias === 'BEARISH' ? '#ef4444' : 'var(--foreground)',
+                    }}>{stock.overnightBias === 'BULLISH' ? 'Bullish' : stock.overnightBias === 'BEARISH' ? 'Bearish' : 'Neutral'}</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Gap vs Stop" desc={"A mund gap-i overnight të kapërcyë stop-loss-in? Nëse PO — mesatarja e gap-it overnight është më e madhe se 70% e distancës së stop-it. Kjo do të thotë që në një natë të keqe, stop-i mund të mos ekzekutohet (gap skip) dhe humbja mund të jetë 2-3x më e madhe. Nëse JO — stop-i është i sigurt nga gap-et normale."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Gap vs Stop</span>
+                    <span className="font-semibold" style={{
+                      color: stock.gapCanSkipStop ? '#ef4444' : '#10b981',
+                    }}>{stock.gapCanSkipStop ? 'RREZIK — mund ta kapijë' : 'Sigur'}</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Distanca e Stop-it" desc={"Distanca në perqindje nga Entry deri te Stop. Kjo është zona e rrezikut tjetër — aq larg sa aksioni mund të bjerë para se stop-i të ekzekutohet. Një distancë më e ngushtë = rrezik më i ulët, por rreziku i being stopped out nga zhurma normale rritet."} >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-muted-foreground">Dist. Stop</span>
+                    <span className="font-medium text-foreground">{stock.stopDistPct}%</span>
                   </div>
                 </MiniPopover>
               </div>
