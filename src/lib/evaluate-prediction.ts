@@ -88,3 +88,8 @@ export async function evaluatePredictionById(
     return updated;
   });
 }
+
+export async function evaluateDuePredictionsBrier() {
+  // TODO: Implement Brier score evaluation pipeline
+  return { evaluated: 0, brierScores: [] };
+}
