@@ -443,13 +443,27 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             <p className="text-[12px] font-semibold text-cyan-400">Swing Prediction</p>
           </div>
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-[12px]">
-            <div className="flex justify-between"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium">{stock.pullbackZone ?? '—'}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${(stock.nextResistance ?? 0).toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Upside 3R</span><span className={(stock.projectedUpsidePct ?? 0) > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{(stock.projectedUpsidePct ?? 0) > 0 ? '+' : ''}{stock.projectedUpsidePct ?? 0}%</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80">{stock.dailyExpRange ?? '—'}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80">{stock.daysTo1R ?? 0}d</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80">{stock.daysTo2R ?? 0}d</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80">{stock.daysTo3R ?? 0}d</span></div>
+            <MiniPopover label="Pullback Zone" desc="Zona e pullback-it — nga low-i 10-ditor (mbështetja) deri te cmimi aktual. Kjo është zona ku aksioni po bën korektimin brenda trendit rritës. Nëse cmimi preket këtë zonë dhe jep candle rikthimi, është sinjal hyrjeje. Zona e gjerë tregon korektim më të thellë." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium">{stock.pullbackZone ?? '—'}</span></div>
+            </MiniPopover>
+            <MiniPopover label="Rezistenca" desc="Niveli i ardhshëm i rezistencës — high-i më i lartë 20-ditor. Kjo është zona ku çmimi mund të hasë shitje. Nëse target 3R është afër kësaj rezistence, mund të ketë vështirësi për të kaluar atë. Rezistencë të lartë = upsides më të kufizuara." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${(stock.nextResistance ?? 0).toFixed(2)}</span></div>
+            </MiniPopover>
+            <MiniPopover label="Upside 3R" desc="Potenciali i fitimit deri te Target 3R si përqindje. Llogaritet: (Target3R - Cmimi aktual) / Cmimi aktual x 100. Nëse është pozitiv, ka hapësirë fitimi. Nëse negativ, target 3R është poshtë cmimit aktual (setup i keq ose stop shumë i gjerë)." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">Upside 3R</span><span className={(stock.projectedUpsidePct ?? 0) > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{(stock.projectedUpsidePct ?? 0) > 0 ? '+' : ''}{stock.projectedUpsidePct ?? 0}%</span></div>
+            </MiniPopover>
+            <MiniPopover label="Rangu Ditor (Expected Range)" desc="Rangu i pritur ditor — llogaritet si Cmimi ± ATR (Average True Range). Kjo tregon se sa larg mund të lëvizë çmimi sot bazuar në volatilitetin e fundit. Përdoret për të vendosur pritjet realiste — mos pres që 1R të arrihet në një ditë nëse rangu ditor është më i vogël se distanca 1R." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80">{stock.dailyExpRange ?? '—'}</span></div>
+            </MiniPopover>
+            <MiniPopover label="Ditë deri te 1R" desc="Sa ditë (afërsisht) deri sa çmimi të arrijë Target 1R, bazuar në ATR. Llogaritet: distanca 1R / ATR. Nëse 1R = $6 dhe ATR = $2, atëherë ~3 ditë. Kjo jep ide kohore — nëse është shumë e gjatë (mbi 15d), rreziku i tregut rritet." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80">{stock.daysTo1R ?? 0}d</span></div>
+            </MiniPopover>
+            <MiniPopover label="Ditë deri te 2R" desc="Sa ditë (afërsisht) deri sa çmimi të arrijë Target 2R. Llogaritet: distanca 2R / ATR. Shumica e swing trade-ve mbahen 3-10 ditë. Nëse 2R kërkon mbi 10 ditë, konsidero nje setup me R:R më të mirë ose ATR më të lartë." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80">{stock.daysTo2R ?? 0}d</span></div>
+            </MiniPopover>
+            <MiniPopover label="Ditë deri te 3R" desc="Sa ditë (afërsisht) deri sa çmimi të arrijë Target 3R. Llogaritet: distanca 3R / ATR. Kjo është horizonti kohor i plotë i trade-it. Nëse 3R kërkon mbi 15 ditë, rreziku i regjimit të tregut ndryshimit rritet — konsidero reduktim të pozicionit në 2R." >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80">{stock.daysTo3R ?? 0}d</span></div>
+            </MiniPopover>
           </div>
         </div>
 
@@ -537,9 +551,15 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
                   <p className="text-[13px] font-semibold text-violet-400">Pozicionimi (1% risk per trade, $25K account)</p>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <div><p className="text-[11px] text-muted-foreground">Shares</p><p className="text-[14px] font-bold text-foreground">{stock.positionSize}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground">Pozicioni</p><p className="text-[14px] font-bold text-foreground">${stock.positionValue.toLocaleString()}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground">Risk $</p><p className="text-[14px] font-bold text-red-400">${stock.riskDollars.toLocaleString()}</p></div>
+                  <MiniPopover label="Shares (Numri i aksioneve)" desc="Numri i aksioneve që duhet të blinësh. Llogaritet si: (Account x Risk%) / (Entry - Stop). Për $25K account me 1% risk: $250 / risk_per_share. Kjo siguron që nuk humbësh më shumë se 1% të account-it në një trade." >
+                    <div className="w-full text-center"><p className="text-[11px] text-muted-foreground">Shares</p><p className="text-[14px] font-bold text-foreground">{stock.positionSize}</p></div>
+                  </MiniPopover>
+                  <MiniPopover label="Vlera e Pozicionit" desc="Vlera totale e pozicionit në dollarë: Shares x Cmimi i hyrjes. Kjo tregon sa kapital do të zë trade-i. Për një account $25K, një pozicion $5,000 është 20% — kjo është e pranueshme për një swing trade i vetëm." >
+                    <div className="w-full text-center"><p className="text-[11px] text-muted-foreground">Pozicioni</p><p className="text-[14px] font-bold text-foreground">${stock.positionValue.toLocaleString()}</p></div>
+                  </MiniPopover>
+                  <MiniPopover label="Risk $ (Rreziku në dollarë)" desc="Humbja maksimale nëse stop-loss preket: Shares x (Entry - Stop). Kjo duhet të jetë 1% e account-it ($250 për $25K). Nëse risk $ është më i lartë, ul numrin e aksioneve. Kjo është rregulli më i rëndësishëm i menaxhimit të riskut." >
+                    <div className="w-full text-center"><p className="text-[11px] text-muted-foreground">Risk $</p><p className="text-[14px] font-bold text-red-400">${stock.riskDollars.toLocaleString()}</p></div>
+                  </MiniPopover>
                 </div>
               </div>
             )}
@@ -571,61 +591,66 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
                   }}>Event & Catalyst Gate</p>
                 </div>
                 <div className="space-y-1.5 text-[13px]">
-                  {/* Row 1: Catalyst Status */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Catalyst status</span>
-                    <span className="font-semibold" style={{
-                      color: stock.catalystStatus === 'CLEAR' ? '#10b981' :
-                        stock.catalystStatus === 'POSITIVE' ? '#3b82f6' :
-                        stock.catalystStatus === 'MIXED' ? '#f59e0b' :
-                        '#ef4444',
-                    }}>{stock.catalystStatus}</span>
-                  </div>
-                  {/* Row 2: Earnings */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Earnings</span>
-                    <span className="font-medium text-foreground">
-                      {stock.daysToEarnings !== null
-                        ? `${stock.daysToEarnings} ditë`
-                        : 'Asnjë në afërsi'}
-                    </span>
-                  </div>
-                  {/* Row 3: SEC 8-K */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">SEC filings</span>
-                    <span className="font-medium" style={{
-                      color: stock.material8KLast30d && stock.material8KSentiment === 'negative' ? '#ef4444' :
-                        stock.material8KLast30d && stock.material8KSentiment === 'positive' ? '#10b981' :
-                        'var(--muted-foreground)',
-                    }}>
-                      {stock.material8KLast30d
-                        ? `Material 8-K — ${stock.material8KSentiment === 'negative' ? 'negative' : stock.material8KSentiment === 'positive' ? 'positive' : 'neutral'}`
-                        : 'Asnjë 8-K material 30d'}
-                    </span>
-                  </div>
-                  {/* Row 4: Macro */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Macro</span>
-                    <span className="font-medium" style={{
-                      color: stock.macroEventWithin24h ? '#f59e0b' : 'var(--muted-foreground)',
-                    }}>
-                      {stock.macroEventWithin24h || 'Asnjë ngjarje makro 24h'}
-                    </span>
-                  </div>
-                  {/* Row 5: Trade Action */}
-                  <div className="flex items-center justify-between pt-1.5 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                    <span className="text-muted-foreground">Trade action</span>
-                    <span className="font-bold" style={{
-                      color: !stock.allowNewEntry ? '#ef4444' :
-                        stock.positionSizeMultiplier < 1 ? '#f59e0b' :
-                        '#10b981',
-                    }}>
-                      {!stock.allowNewEntry ? 'NO ENTRY' :
-                        stock.positionSizeMultiplier < 1
-                          ? `READY, ${Math.round(stock.positionSizeMultiplier * 100)}% size`
-                          : 'READY'}
-                    </span>
-                  </div>
+                  <MiniPopover label="Catalyst Status" desc="Statusi i katalizatorëve dhe ngjarjeve. CLEAR = asnje ngjarje e afërt, hyrje normale. POSITIVE = ka katalizator pozitiv (8-K pozitiv, upgrade). MIXED = ka ngjarje me rrezik të përzier (ul pozicionin 50-75%). EVENT_RISK = earnings ose ngjarje makro pranë, mos hap. NO_TRADE = rrezik i lartë, asnjë lëvizje." >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-muted-foreground">Catalyst status</span>
+                      <span className="font-semibold" style={{
+                        color: stock.catalystStatus === 'CLEAR' ? '#10b981' :
+                          stock.catalystStatus === 'POSITIVE' ? '#3b82f6' :
+                          stock.catalystStatus === 'MIXED' ? '#f59e0b' :
+                          '#ef4444',
+                      }}>{stock.catalystStatus}</span>
+                    </div>
+                  </MiniPopover>
+                  <MiniPopover label="Earnings" desc="Ditë deri te raporti i ardhurave (earnings) tjetër. Nëse earnings është brenda 3 ditësh, nuk rekomandohet të hapësh long (risk gap). 4-7 ditë: konsidero pozicion 50%. Mbi 7 ditë ose asnjë: nuk ndikon. Earnings mund të shkaktojë gap 8-10% që shkatërron stop-loss." >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-muted-foreground">Earnings</span>
+                      <span className="font-medium text-foreground">
+                        {stock.daysToEarnings !== null
+                          ? `${stock.daysToEarnings} ditë`
+                          : 'Asnjë në afërsi'}
+                      </span>
+                    </div>
+                  </MiniPopover>
+                  <MiniPopover label="SEC Filings (8-K)" desc="Kontrollon raportet 8-K materialë të depozituara te SEC në 30 ditët e fundit. 8-K material përfshin ndryshime të rëndësishme: fuzionime, ndryshime drejtuesish, rezultate të papritura. Negative = NO_TRADE. Positive = sinjal i mirë. Neutral ose asnjë = nuk ndikon." >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-muted-foreground">SEC filings</span>
+                      <span className="font-medium" style={{
+                        color: stock.material8KLast30d && stock.material8KSentiment === 'negative' ? '#ef4444' :
+                          stock.material8KLast30d && stock.material8KSentiment === 'positive' ? '#10b981' :
+                          'var(--muted-foreground)',
+                      }}>
+                        {stock.material8KLast30d
+                          ? `Material 8-K — ${stock.material8KSentiment === 'negative' ? 'negative' : stock.material8KSentiment === 'positive' ? 'positive' : 'neutral'}`
+                          : 'Asnjë 8-K material 30d'}
+                      </span>
+                    </div>
+                  </MiniPopover>
+                  <MiniPopover label="Ngjarje Makro" desc="Kontrollon ngjarjet makroekonomike brenda 24 orëve: FOMC (vendimi i interesit), CPI (inflacioni), NFP (punësimit). Këto ngjarje mund të shkaktojnë volatilitet të lartë në të gjithë tregun. Nëse ka ngjarje, kujdes — konsidero ulje pozicioni ose prit pas ngjarjes." >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-muted-foreground">Macro</span>
+                      <span className="font-medium" style={{
+                        color: stock.macroEventWithin24h ? '#f59e0b' : 'var(--muted-foreground)',
+                      }}>
+                        {stock.macroEventWithin24h || 'Asnjë ngjarje makro 24h'}
+                      </span>
+                    </div>
+                  </MiniPopover>
+                  <MiniPopover label="Trade Action" desc="Veprimi përfundimtar bazuar në të gjithë kontrollat: READY = të gjithë kontrollat janë kaluar, mund të hapësh pozicion. READY me % size = hap por me pozicion të reduktuar (për shkak të ngjarjeve). NO ENTRY = mos hap — ka rrezik të lartë (earnings pranë, 8-K negative, ose regjim i dobët)." >
+                    <div className="flex items-center justify-between w-full pt-1.5 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                      <span className="text-muted-foreground">Trade action</span>
+                      <span className="font-bold" style={{
+                        color: !stock.allowNewEntry ? '#ef4444' :
+                          stock.positionSizeMultiplier < 1 ? '#f59e0b' :
+                          '#10b981',
+                      }}>
+                        {!stock.allowNewEntry ? 'NO ENTRY' :
+                          stock.positionSizeMultiplier < 1
+                            ? `READY, ${Math.round(stock.positionSizeMultiplier * 100)}% size`
+                            : 'READY'}
+                      </span>
+                    </div>
+                  </MiniPopover>
                 </div>
               </div>
             )}
@@ -639,36 +664,44 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
                   stock.sectorRsStatus === 'LAGGING' ? 'rgba(239, 68, 68, 0.2)' :
                   'rgba(100, 116, 139, 0.15)',
               }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-muted-foreground">Sector ETF</span>
-                  <span className="text-[13px] font-semibold text-foreground">{stock.sectorEtf}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-muted-foreground">RS vs Sector (20D)</span>
-                  <span className="text-[13px] font-semibold" style={{
-                    color: stock.rsVsSector20d > 0 ? '#10b981' : stock.rsVsSector20d < 0 ? '#ef4444' : 'var(--muted-foreground)',
-                  }}>
-                    {stock.rsVsSector20d > 0 ? '+' : ''}{stock.rsVsSector20d}%
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-muted-foreground">Sector Trend</span>
-                  <span className="text-[13px] font-medium" style={{
-                    color: stock.sectorAboveSma50 ? '#10b981' : '#ef4444',
-                  }}>
-                    {stock.sectorAboveSma50 ? 'Bullish' : 'Weak'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-muted-foreground">Status</span>
-                  <span className="text-[13px] font-bold" style={{
-                    color: stock.sectorRsStatus === 'LEADING' ? '#10b981' :
-                      stock.sectorRsStatus === 'LAGGING' ? '#ef4444' :
-                      '#f59e0b',
-                  }}>
-                    {stock.sectorRsStatus}
-                  </span>
-                </div>
+                <MiniPopover label="Sector ETF" desc="ETF-ja e sektorit për këtë aksion (p.sh. XLK për teknologji, XLF për financë). Kjo është baza për krahasimin e performancës relative (RS). Nëse aksioni po bën më mirë se ETF-ja e sektorit të tij, ka një edge të vërtetë — nuk është thjesht sektori në rritje." >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[13px] text-muted-foreground">Sector ETF</span>
+                    <span className="text-[13px] font-semibold text-foreground">{stock.sectorEtf}</span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="RS vs Sector (20D)" desc="Relative Strength vs Sector ETF — sa më mirë ka performuar aksioni krah ETF-së së sektorit të tij në 20 ditët e fundit. Nëse pozitiv (+), aksioni është duke udhëhequr sektorin. Nëse negativ (-), edhe pse aksioni mund të jetë në rritje, po bën më keq se konkurrentët e tij — kjo është sinjal i dobët." >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[13px] text-muted-foreground">RS vs Sector (20D)</span>
+                    <span className="text-[13px] font-semibold" style={{
+                      color: stock.rsVsSector20d > 0 ? '#10b981' : stock.rsVsSector20d < 0 ? '#ef4444' : 'var(--muted-foreground)',
+                    }}>
+                      {stock.rsVsSector20d > 0 ? '+' : ''}{stock.rsVsSector20d}%
+                    </span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Sector Trend" desc="Trendi i sektorit — a është ETF-ja e sektorit mbi SMA 50-ditore. Bullish = sektori është në trend rritës, çdo lëvizje pozitive ka mbështetje të gjerë. Weak = sektori është nën SMA50, rreziku është më i lartë sepse edhe një aksion i fortë mund të tërhiqet poshtë nga rënia e sektorit." >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[13px] text-muted-foreground">Sector Trend</span>
+                    <span className="text-[13px] font-medium" style={{
+                      color: stock.sectorAboveSma50 ? '#10b981' : '#ef4444',
+                    }}>
+                      {stock.sectorAboveSma50 ? 'Bullish' : 'Weak'}
+                    </span>
+                  </div>
+                </MiniPopover>
+                <MiniPopover label="Status (RS vs Sector)" desc="Statusi i përgjithshëm i aksionit krah sektorit: LEADING = aksioni po udhëheq sektorin (i fortë, prioritet), INLINE = performancë e barabartë me sektorin (normal), LAGGING = aksioni po mbetet pas sektorit (sinjal i dobët, kujdes). Leading është më i mirë sepse tregon kërkesë institucionale specifike për këtë aksion." >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[13px] text-muted-foreground">Status</span>
+                    <span className="text-[13px] font-bold" style={{
+                      color: stock.sectorRsStatus === 'LEADING' ? '#10b981' :
+                        stock.sectorRsStatus === 'LAGGING' ? '#ef4444' :
+                        '#f59e0b',
+                    }}>
+                      {stock.sectorRsStatus}
+                    </span>
+                  </div>
+                </MiniPopover>
               </div>
             )}
 
@@ -751,12 +784,36 @@ function ScoreCell({ label, value }: { label: string; value: number }) {
   );
 }
 
+const ENTRY_DETAILS: Record<string, string> = {
+  'ENTRY': 'Çmimi i hyrjes — nivele ku duhet të vendosësh buy order. Për pullback: limit order afër EMA10/20. Për breakout: buy stop-limit pak mbi 20d high. Kjo nuk është rekomandim blerjeje, por pikë referencë e llogaritur nga strategjia.',
+  'STOP': 'Stop-loss — nivele ku pozicioni mbyllet automatikisht nëse cmimi bie. Vendoset 1.5 x ATR nën entry, ose nën swing-low minus 0.2 x ATR (cilado është më i ngushtë). Qëllimi është të limitojë humbjen maksimale.',
+  'TARGET 1R': 'Target 1R — çmimi ku fitimi është 1x rrezikun (1R = Entry - Stop). Nëse rreziku është $3, target 1R është Entry + $3. Kjo është zona e parë ku mund të mbyllësh një pjesë të pozicionit.',
+  'TARGET 2R': 'Target 2R — çmimi ku fitimi është 2x rrezikun. Shumica e trader-ët e preferuar mbyllin 50-70% të pozicionit këtu dhe lënë rrestën për 3R me trailing stop.',
+  'TARGET 3R': 'Target 3R — çmimi ku fitimi është 3x rrezikun. Kjo është zona përfundimtare e targetit. Strategjia kërkon R:R minimal 1:2, por 1:3 është ideali. Target 3R llogaritet si Entry + 3 x (Entry - Stop).',
+};
+
 function EntryBox({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
   return (
-    <div className={`rounded-lg ${bg} border p-2.5 text-center`}>
-      <p className={`text-[11px] ${color} font-medium`}>{label}</p>
-      <p className={`text-[14px] font-bold ${color}`}>${value.toFixed(2)}</p>
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <div className={`rounded-lg ${bg} border p-2.5 text-center cursor-pointer hover:brightness-110 transition-all group`}>
+          <div className="flex items-center justify-center gap-0.5">
+            <p className={`text-[11px] ${color} font-medium`}>{label}</p>
+            <Info className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+          </div>
+          <p className={`text-[14px] font-bold ${color}`}>${value.toFixed(2)}</p>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="center" className="w-72 sm:w-80 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <h3 className="text-sm font-bold text-foreground">{label}</h3>
+        </div>
+        <div className="px-4 pb-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën?</p>
+          <p className="text-[13px] leading-relaxed text-foreground/85">{ENTRY_DETAILS[label]}</p>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -829,6 +886,28 @@ function DetailPopover({ label, value, good, warn, desc, ideal }: {
             <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
             <p className="text-[13px] leading-relaxed text-foreground/85">{ideal}</p>
           </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── Mini Popover (reusable for grid labels) ──
+function MiniPopover({ label, desc, children }: { label: string; desc: string; children: React.ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="hover:brightness-125 transition-all cursor-pointer group w-full text-left">
+          {children}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-72 sm:w-80 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <h3 className="text-sm font-bold text-foreground">{label}</h3>
+        </div>
+        <div className="px-4 pb-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën?</p>
+          <p className="text-[13px] leading-relaxed text-foreground/85">{desc}</p>
         </div>
       </PopoverContent>
     </Popover>
