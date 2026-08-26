@@ -388,13 +388,13 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             <p className="text-[12px] font-semibold text-cyan-400">Swing Prediction</p>
           </div>
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-[12px]">
-            <div className="flex justify-between"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium">{stock.pullbackZone}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${stock.nextResistance.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Upside 3R</span><span className={stock.projectedUpsidePct > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{stock.projectedUpsidePct > 0 ? '+' : ''}{stock.projectedUpsidePct}%</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80">{stock.dailyExpRange}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80">{stock.daysTo1R}d</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80">{stock.daysTo2R}d</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80">{stock.daysTo3R}d</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium">{stock.pullbackZone ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${(stock.nextResistance ?? 0).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Upside 3R</span><span className={(stock.projectedUpsidePct ?? 0) > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{(stock.projectedUpsidePct ?? 0) > 0 ? '+' : ''}{stock.projectedUpsidePct ?? 0}%</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80">{stock.dailyExpRange ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80">{stock.daysTo1R ?? 0}d</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80">{stock.daysTo2R ?? 0}d</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80">{stock.daysTo3R ?? 0}d</span></div>
           </div>
         </div>
 
