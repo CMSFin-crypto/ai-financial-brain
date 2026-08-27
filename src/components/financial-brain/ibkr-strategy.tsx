@@ -720,11 +720,6 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             )}
 
 
-            {/* IBKR Bracket Order */}
-            {stock.bracketOrder && (
-              <BracketOrderBlock order={stock.bracketOrder} />
-            )}
-
             {/* News Impact Signal */}
             <NewsImpactBlock symbol={stock.symbol} />
           </div>
