@@ -452,27 +452,31 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             <Activity className="w-3.5 h-3.5 text-cyan-400" />
             <p className="text-[12px] font-semibold text-cyan-400">Swing Prediction</p>
           </div>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-[12px]">
-            <MiniPopover label="Pullback Zone" desc="Zona e pullback-it — nga low-i 10-ditor (mbështetja) deri te cmimi aktual. Kjo është zona ku aksioni po bën korektimin brenda trendit rritës. Nëse cmimi preket këtë zonë dhe jep candle rikthimi, është sinjal hyrjeje. Zona e gjerë tregon korektim më të thellë." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium">{stock.pullbackZone ?? '—'}</span></div>
+          {/* Row 1: 4 columns — zone, resistance, upside, range */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5 text-[12px]">
+            <MiniPopover label="Pullback Zone" desc={"Zona e pullback-it — nga low-i 10-ditor (mbështetja) deri te cmimi aktual. Kjo është zona ku aksioni po bën korektimin brenda trendit rritës. Nëse cmimi preket këtë zonë dhe jep candle rikthimi, është sinjal hyrjeje. Zona e gjerë tregon korektim më të thellë."} >
+              <div className="flex flex-col gap-0.5 w-full"><span className="text-muted-foreground">Pullback Zone</span><span className="text-cyan-300 font-medium truncate">{stock.pullbackZone ?? '—'}</span></div>
             </MiniPopover>
-            <MiniPopover label="Rezistenca" desc="Niveli i ardhshëm i rezistencës — high-i më i lartë 20-ditor. Kjo është zona ku çmimi mund të hasë shitje. Nëse target 3R është afër kësaj rezistence, mund të ketë vështirësi për të kaluar atë. Rezistencë të lartë = upsides më të kufizuara." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${(stock.nextResistance ?? 0).toFixed(2)}</span></div>
+            <MiniPopover label="Rezistenca" desc={"Niveli i ardhshëm i rezistencës — high-i më i lartë 20-ditor. Kjo është zona ku çmimi mund të hasë shitje. Nëse target 3R është afër kësaj rezistence, mund të ketë vështirësi për të kaluar atë. Rezistencë të lartë = upsides më të kufizuara."} >
+              <div className="flex flex-col gap-0.5 w-full"><span className="text-muted-foreground">Rezistenca</span><span className="text-orange-300 font-medium">${(stock.nextResistance ?? 0).toFixed(2)}</span></div>
             </MiniPopover>
-            <MiniPopover label="Upside 3R" desc="Potenciali i fitimit deri te Target 3R si përqindje. Llogaritet: (Target3R - Cmimi aktual) / Cmimi aktual x 100. Nëse është pozitiv, ka hapësirë fitimi. Nëse negativ, target 3R është poshtë cmimit aktual (setup i keq ose stop shumë i gjerë)." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">Upside 3R</span><span className={(stock.projectedUpsidePct ?? 0) > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{(stock.projectedUpsidePct ?? 0) > 0 ? '+' : ''}{stock.projectedUpsidePct ?? 0}%</span></div>
+            <MiniPopover label="Upside 3R" desc={"Potenciali i fitimit deri te Target 3R si përqindje. Llogaritet: (Target3R - Cmimi aktual) / Cmimi aktual x 100. Nëse është pozitiv, ka hapësirë fitimi. Nëse negativ, target 3R është poshtë cmimit aktual (setup i keq ose stop shumë i gjerë)."} >
+              <div className="flex flex-col gap-0.5 w-full"><span className="text-muted-foreground">Upside 3R</span><span className={(stock.projectedUpsidePct ?? 0) > 0 ? 'text-emerald-300 font-medium' : 'text-red-300 font-medium'}>{(stock.projectedUpsidePct ?? 0) > 0 ? '+' : ''}{stock.projectedUpsidePct ?? 0}%</span></div>
             </MiniPopover>
-            <MiniPopover label="Rangu Ditor (Expected Range)" desc="Rangu i pritur ditor — llogaritet si Cmimi ± ATR (Average True Range). Kjo tregon se sa larg mund të lëvizë çmimi sot bazuar në volatilitetin e fundit. Përdoret për të vendosur pritjet realiste — mos pres që 1R të arrihet në një ditë nëse rangu ditor është më i vogël se distanca 1R." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80">{stock.dailyExpRange ?? '—'}</span></div>
+            <MiniPopover label="Rangu Ditor (Expected Range)" desc={"Rangu i pritur ditor — llogaritet si Cmimi ± ATR (Average True Range). Kjo tregon se sa larg mund të lëvizë çmimi sot bazuar në volatilitetin e fundit. Përdoret për të vendosur pritjet realiste — mos pres që 1R të arrihet në një ditë nëse rangu ditor është më i vogël se distanca 1R."} >
+              <div className="flex flex-col gap-0.5 w-full"><span className="text-muted-foreground">Rangu Ditor</span><span className="text-foreground/80 truncate">{stock.dailyExpRange ?? '—'}</span></div>
             </MiniPopover>
-            <MiniPopover label="Ditë deri te 1R" desc="Sa ditë (afërsisht) deri sa çmimi të arrijë Target 1R, bazuar në ATR. Llogaritet: distanca 1R / ATR. Nëse 1R = $6 dhe ATR = $2, atëherë ~3 ditë. Kjo jep ide kohore — nëse është shumë e gjatë (mbi 15d), rreziku i tregut rritet." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80">{stock.daysTo1R ?? 0}d</span></div>
+          </div>
+          {/* Row 2: 3 columns — days to target */}
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-[12px] mt-1.5">
+            <MiniPopover label="Ditë deri te 1R" desc={"Sa ditë (afërsisht) deri sa çmimi të arrijë Target 1R, bazuar në ATR. Llogaritet: distanca 1R / ATR. Nëse 1R = $6 dhe ATR = $2, atëherë ~3 ditë. Kjo jep ide kohore — nëse është shumë e gjatë (mbi 15d), rreziku i tregut rritet."} >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">1R ne</span><span className="text-foreground/80 font-medium">{stock.daysTo1R ?? 0}d</span></div>
             </MiniPopover>
-            <MiniPopover label="Ditë deri te 2R" desc="Sa ditë (afërsisht) deri sa çmimi të arrijë Target 2R. Llogaritet: distanca 2R / ATR. Shumica e swing trade-ve mbahen 3-10 ditë. Nëse 2R kërkon mbi 10 ditë, konsidero nje setup me R:R më të mirë ose ATR më të lartë." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80">{stock.daysTo2R ?? 0}d</span></div>
+            <MiniPopover label="Ditë deri te 2R" desc={"Sa ditë (afërsisht) deri sa çmimi të arrijë Target 2R. Llogaritet: distanca 2R / ATR. Shumica e swing trade-ve mbahen 3-10 ditë. Nëse 2R kërkon mbi 10 ditë, konsidero nje setup me R:R më të mirë ose ATR më të lartë."} >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">2R ne</span><span className="text-foreground/80 font-medium">{stock.daysTo2R ?? 0}d</span></div>
             </MiniPopover>
-            <MiniPopover label="Ditë deri te 3R" desc="Sa ditë (afërsisht) deri sa çmimi të arrijë Target 3R. Llogaritet: distanca 3R / ATR. Kjo është horizonti kohor i plotë i trade-it. Nëse 3R kërkon mbi 15 ditë, rreziku i regjimit të tregut ndryshimit rritet — konsidero reduktim të pozicionit në 2R." >
-              <div className="flex justify-between w-full"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80">{stock.daysTo3R ?? 0}d</span></div>
+            <MiniPopover label="Ditë deri te 3R" desc={"Sa ditë (afërsisht) deri sa çmimi të arrijë Target 3R. Llogaritet: distanca 3R / ATR. Kjo është horizonti kohor i plotë i trade-it. Nëse 3R kërkon mbi 15 ditë, rreziku i regjimit të tregut ndryshimit rritet — konsidero reduktim të pozicionit në 2R."} >
+              <div className="flex justify-between w-full"><span className="text-muted-foreground">3R ne</span><span className="text-foreground/80 font-medium">{stock.daysTo3R ?? 0}d</span></div>
             </MiniPopover>
           </div>
         </div>
@@ -727,8 +731,7 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
         )}
 
         {/* Overnight Risk */}
-        {stock.avgOvernightGap20 !== undefined && (
-          <div className="mt-2.5 rounded-lg border p-3 space-y-1.5" style={{
+        <div className="mt-2.5 rounded-lg border p-3 space-y-1.5" style={{
             backgroundColor: stock.overnightRiskLevel === 'SAFE' ? 'rgba(16, 185, 129, 0.05)' :
               stock.overnightRiskLevel === 'MODERATE' ? 'rgba(245, 158, 11, 0.05)' :
               'rgba(239, 68, 68, 0.05)',
@@ -784,7 +787,6 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
               </MiniPopover>
             </div>
           </div>
-        )}
 
         <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-center gap-1.5 mt-2.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
