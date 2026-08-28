@@ -481,6 +481,7 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
           </div>
         </div>
 
+
         {/* Quick stats row */}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
           <StatPopover label="RSI" value={stock.rsi} good={stock.rsi >= 40 && stock.rsi <= 65} warn={stock.rsi > 70 || stock.rsi < 30}
@@ -518,6 +519,13 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             desc="Average Directional Index — mat forcen e trendit pa marre parasysh drejtimin. 25-50 = trend i forte."
             verdict={vADX}
           />        </div>
+
+        {/* EMA / SMA values */}
+        <div className="mt-1.5 flex items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+          <span>EMA10 <span className="text-cyan-300 font-medium">${(stock.ema10Val ?? 0).toFixed(2)}</span></span>
+          <span>EMA20 <span className="text-cyan-300 font-medium">${(stock.ema20Val ?? 0).toFixed(2)}</span></span>
+          <span>SMA50 <span className="text-foreground/70 font-medium">${(stock.sma50Val ?? 0).toFixed(2)}</span></span>
+        </div>
 
         {/* Reasons */}
         {stock.reasons.length > 0 && (
