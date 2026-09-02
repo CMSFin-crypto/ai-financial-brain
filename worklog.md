@@ -66,3 +66,23 @@ Stage Summary:
 - All spec features now visible in UI
 - No TypeScript errors in IBKR files
 - Key new UI sections: BracketOrderBlock, position sizing, sector exposure, 3R target, ADX stat, Stacked MA detail, Entry Type detail
+---
+Task ID: 1
+Agent: main
+Task: Add liquidity metrics (ADV, Spread%, Liquidity Score) to IBKR stock cards
+
+Work Log:
+- Added spreadPct, liquidityScore, liquidityStatus to FunnelStock interface in scan API
+- Fixed avgDolVol20d to use proper daily (close*volume) averaging instead of price*avgVol
+- Added spread estimation formula: min(0.5, 1.5/sqrt(ADV_M))
+- Added Dollar Volume Score and Spread Score with user-specified thresholds
+- Added Liquidity Score = 60% DV Score + 40% Spread Score with status labels
+- Added 3 liquidity badges to UI (ADV, Spread, Likuiditeti) with color coding
+- Build passed, pushed to main
+
+Stage Summary:
+- 3 liquidity metrics now displayed as colored badges in each stock card
+- ADV shows daily dollar volume (green >=$50M, amber >=$20M, red <$20M)
+- Spread shows estimated bid-ask spread % (green <=0.10%, amber <=0.25%, red >0.25%)
+- Liquidity Score shows 0-100 composite (green >=80, blue >=60, amber >=40, red <40)
+- Each badge has tooltip with explanation
