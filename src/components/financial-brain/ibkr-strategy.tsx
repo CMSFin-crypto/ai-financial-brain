@@ -67,6 +67,10 @@ interface FunnelStock {
   overnightBias: string;
   gapCanSkipStop: boolean;
   stopDistPct: number;
+  // Liquidity Metrics
+  spreadPct: number;
+  liquidityScore: number;
+  liquidityStatus: string;
 }
 
 interface FunnelResponse {
@@ -525,6 +529,25 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
           <span>EMA10 <span className="text-cyan-300 font-medium">${(stock.ema10Val ?? 0).toFixed(2)}</span></span>
           <span>EMA20 <span className="text-cyan-300 font-medium">${(stock.ema20Val ?? 0).toFixed(2)}</span></span>
           <span>SMA50 <span className="text-foreground/70 font-medium">${(stock.sma50Val ?? 0).toFixed(2)}</span></span>
+        </div>
+
+        {/* Liquidity Metrics */}
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+          <MiniPopover label={"ADV " + (stock.avgDolVol20d >= 1e9 ? (stock.avgDolVol20d / 1e9).toFixed(1) + 'B' : (stock.avgDolVol20d / 1e6).toFixed(0) + 'M')} desc={"Average Dollar Volume 20D: sa dollarra tregtohen mesatarisht ne dite. Llogaritet si mesatarja e (close x volume) per 20 ditet e fundit. >$100M = Excellent, $50-100M = Strong, $20-50M = Good."} >
+            <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + (stock.avgDolVol20d >= 50e6 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : stock.avgDolVol20d >= 20e6 ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" : "bg-red-500/15 text-red-400 border border-red-500/20")}>
+              ADV {(stock.avgDolVol20d >= 1e9 ? (stock.avgDolVol20d / 1e9).toFixed(1) + 'B' : (stock.avgDolVol20d / 1e6).toFixed(0) + 'M')}
+            </span>
+          </MiniPopover>
+          <MiniPopover label={"Spread " + (stock.spreadPct ?? 0).toFixed(2) + "%"} desc={"Bid-Ask Spread %: kushtet e hyrjes ne treg. <= 0.10% = Excellent, 0.10-0.25% = Good, 0.25-0.50% = Medium, > 0.50% = Weak. Spread i ulet do te thote ekzekutim me i mire."} >
+            <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + ((stock.spreadPct ?? 0) <= 0.10 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : (stock.spreadPct ?? 0) <= 0.25 ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" : "bg-red-500/15 text-red-400 border border-red-500/20")}>
+              Spread {(stock.spreadPct ?? 0).toFixed(2)}%
+            </span>
+          </MiniPopover>
+          <MiniPopover label={"Likuiditeti " + (stock.liquidityScore ?? 0) + "/100"} desc={"Liquidity Score 0-100: kombinim 60% Dollar Volume Score + 40% Spread Score. 80-100 = High, 60-79 = Good, 40-59 = Medium, <40 = Low."} >
+            <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + ((stock.liquidityScore ?? 0) >= 80 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : (stock.liquidityScore ?? 0) >= 60 ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" : (stock.liquidityScore ?? 0) >= 40 ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" : "bg-red-500/15 text-red-400 border border-red-500/20")}>
+              Likuiditeti {stock.liquidityScore ?? 0}/100
+            </span>
+          </MiniPopover>
         </div>
 
         {/* Reasons */}

@@ -299,6 +299,10 @@ interface FunnelStock {
   daysTo1R: number;           // estimated trading days to 1R target
   daysTo2R: number;
   daysTo3R: number;
+  // NEW: Liquidity Metrics
+  spreadPct: number;
+  liquidityScore: number;
+  liquidityStatus: string;
   // NEW: Overnight Risk
   avgOvernightGap20: number;
   avgOvernightGap60: number;
@@ -391,7 +395,13 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
 
     // Liquidity checks
     const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
-    const avgDolVol = price * avgVol20;
+    // Proper avg dollar volume: average of daily (close * volume)
+    const n20 = Math.min(20, closes.length, vols.length);
+    const dailyDolVols: number[] = [];
+    for (let i = closes.length - n20; i < closes.length; i++) {
+      dailyDolVols.push(closes[i] * vols[i]);
+    }
+    const avgDolVol = dailyDolVols.reduce((a,b) => a+b, 0) / n20;
     const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
 
     // Trend checks (existing)
@@ -461,6 +471,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       overnightGapUpPct: 0, maxOvernightGapDown: 0, maxOvernightGapUp: 0,
       overnightRiskLevel: 'SAFE', overnightBias: 'NEUTRAL',
       gapCanSkipStop: false, stopDistPct: 0,
+      spreadPct: 0, liquidityScore: 0, liquidityStatus: 'N/A',
     });
   }
 
@@ -712,6 +723,34 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     stock.overnightBias = oBias;
     stock.gapCanSkipStop = gapCanSkip;
     stock.stopDistPct = Math.round(stopDistPctVal * 100) / 100;
+
+    // ── Liquidity Metrics ──
+    // Spread estimation (no real bid/ask in historical data)
+    // Formula: spreadPct = min(0.5, 1.5 / sqrt(avgDolVol / 1M))
+    const advM = stock.avgDolVol20d / 1_000_000;
+    const spreadPct = advM > 0 ? Math.min(0.5, 1.5 / Math.sqrt(advM)) : 0.5;
+    stock.spreadPct = Math.round(spreadPct * 1000) / 1000; // 3 decimals
+
+    // Dollar Volume Score
+    let dvScore = 25;
+    if (stock.avgDolVol20d > 100_000_000) dvScore = 100;
+    else if (stock.avgDolVol20d > 50_000_000) dvScore = 85;
+    else if (stock.avgDolVol20d > 20_000_000) dvScore = 70;
+    else if (stock.avgDolVol20d > 10_000_000) dvScore = 50;
+
+    // Spread Score
+    let spScore = 25;
+    if (spreadPct <= 0.10) spScore = 100;
+    else if (spreadPct <= 0.25) spScore = 80;
+    else if (spreadPct <= 0.50) spScore = 55;
+
+    const liqScore = Math.round(dvScore * 0.60 + spScore * 0.40);
+    stock.liquidityScore = liqScore;
+
+    if (liqScore >= 80) stock.liquidityStatus = 'HIGH';
+    else if (liqScore >= 60) stock.liquidityStatus = 'GOOD';
+    else if (liqScore >= 40) stock.liquidityStatus = 'MEDIUM';
+    else stock.liquidityStatus = 'LOW';
 
     // ── F) Risk Quality (0-100) — 5% weight ──
     let rScore = 50;
