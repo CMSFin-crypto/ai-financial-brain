@@ -212,7 +212,7 @@ export function explainRankingChange(
     reasons.push(`Status ndryshoi: ${previous.decision} -> ${current.decision}`);
   }
 
-  let action = RankingChangeAction.SCORE_UP;
+  let action: RankingChangeAction = RankingChangeAction.SCORE_UP;
   if (oldRank === null && newRank !== null) {
     action = RankingChangeAction.ENTERED_LIST;
   } else if (oldRank !== null && newRank === null) {
@@ -276,7 +276,7 @@ export function calculateOutcome(input: OutcomeInput) {
   const hitTarget5Pct = hasNumber(nextDayHighReturnPct) && nextDayHighReturnPct >= 5;
   const hitTarget10Pct = hasNumber(nextDayHighReturnPct) && nextDayHighReturnPct >= 10;
 
-  let outcome = SignalOutcomeType.PENDING;
+  let outcome: SignalOutcomeType = SignalOutcomeType.PENDING;
 
   if (input.heldDayOneLow === false || (hasNumber(maxAdverseExcursionPct) && maxAdverseExcursionPct <= -8)) {
     outcome = SignalOutcomeType.STOPPED_OUT;

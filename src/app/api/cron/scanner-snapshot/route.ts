@@ -1,32 +1,46 @@
-import { NextResponse } from "next/server";
+// ═══════════════════════════════════════════════════════════════
+// Scanner Snapshot Cron — Runs IBKR scan and saves snapshots
+// Schedule: 7 times per day (9:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30 ET)
+// Call: GET /api/cron/scanner-snapshot
+// ═══════════════════════════════════════════════════════════════
+
+import { NextRequest, NextResponse } from "next/server";
 import { runIBKRScan } from "@/app/api/ibkr-scan/route";
-import { ScannerStrategy, ScannerDecision } from "@prisma/client";
 import { saveStrategySnapshots } from "@/lib/scanner-snapshot-service";
+import { ScannerStrategy, ScannerDecision } from "@prisma/client";
 
-// Maps existing Decision type to ScannerDecision enum
-function mapDecision(d: string): ScannerDecision {
-  const map: Record<string, ScannerDecision> = {
-    READY: ScannerDecision.READY,
-    WATCHLIST: ScannerDecision.WATCHLIST,
-    EVENT_RISK: ScannerDecision.EXTENDED_RISK,
-    EXTENDED: ScannerDecision.EXTENDED_RISK,
-    NO_TRADE: ScannerDecision.NO_TRADE,
-  };
-  return map[d] || ScannerDecision.NO_TRADE;
-}
+export const maxDuration = 120;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Auth check
+  const authHeader = req.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const startTime = Date.now();
+
   try {
-    const t0 = Date.now();
-    console.log("[CRON-SCANNER] Starting scanner snapshot...");
-
-    // Run the IBKR scan
+    // Run the scanner
     const scanResult = await runIBKRScan();
 
-    // Save snapshots for all top stocks
-    const saveResult = await saveStrategySnapshots(
+    // Map decisions to ScannerDecision enum
+    const mapDecision = (d: string): ScannerDecision => {
+      const map: Record<string, ScannerDecision> = {
+        READY: ScannerDecision.READY,
+        WATCHLIST: ScannerDecision.WATCHLIST,
+        EVENT_RISK: ScannerDecision.EXTENDED_RISK,
+        EXTENDED: ScannerDecision.EXTENDED_RISK,
+        NO_TRADE: ScannerDecision.NO_TRADE,
+      };
+      return map[d] || ScannerDecision.NO_TRADE;
+    };
+
+    // Save snapshots for IBKR Pullback strategy
+    const saved = await saveStrategySnapshots(
       ScannerStrategy.IBKR_PULLBACK,
-      scanResult.results.map((stock, index) => ({
+      scanResult.results.map((stock: any, index: number) => ({
         ticker: stock.symbol,
         rank: index + 1,
         totalScore: stock.totalScore,
@@ -51,17 +65,19 @@ export async function GET() {
       }))
     );
 
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    console.log(`[CRON-SCANNER] Saved ${saveResult.length} snapshots in ${elapsed}s`);
+    const elapsedMs = Date.now() - startTime;
 
     return NextResponse.json({
-      ok: true,
-      stocksScanned: scanResult.results.length,
-      snapshotsSaved: saveResult.length,
-      elapsed: `${elapsed}s`,
+      status: "ok",
+      elapsedMs,
+      scannedAt: scanResult.scannedAt,
+      regimeOk: scanResult.regimeOk,
+      totalCandidates: scanResult.results.length,
+      snapshotsSaved: saved.length,
     });
-  } catch (err: any) {
-    console.error("[CRON-SCANNER] Error:", err);
-    return NextResponse.json({ error: err?.message || "Gabim" }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[CRON-SCANNER-SNAPSHOT] Error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

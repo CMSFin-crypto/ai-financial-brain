@@ -186,7 +186,7 @@ export async function saveStrategySnapshots(
   candidates: SnapshotInput[]
 ) {
   // Process sequentially to avoid DB contention
-  const results = [];
+  const results: { snapshot: any; change: any }[] = [];
   for (const candidate of candidates) {
     try {
       const result = await saveScannerSnapshot(strategy, candidate);

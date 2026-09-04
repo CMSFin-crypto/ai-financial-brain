@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
   Copy, Check, Briefcase, FileText, ShieldAlert, Moon,
+  GitCompareArrows, TrendingDown, ArrowUpRight, ArrowDownRight, LogIn, LogOut,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -346,6 +347,28 @@ function NewsImpactBlock({ symbol }: { symbol: string }) {
 // ── Stock Card ──
 function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [rankingChanges, setRankingChanges] = useState<any[] | null>(null);
+  const [loadingChanges, setLoadingChanges] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
+
+  // Fetch ranking changes for this ticker
+  const fetchRankingChanges = useCallback(async () => {
+    if (rankingChanges !== null) return; // already fetched
+    setLoadingChanges(true);
+    try {
+      const res = await fetch(`/api/scanner-learning/changes?ticker=${stock.symbol}&limit=5`);
+      if (res.ok) {
+        const data = await res.json();
+        setRankingChanges(data.changes || []);
+      } else {
+        setRankingChanges([]);
+      }
+    } catch {
+      setRankingChanges([]);
+    } finally {
+      setLoadingChanges(false);
+    }
+  }, [stock.symbol, rankingChanges]);
   const ds = DECISION_STYLE[stock.decision];
   const setupColor = stock.setup === 'PULLBACK' ? 'text-amber-400' : stock.setup === 'BREAKOUT' ? 'text-blue-400' : stock.setup === 'TREND_CONT' ? 'text-emerald-400' : 'text-muted-foreground';
   const setupBg = stock.setup === 'PULLBACK' ? 'bg-amber-500/15 border-amber-500/30' : stock.setup === 'BREAKOUT' ? 'bg-blue-500/15 border-blue-500/30' : 'bg-emerald-500/15 border-emerald-500/30';
@@ -548,6 +571,79 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
               Likuiditeti {stock.liquidityScore ?? 0}/100
             </span>
           </MiniPopover>
+          {/* Pse ndryshoi? button */}
+          <Popover open={showChanges} onOpenChange={(open) => {
+            setShowChanges(open);
+            if (open) fetchRankingChanges();
+          }}>
+            <PopoverTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/15 text-violet-400 border border-violet-500/20 hover:bg-violet-500/25 transition-colors cursor-pointer"
+                title="Pse ndryshoi renditja?"
+              >
+                <GitCompareArrows className="w-3 h-3" />
+                Pse ndryshoi?
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-3 bg-popover border-border/50" side="bottom" align="start">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <GitCompareArrows className="w-4 h-4 text-violet-400" />
+                  <p className="text-sm font-semibold text-foreground">Ndryshimet e Renditjes</p>
+                </div>
+                <p className="text-[12px] text-muted-foreground">{stock.symbol} — historiku i ndryshimeve te score, rank, dhe status</p>
+                {loadingChanges && (
+                  <div className="flex items-center gap-2 py-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    <span className="text-[12px] text-muted-foreground">Duke ngarkuar...</span>
+                  </div>
+                )}
+                {!loadingChanges && rankingChanges && rankingChanges.length === 0 && (
+                  <p className="text-[12px] text-muted-foreground py-2">Asnje ndryshim i regjistruar per momentin.</p>
+                )}
+                {!loadingChanges && rankingChanges && rankingChanges.length > 0 && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {rankingChanges.map((ch: any, i: number) => {
+                      const actionIcon = ch.action === 'RANK_UP' || ch.action === 'ENTERED_LIST' || ch.action === 'SCORE_UP'
+                        ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
+                        : ch.action === 'RANK_DOWN' || ch.action === 'EXITED_LIST' || ch.action === 'SCORE_DOWN'
+                        ? <ArrowDownRight className="w-3.5 h-3.5 text-red-400" />
+                        : ch.action === 'STATUS_CHANGED'
+                        ? <Activity className="w-3.5 h-3.5 text-amber-400" />
+                        : <GitCompareArrows className="w-3.5 h-3.5 text-muted-foreground" />;
+                      const actionLabel: Record<string, string> = {
+                        ENTERED_LIST: 'Hyri ne list',
+                        EXITED_LIST: 'Doli nga list',
+                        RANK_UP: 'Rank u permiresua',
+                        RANK_DOWN: 'Rank ra',
+                        SCORE_UP: 'Score u rrit',
+                        SCORE_DOWN: 'Score ra',
+                        STATUS_CHANGED: 'Status ndryshoi',
+                      };
+                      return (
+                        <div key={i} className="flex items-start gap-2 p-1.5 rounded-md bg-muted/20">
+                          {actionIcon}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-medium text-foreground">{actionLabel[ch.action] || ch.action}</p>
+                            <div className="flex gap-2 text-[11px] text-muted-foreground">
+                              {ch.oldRank != null && ch.newRank != null && <span>#{ch.oldRank} → #{ch.newRank}</span>}
+                              {ch.scoreChange != null && <span>Score: {ch.scoreChange > 0 ? '+' : ''}{ch.scoreChange}</span>}
+                            </div>
+                            {Array.isArray(ch.reasons) && ch.reasons.length > 0 && (
+                              <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">{ch.reasons[0]}</p>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
+                            {new Date(ch.createdAt).toLocaleDateString('sq', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Reasons */}
@@ -1172,6 +1268,24 @@ export function IBKRStrategy() {
   const [error, setError] = useState<string | null>(null);
   const [hasScanned, setHasScanned] = useState(false);
 
+  // Learning Engine state
+  const [learningSummary, setLearningSummary] = useState<any | null>(null);
+  const [learningLoading, setLearningLoading] = useState(false);
+  const [showLearning, setShowLearning] = useState(false);
+
+  const fetchLearningSummary = useCallback(async () => {
+    if (learningSummary) return;
+    setLearningLoading(true);
+    try {
+      const res = await fetch('/api/scanner-learning/summary');
+      if (res.ok) {
+        const data = await res.json();
+        setLearningSummary(data);
+      }
+    } catch { /* ignore */ }
+    finally { setLearningLoading(false); }
+  }, [learningSummary]);
+
   const runScan = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -1342,6 +1456,87 @@ export function IBKRStrategy() {
           </Card>
         )}
       </>)}
+
+      {/* Adaptive Scanner Learning Panel */}
+      <Card className="border-violet-500/20 bg-violet-500/5">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitCompareArrows className="w-4 h-4 text-violet-400" />
+              <h3 className="text-[14px] font-bold text-foreground">Learning Engine</h3>
+              <span className="text-[11px] text-muted-foreground">— Adaptive Scanner Statistics</span>
+            </div>
+            <Popover open={showLearning} onOpenChange={(open) => {
+              setShowLearning(open);
+              if (open) fetchLearningSummary();
+            }}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors">
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  Statistikat
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-96 p-4 bg-popover border-border/50" side="bottom" align="end">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <GitCompareArrows className="w-5 h-5 text-violet-400" />
+                    <p className="text-sm font-semibold text-foreground">Adaptive Learning Summary</p>
+                  </div>
+                  {learningLoading && (
+                    <div className="flex items-center gap-2 py-4 justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      <span className="text-[12px] text-muted-foreground">Duke ngarkuar...</span>
+                    </div>
+                  )}
+                  {!learningLoading && !learningSummary && (
+                    <p className="text-[12px] text-muted-foreground py-2">Te dhenat nuk u ngarkuan.</p>
+                  )}
+                  {!learningLoading && learningSummary && (
+                    <div className="space-y-2.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Sinjale Total</p>
+                          <p className="text-lg font-bold text-emerald-400">{learningSummary.totalSignals ?? 0}</p>
+                        </div>
+                        <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Continuation Rate</p>
+                          <p className="text-lg font-bold text-blue-400">{learningSummary.continuationRate ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Fade Rate</p>
+                          <p className="text-lg font-bold text-amber-400">{learningSummary.fadeRate ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Avg Next Day Return</p>
+                          <p className={`text-lg font-bold ${(learningSummary.averageNextDayReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(learningSummary.averageNextDayReturnPct ?? 0) > 0 ? '+' : ''}{learningSummary.averageNextDayReturnPct ?? 0}%</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-lg bg-muted/10 p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">Avg Drawdown</p>
+                          <p className="text-sm font-bold text-red-400">{learningSummary.averageDrawdownPct ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/10 p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">Target 5% Hit</p>
+                          <p className="text-sm font-bold text-emerald-400">{learningSummary.target5HitRate ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/10 p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">Target 10% Hit</p>
+                          <p className="text-sm font-bold text-violet-400">{learningSummary.target10HitRate ?? 0}%</p>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/60">Weights adaptohen ±0.05 per jav, minimum 50 raste. Walk-forward test mujore.</p>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <p className="text-[12px] text-muted-foreground mt-1.5">
+            Scanner-i mbledh snapshots 7x ne dite, ndjek ndryshimet e rank/score, dhe mat rezultatet e sinjaleve. Faktoret adaptohen bazuar ne performancen historike.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Strategy Reference (collapsed after scan) */}
       <Section title="Rregullat e Filtrit (Funnel Steps)" icon={Calculator} color="text-blue-400" defaultOpen={!hasScanned}>
