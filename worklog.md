@@ -104,3 +104,37 @@ Stage Summary:
 - Logs price differences when close != realtime (for debugging)
 - All 27+ other callers of fetchHistoricalData unaffected (same return type)
 - Scan API automatically benefits from fix via closes[last]
+
+---
+Task ID: 3
+Agent: main
+Task: Implement Adaptive Scanner Learning Engine
+
+Work Log:
+- Added 4 enums (ScannerStrategy, ScannerDecision, RankingChangeAction, SignalOutcomeType) to prisma schema
+- Added 4 models (ScannerSnapshot, RankingChange, SignalOutcome, AdaptiveFactorStat) to prisma schema
+- Ran prisma format and prisma generate successfully
+- Created src/lib/adaptive-scanner-learning.ts with:
+  - SnapshotInput/PriorSnapshot/ScannerChange types
+  - explainRankingChange() - detects ranking changes and explains reasons
+  - calculateOutcome() - classifies signal outcomes (CONTINUATION/FADE/STOPPED_OUT/etc)
+  - shouldAllowWeightUpdate() - adaptive weight adjustment logic
+  - calculateRelativeVolume() and calculateClosingStrength() helpers
+- Created src/lib/scanner-snapshot-service.ts with:
+  - saveScannerSnapshot() - saves snapshot + detects change + creates pending outcome
+  - saveStrategySnapshots() - batch save for all candidates
+- Created API routes:
+  - /api/scanner-learning/changes - GET ranking changes
+  - /api/scanner-learning/summary - GET outcome statistics
+  - /api/scanner-learning/outcomes - GET outcomes + POST evaluate pending
+  - /api/cron/scanner-snapshot - triggers scan + snapshot save
+- Integrated snapshot saving into ibkr-scan route (non-blocking try/catch after scan completes)
+- Build passed, pushed to main
+
+Stage Summary:
+- Full Adaptive Scanner Learning Engine implemented
+- Every IBKR scan now automatically saves snapshots to DB
+- Ranking changes are detected and explained (ENTERED_LIST, RANK_UP, RANK_DOWN, EXITED_LIST, etc)
+- Signal outcomes are created as PENDING and can be evaluated via POST /api/scanner-learning/outcomes
+- Prisma migration needs to be run in production (DATABASE_URL not PostgreSQL locally)
+- UI for "Pse ndryshoi?" and "Cka mesoi sistemi" not yet added (requires migration first)
