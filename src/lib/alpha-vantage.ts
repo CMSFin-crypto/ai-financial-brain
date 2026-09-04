@@ -285,6 +285,7 @@ export function buildPriceContext(prices: Record<string, LivePrice>): string {
 /**
  * Fetch 30-day historical chart data from Yahoo Finance.
  * Returns real OHLCV data for charting.
+ * The last close is updated with meta.regularMarketPrice to ensure accuracy.
  */
 export async function fetchHistoricalData(
   ticker: string,
@@ -346,6 +347,22 @@ export async function fetchHistoricalData(
             volume: vol || 0,
           });
         }
+      }
+
+      const meta = result.meta;
+      const realtimePrice: number | null = meta?.regularMarketPrice ?? null;
+
+      // Update the last data point's close with the real-time price from Yahoo meta.
+      // This ensures closes[last] always reflects the current market price,
+      // fixing discrepancies when historical data lags behind real-time.
+      if (realtimePrice && realtimePrice > 0 && points.length > 0) {
+        const lastPt = points[points.length - 1];
+        const diff = Math.abs(realtimePrice - lastPt.close);
+        if (diff > 0.01) {
+          console.log(`[CHART] ${t}: updating last close $${lastPt.close.toFixed(2)} -> realtime $${realtimePrice.toFixed(2)} (diff=$${diff.toFixed(2)})`);
+        }
+        // Update the last bar's close with the real-time price
+        points[points.length - 1] = { ...lastPt, close: +realtimePrice.toFixed(2) };
       }
 
       if (points.length >= 15) {
