@@ -884,7 +884,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`[IBKR v2] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${passedSectorLimit} → ${topStocks.length} (${elapsed}s)`);
 
-  return {
+  const result = {
     scannedAt: new Date().toISOString(),
     regimeOk,
     regimeDetail: {
@@ -904,6 +904,55 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     results: topStocks,
     sectorExposure,
   };
+
+  // ── Save snapshots to Adaptive Scanner Learning Engine (non-blocking) ──
+  try {
+    const { saveStrategySnapshots } = await import('@/lib/scanner-snapshot-service');
+    const { ScannerStrategy, ScannerDecision } = await import('@prisma/client');
+
+    const mapDecision = (d: string): typeof ScannerDecision[keyof typeof ScannerDecision] => {
+      const map: Record<string, any> = {
+        READY: ScannerDecision.READY,
+        WATCHLIST: ScannerDecision.WATCHLIST,
+        EVENT_RISK: ScannerDecision.EXTENDED_RISK,
+        EXTENDED: ScannerDecision.EXTENDED_RISK,
+        NO_TRADE: ScannerDecision.NO_TRADE,
+      };
+      return map[d] || ScannerDecision.NO_TRADE;
+    };
+
+    await saveStrategySnapshots(
+      ScannerStrategy.IBKR_PULLBACK,
+      topStocks.map((stock, index) => ({
+        ticker: stock.symbol,
+        rank: index + 1,
+        totalScore: stock.totalScore,
+        decision: mapDecision(stock.decision),
+        price: stock.price,
+        volume: stock.avgVol20d,
+        averageVolume20D: stock.avgVol20d,
+        avgDollarVolume20D: stock.avgDolVol20d,
+        spreadPct: stock.spreadPct,
+        liquidityScore: stock.liquidityScore,
+        ema20: stock.ema20Val,
+        sma50: stock.sma50Val,
+        atr14: stock.atr,
+        rsi14: stock.rsi,
+        adx14: stock.adx,
+        trendScore: stock.trendScore,
+        volumeScore: stock.volConfScore,
+        sector: stock.sector,
+        marketRegime: regimeOk ? 'BULL' : 'BEAR',
+        reasons: stock.reasons,
+        riskFlags: stock.warnings,
+      }))
+    );
+    console.log(`[IBKR v2] Saved ${topStocks.length} snapshots to learning engine`);
+  } catch (e: any) {
+    console.error('[IBKR v2] Snapshot save failed (non-blocking):', e?.message || e);
+  }
+
+  return result;
 }
 
 // HTTP wrapper

@@ -36,7 +36,7 @@ model Portfolio {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  trades    Trade[]
+  trades Trade[]
 }
 
 model Trade {
@@ -56,17 +56,17 @@ model Trade {
 }
 
 model WatchlistItem {
-  id          String   @id @default(cuid())
-  sessionId   String   @default("default")
-  ticker      String
-  company     String
-  sector      String
-  note        String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  sessionId String   @default("default")
+  ticker    String
+  company   String
+  sector    String
+  note      String?
+  createdAt DateTime @default(now())
 
   alertAbove  Float?
   alertBelow  Float?
-  alertActive Boolean  @default(true)
+  alertActive Boolean   @default(true)
   alertedAt   DateTime?
 
   @@unique([sessionId, ticker])
@@ -77,46 +77,46 @@ model WatchlistItem {
 // ═══════════════════════════════════════════════════════════════
 
 model Prediction {
-  id                    String   @id @default(cuid())
-  symbol                String
-  sector                String?
-  horizonDays           Int      @default(1)
+  id          String  @id @default(cuid())
+  symbol      String
+  sector      String?
+  horizonDays Int     @default(1)
 
-  predictedAt           DateTime @default(now())
-  dueAt                 DateTime
+  predictedAt DateTime @default(now())
+  dueAt       DateTime
 
-  modelVersion          String
+  modelVersion String
 
-  entryPrice            Float
-  benchmarkSymbol       String?  @default("SPY")
-  benchmarkEntryPrice   Float?
-  actualPrice           Float?
-  benchmarkActualPrice  Float?
+  entryPrice           Float
+  benchmarkSymbol      String? @default("SPY")
+  benchmarkEntryPrice  Float?
+  actualPrice          Float?
+  benchmarkActualPrice Float?
 
-  regime                String?
-  regimeConfidence      Float?
-  transitionRisk        Float?
+  regime           String?
+  regimeConfidence Float?
+  transitionRisk   Float?
 
-  rawScore              Float
-  calibratedConfidence  Float
-  finalDecision         String   // "BUY" | "SELL" | "HOLD" | "NO_TRADE"
+  rawScore             Float
+  calibratedConfidence Float
+  finalDecision        String // "BUY" | "SELL" | "HOLD" | "NO_TRADE"
 
-  actualReturn          Float?
-  benchmarkReturn       Float?
-  excessReturn         Float?
-  actualOutcome         Int?
-  wasCorrect            Boolean?
+  actualReturn    Float?
+  benchmarkReturn Float?
+  excessReturn    Float?
+  actualOutcome   Int?
+  wasCorrect      Boolean?
 
-  evaluationStatus      String   @default("PENDING")
-  evaluatedAt           DateTime?
+  evaluationStatus String    @default("PENDING")
+  evaluatedAt      DateTime?
 
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  factors               PredictionFactor[]
-  snapshots             PredictionSnapshot[]
-  marketSnapshots       MarketSnapshot[]
-  spilloverSignal       SpilloverSignal?
+  factors         PredictionFactor[]
+  snapshots       PredictionSnapshot[]
+  marketSnapshots MarketSnapshot[]
+  spilloverSignal SpilloverSignal?
 
   @@index([symbol, predictedAt])
   @@index([symbol, dueAt])
@@ -126,27 +126,27 @@ model Prediction {
 }
 
 model PredictionFactor {
-  id            String   @id @default(cuid())
-  predictionId  String
-  factorName    String
-  factorType    String
-  score         Float
-  weight        Float
-  signal        String?
-  description   String?
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  predictionId String
+  factorName   String
+  factorType   String
+  score        Float
+  weight       Float
+  signal       String?
+  description  String?
+  createdAt    DateTime @default(now())
 
-  prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  prediction Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
 
   @@index([predictionId])
   @@index([factorName, createdAt])
 }
 
 model PredictionSnapshot {
-  id               String   @id @default(cuid())
-  predictionId     String
-  snapshotType     String   // "CREATED" | "EVALUATED" | "SNAPSHOT"
-  timestamp        DateTime @default(now())
+  id           String   @id @default(cuid())
+  predictionId String
+  snapshotType String // "CREATED" | "EVALUATED" | "SNAPSHOT"
+  timestamp    DateTime @default(now())
 
   price            Float?
   benchmarkPrice   Float?
@@ -155,52 +155,52 @@ model PredictionSnapshot {
   transitionRisk   Float?
   note             String?
 
-  prediction       Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  prediction Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
 
   @@index([predictionId, timestamp])
   @@index([snapshotType, timestamp])
 }
 
 model ModelWeight {
-  id          String   @id @default(cuid())
-  factorName  String   // "rsi" | "macdHistogram" | "pe_ratio" etc.
-  factorType  String   // "technical" | "fundamental" | "regime"
-  weight      Float    // current weight (sum should = 1.0 per type)
-  sampleSize  Int      @default(0) // how many predictions contributed
-  accuracy    Float    @default(0) // observed accuracy % for this factor
-  streakCorrect Int   @default(0)
-  streakWrong   Int   @default(0)
-  minSample   Int      @default(30) // minimum sample before weight changes
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  factorName    String // "rsi" | "macdHistogram" | "pe_ratio" etc.
+  factorType    String // "technical" | "fundamental" | "regime"
+  weight        Float // current weight (sum should = 1.0 per type)
+  sampleSize    Int      @default(0) // how many predictions contributed
+  accuracy      Float    @default(0) // observed accuracy % for this factor
+  streakCorrect Int      @default(0)
+  streakWrong   Int      @default(0)
+  minSample     Int      @default(30) // minimum sample before weight changes
+  updatedAt     DateTime @updatedAt
 
   @@unique([factorName])
 }
 
 model MarketSnapshot {
-  id            String   @id @default(cuid())
-  predictionId  String   @unique
-  regime        String   @default("UNKNOWN") // "BULL" | "BEAR" | "VOLATILE" | "RANGING"
-  regimeConfidence Float @default(0)
-  spyPrice      Float?
-  spyChange5d   Float?
-  spyChange20d  Float?
-  vixLevel      Float?
-  marketBreadth  Float?   // % of stocks above 200-day MA
-  sectorAvg     Float?   // average prediction score for this sector
-  createdAt     DateTime @default(now())
+  id               String   @id @default(cuid())
+  predictionId     String   @unique
+  regime           String   @default("UNKNOWN") // "BULL" | "BEAR" | "VOLATILE" | "RANGING"
+  regimeConfidence Float    @default(0)
+  spyPrice         Float?
+  spyChange5d      Float?
+  spyChange20d     Float?
+  vixLevel         Float?
+  marketBreadth    Float? // % of stocks above 200-day MA
+  sectorAvg        Float? // average prediction score for this sector
+  createdAt        DateTime @default(now())
 
-  prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  prediction Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
 }
 
 model EventSnapshot {
-  id            String   @id @default(cuid())
-  ticker        String
-  eventType     String   // "earnings" | "fed" | "geopolitical" | "sector_news" | "none"
-  eventDate     DateTime?
-  daysUntil     Int?
-  severity      String   @default("LOW") // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-  description   String   @default("")
-  createdAt     DateTime @default(now())
+  id          String    @id @default(cuid())
+  ticker      String
+  eventType   String // "earnings" | "fed" | "geopolitical" | "sector_news" | "none"
+  eventDate   DateTime?
+  daysUntil   Int?
+  severity    String    @default("LOW") // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  description String    @default("")
+  createdAt   DateTime  @default(now())
 
   @@index([ticker, eventType])
   @@index([eventDate])
@@ -209,25 +209,25 @@ model EventSnapshot {
 // ═══════ GLOBAL SPILLOVER ENGINE ═══════
 
 model GlobalMarketSnapshot {
-  id          String   @id @default(cuid())
-  date        DateTime @db.Date
-  symbol      String   // "KOSPI" | "^N225" | "^HSI" | "SPY" | "QQQ" | "SMH" | "VIX" etc.
-  assetType   String   @default("INDEX") // "INDEX" | "ETF" | "STOCK" | "VOLATILITY"
-  region      String   // "ASIA_PACIFIC" | "US" | "EUROPE"
-  sector      String?  // "SEMICONDUCTOR" | "INDEX" | "VOLATILITY"
-  open        Float
-  high        Float
-  low         Float
-  close       Float
-  volume      Float    @default(0)
-  return1d    Float    @default(0)
-  return2d    Float?
-  return5d    Float?
-  atr14       Float?
-  sma20       Float?
-  sma50       Float?
-  sma200      Float?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  symbol    String // "KOSPI" | "^N225" | "^HSI" | "SPY" | "QQQ" | "SMH" | "VIX" etc.
+  assetType String   @default("INDEX") // "INDEX" | "ETF" | "STOCK" | "VOLATILITY"
+  region    String // "ASIA_PACIFIC" | "US" | "EUROPE"
+  sector    String? // "SEMICONDUCTOR" | "INDEX" | "VOLATILITY"
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float    @default(0)
+  return1d  Float    @default(0)
+  return2d  Float?
+  return5d  Float?
+  atr14     Float?
+  sma20     Float?
+  sma50     Float?
+  sma200    Float?
+  createdAt DateTime @default(now())
 
   @@index([symbol, date])
   @@index([region, date])
@@ -236,28 +236,28 @@ model GlobalMarketSnapshot {
 }
 
 model SpilloverSignal {
-  id             String    @id @default(cuid())
-  date           DateTime  @db.Date
-  targetSymbol   String    // e.g. "NVDA", "SMH", "SOXX"
-  targetSector   String?   // e.g. "SEMICONDUCTOR"
-  setupType      String    // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
-  spilloverScore Float     // -100 to +100
-  confidence     Float     // 0 to 1
-  modelVersion   String    @default("spillover-v1")
-  reasons        Json      // string[] of human-readable reasons
-  features       Json?     // full SpilloverFeatures snapshot
-  createdAt      DateTime  @default(now())
+  id             String   @id @default(cuid())
+  date           DateTime @db.Date
+  targetSymbol   String // e.g. "NVDA", "SMH", "SOXX"
+  targetSector   String? // e.g. "SEMICONDUCTOR"
+  setupType      String // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
+  spilloverScore Float // -100 to +100
+  confidence     Float // 0 to 1
+  modelVersion   String   @default("spillover-v1")
+  reasons        Json // string[] of human-readable reasons
+  features       Json? // full SpilloverFeatures snapshot
+  createdAt      DateTime @default(now())
 
   // Prediction linkage (optional — only set when created by prediction pipeline)
-  predictionId   String?   @unique
-  prediction     Prediction? @relation(fields: [predictionId], references: [id])
+  predictionId String?     @unique
+  prediction   Prediction? @relation(fields: [predictionId], references: [id])
 
   // Cross-market driver fields (populated by prediction pipeline)
-  asiaConsensus  Float?    // -1 to +1
-  riskAlignment  Float?    // -1 to +1
-  vixDirection   String?   // "rising" | "falling" | "stable"
-  sectorTrend    String?   // "strong" | "weak" | "neutral"
-  asiaAligned    Boolean?
+  asiaConsensus Float? // -1 to +1
+  riskAlignment Float? // -1 to +1
+  vixDirection  String? // "rising" | "falling" | "stable"
+  sectorTrend   String? // "strong" | "weak" | "neutral"
+  asiaAligned   Boolean?
 
   @@index([targetSymbol, date])
   @@index([setupType, date])
@@ -267,17 +267,17 @@ model SpilloverSignal {
 }
 
 model SpilloverModelResult {
-  id               String   @id @default(cuid())
-  date             DateTime @db.Date
-  targetSymbol     String
-  modelVersion     String   // "spillover-v2-logreg" | "spillover-v2-xgb"
-  probabilityUp    Float    // 0 to 1
-  probabilityDown  Float    // 0 to 1
-  predictedClass    String   // "RELIEF_RALLY" | "CONTINUATION" | "NEUTRAL"
-  actualClass      String?  // filled by evaluator
-  actualReturn     Float?  // filled by evaluator
-  wasCorrect       Boolean?
-  createdAt        DateTime @default(now())
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  targetSymbol    String
+  modelVersion    String // "spillover-v2-logreg" | "spillover-v2-xgb"
+  probabilityUp   Float // 0 to 1
+  probabilityDown Float // 0 to 1
+  predictedClass  String // "RELIEF_RALLY" | "CONTINUATION" | "NEUTRAL"
+  actualClass     String? // filled by evaluator
+  actualReturn    Float? // filled by evaluator
+  wasCorrect      Boolean?
+  createdAt       DateTime @default(now())
 
   @@index([targetSymbol, date])
   @@index([modelVersion, date])
@@ -287,28 +287,28 @@ model SpilloverModelResult {
 // ═══════ REGIME INTELLIGENCE ═══════
 
 model RegimeSnapshot {
-  id               String   @id @default(cuid())
-  date             DateTime @db.Date
-  regimeState      String   // "BULL_LOW_VOL" | "BEAR_HIGH_VOL" | "PANIC_CAPITULATION" | "RELIEF_RALLY" | "RANGE_NEUTRAL"
-  confidence       Float    // 0 to 1
-  transitionRisk   Float    @default(0) // 0-1, probability of regime change within 5 days
+  id             String   @id @default(cuid())
+  date           DateTime @db.Date
+  regimeState    String // "BULL_LOW_VOL" | "BEAR_HIGH_VOL" | "PANIC_CAPITULATION" | "RELIEF_RALLY" | "RANGE_NEUTRAL"
+  confidence     Float // 0 to 1
+  transitionRisk Float    @default(0) // 0-1, probability of regime change within 5 days
   // Raw features at detection time
-  spyReturn1d      Float?
-  spyReturn5d      Float?
-  spyReturn20d     Float?
-  spyVsSma200      Float?  // % above/below SMA200
-  vixLevel         Float?
-  vixReturn1d      Float?
-  atrZScore        Float?
-  breadthPct       Float?  // % of stocks above SMA50
-  adxLevel         Float?
-  spilloverScore   Float?
-  spilloverSetup   String?
-  eventRiskScore   Float?
+  spyReturn1d    Float?
+  spyReturn5d    Float?
+  spyReturn20d   Float?
+  spyVsSma200    Float? // % above/below SMA200
+  vixLevel       Float?
+  vixReturn1d    Float?
+  atrZScore      Float?
+  breadthPct     Float? // % of stocks above SMA50
+  adxLevel       Float?
+  spilloverScore Float?
+  spilloverSetup String?
+  eventRiskScore Float?
   // Policy snapshot
-  policy           Json?    // full RegimePolicy at detection time
-  drivers          Json?    // string[] of human-readable reasons
-  createdAt        DateTime @default(now())
+  policy         Json? // full RegimePolicy at detection time
+  drivers        Json? // string[] of human-readable reasons
+  createdAt      DateTime @default(now())
 
   @@unique([date]) // one regime snapshot per day
   @@index([regimeState, date])
@@ -318,21 +318,21 @@ model RegimeSnapshot {
 // ═══════ MODEL METRICS (Brier calibration layer) ═══════
 
 model ModelMetricSnapshot {
-  id                String   @id @default(cuid())
-  modelVersion      String
-  horizonDays       Int
-  sampleSize        Int
-  accuracy          Float?
-  avgReturn         Float?
-  benchmarkReturn   Float?
-  alpha             Float?
-  winRate           Float?
-  brierScore        Float?
-  precisionBuy      Float?
-  recallBuy         Float?
-  noTradeRate       Float?
-  maxDrawdown       Float?
-  createdAt         DateTime @default(now())
+  id              String   @id @default(cuid())
+  modelVersion    String
+  horizonDays     Int
+  sampleSize      Int
+  accuracy        Float?
+  avgReturn       Float?
+  benchmarkReturn Float?
+  alpha           Float?
+  winRate         Float?
+  brierScore      Float?
+  precisionBuy    Float?
+  recallBuy       Float?
+  noTradeRate     Float?
+  maxDrawdown     Float?
+  createdAt       DateTime @default(now())
 
   @@index([modelVersion, createdAt])
   @@index([horizonDays, createdAt])
@@ -341,28 +341,28 @@ model ModelMetricSnapshot {
 // ═══════ AI LEARNING SYSTEM ═══════
 
 model AILesson {
-  id          String   @id @default(cuid())
-  category    String   // "overconfidence" | "wrong_direction" | "timing" | "sector_bias" | "volatility" | "macro_miss"
-  ticker      String?
-  sector      String?
-  mistake     String
-  lesson      String
-  severity    Int      // 1-5
-  timesApplied Int     @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  category     String // "overconfidence" | "wrong_direction" | "timing" | "sector_bias" | "volatility" | "macro_miss"
+  ticker       String?
+  sector       String?
+  mistake      String
+  lesson       String
+  severity     Int // 1-5
+  timesApplied Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ═══════ DAILY SCAN PICKS (replaces /tmp JSON file) ═══════
 
 model DailyPick {
-  id        String   @id @default(cuid())
-  symbol    String
-  bucket    String   // "TOP" | "BOTTOM"
-  rank      Int
-  score     Float
-  sector    String?
-  scanDate  DateTime @default(now())
+  id       String   @id @default(cuid())
+  symbol   String
+  bucket   String // "TOP" | "BOTTOM"
+  rank     Int
+  score    Float
+  sector   String?
+  scanDate DateTime @default(now())
 
   @@index([symbol, scanDate])
   @@index([bucket, scanDate])
@@ -372,11 +372,11 @@ model DailyPick {
 // ═══════ EXECUTION QUALITY MONITOR ═══════
 
 model ExecutionEvent {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   predictionId     String?
   symbol           String
-  side             String   // "BUY" | "SELL"
-  orderType        String   // "LIMIT" | "MARKET" | "STOP" etc.
+  side             String // "BUY" | "SELL"
+  orderType        String // "LIMIT" | "MARKET" | "STOP" etc.
   quantity         Float
   intendedPrice    Float?
   submittedPrice   Float?
@@ -386,14 +386,14 @@ model ExecutionEvent {
   submittedAt      DateTime
   ackAt            DateTime?
   filledAt         DateTime?
-  status           String   // "SUBMITTED" | "ACKED" | "FILLED" | "PARTIAL" | "REJECTED" | "CANCELLED"
+  status           String // "SUBMITTED" | "ACKED" | "FILLED" | "PARTIAL" | "REJECTED" | "CANCELLED"
   rejectReason     String?
   latencyMs        Int?
   slippageBps      Float?
   partialFillPct   Float?
-  stopAttached     Boolean  @default(false)
+  stopAttached     Boolean   @default(false)
   venue            String?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
 
   @@index([symbol, createdAt])
   @@index([status, createdAt])
@@ -401,43 +401,43 @@ model ExecutionEvent {
 }
 
 model AIStats {
-  id              String   @id @default(cuid())
-  totalPredictions Int     @default(0)
-  correctPredictions Int   @default(0)
-  avgAccuracy      Float   @default(0)
-  bestSector       String?
-  worstSector      String?
-  streakCorrect    Int     @default(0)
-  streakWrong      Int     @default(0)
-  lessonsLearned   Int     @default(0)
-  updatedAt        DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  totalPredictions   Int      @default(0)
+  correctPredictions Int      @default(0)
+  avgAccuracy        Float    @default(0)
+  bestSector         String?
+  worstSector        String?
+  streakCorrect      Int      @default(0)
+  streakWrong        Int      @default(0)
+  lessonsLearned     Int      @default(0)
+  updatedAt          DateTime @updatedAt
 
   // Per-horizon accuracy
-  accuracy1d       Float   @default(0)
-  accuracy5d       Float   @default(0)
-  accuracy20d      Float   @default(0)
+  accuracy1d  Float @default(0)
+  accuracy5d  Float @default(0)
+  accuracy20d Float @default(0)
 
   // Calibrated confidence tracking
-  confidenceBuckets Json?   // {"50-60": {total:10, correct:6}, "60-70": {...}}
+  confidenceBuckets Json? // {"50-60": {total:10, correct:6}, "60-70": {...}}
 }
 
 // ═══════ HUMAN OVERRIDE LEDGER ═══════
 
 model ManualDecisionOverride {
-  id             String   @id @default(cuid())
-  predictionId   String?
-  symbol         String
-  originalDecision String  // what the model suggested
-  overrideDecision String  // "ACCEPTED" | "REJECTED" | "MODIFIED"
-  overrideReason String   // news_risk | liquidity | earnings_near | disagree_with_signal | execution_risk | other
-  notes          String?
-  modelScore     Float?
-  modelConfidence Float?
-  regime         String?
-  outcome        String?  // "CORRECT_OVERRIDE" | "WRONG_OVERRIDE" | "PENDING"
-  actualReturn   Float?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(cuid())
+  predictionId     String?
+  symbol           String
+  originalDecision String // what the model suggested
+  overrideDecision String // "ACCEPTED" | "REJECTED" | "MODIFIED"
+  overrideReason   String // news_risk | liquidity | earnings_near | disagree_with_signal | execution_risk | other
+  notes            String?
+  modelScore       Float?
+  modelConfidence  Float?
+  regime           String?
+  outcome          String? // "CORRECT_OVERRIDE" | "WRONG_OVERRIDE" | "PENDING"
+  actualReturn     Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([symbol, createdAt])
   @@index([predictionId])
@@ -446,99 +446,99 @@ model ManualDecisionOverride {
 // ═══════ META-MODEL AI (XGBoost-style classifier + calibration) ═══════
 
 model ModelTrainingRun {
-  id                  String   @id @default(cuid())
-  modelVersion        String   // "meta-v1-2026-08-01"
-  algorithm           String   // "lightgbm" | "xgboost" | "ensemble"
-  status              String   @default("PENDING") // "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
+  id           String @id @default(cuid())
+  modelVersion String // "meta-v1-2026-08-01"
+  algorithm    String // "lightgbm" | "xgboost" | "ensemble"
+  status       String @default("PENDING") // "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
 
   // Training config
-  trainingWindowFrom  DateTime?
-  trainingWindowTo    DateTime?
+  trainingWindowFrom   DateTime?
+  trainingWindowTo     DateTime?
   validationWindowFrom DateTime?
-  validationWindowTo  DateTime?
-  testWindowFrom      DateTime?
-  testWindowTo        DateTime?
+  validationWindowTo   DateTime?
+  testWindowFrom       DateTime?
+  testWindowTo         DateTime?
 
   // Hyper-parameters
-  hyperParams         Json?    // { nEstimators, maxDepth, learningRate, ... }
-  featureList         Json?    // string[] of feature names used
-  targetHorizonDays   Int      @default(1)
-  targetDefinition    String   @default("trade_success_1d") // how label was computed
+  hyperParams       Json? // { nEstimators, maxDepth, learningRate, ... }
+  featureList       Json? // string[] of feature names used
+  targetHorizonDays Int    @default(1)
+  targetDefinition  String @default("trade_success_1d") // how label was computed
 
   // Results
-  trainSamples        Int      @default(0)
-  valSamples          Int      @default(0)
-  testSamples         Int      @default(0)
-  trainAccuracy       Float?
-  valAccuracy         Float?
-  testAccuracy        Float?
-  trainBrier          Float?
-  valBrier            Float?
-  testBrier           Float?
-  valAuc              Float?
-  testAuc             Float?
-  calibrationEce      Float?   // expected calibration error on val
-  overfittingRatio    Float?   // trainAcc / testAcc (1.0 = perfect, >1.3 = overfit)
+  trainSamples     Int    @default(0)
+  valSamples       Int    @default(0)
+  testSamples      Int    @default(0)
+  trainAccuracy    Float?
+  valAccuracy      Float?
+  testAccuracy     Float?
+  trainBrier       Float?
+  valBrier         Float?
+  testBrier        Float?
+  valAuc           Float?
+  testAuc          Float?
+  calibrationEce   Float? // expected calibration error on val
+  overfittingRatio Float? // trainAcc / testAcc (1.0 = perfect, >1.3 = overfit)
 
   // Serialized model artifact (base64-encoded JSON for V1)
-  modelArtifact       String?  // serialized trees / coefficients
-  calibrationState    Json?    // isotonic calibration mapping
+  modelArtifact    String? // serialized trees / coefficients
+  calibrationState Json? // isotonic calibration mapping
 
   // Walk-forward specifics
-  wfFoldCount         Int      @default(0)
-  wfAvgAccuracy       Float?
-  wfStdAccuracy       Float?
-  wfAvgBrier          Float?
+  wfFoldCount   Int    @default(0)
+  wfAvgAccuracy Float?
+  wfStdAccuracy Float?
+  wfAvgBrier    Float?
 
-  error               String?
-  completedAt         DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  error       String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  predictions         ModelPrediction[]
+  predictions ModelPrediction[]
 
   @@index([modelVersion, createdAt])
   @@index([status])
 }
 
 model ModelPrediction {
-  id                  String   @id @default(cuid())
-  trainingRunId       String?
-  modelVersion        String
-  symbol              String
-  sector              String?
-  regime              String?
+  id            String  @id @default(cuid())
+  trainingRunId String?
+  modelVersion  String
+  symbol        String
+  sector        String?
+  regime        String?
 
-  predictedAt         DateTime @default(now())
-  horizonDays         Int      @default(1)
+  predictedAt DateTime @default(now())
+  horizonDays Int      @default(1)
 
   // Input features snapshot
-  features            Json     // { featureName: value, ... }
-  featureVersion      String   // links to FeatureSnapshot.version
+  features       Json // { featureName: value, ... }
+  featureVersion String // links to FeatureSnapshot.version
 
   // Raw model output
-  rawWinProbability   Float
-  rawLossProbability  Float
+  rawWinProbability  Float
+  rawLossProbability Float
 
   // Calibrated output
-  calibratedWinProb   Float
-  confidenceCalibrated Float   // final confidence after calibration
+  calibratedWinProb    Float
+  confidenceCalibrated Float // final confidence after calibration
 
   // Decision
-  expectedEdge        Float?   // expected value of the trade
-  recommendedAction   String   @default("SKIP") // "TRADE" | "PAPER_ONLY" | "SKIP"
-  actionReason        String?  // human-readable reason
+  expectedEdge      Float? // expected value of the trade
+  recommendedAction String  @default("SKIP") // "TRADE" | "PAPER_ONLY" | "SKIP"
+  actionReason      String? // human-readable reason
 
   // Outcome (filled later)
- actualReturn        Float?
-  wasCorrect         Boolean?
-  evaluationStatus    String   @default("PENDING") // "PENDING" | "EVALUATED"
-  evaluatedAt         DateTime?
+  actualReturn     Float?
+  wasCorrect       Boolean?
+  evaluationStatus String    @default("PENDING") // "PENDING" | "EVALUATED"
+  evaluatedAt      DateTime?
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  trainingRun         ModelTrainingRun? @relation(fields: [trainingRunId], references: [id])
+  trainingRun ModelTrainingRun? @relation(fields: [trainingRunId], references: [id])
 
   @@index([symbol, predictedAt])
   @@index([modelVersion, predictedAt])
@@ -546,14 +546,14 @@ model ModelPrediction {
 }
 
 model FeatureSnapshot {
-  id                  String   @id @default(cuid())
-  version             String   // "feat-v1" — incremented on schema changes
-  symbol              String
-  date                DateTime
-  snapshot            Json     // { featureName: value, ... }
-  schemaHash          String   // hash of sorted feature names for consistency check
-  featureCount        Int
-  createdAt           DateTime @default(now())
+  id           String   @id @default(cuid())
+  version      String // "feat-v1" — incremented on schema changes
+  symbol       String
+  date         DateTime
+  snapshot     Json // { featureName: value, ... }
+  schemaHash   String // hash of sorted feature names for consistency check
+  featureCount Int
+  createdAt    DateTime @default(now())
 
   @@unique([version, symbol, date])
   @@index([version])
@@ -563,67 +563,254 @@ model FeatureSnapshot {
 // ═══════ PREDICTION REVIEW & DRIFT MONITOR ═══════
 
 model DriftSnapshot {
-  id              String   @id @default(cuid())
-  date            DateTime @db.Date
+  id               String   @id @default(cuid())
+  date             DateTime @db.Date
   // Per-horizon daily accuracy
-  accuracy1d      Float?
-  accuracy5d      Float?
-  accuracy20d     Float?
-  sample1d        Int      @default(0)
-  sample5d        Int      @default(0)
-  sample20d       Int      @default(0)
+  accuracy1d       Float?
+  accuracy5d       Float?
+  accuracy20d      Float?
+  sample1d         Int      @default(0)
+  sample5d         Int      @default(0)
+  sample20d        Int      @default(0)
   // Calibration drift
-  brierScore      Float?
-  ece             Float?
+  brierScore       Float?
+  ece              Float?
   // No-trade rate
-  noTradeRate     Float?
+  noTradeRate      Float?
   // Per-regime accuracy (JSON: { "BULL_LOW_VOL": 72.3, ... })
   regimeAccuracies Json?
   // Per-sector accuracy (JSON: { "TECHNOLOGY": 65.0, ... })
   sectorAccuracies Json?
   // Warnings
-  warnings        Json?    // string[] of active warnings
-  createdAt       DateTime @default(now())
+  warnings         Json? // string[] of active warnings
+  createdAt        DateTime @default(now())
 
   @@unique([date])
   @@index([date])
 }
 
+// ═══════ ADAPTIVE SCANNER LEARNING ENGINE ═══════
+
+enum ScannerStrategy {
+  IBKR_PULLBACK
+  CATALYST_MOMENTUM
+}
+
+enum ScannerDecision {
+  READY
+  WATCHLIST
+  NEW_CANDIDATE
+  CONFIRMED_MOMENTUM
+  MOMENTUM_PULLBACK_READY
+  RANK_UP
+  RANK_DOWN
+  FADE_RISK
+  EXTENDED_RISK
+  NO_TRADE
+  EXITED_LIST
+}
+
+enum RankingChangeAction {
+  ENTERED_LIST
+  EXITED_LIST
+  RANK_UP
+  RANK_DOWN
+  SCORE_UP
+  SCORE_DOWN
+  STATUS_CHANGED
+}
+
+enum SignalOutcomeType {
+  CONTINUATION
+  PULLBACK_SUCCESS
+  FADE
+  STOPPED_OUT
+  NO_EDGE
+  PENDING
+}
+
+model ScannerSnapshot {
+  id                  String          @id @default(cuid())
+  ticker              String
+  strategy            ScannerStrategy
+  snapshotAt          DateTime        @default(now())
+  rank                Int?
+  totalScore          Float
+  confidence          Float?
+  decision            ScannerDecision
+  price               Float
+  priorClose          Float?
+  dayChangePct        Float?
+  premarketGapPct     Float?
+  volume              Float?
+  averageVolume20D    Float?
+  relativeVolume      Float?
+  avgDollarVolume20D  Float?
+  spreadPct           Float?
+  liquidityScore      Float?
+  vwap                Float?
+  aboveVwap           Boolean?
+  vwapDistancePct     Float?
+  ema20               Float?
+  sma50               Float?
+  sma200              Float?
+  atr14               Float?
+  rsi14               Float?
+  adx14               Float?
+  trendScore          Float?
+  pullbackScore       Float?
+  catalystScore       Float?
+  volumeScore         Float?
+  sectorScore         Float?
+  marketRegimeScore   Float?
+  liquidityMapScore   Float?
+  fadeRiskScore       Float?
+  closingStrength     Float?
+  marketRegime        String?
+  sector              String?
+  sectorStrength      Float?
+  poc                 Float?
+  nearestBelowHvn     Float?
+  nearestAboveHvn     Float?
+  bidWallPrice        Float?
+  askWallPrice        Float?
+  newsCatalyst        String?
+  catalystPublishedAt DateTime?
+  secEvent            String?
+  reasons             Json?
+  riskFlags           Json?
+  scoreBreakdown      Json?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  changesFrom RankingChange[] @relation("ChangeFrom")
+  changesTo   RankingChange[] @relation("ChangeTo")
+  outcomes    SignalOutcome[]
+
+  @@index([ticker, strategy, snapshotAt])
+  @@index([strategy, snapshotAt])
+  @@index([decision, snapshotAt])
+}
+
+model RankingChange {
+  id             String              @id @default(cuid())
+  ticker         String
+  strategy       ScannerStrategy
+  fromSnapshotId String?
+  toSnapshotId   String
+  oldRank        Int?
+  newRank        Int?
+  oldScore       Float?
+  newScore       Float
+  scoreChange    Float?
+  oldDecision    ScannerDecision?
+  newDecision    ScannerDecision
+  action         RankingChangeAction
+  reasons        Json?
+  createdAt      DateTime            @default(now())
+
+  fromSnapshot ScannerSnapshot? @relation("ChangeFrom", fields: [fromSnapshotId], references: [id], onDelete: SetNull)
+  toSnapshot   ScannerSnapshot  @relation("ChangeTo", fields: [toSnapshotId], references: [id], onDelete: Cascade)
+
+  @@index([ticker, strategy, createdAt])
+  @@index([action, createdAt])
+}
+
+model SignalOutcome {
+  id                       String            @id @default(cuid())
+  snapshotId               String
+  ticker                   String
+  strategy                 ScannerStrategy
+  entryPrice               Float
+  priceAfter1Hour          Float?
+  closePrice               Float?
+  nextDayOpenPrice         Float?
+  nextDayHighPrice         Float?
+  nextDayClosePrice        Float?
+  threeDayClosePrice       Float?
+  return1HourPct           Float?
+  returnToClosePct         Float?
+  nextDayOpenReturnPct     Float?
+  nextDayHighReturnPct     Float?
+  nextDayCloseReturnPct    Float?
+  threeDayReturnPct        Float?
+  maxFavorableExcursionPct Float?
+  maxAdverseExcursionPct   Float?
+  hitTarget5Pct            Boolean?
+  hitTarget10Pct           Boolean?
+  heldVwapToClose          Boolean?
+  heldDayOneLow            Boolean?
+  outcome                  SignalOutcomeType @default(PENDING)
+  evaluatedAt              DateTime?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  snapshot ScannerSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId])
+  @@index([ticker, strategy, createdAt])
+  @@index([outcome, evaluatedAt])
+}
+
+model AdaptiveFactorStat {
+  id                 String          @id @default(cuid())
+  strategy           ScannerStrategy
+  factor             String
+  bucket             String
+  sampleSize         Int             @default(0)
+  wins               Int             @default(0)
+  losses             Int             @default(0)
+  hitRate            Float           @default(0)
+  averageReturnPct   Float           @default(0)
+  averageDrawdownPct Float           @default(0)
+  expectancy         Float           @default(0)
+  currentWeight      Float           @default(0)
+  proposedWeight     Float?
+  isEnabled          Boolean         @default(true)
+  periodStart        DateTime
+  periodEnd          DateTime
+  updatedAt          DateTime        @updatedAt
+  createdAt          DateTime        @default(now())
+
+  @@unique([strategy, factor, bucket, periodStart, periodEnd])
+  @@index([strategy, factor])
+}
+
 // ═══════ MODEL RELEASE GOVERNANCE ═══════
 
 model ModelRelease {
-  id                String   @id @default(cuid())
-  modelVersion       String
-  releaseType       String   // "MAJOR" | "MINOR" | "HOTFIX" | "ROLLBACK"
+  id           String @id @default(cuid())
+  modelVersion String
+  releaseType  String // "MAJOR" | "MINOR" | "HOTFIX" | "ROLLBACK"
 
   // What changed
   description        String
-  features           Json?    // string[] of feature names used
+  features           Json? // string[] of feature names used
   trainingWindowFrom DateTime?
   trainingWindowTo   DateTime?
 
   // Validation at time of release
-  validationSummary  Json?    // full ValidationSummary snapshot
-  driftStatus        String?  // "STABLE" | "DRIFT_WARNING" | "DRIFT_CRITICAL"
-  robustnessScore    Float?
+  validationSummary      Json? // full ValidationSummary snapshot
+  driftStatus            String? // "STABLE" | "DRIFT_WARNING" | "DRIFT_CRITICAL"
+  robustnessScore        Float?
   walkForwardConsistency Float?
-  overfittingSeverity String?  // "NONE" | "LOW" | "MEDIUM" | "HIGH"
-  sampleSize        Int      @default(0)
+  overfittingSeverity    String? // "NONE" | "LOW" | "MEDIUM" | "HIGH"
+  sampleSize             Int     @default(0)
 
   // Known limitations
-  knownLimitations  Json?    // string[]
-  breakingChanges   Boolean  @default(false)
+  knownLimitations Json? // string[]
+  breakingChanges  Boolean @default(false)
 
   // Release lifecycle
-  approvalStatus    String   @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED" | "DEPLOYED" | "ROLLED_BACK"
-  approvedBy        String?
-  approvedAt         DateTime?
-  deployedAt         DateTime?
-  rolledBackAt      DateTime?
-  rollbackReason    String?
+  approvalStatus String    @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED" | "DEPLOYED" | "ROLLED_BACK"
+  approvedBy     String?
+  approvedAt     DateTime?
+  deployedAt     DateTime?
+  rolledBackAt   DateTime?
+  rollbackReason String?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([modelVersion, createdAt])
   @@index([approvalStatus])
@@ -634,41 +821,41 @@ model ModelRelease {
 // and in which market regime. Uses event-study methodology.
 
 model HistoricalNewsEvent {
-  id                     String   @id @default(cuid())
-  ticker                 String
-  publishedAtUtc         DateTime
-  source                 String
-  headline               String
-  summary                String   @default("")
-  eventType              String   @default("other") // see EVENT_TYPES in news-event-classifier.ts
-  sentimentScore         Float    @default(0) // -1 to +1
-  sentimentLabel         String   @default("neutral") // positive / negative / neutral
-  noveltyScore           Float    @default(0) // 0-1, how surprising vs recent news for same ticker
-  macroVsMicro           String   @default("micro") // macro / micro / both
-  sector                 String   @default("")
+  id             String   @id @default(cuid())
+  ticker         String
+  publishedAtUtc DateTime
+  source         String
+  headline       String
+  summary        String   @default("")
+  eventType      String   @default("other") // see EVENT_TYPES in news-event-classifier.ts
+  sentimentScore Float    @default(0) // -1 to +1
+  sentimentLabel String   @default("neutral") // positive / negative / neutral
+  noveltyScore   Float    @default(0) // 0-1, how surprising vs recent news for same ticker
+  macroVsMicro   String   @default("micro") // macro / micro / both
+  sector         String   @default("")
 
   // Market regime at time of news
-  marketRegime           String   @default("UNKNOWN")
-  vixLevel               Float?
-  benchmarkSymbol        String   @default("SPY")
+  marketRegime    String @default("UNKNOWN")
+  vixLevel        Float?
+  benchmarkSymbol String @default("SPY")
 
   // Market reaction (filled by recompute-returns job)
-  return1d               Float?   @default(0)
-  return3d               Float?   @default(0)
-  return7d               Float?   @default(0)
-  abnormalReturn1d       Float?   @default(0) // stock_return - benchmark_return
-  abnormalReturn3d       Float?   @default(0)
-  abnormalReturn7d       Float?   @default(0)
-  maxUpsideWindow       Float?   @default(0) // max % gain within 7d
-  maxDrawdownWindow      Float?   @default(0) // max % loss within 7d
-  sectorReturnSameWindow Float?   @default(0)
+  return1d               Float? @default(0)
+  return3d               Float? @default(0)
+  return7d               Float? @default(0)
+  abnormalReturn1d       Float? @default(0) // stock_return - benchmark_return
+  abnormalReturn3d       Float? @default(0)
+  abnormalReturn7d       Float? @default(0)
+  maxUpsideWindow        Float? @default(0) // max % gain within 7d
+  maxDrawdownWindow      Float? @default(0) // max % loss within 7d
+  sectorReturnSameWindow Float? @default(0)
 
   // Classification flags
-  impactHit1d            Boolean? @default(false) // true if |abnormalReturn1d| > 2%
-  horizonClass           String?  @default("none") // intraday / 1d / 3d / 5d_plus / none
+  impactHit1d  Boolean? @default(false) // true if |abnormalReturn1d| > 2%
+  horizonClass String?  @default("none") // intraday / 1d / 3d / 5d_plus / none
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([ticker, publishedAtUtc])
   @@index([eventType, publishedAtUtc])
@@ -680,20 +867,20 @@ model HistoricalNewsEvent {
 }
 
 model MarketRegimeDaily {
-  id                String   @id @default(cuid())
-  date              DateTime @unique @db.Date
-  spyTrendState     String   @default("UNKNOWN") // BULL / BEAR / RANGING
-  qqqTrendState     String   @default("UNKNOWN")
-  vixLevel          Float    @default(0)
-  spyReturn1d       Float    @default(0)
-  spyReturn5d       Float    @default(0)
-  sectorStrengthRank Json?    // { "TECHNOLOGY": 3, "FINANCE": 7, ... }
-  riskMode          String   @default("NEUTRAL") // RISK_ON / RISK_OFF / NEUTRAL
-  dxyState          String?  // rising / falling / stable
-  oilState          String?  // rising / falling / stable
-  ratesDirection    String?  // hiking / cutting / neutral
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  date               DateTime @unique @db.Date
+  spyTrendState      String   @default("UNKNOWN") // BULL / BEAR / RANGING
+  qqqTrendState      String   @default("UNKNOWN")
+  vixLevel           Float    @default(0)
+  spyReturn1d        Float    @default(0)
+  spyReturn5d        Float    @default(0)
+  sectorStrengthRank Json? // { "TECHNOLOGY": 3, "FINANCE": 7, ... }
+  riskMode           String   @default("NEUTRAL") // RISK_ON / RISK_OFF / NEUTRAL
+  dxyState           String? // rising / falling / stable
+  oilState           String? // rising / falling / stable
+  ratesDirection     String? // hiking / cutting / neutral
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@index([date])
 }
