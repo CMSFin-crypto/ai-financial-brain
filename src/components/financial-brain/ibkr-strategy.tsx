@@ -350,20 +350,30 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
   const [rankingChanges, setRankingChanges] = useState<any[] | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
+  const [changesError, setChangesError] = useState<string | null>(null);
 
   // Fetch ranking changes for this ticker
   const fetchRankingChanges = useCallback(async () => {
     if (rankingChanges !== null) return; // already fetched
     setLoadingChanges(true);
+    setChangesError(null);
     try {
       const res = await fetch(`/api/scanner-learning/changes?ticker=${stock.symbol}&limit=5`);
       if (res.ok) {
         const data = await res.json();
-        setRankingChanges(data.changes || []);
+        if (data.error) {
+          setChangesError(data.error);
+          setRankingChanges([]);
+        } else {
+          setRankingChanges(data.changes || []);
+        }
       } else {
+        const data = await res.json().catch(() => ({}));
+        setChangesError(data.error || 'Gabim ne server');
         setRankingChanges([]);
       }
-    } catch {
+    } catch (e) {
+      setChangesError('Gabim rrjeti');
       setRankingChanges([]);
     } finally {
       setLoadingChanges(false);
@@ -572,79 +582,79 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             </span>
           </MiniPopover>
           {/* Pse ndryshoi? button */}
-          <Popover open={showChanges} onOpenChange={(open) => {
-            setShowChanges(open);
-            if (open) fetchRankingChanges();
-          }}>
-            <PopoverTrigger asChild>
-              <button
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/15 text-violet-400 border border-violet-500/20 hover:bg-violet-500/25 transition-colors cursor-pointer"
-                title="Pse ndryshoi renditja?"
-              >
-                <GitCompareArrows className="w-3 h-3" />
-                Pse ndryshoi?
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-3 bg-popover border-border/50" side="bottom" align="start">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <GitCompareArrows className="w-4 h-4 text-violet-400" />
-                  <p className="text-sm font-semibold text-foreground">Ndryshimet e Renditjes</p>
-                </div>
-                <p className="text-[12px] text-muted-foreground">{stock.symbol} — historiku i ndryshimeve te score, rank, dhe status</p>
-                {loadingChanges && (
-                  <div className="flex items-center gap-2 py-3">
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    <span className="text-[12px] text-muted-foreground">Duke ngarkuar...</span>
-                  </div>
-                )}
-                {!loadingChanges && rankingChanges && rankingChanges.length === 0 && (
-                  <p className="text-[12px] text-muted-foreground py-2">Asnje ndryshim i regjistruar per momentin.</p>
-                )}
-                {!loadingChanges && rankingChanges && rankingChanges.length > 0 && (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {rankingChanges.map((ch: any, i: number) => {
-                      const actionIcon = ch.action === 'RANK_UP' || ch.action === 'ENTERED_LIST' || ch.action === 'SCORE_UP'
-                        ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-                        : ch.action === 'RANK_DOWN' || ch.action === 'EXITED_LIST' || ch.action === 'SCORE_DOWN'
-                        ? <ArrowDownRight className="w-3.5 h-3.5 text-red-400" />
-                        : ch.action === 'STATUS_CHANGED'
-                        ? <Activity className="w-3.5 h-3.5 text-amber-400" />
-                        : <GitCompareArrows className="w-3.5 h-3.5 text-muted-foreground" />;
-                      const actionLabel: Record<string, string> = {
-                        ENTERED_LIST: 'Hyri ne list',
-                        EXITED_LIST: 'Doli nga list',
-                        RANK_UP: 'Rank u permiresua',
-                        RANK_DOWN: 'Rank ra',
-                        SCORE_UP: 'Score u rrit',
-                        SCORE_DOWN: 'Score ra',
-                        STATUS_CHANGED: 'Status ndryshoi',
-                      };
-                      return (
-                        <div key={i} className="flex items-start gap-2 p-1.5 rounded-md bg-muted/20">
-                          {actionIcon}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-medium text-foreground">{actionLabel[ch.action] || ch.action}</p>
-                            <div className="flex gap-2 text-[11px] text-muted-foreground">
-                              {ch.oldRank != null && ch.newRank != null && <span>#{ch.oldRank} → #{ch.newRank}</span>}
-                              {ch.scoreChange != null && <span>Score: {ch.scoreChange > 0 ? '+' : ''}{ch.scoreChange}</span>}
-                            </div>
-                            {Array.isArray(ch.reasons) && ch.reasons.length > 0 && (
-                              <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">{ch.reasons[0]}</p>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
-                            {new Date(ch.createdAt).toLocaleDateString('sq', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <button
+            onClick={() => {
+              if (!showChanges) fetchRankingChanges();
+              setShowChanges(!showChanges);
+            }}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/15 text-violet-400 border border-violet-500/20 hover:bg-violet-500/25 transition-colors cursor-pointer"
+            title="Pse ndryshoi renditja?"
+          >
+            <GitCompareArrows className="w-3 h-3" />
+            Pse ndryshoi?
+            {showChanges && <ChevronUp className="w-3 h-3" />}
+            {!showChanges && <ChevronDown className="w-3 h-3" />}
+          </button>
         </div>
+
+        {/* Ranking Changes expanded panel */}
+        {showChanges && (
+          <div className="mt-2 rounded-lg bg-violet-500/5 border border-violet-500/15 p-2.5">
+            <div className="flex items-center gap-1.5 mb-2">
+              <GitCompareArrows className="w-3.5 h-3.5 text-violet-400" />
+              <p className="text-[12px] font-semibold text-violet-400">Ndryshimet e Renditjes — {stock.symbol}</p>
+            </div>
+            {loadingChanges && (
+              <div className="flex items-center gap-2 py-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                <span className="text-[12px] text-muted-foreground">Duke ngarkuar...</span>
+              </div>
+            )}
+            {!loadingChanges && changesError && (
+              <div className="flex items-start gap-2 py-1">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[12px] text-amber-400">Nuk u lidh me databazën</p>
+                  <p className="text-[11px] text-muted-foreground/60">{changesError}</p>
+                </div>
+              </div>
+            )}
+            {!loadingChanges && !changesError && rankingChanges && rankingChanges.length === 0 && (
+              <p className="text-[12px] text-muted-foreground py-1">Asnje ndryshim i regjistruar per momentin. Snapshots mbledhen automatikisht kur scanner punon.</p>
+            )}
+            {!loadingChanges && rankingChanges && rankingChanges.length > 0 && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {rankingChanges.map((ch: any, i: number) => {
+                  const isPositive = ch.action === 'RANK_UP' || ch.action === 'ENTERED_LIST' || ch.action === 'SCORE_UP';
+                  const isNegative = ch.action === 'RANK_DOWN' || ch.action === 'EXITED_LIST' || ch.action === 'SCORE_DOWN';
+                  const actionLabel: Record<string, string> = {
+                    ENTERED_LIST: 'Hyri ne list',
+                    EXITED_LIST: 'Doli nga list',
+                    RANK_UP: 'Rank u permiresua',
+                    RANK_DOWN: 'Rank ra',
+                    SCORE_UP: 'Score u rrit',
+                    SCORE_DOWN: 'Score ra',
+                    STATUS_CHANGED: 'Status ndryshoi',
+                  };
+                  return (
+                    <div key={i} className="flex items-center gap-2 p-1.5 rounded-md bg-muted/15">
+                      {isPositive && <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
+                      {isNegative && <ArrowDownRight className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
+                      {!isPositive && !isNegative && <Activity className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-medium text-foreground">{actionLabel[ch.action] || ch.action}</p>
+                        <div className="flex gap-2 text-[10px] text-muted-foreground">
+                          {ch.oldRank != null && ch.newRank != null && <span>#{ch.oldRank} → #{ch.newRank}</span>}
+                          {ch.scoreChange != null && <span>Score: {ch.scoreChange > 0 ? '+' : ''}{ch.scoreChange}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Reasons */}
         {stock.reasons.length > 0 && (
