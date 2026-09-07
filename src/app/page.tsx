@@ -12,7 +12,6 @@ import { DailyPicks } from '@/components/financial-brain/daily-picks';
 import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
-import { TopSwingPredictions } from '@/components/financial-brain/top-swing-predictions';
 import { IBKRStrategy } from '@/components/financial-brain/ibkr-strategy';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
@@ -31,7 +30,6 @@ import {
   Target,
   Crosshair,
   Radar,
-  Flame,
   MessageSquare,
   Briefcase,
   Search,
@@ -48,7 +46,6 @@ import {
   ExternalLink,
   FileText,
   ArrowRight,
-  TrendingUp,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -121,9 +118,6 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
-                  </TabsTrigger>
-                  <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Flame className="w-3.5 h-3.5 mr-1.5" />Swing Predictions
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
@@ -211,9 +205,6 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
-                  </TabsTrigger>
-                  <TabsTrigger value="top-movers" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Flame className="w-3 h-3 mr-1" />Swing Predictions
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3 h-3 mr-1" />Sektoret
@@ -323,29 +314,6 @@ export default function Home() {
                 </CardContent>
               </Card>
               <MarketDashboard />
-            </motion.div>
-          </TabsContent>
-
-          {/* Tab: Swing Predictions */}
-          <TabsContent value="top-movers" className="mt-4">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-4"
-            >
-              <Card className="border-emerald-500/20 bg-emerald-500/5">
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    <h3 className="text-sm font-semibold">Top Swing Predictions</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Aksione te perzgjedhura nga modeli per potencial swing ne 1D, 3D dhe 7D, te filtruara nga risku i ngjarjeve, regjimi i tregut dhe faktoret global.
-                  </p>
-                </CardContent>
-              </Card>
-              <TopSwingPredictions />
             </motion.div>
           </TabsContent>
 
