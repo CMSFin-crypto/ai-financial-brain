@@ -694,15 +694,9 @@ function buildChart(
         <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{fmt(lastClose, 2)}</text>
 
         {/* ═══ TradingView-style RIGHT-EDGE line labels ═══ */}
-        {/* Each label sits at the Y-position where its line ends, left of the Y-axis */}
-        <EdgeLabels items={[
-          ...(lastSma20 !== null ? [{ label: `SMA(${smaP}) ${fmt(lastSma20, 2)}`, y: yP(lastSma20), color: SMA20_CLR }] : []),
-          ...(lastSma50 !== null ? [{ label: `SMA(${smaLongP}) ${fmt(lastSma50, 2)}`, y: yP(lastSma50), color: SMA50_CLR }] : []),
-          ...(lastEma12 !== null ? [{ label: `EMA(${emaP}) ${fmt(lastEma12, 2)}`, y: yP(lastEma12), color: EMA12_CLR }] : []),
-          ...(bb.upper[n-1] !== null ? [{ label: `BB Upper ${fmt(bb.upper[n-1], 2)}`, y: yP(bb.upper[n-1]!), color: BB_CLR }] : []),
-          ...(bb.middle[n-1] !== null ? [{ label: `BB Mid ${fmt(bb.middle[n-1], 2)}`, y: yP(bb.middle[n-1]!), color: BB_CLR }] : []),
-          ...(bb.lower[n-1] !== null ? [{ label: `BB Lower ${fmt(bb.lower[n-1], 2)}`, y: yP(bb.lower[n-1]!), color: BB_CLR }] : []),
-        ]} rightEdge={W - R} fontSize={9.5} />
+        {/* REMOVED: SMA, BB, EMA labels were cluttering the right edge.
+             TradingView shows only the current price tag on the right axis.
+             Indicator values are now displayed in the cards below the chart. */}
 
         {/* Volume label */}
         <text x={L + 8} y={volTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.5}>Vol</text>
@@ -723,12 +717,7 @@ function buildChart(
         <g clipPath="url(#rsiClip)">
           {fullLine(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi', `RSI(${rsiP}) — Indeksi i Forc\u00ebs Relative`)}
         </g>
-        {/* RSI right-edge label */}
-        {lastRsi !== null && (
-          <EdgeLabels items={[
-            { label: `RSI(${rsiP}) ${fmt(lastRsi, 2)}`, y: yR(lastRsi), color: RSI_CLR },
-          ]} rightEdge={W - R} fontSize={9.5} />
-        )}
+        {/* RSI right-edge label REMOVED — value shown in indicator card below */}
 
         {/* ═══════ PANEL SEPARATOR ═══════ */}
         <line x1={L} y1={macdTop - 1} x2={W - R} y2={macdTop - 1} stroke={GRID} strokeOpacity={0.5} />
@@ -754,11 +743,7 @@ function buildChart(
           {fullLine(macdData.macd.map(v => v !== null ? yM(v) : null), MACD_CLR, 1.5, 'macd', `MACD(${macdFast},${macdSlow}) — Divergjenc\u00eb Mesataresh`)}
           {fullLine(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig', `Signal — Vija e Sinjalit MACD`)}
         </g>
-        {/* MACD right-edge labels */}
-        <EdgeLabels items={[
-          ...(lastMacd !== null ? [{ label: `MACD ${fmt(lastMacd, 2)}`, y: yM(lastMacd), color: MACD_CLR }] : []),
-          ...(lastSig !== null ? [{ label: `Signal ${fmt(lastSig, 2)}`, y: yM(lastSig), color: SIG_CLR }] : []),
-        ]} rightEdge={W - R} fontSize={9.5} />
+        {/* MACD right-edge labels REMOVED — values shown in indicator card below */}
 
         {/* ═══════ VOLUME PROFILE (horizontal histogram, right side of price panel) ═══════ */}
         {vp.bins.length > 0 && vp.maxBinVol > 0 && (
