@@ -18,6 +18,7 @@ import {
   ArrowDown,
   DollarSign,
   AlertTriangle,
+  BrainCircuit,
 } from 'lucide-react';
 import { StockSearch } from './stock-search';
 
@@ -431,6 +432,7 @@ function CandlestickChartInner({
   const [activeTool, setActiveTool] = useState<DrawingTool>('none');
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number; price: number } | null>(null);
   const [drawingInfo, setDrawingInfo] = useState<{ drawing: Drawing; x: number; y: number } | null>(null);
+  const [lineInfo, setLineInfo] = useState<{ lineType: string; label: string; price?: number; x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Listen for tooltip events from buildChart (which can't access setTooltip directly)
@@ -441,6 +443,19 @@ function CandlestickChartInner({
     };
     window.addEventListener('chart-tooltip', handler as EventListener);
     return () => window.removeEventListener('chart-tooltip', handler as EventListener);
+  }, []);
+
+  // Listen for chart-line-click events — when user clicks on a chart line
+  // (POC, VAH, VAL, SMA, EMA, BB, Support, Resistance), show a detailed info popup.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { lineType: string; label: string; price?: number; x: number; y: number };
+      setLineInfo(detail);
+      // Close any open drawing popup
+      setDrawingInfo(null);
+    };
+    window.addEventListener('chart-line-click', handler as EventListener);
+    return () => window.removeEventListener('chart-line-click', handler as EventListener);
   }, []);
 
   // NOTE: Drawings are NOT cleared on timeframe changes.
@@ -490,6 +505,11 @@ function CandlestickChartInner({
     // If a drawing info popup is open, just close it on outside click
     if (drawingInfo) {
       setDrawingInfo(null);
+      return;
+    }
+    // If a chart-line info popup is open, close it on outside click
+    if (lineInfo) {
+      setLineInfo(null);
       return;
     }
     if (activeTool === 'none') {
@@ -934,6 +954,190 @@ function CandlestickChartInner({
             </div>
           );
         })()}
+
+        {/* ═══ Chart-line info popup — shows when clicking on POC, VAH, VAL, SMA, EMA, BB, S/R ═══ */}
+        {lineInfo && (() => {
+          const currentPrice = data && data.length > 0 ? data[data.length - 1].close : 0;
+          const popupW = 340;
+          const popupH = 280;
+          const containerW = 1000;
+          let left = lineInfo.x + 12;
+          if (left + popupW > containerW) left = lineInfo.x - popupW - 12;
+          if (left < 0) left = 8;
+          let top = lineInfo.y + 12;
+          if (top + popupH > 500) top = lineInfo.y - popupH - 12;
+          if (top < 8) top = 8;
+
+          // Build content based on lineType
+          let title = '';
+          let titleColor = '';
+          let titleIcon = '';
+          let details: { label: string; value: string; color?: string }[] = [];
+          let explanation = '';
+          const lt = lineInfo.lineType;
+
+          if (lt === 'poc') {
+            const pocPrice = lineInfo.price || parseFloat(lineInfo.label.replace(/[^0-9.]/g, '')) || 0;
+            title = 'POC — Point of Control';
+            titleColor = '#f0b323';
+            titleIcon = '●';
+            details = [
+              { label: 'Niveli POC', value: `$${fmt(pocPrice, 2)}` },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+              { label: 'Distanca', value: `${currentPrice > pocPrice ? '+' : ''}${fmt(((currentPrice - pocPrice) / pocPrice) * 100, 2)}%`, color: currentPrice >= pocPrice ? '#26a69a' : '#ef5350' },
+            ];
+            explanation = 'POC (Point of Control) është niveli i çmimit ku është traduar volumi më i madh në periudhën e analizuar. Ky është niveli më i rëndësishëm sepse tregon ku ka pasur më shumë aktivitet tregtar. Çmimi ka tendencë të kthehet tek POC sepse aty është "vlera e drejtë" e tregut. Kur çmimi është mbi POC → tregu është bullish. Kur është nën POC → tregu është bearish.';
+          } else if (lt === 'vah') {
+            title = 'VAH — Value Area High';
+            titleColor = '#2962ff';
+            titleIcon = '▲';
+            details = [
+              { label: 'Niveli VAH', value: lineInfo.label.replace(/VAH\s*/, '') },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'VAH (Value Area High) është çmimi më i lartë brenda Value Area — zonës që përmban 70% të volumit total të tregtuar rreth POC. Kur çmimi thyen VAH lart → sinjal bullish, tregu po zgjerohet. Kur çmimi refuzohet tek VAH → sinjal bearish, rezistencë e fortë.';
+          } else if (lt === 'val') {
+            title = 'VAL — Value Area Low';
+            titleColor = '#2962ff';
+            titleIcon = '▼';
+            details = [
+              { label: 'Niveli VAL', value: lineInfo.label.replace(/VAL\s*/, '') },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'VAL (Value Area Low) është çmimi më i ulët brenda Value Area. Kur çmimi thyen VAL poshtë → sinjal bearish, tregu po dobësohet. Kur çmimi refuzohet tek VAL → sinjal bullish, suport i fortë. Zona mes VAH dhe VAL është ku tregu kalon 70% të kohës.';
+          } else if (lt === 'sma20') {
+            title = 'SMA 20 — Mesatare e Thjeshtë 20-periodeshe';
+            titleColor = '#f0b323';
+            titleIcon = '—';
+            details = [
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'SMA 20 llogarit mesataren e çmimeve të 20 periudhave të fundit. Është një indikator trendi afatshkurtër. Kur çmimi është MBAI SMA 20 → trend bullish afatshkurtër. Kur është NËN → trend bearish. Kryqëzimi me SMA 50 (Golden/Death Cross) jep sinjale më të forta.';
+          } else if (lt === 'sma50') {
+            title = 'SMA 50 — Mesatare e Gjatë 50-periodeshe';
+            titleColor = '#2962ff';
+            titleIcon = '—';
+            details = [
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'SMA 50 llogarit mesataren e 50 periudhave. Është indikator trendi afatmesëm. Kur çmimi është mbi SMA 50 → trend pozitiv. Golden Cross (SMA 50 kalon mbi SMA 200) = sinjal blerjeje i fortë. Death Cross (SMA 50 kalon nën SMA 200) = sinjal shitjeje i fortë.';
+          } else if (lt === 'ema12') {
+            title = 'EMA 12 — Mesatare Eksponenciale 12-periodeshe';
+            titleColor = '#ff6d00';
+            titleIcon = '—';
+            details = [
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'EMA 12 i jep më shumë peshë çmimeve të fundit krahasuar me SMA. Reagon më shpejt ndaj ndryshimeve të çmimit. Përdoret në MACD (EMA 12 - EMA 26). Kur EMA 12 kalon mbi EMA 26 → sinjal bullish. Kur kalon nën → sinjal bearish.';
+          } else if (lt === 'bb-upper') {
+            title = 'BB Upper — Bollinger Band Sipërme';
+            titleColor = '#7c4dff';
+            titleIcon = '▲';
+            details = [
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'Bollinger Band Upper = SMA 20 + 2 devijime standarde. Kur çmimi prek BB Upper → tregu është i mbipëshuar (overbought), mund të ketë kthim poshtë. Kur çmimi thyen BB Upper me vëllim → sinjal i fortë bullish, trendi po zgjerohet.';
+          } else if (lt === 'bb-middle') {
+            title = 'BB Mid — Bollinger Band Mes (SMA 20)';
+            titleColor = '#7c4dff';
+            titleIcon = '—';
+            details = [
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'BB Mid është SMA 20 — vija e mesme e Bollinger Bands. Shërben si suport/rezistencë dinamike. Kur çmimi është mbi BB Mid → tregu në uptrend. Nën BB Mid → downtrend. Kthimi nga njëra anë në tjetrën tregon ndryshim trendi.';
+          } else if (lt === 'bb-lower') {
+            title = 'BB Lower — Bollinger Band Poshtëme';
+            titleColor = '#7c4dff';
+            titleIcon = '▼';
+            details = [
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+            ];
+            explanation = 'Bollinger Band Lower = SMA 20 - 2 devijime standarde. Kur çmimi prek BB Lower → tregu është i nënpëshuar (oversold), mund të ketë kthim lart. Kur çmimi thyen BB Lower me vëllim → sinjal bearish i fortë. Ngushtimi i brezave (squeeze) parandalon shpërthim të madh.';
+          } else if (lt === 'rsi') {
+            title = 'RSI — Indeksi i Forcës Relative';
+            titleColor = '#2962ff';
+            titleIcon = '∿';
+            explanation = 'RSI mat shpejtësinë dhe ndryshimin e lëvizjeve të çmimit në shkallë 0-100. Mbi 70 = overbought (mbipëshuar, mund të bjerë). Nën 30 = oversold (nënpëshuar, mund të rritet). 50 = vija neutrale. Divergjenca mes RSI dhe çmimit tregon kthim të mundshëm trendi.';
+          } else if (lt === 'macd') {
+            title = 'MACD — Divergjenca e Mesatareve Lëvizëse';
+            titleColor = '#2962ff';
+            titleIcon = '∿';
+            explanation = 'MACD = EMA 12 - EMA 26. Tregon momentumin e trendit. Kur MACD është pozitiv dhe duke u rritur → trend bullish i fortë. Kur është negativ dhe duke u rritur → trend bearish po dobësohet. Kryqëzimi me vijën e sinjalit jep sinjale blerjeje/shitjeje.';
+          } else if (lt === 'macd-signal') {
+            title = 'Signal Line — Vija e Sinjalit MACD';
+            titleColor = '#ff6d00';
+            titleIcon = '∿';
+            explanation = 'Signal Line = EMA 9 e MACD. Kur MACD kalon mbi Signal → sinjal blerjeje (bullish crossover). Kur MACD kalon nën Signal → sinjal shitjeje (bearish crossover). Histogrami (MACD - Signal) tregon forcën e momentit.';
+          } else if (lt === 'resistance') {
+            const resPrice = lineInfo.price || parseFloat(lineInfo.label.replace(/[^0-9.]/g, '')) || 0;
+            title = 'Rezistencë (Resistance)';
+            titleColor = '#ef5350';
+            titleIcon = '▲';
+            details = [
+              { label: 'Niveli i rezistencës', value: `$${fmt(resPrice, 2)}` },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+              { label: 'Distanca', value: `${fmt(((resPrice - currentPrice) / currentPrice) * 100, 2)}%`, color: '#ef5350' },
+            ];
+            explanation = 'Rezistenca është niveli ku çmimi ka hasur presion shitës dhe ka refuzuar të rritet më tej. Kur çmimi afrohet tek rezistenca → shitësit bëhen aktiv. Nëse çmimi thyen rezistencën me vëllim → kthehet në suport dhe sinjal bullish. Nëse refuzohet → pritet rënie.';
+          } else if (lt === 'support') {
+            const supPrice = lineInfo.price || parseFloat(lineInfo.label.replace(/[^0-9.]/g, '')) || 0;
+            title = 'Suport (Support)';
+            titleColor = '#26a69a';
+            titleIcon = '▼';
+            details = [
+              { label: 'Niveli i suportit', value: `$${fmt(supPrice, 2)}` },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+              { label: 'Distanca', value: `${fmt(((supPrice - currentPrice) / currentPrice) * 100, 2)}%`, color: '#26a69a' },
+            ];
+            explanation = 'Suporti është niveli ku çmimi ka gjetur presion blerës dhe ka refuzuar të bjerë më poshtë. Kur çmimi afrohet tek suporti → blerësit bëhen aktiv. Nëse çmimi thyen suportin me vëllim → kthehet në rezistencë dhe sinjal bearish. Nëse mban → pritet rikthim lart.';
+          } else {
+            title = lineInfo.label;
+            titleColor = '#787b86';
+            titleIcon = '●';
+            explanation = 'Klikuat mbi një element të chart-it.';
+          }
+
+          return (
+            <div
+              className="absolute z-30 rounded-lg shadow-2xl"
+              style={{
+                left, top,
+                width: popupW,
+                background: '#1e222d',
+                border: `1px solid ${titleColor}`,
+                color: '#d1d4dc',
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-3 py-2 rounded-t-lg" style={{ background: titleColor }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold text-[#131722]">{titleIcon}</span>
+                  <span className="text-xs font-bold text-[#131722]">{title}</span>
+                </div>
+                <button onClick={() => setLineInfo(null)} className="text-[#131722] hover:opacity-70 font-bold text-sm">✕</button>
+              </div>
+              {details.length > 0 && (
+                <div className="px-3 py-2 space-y-1.5">
+                  {details.map((det, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-[#787b86]">{det.label}</span>
+                      <span className="font-mono font-semibold" style={{ color: det.color || '#d1d4dc' }}>{det.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {details.length > 0 && <div className="h-px bg-[#2a2e39] mx-3" />}
+              <div className="px-3 py-2.5">
+                <p className="text-[11px] leading-relaxed text-[#d1d4dc]">{explanation}</p>
+              </div>
+              <div className="flex px-3 pb-3">
+                <button onClick={() => setLineInfo(null)} className="flex-1 text-[11px] py-1.5 rounded bg-[#363a45] text-[#d1d4dc] hover:bg-[#434651] font-medium transition-colors">
+                  E kuptova
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -1047,7 +1251,8 @@ function buildChart(
     // ═══ FULL-WIDTH LINE FUNCTION ═══
     // Every line ALWAYS spans from left edge (x=L) to right edge (x=W-R).
     // Horizontal extension uses first/last valid Y value — exactly like TradingView.
-    const fullLine = (vals: (number | null)[], color: string, sw = 1, id?: string, label?: string) => {
+    // lineType is used by CandlestickChartInner to show detailed info popups
+    const fullLine = (vals: (number | null)[], color: string, sw = 1, id?: string, label?: string, lineType?: string) => {
       let firstY: number | null = null;
       let lastY: number | null = null;
       const validPts: string[] = [];
@@ -1059,26 +1264,25 @@ function buildChart(
         }
       }
       if (firstY === null || validPts.length === 0) return null;
-      // Build full-width points: left edge → first valid → ... → last valid → right edge
       const allPts = [`${L},${firstY}`, ...validPts, `${W - R},${lastY}`];
       const ptsStr = allPts.join(' ');
-      // Click handler for tooltip — emit a CustomEvent so the parent CandlestickChart
-      // can pick it up without needing direct access to setTooltip (which lives outside buildChart).
+      // Click handler — emit CustomEvent with lineType so CandlestickChartInner
+      // can show a detailed info popup explaining what this line is.
       const clickHandler = label ? ((e: { stopPropagation: () => void; currentTarget: { closest: (s: string) => SVGSVGElement | null }; clientX: number; clientY: number }) => {
         e.stopPropagation();
         const svgEl = e.currentTarget.closest('svg');
         if (!svgEl) return;
         const rect = svgEl.getBoundingClientRect();
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('chart-tooltip', {
-            detail: { text: label, x: e.clientX - rect.left, y: e.clientY - rect.top }
+          window.dispatchEvent(new CustomEvent('chart-line-click', {
+            detail: { lineType: lineType || 'unknown', label, x: e.clientX - rect.left, y: e.clientY - rect.top }
           }));
         }
       }) : undefined;
       return (
         <g key={id ?? color}>
           {label && <polyline points={ptsStr} fill="none" stroke="transparent" strokeWidth={14} strokeLinecap="round" style={{ cursor: 'pointer' }} onPointerDown={clickHandler} />}
-          <polyline points={ptsStr} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={ptsStr} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" />
         </g>
       );
     };
@@ -1169,14 +1373,14 @@ function buildChart(
         {bbPts.length > 2 && <polygon points={bbPts.join(' ')} fill="rgba(124,77,255,0.08)" stroke="none" />}
 
         {/* Bollinger Band lines */}
-        {fullLine(bb.upper.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-u', `BB Sip\u00ebrme — Bollinger Band Upper`)}
-        {fullLine(bb.middle.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-m', `BB Mesme — Bollinger Band Mid (SMA ${bbP})`)}
-        {fullLine(bb.lower.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-l', `BB Posht\u00ebme — Bollinger Band Lower`)}
+        {fullLine(bb.upper.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-u', `BB Sip\u00ebrme — Bollinger Band Upper`, 'bb-upper')}
+        {fullLine(bb.middle.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-m', `BB Mesme — Bollinger Band Mid (SMA ${bbP})`, 'bb-middle')}
+        {fullLine(bb.lower.map(v => v !== null ? yP(v) : null), BB_CLR, 1, 'bb-l', `BB Posht\u00ebme — Bollinger Band Lower`, 'bb-lower')}
 
         {/* Moving Averages */}
-        {fullLine(sma20.map(v => v !== null ? yP(v) : null), SMA20_CLR, 1.5, 's20', `SMA(${smaP}) — Mesatare e Thjesht\u00eb`)}
-        {fullLine(sma50.map(v => v !== null ? yP(v) : null), SMA50_CLR, 1.5, 's50', `SMA(${smaLongP}) — Mesatare e Gjat\u00eb`)}
-        {fullLine(ema12.map(v => v !== null ? yP(v) : null), EMA12_CLR, 1.2, 'e12', `EMA(${emaP}) — Mesatare Eksponenciale`)}
+        {fullLine(sma20.map(v => v !== null ? yP(v) : null), SMA20_CLR, 1.5, 's20', `SMA(${smaP}) — Mesatare e Thjesht\u00eb`, 'sma20')}
+        {fullLine(sma50.map(v => v !== null ? yP(v) : null), SMA50_CLR, 1.5, 's50', `SMA(${smaLongP}) — Mesatare e Gjat\u00eb`, 'sma50')}
+        {fullLine(ema12.map(v => v !== null ? yP(v) : null), EMA12_CLR, 1.2, 'e12', `EMA(${emaP}) — Mesatare Eksponenciale`, 'ema12')}
 
         {/* Candlesticks */}
         <g clipPath="url(#priceClip)">
@@ -1223,7 +1427,7 @@ function buildChart(
         <text x={W - R + 6} y={yR(30) + 3.5} fill={TXT} fontSize={9.5} fontFamily="Trebuchet MS, sans-serif">30.00</text>
         {/* RSI line */}
         <g clipPath="url(#rsiClip)">
-          {fullLine(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi', `RSI(${rsiP}) — Indeksi i Forc\u00ebs Relative`)}
+          {fullLine(rsi.map(v => v !== null ? yR(v) : null), RSI_CLR, 1.5, 'rsi', `RSI(${rsiP}) — Indeksi i Forc\u00ebs Relative`, 'rsi')}
         </g>
         {/* RSI right-edge label REMOVED — value shown in indicator card below */}
 
@@ -1248,8 +1452,8 @@ function buildChart(
             );
           })}
           {/* MACD & Signal lines */}
-          {fullLine(macdData.macd.map(v => v !== null ? yM(v) : null), MACD_CLR, 1.5, 'macd', `MACD(${macdFast},${macdSlow}) — Divergjenc\u00eb Mesataresh`)}
-          {fullLine(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig', `Signal — Vija e Sinjalit MACD`)}
+          {fullLine(macdData.macd.map(v => v !== null ? yM(v) : null), MACD_CLR, 1.5, 'macd', `MACD(${macdFast},${macdSlow}) — Divergjenc\u00eb Mesataresh`, 'macd')}
+          {fullLine(macdData.signal.map(v => v !== null ? yM(v) : null), SIG_CLR, 1.2, 'sig', `Signal — Vija e Sinjalit MACD`, 'macd-signal')}
         </g>
         {/* MACD right-edge labels REMOVED — values shown in indicator card below */}
 
@@ -1292,7 +1496,7 @@ function buildChart(
               );
             })}
 
-            {/* POC line — extends across entire price panel */}
+            {/* POC line — clickable, shows info popup */}
             <line
               x1={L}
               y1={vpBarY(vp.poc) + vpBarHeight / 2}
@@ -1302,41 +1506,101 @@ function buildChart(
               strokeWidth={1}
               strokeDasharray="5 3"
               opacity={0.9}
+              pointerEvents="none"
             />
-            <g>
+            {/* Invisible wide hit area for POC */}
+            <line
+              x1={L}
+              y1={vpBarY(vp.poc) + vpBarHeight / 2}
+              x2={W - R}
+              y2={vpBarY(vp.poc) + vpBarHeight / 2}
+              stroke="transparent"
+              strokeWidth={14}
+              pointerEvents="stroke"
+              style={{ cursor: 'pointer' }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                const svgEl = (e.currentTarget as unknown as { closest: (s: string) => SVGSVGElement | null }).closest('svg');
+                if (!svgEl) return;
+                const rect = svgEl.getBoundingClientRect();
+                window.dispatchEvent(new CustomEvent('chart-line-click', {
+                  detail: { lineType: 'poc', label: `POC $${fmt(vp.poc, 2)}`, x: e.clientX - rect.left, y: e.clientY - rect.top }
+                }));
+              }}
+            />
+            <g pointerEvents="none">
               <rect x={L + 4} y={vpBarY(vp.poc) - 8} width={70} height={14} rx={2} fill="#f0b323" opacity={0.95} />
               <text x={L + 8} y={vpBarY(vp.poc) + 2} fill="#131722" fontSize={9.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
                 POC {fmt(vp.poc, 2)}
               </text>
             </g>
 
-            {/* VAH line */}
-            <line x1={L} y1={vpBarY(vp.vah) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.vah) + vpBarHeight / 2} stroke="#2962ff" strokeWidth={0.8} strokeDasharray="3 4" opacity={0.6} />
-            <text x={W - R - 4} y={vpBarY(vp.vah) - 2} fill="#2962ff" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" textAnchor="end">
+            {/* VAH line — clickable */}
+            <line x1={L} y1={vpBarY(vp.vah) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.vah) + vpBarHeight / 2} stroke="#2962ff" strokeWidth={0.8} strokeDasharray="3 4" opacity={0.6} pointerEvents="none" />
+            <line
+              x1={L} y1={vpBarY(vp.vah) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.vah) + vpBarHeight / 2}
+              stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'pointer' }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                const svgEl = (e.currentTarget as unknown as { closest: (s: string) => SVGSVGElement | null }).closest('svg');
+                if (!svgEl) return;
+                const rect = svgEl.getBoundingClientRect();
+                window.dispatchEvent(new CustomEvent('chart-line-click', {
+                  detail: { lineType: 'vah', label: `VAH $${fmt(vp.vah, 2)}`, x: e.clientX - rect.left, y: e.clientY - rect.top }
+                }));
+              }}
+            />
+            <text x={W - R - 4} y={vpBarY(vp.vah) - 2} fill="#2962ff" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" textAnchor="end" pointerEvents="none">
               VAH {fmt(vp.vah, 2)}
             </text>
 
-            {/* VAL line */}
-            <line x1={L} y1={vpBarY(vp.val) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.val) + vpBarHeight / 2} stroke="#2962ff" strokeWidth={0.8} strokeDasharray="3 4" opacity={0.6} />
-            <text x={W - R - 4} y={vpBarY(vp.val) + 10} fill="#2962ff" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" textAnchor="end">
+            {/* VAL line — clickable */}
+            <line x1={L} y1={vpBarY(vp.val) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.val) + vpBarHeight / 2} stroke="#2962ff" strokeWidth={0.8} strokeDasharray="3 4" opacity={0.6} pointerEvents="none" />
+            <line
+              x1={L} y1={vpBarY(vp.val) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.val) + vpBarHeight / 2}
+              stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'pointer' }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                const svgEl = (e.currentTarget as unknown as { closest: (s: string) => SVGSVGElement | null }).closest('svg');
+                if (!svgEl) return;
+                const rect = svgEl.getBoundingClientRect();
+                window.dispatchEvent(new CustomEvent('chart-line-click', {
+                  detail: { lineType: 'val', label: `VAL $${fmt(vp.val, 2)}`, x: e.clientX - rect.left, y: e.clientY - rect.top }
+                }));
+              }}
+            />
+            <text x={W - R - 4} y={vpBarY(vp.val) + 10} fill="#2962ff" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" textAnchor="end" pointerEvents="none">
               VAL {fmt(vp.val, 2)}
             </text>
 
-            <text x={L + 4} y={priceTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.7} fontWeight="600">
+            <text x={L + 4} y={priceTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.7} fontWeight="600" pointerEvents="none">
               VOL PROFILE
             </text>
           </g>
         )}
 
-        {/* ═══════ SUPPORT / RESISTANCE LEVELS (horizontal lines across price panel) ═══════ */}
+        {/* ═══════ SUPPORT / RESISTANCE LEVELS — clickable ═══════ */}
         {srResistances.map((r, i) => {
           if (r < pMin || r > pMax) return null;
           const y = yP(r);
           return (
             <g key={"res" + i}>
-              <line x1={L} y1={y} x2={W - R} y2={y} stroke="#ef5350" strokeWidth={0.9} strokeDasharray="6 4" opacity={0.55} />
-              <rect x={L + 4} y={y - 11} width={58} height={12} rx={2} fill="#ef5350" opacity={0.92} />
-              <text x={L + 7} y={y - 2} fill="white" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+              <line x1={L} y1={y} x2={W - R} y2={y} stroke="#ef5350" strokeWidth={0.9} strokeDasharray="6 4" opacity={0.55} pointerEvents="none" />
+              <line
+                x1={L} y1={y} x2={W - R} y2={y}
+                stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'pointer' }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  const svgEl = (e.currentTarget as unknown as { closest: (s: string) => SVGSVGElement | null }).closest('svg');
+                  if (!svgEl) return;
+                  const rect = svgEl.getBoundingClientRect();
+                  window.dispatchEvent(new CustomEvent('chart-line-click', {
+                    detail: { lineType: 'resistance', label: `Rezistenca $${fmt(r, 2)}`, price: r, x: e.clientX - rect.left, y: e.clientY - rect.top }
+                  }));
+                }}
+              />
+              <rect x={L + 4} y={y - 11} width={58} height={12} rx={2} fill="#ef5350" opacity={0.92} pointerEvents="none" />
+              <text x={L + 7} y={y - 2} fill="white" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700" pointerEvents="none">
                 R ${fmt(r, 2)}
               </text>
             </g>
@@ -1347,9 +1611,22 @@ function buildChart(
           const y = yP(s);
           return (
             <g key={"sup" + i}>
-              <line x1={L} y1={y} x2={W - R} y2={y} stroke="#26a69a" strokeWidth={0.9} strokeDasharray="6 4" opacity={0.55} />
-              <rect x={L + 4} y={y - 1} width={58} height={12} rx={2} fill="#26a69a" opacity={0.92} />
-              <text x={L + 7} y={y + 8} fill="white" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+              <line x1={L} y1={y} x2={W - R} y2={y} stroke="#26a69a" strokeWidth={0.9} strokeDasharray="6 4" opacity={0.55} pointerEvents="none" />
+              <line
+                x1={L} y1={y} x2={W - R} y2={y}
+                stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'pointer' }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  const svgEl = (e.currentTarget as unknown as { closest: (s: string) => SVGSVGElement | null }).closest('svg');
+                  if (!svgEl) return;
+                  const rect = svgEl.getBoundingClientRect();
+                  window.dispatchEvent(new CustomEvent('chart-line-click', {
+                    detail: { lineType: 'support', label: `Suporti $${fmt(s, 2)}`, price: s, x: e.clientX - rect.left, y: e.clientY - rect.top }
+                  }));
+                }}
+              />
+              <rect x={L + 4} y={y - 1} width={58} height={12} rx={2} fill="#26a69a" opacity={0.92} pointerEvents="none" />
+              <text x={L + 7} y={y + 8} fill="white" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700" pointerEvents="none">
                 S ${fmt(s, 2)}
               </text>
             </g>
@@ -1368,6 +1645,155 @@ function buildChart(
       </svg>
     );
   // end of buildChart
+}
+
+// ═══ Indicator Explanations — collapsible educational section ═══
+function IndicatorExplanations() {
+  const [expanded, setExpanded] = useState(false);
+  const [activeIndicator, setActiveIndicator] = useState<string | null>(null);
+
+  const indicators = [
+    {
+      id: 'rsi',
+      name: 'RSI (Relative Strength Index)',
+      icon: '∿',
+      color: '#2962ff',
+      what: 'Mat shpejtësinë dhe madhësinë e lëvizjeve të çmimit në shkallë 0-100.',
+      how: 'Mbi 70 = overbought (mbipëshuar, çmimi mund të bjerë). Nën 30 = oversold (nënpëshuar, çmimi mund të rritet). 50 = neutrale. Divergjenca mes RSI dhe çmimit tregon kthim të mundshëm trendi.',
+      signals: 'Blerje: RSI < 30 ose kryqëzim mbi 50. Shitje: RSI > 70 ose kryqëzim nën 50.',
+    },
+    {
+      id: 'macd',
+      name: 'MACD (Moving Average Convergence Divergence)',
+      icon: '∿',
+      color: '#2962ff',
+      what: 'Tregon divergjencën mes dy mesatareve lëvizëse eksponenciale (EMA 12 dhe EMA 26).',
+      how: 'MACD pozitiv = trend bullish. MACD negativ = trend bearish. Histogrami tregon forcën e momentit. Kur histogrami rritet → momenti po forcohet.',
+      signals: 'Blerje: MACD kalon mbi Signal line. Shitje: MACD kalon nën Signal line.',
+    },
+    {
+      id: 'sma',
+      name: 'SMA / EMA (Mesataret Lëvizëse)',
+      icon: '—',
+      color: '#f0b323',
+      what: 'SMA llogarit mesataren e çmimeve të N periudhave. EMA i jep më shumë peshë çmimeve të fundit.',
+      how: 'Çmimi mbi SMA = trend bullish. Nën SMA = bearish. Golden Cross (SMA 50 mbi SMA 200) = sinjal i fortë blerjeje. Death Cross = sinjal shitjeje.',
+      signals: 'Blerje: Çmimi mbi SMA 50 + Golden Cross. Shitje: Çmimi nën SMA 50 + Death Cross.',
+    },
+    {
+      id: 'bb',
+      name: 'Bollinger Bands',
+      icon: '☰',
+      color: '#7c4dff',
+      what: 'Tre vija: BB Upper (SMA 20 + 2σ), BB Mid (SMA 20), BB Lower (SMA 20 - 2σ). Mat volatilitetin.',
+      how: 'Çmimi tek BB Upper = overbought. Tek BB Lower = oversold. Ngushtimi i brezave (squeeze) parandalon shpërthim të madh. Zgjerimi = volatilitet i lartë.',
+      signals: 'Blerje: Çmimi prek BB Lower + kthim. Shitje: Çmimi prek BB Upper + kthim. Breakout: Çmimi thyen BB me vëllim.',
+    },
+    {
+      id: 'stochastic',
+      name: 'Stochastic Oscillator',
+      icon: '∿',
+      color: '#787b86',
+      what: 'Krahason çmimin aktual me rangun e çmimeve të N periudhave (0-100).',
+      how: '%K mbi 80 = overbought. %K nën 20 = oversold. Kryqëzimi %K/%D jep sinjale. Kur %K kalon mbi %D në zonën oversold = sinjal blerjeje.',
+      signals: 'Blerje: %K < 20 + kryqëzim mbi %D. Shitje: %K > 80 + kryqëzim nën %D.',
+    },
+    {
+      id: 'volume',
+      name: 'Volumi',
+      icon: '▊',
+      color: '#26a69a',
+      what: 'Numri i aksioneve të tregtuara në një periudhë. Tregon forcën e lëvizjeve.',
+      how: 'Volumi i lartë me rritje = trend i fortë. Volumi i ulët me rritje = trend i dobët. Volumi që rritet në rënie = presion shitës i fortë.',
+      signals: 'Konfirmim: Volumi duhet të rritet në drejtimin e trendit. Divergjenca = kujdes.',
+    },
+    {
+      id: 'poc',
+      name: 'POC / VAH / VAL (Volume Profile)',
+      icon: '●',
+      color: '#f0b323',
+      what: 'POC = niveli me volumin më të madh. VAH/VAL = kufijtë e Value Area (70% e volumit).',
+      how: 'Çmimi ka tendencë të kthehet tek POC. Kur çmimi është mbi POC = bullish. Nën POC = bearish. Value Area = zona ku tregu kalon 70% të kohës.',
+      signals: 'Blerje: Çmimi mban mbi VAL ose POC. Shitje: Çmimi refuzohet tek VAH.',
+    },
+    {
+      id: 'sr',
+      name: 'Suporti & Rezistenca',
+      icon: '☰',
+      color: '#26a69a',
+      what: 'Suporti = niveli ku çmimi gjen presion blerës. Rezistenca = niveli ku gjen presion shitës.',
+      how: 'Sa më shumë herë çmimi ka prekur një nivel pa e thyer, aq më i fortë është. Kur thyhet rezistenca → kthehet në suport. Kur thyhet suporti → kthehet në rezistencë.',
+      signals: 'Blerje: Çmimi mban tek suporti + konfirmim. Shitje: Çmimi refuzohet tek rezistenca.',
+    },
+  ];
+
+  return (
+    <Card className="border-blue-500/20 bg-blue-500/5">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <BrainCircuit className="w-4 h-4 text-blue-500" />
+            Çfarë janë indikatorët?
+          </span>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs text-blue-500 hover:text-blue-400 font-medium transition-colors"
+          >
+            {expanded ? '▲ Mbyll' : '▼ Shpjego'}
+          </button>
+        </CardTitle>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="space-y-2">
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Kliko mbi një indikator për të parë shpjegimin e detajuar. Gjithashtu, mund të klikosh direkt mbi linjat në chart (POC, VAH, VAL, SMA, BB, suport/rezistencë) për shpjegim.
+          </p>
+          {/* Indicator chips */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {indicators.map(ind => (
+              <button
+                key={ind.id}
+                onClick={() => setActiveIndicator(activeIndicator === ind.id ? null : ind.id)}
+                className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all ${
+                  activeIndicator === ind.id
+                    ? 'text-white shadow-md'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                }`}
+                style={activeIndicator === ind.id ? { background: ind.color } : {}}
+              >
+                {ind.icon} {ind.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+          {/* Active indicator explanation */}
+          {activeIndicator && (() => {
+            const ind = indicators.find(i => i.id === activeIndicator);
+            if (!ind) return null;
+            return (
+              <div className="bg-card/50 rounded-lg p-3 border border-border/30 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold" style={{ color: ind.color }}>{ind.icon}</span>
+                  <span className="text-sm font-bold">{ind.name}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Çfarë është</span>
+                  <p className="text-[11px] leading-relaxed mt-0.5">{ind.what}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Si të lexohet</span>
+                  <p className="text-[11px] leading-relaxed mt-0.5">{ind.how}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Sinjale tregtare</span>
+                  <p className="text-[11px] leading-relaxed mt-0.5">{ind.signals}</p>
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      )}
+    </Card>
+  );
 }
 
 export function TechnicalAnalysis() {
@@ -1642,6 +2068,9 @@ export function TechnicalAnalysis() {
                 </span>
               </div>
             </div>
+
+          {/* ═══ INDICATOR EXPLANATIONS — collapsible educational section ═══ */}
+          <IndicatorExplanations />
 
           {/* ═══ INDICATORS — Detailed Cards ═══ */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
