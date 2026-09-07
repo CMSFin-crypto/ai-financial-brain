@@ -21,7 +21,6 @@ import { EarningsCalendar } from '@/components/financial-brain/earnings-calendar
 import { EconomicCalendar } from '@/components/financial-brain/economic-calendar';
 import { StockScreener } from '@/components/financial-brain/stock-screener';
 import { SecFilings } from '@/components/financial-brain/sec-filings';
-import { FivePillars } from '@/components/financial-brain/five-pillars';
 
 import {
   Brain,
@@ -49,7 +48,6 @@ import {
   ExternalLink,
   FileText,
   ArrowRight,
-  Zap,
   TrendingUp,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
@@ -126,9 +124,6 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="top-movers" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Flame className="w-3.5 h-3.5 mr-1.5" />Swing Predictions
-                  </TabsTrigger>
-                  <TabsTrigger value="5-pillars" className="text-xs py-2 px-3 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <Zap className="w-3.5 h-3.5 mr-1.5" />5 Pillars Momentum
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
@@ -219,9 +214,6 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="top-movers" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Flame className="w-3 h-3 mr-1" />Swing Predictions
-                  </TabsTrigger>
-                  <TabsTrigger value="5-pillars" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <Zap className="w-3 h-3 mr-1" />5 Pillars Momentum
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3 h-3 mr-1" />Sektoret
@@ -354,29 +346,6 @@ export default function Home() {
                 </CardContent>
               </Card>
               <TopSwingPredictions />
-            </motion.div>
-          </TabsContent>
-
-          {/* Tab: 5 Pillars Momentum (Ross Cameron) */}
-          <TabsContent value="5-pillars" className="mt-4">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-4"
-            >
-              <Card className="border-amber-500/20 bg-amber-500/5">
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Zap className="w-4 h-4 text-amber-500" />
-                    <h3 className="text-sm font-semibold">5 Pillars Momentum — Ross Cameron Scanner</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Skanon 500+ aksione small-cap me kriteret e Warrior Trading: RelVol ≥5x, Change ≥10%, News Catalyst, Price $2-$20, Float &lt;20M. ELIGIBLE / WATCH / REJECTED status + buy/sell indikatorë + notifikime.
-                  </p>
-                </CardContent>
-              </Card>
-              <FivePillars />
             </motion.div>
           </TabsContent>
 
