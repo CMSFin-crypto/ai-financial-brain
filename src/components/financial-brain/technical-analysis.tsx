@@ -403,6 +403,7 @@ function CandlestickChart({
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [activeTool, setActiveTool] = useState<DrawingTool>('none');
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number; price: number } | null>(null);
+  const [drawingInfo, setDrawingInfo] = useState<{ drawing: Drawing; x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Listen for tooltip events from buildChart (which can't access setTooltip directly)
@@ -459,6 +460,11 @@ function CandlestickChart({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // If a drawing info popup is open, just close it on outside click
+    if (drawingInfo) {
+      setDrawingInfo(null);
+      return;
+    }
     if (activeTool === 'none') {
       setTooltip(null);
       return;
@@ -502,27 +508,99 @@ function CandlestickChart({
   const VB_W = 880;
   const VB_H = 540;
 
-  // Render drawings as overlay
+  // Helper: compute prices at trend line endpoints for display
+  const priceAtNormY = (ny: number): number => {
+    if (!data || data.length === 0) return 0;
+    const candleH = 280 * 0.82;
+    const hiVals = data.map(d => d.high);
+    const loVals = data.map(d => d.low);
+    const allH = Math.max(...hiVals);
+    const allL = Math.min(...loVals);
+    const pad = (allH - allL) * 0.06 || 1;
+    const pMin = allL - pad;
+    const pMax = allH + pad;
+    const y = ny * VB_H;
+    return pMin + (pMax - pMin) * (1 - y / candleH);
+  };
+
+  // Helper: show info popup for a drawing
+  const showDrawingInfo = (drawing: Drawing, e: React.PointerEvent<SVGElement>) => {
+    e.stopPropagation();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    setDrawingInfo({
+      drawing,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+    setActiveTool('none');
+    setPendingPoint(null);
+  };
+
+  // Render drawings as overlay — clickable lines
   const drawingsSvg = drawings.map(d => {
     if (d.type === 'trendline' && d.x1 !== undefined && d.y1 !== undefined && d.x2 !== undefined && d.y2 !== undefined) {
+      const x1 = d.x1 * VB_W, y1 = d.y1 * VB_H;
+      const x2 = d.x2 * VB_W, y2 = d.y2 * VB_H;
+      const price1 = priceAtNormY(d.y1);
+      const price2 = priceAtNormY(d.y2);
+      const slope = price2 - price1;
+      const isRising = slope > 0;
+      const slopePct = price1 !== 0 ? (slope / price1) * 100 : 0;
+      // Angle in degrees for display
+      const dx = x2 - x1, dy = y2 - y1;
+      const angleDeg = Math.atan2(-dy, dx) * 180 / Math.PI; // negate dy because SVG Y is inverted
       return (
-        <g key={d.id}>
+        <g key={d.id} className="cursor-pointer">
+          {/* Wide invisible hit area — uses pointerEvents=stroke to ensure clicks register */}
           <line
-            x1={d.x1 * VB_W} y1={d.y1 * VB_H}
-            x2={d.x2 * VB_W} y2={d.y2 * VB_H}
+            x1={x1} y1={y1} x2={x2} y2={y2}
+            stroke="transparent"
+            strokeWidth={14}
+            pointerEvents="stroke"
+            onPointerDown={(e) => showDrawingInfo(d, e as unknown as React.PointerEvent<SVGElement>)}
+            style={{ cursor: 'pointer' }}
+          />
+          {/* Visible line */}
+          <line
+            x1={x1} y1={y1} x2={x2} y2={y2}
             stroke={d.color}
-            strokeWidth={2}
+            strokeWidth={2.5}
             strokeLinecap="round"
             opacity={0.95}
+            pointerEvents="none"
           />
           {/* Endpoints */}
-          <circle cx={d.x1 * VB_W} cy={d.y1 * VB_H} r={3} fill={d.color} />
-          <circle cx={d.x2 * VB_W} cy={d.y2 * VB_H} r={3} fill={d.color} />
+          <circle cx={x1} cy={y1} r={4} fill={d.color} pointerEvents="none" />
+          <circle cx={x2} cy={y2} r={4} fill={d.color} pointerEvents="none" />
+          {/* Inline label at midpoint */}
+          <g pointerEvents="none">
+            <rect
+              x={(x1 + x2) / 2 - 35}
+              y={(y1 + y2) / 2 - 8}
+              width={70}
+              height={14}
+              rx={2}
+              fill={d.color}
+              opacity={0.92}
+            />
+            <text
+              x={(x1 + x2) / 2}
+              y={(y1 + y2) / 2 + 2}
+              fill="#131722"
+              fontSize={9}
+              fontFamily="Trebuchet MS, sans-serif"
+              fontWeight="700"
+              textAnchor="middle"
+            >
+              {isRising ? '↗' : '↘'} {isRising ? '+' : ''}{fmt(slopePct, 1)}%
+            </text>
+          </g>
         </g>
       );
     }
     if ((d.type === 'long' || d.type === 'short') && d.price !== undefined) {
-      // Convert price to Y using same scale as buildChart
       const candleH = 280 * 0.82;
       const hiVals = data.map(d => d.high);
       const loVals = data.map(d => d.low);
@@ -532,20 +610,60 @@ function CandlestickChart({
       const pMin = allL - pad;
       const pMax = allH + pad;
       const y = candleH * (1 - (d.price - pMin) / (pMax - pMin));
+      const currentPrice = data[data.length - 1]?.close ?? 0;
+      const distance = d.price - currentPrice;
+      const distancePct = currentPrice !== 0 ? (distance / currentPrice) * 100 : 0;
       return (
-        <g key={d.id}>
+        <g key={d.id} className="cursor-pointer">
+          {/* Wide invisible hit area */}
+          <line
+            x1={2} y1={y} x2={VB_W - 60} y2={y}
+            stroke="transparent"
+            strokeWidth={14}
+            pointerEvents="stroke"
+            onPointerDown={(e) => showDrawingInfo(d, e as unknown as React.PointerEvent<SVGElement>)}
+            style={{ cursor: 'pointer' }}
+          />
+          {/* Visible dashed line */}
           <line
             x1={2} y1={y}
             x2={VB_W - 60} y2={y}
             stroke={d.color}
-            strokeWidth={1.5}
-            strokeDasharray={d.type === 'long' ? '10 3' : '10 3'}
+            strokeWidth={1.8}
+            strokeDasharray="10 3"
             opacity={0.9}
+            pointerEvents="none"
           />
-          <rect x={VB_W - 60} y={y - 9} width={60} height={16} rx={2} fill={d.color} opacity={0.95} />
-          <text x={VB_W - 56} y={y + 2} fill="white" fontSize={9} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+          {/* Price tag */}
+          <rect x={VB_W - 60} y={y - 9} width={60} height={16} rx={2} fill={d.color} opacity={0.95} pointerEvents="none" />
+          <text x={VB_W - 56} y={y + 2} fill="white" fontSize={9} fontFamily="Trebuchet MS, sans-serif" fontWeight="700" pointerEvents="none">
             {d.type === 'long' ? '▲' : '▼'} ${fmt(d.price, 2)}
           </text>
+          {/* Distance badge at midpoint */}
+          <g pointerEvents="none">
+            <rect
+              x={VB_W / 2 - 40}
+              y={y - 8}
+              width={80}
+              height={14}
+              rx={2}
+              fill="#1e222d"
+              opacity={0.85}
+              stroke={d.color}
+              strokeWidth={0.5}
+            />
+            <text
+              x={VB_W / 2}
+              y={y + 2}
+              fill={d.color}
+              fontSize={8.5}
+              fontFamily="Trebuchet MS, sans-serif"
+              fontWeight="600"
+              textAnchor="middle"
+            >
+              {distance >= 0 ? '+' : ''}{fmt(distancePct, 2)}% nga çmimi
+            </text>
+          </g>
         </g>
       );
     }
@@ -645,6 +763,150 @@ function CandlestickChart({
             {tooltip.text}
           </div>
         )}
+
+        {/* ═══ Drawing info popup — shows when clicking on a drawn line ═══ */}
+        {drawingInfo && (() => {
+          const d = drawingInfo.drawing;
+          const currentPrice = data[data.length - 1]?.close ?? 0;
+          // Position popup near the click, but keep within bounds
+          const popupW = 320;
+          const popupH = 240;
+          const containerW = 1000; // approx container width
+          let left = drawingInfo.x + 12;
+          if (left + popupW > containerW) left = drawingInfo.x - popupW - 12;
+          if (left < 0) left = 8;
+          let top = drawingInfo.y + 12;
+          if (top + popupH > 500) top = drawingInfo.y - popupH - 12;
+          if (top < 8) top = 8;
+
+          // Build explanation based on line type
+          let title = '';
+          let titleColor = '';
+          let titleIcon = '';
+          let details: { label: string; value: string; color?: string }[] = [];
+          let explanation = '';
+
+          if (d.type === 'trendline' && d.x1 !== undefined && d.y1 !== undefined && d.x2 !== undefined && d.y2 !== undefined) {
+            const price1 = priceAtNormY(d.y1);
+            const price2 = priceAtNormY(d.y2);
+            const slope = price2 - price1;
+            const slopePct = price1 !== 0 ? (slope / price1) * 100 : 0;
+            const isRising = slope > 0;
+            const dx = (d.x2 - d.x1) * VB_W, dy = (d.y2 - d.y1) * VB_H;
+            const angleDeg = Math.atan2(-dy, dx) * 180 / Math.PI;
+
+            title = 'Vijë Trendi';
+            titleColor = '#f0b323';
+            titleIcon = isRising ? '↗' : '↘';
+            details = [
+              { label: 'Pika 1 (çmim)', value: `$${fmt(price1, 2)}` },
+              { label: 'Pika 2 (çmim)', value: `$${fmt(price2, 2)}` },
+              { label: 'Përqindja e ndryshimit', value: `${isRising ? '+' : ''}${fmt(slopePct, 2)}%`, color: isRising ? '#26a69a' : '#ef5350' },
+              { label: 'Këndi', value: `${fmt(angleDeg, 1)}°` },
+            ];
+            explanation = isRising
+              ? 'Vijë trendi ngjitëse (bullish). Çmimi po rritet nga pika 1 te pika 2. Kjo vijë vepron si suport dinamik — kur çmimi prek vijën nga lart-poshtë, kërko sinjal blerjeje. Nëse çmimi thyen vijën poshtë, trendi mund të kthehet.'
+              : 'Vijë trendi zbritëse (bearish). Çmimi po bie nga pika 1 te pika 2. Kjo vijë vepron si rezistencë dinamike — kur çmimi prek vijën nga poshtë-lart, kërko sinjal shitjeje. Nëse çmimi thyen vijën lart, trendi mund të kthehet.';
+          } else if (d.type === 'long' && d.price !== undefined) {
+            const distance = d.price - currentPrice;
+            const distancePct = currentPrice !== 0 ? (distance / currentPrice) * 100 : 0;
+            const isAbove = distance > 0;
+            title = 'Linjë Long (Blerje)';
+            titleColor = '#26a69a';
+            titleIcon = '▲';
+            details = [
+              { label: 'Niveli i hyrjes', value: `$${fmt(d.price, 2)}` },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+              { label: 'Distanca nga çmimi', value: `${isAbove ? '+' : ''}${fmt(distancePct, 2)}%`, color: isAbove ? '#ef5350' : '#26a69a' },
+            ];
+            explanation = isAbove
+              ? 'Nivel Long mbi çmimin aktual → Target (marrje fitimi). Kur çmimi arrin këtë nivel, mbyll pozicionin Long. Vendose këtë si target për një tregti Long ekzistuese.'
+              : 'Nivel Long nën çmimin aktual → Hyrje blerje. Kur çmimi bie dhe teston këtë nivel, kërko konfirmim (hammer, vëllim rritje, RSI oversold) dhe hyr Long. Vendos Stop Loss 2-3% nën këtë nivel.';
+          } else if (d.type === 'short' && d.price !== undefined) {
+            const distance = d.price - currentPrice;
+            const distancePct = currentPrice !== 0 ? (distance / currentPrice) * 100 : 0;
+            const isAbove = distance > 0;
+            title = 'Linjë Short (Shitje)';
+            titleColor = '#ef5350';
+            titleIcon = '▼';
+            details = [
+              { label: 'Niveli i hyrjes', value: `$${fmt(d.price, 2)}` },
+              { label: 'Çmimi aktual', value: `$${fmt(currentPrice, 2)}` },
+              { label: 'Distanca nga çmimi', value: `${isAbove ? '+' : ''}${fmt(distancePct, 2)}%`, color: isAbove ? '#ef5350' : '#26a69a' },
+            ];
+            explanation = isAbove
+              ? 'Nivel Short mbi çmimin aktual → Hyrje shitje. Kur çmimi rritet dhe teston këtë nivel, kërko konfirmim (shooting star, vëllim rritje, RSI overbought) dhe hyr Short. Vendos Stop Loss 2-3% mbi këtë nivel.'
+              : 'Nivel Short nën çmimin aktual → Target (mbyllje Short). Kur çmimi arrin këtë nivel, mbyll pozicionin Short ekzistues dhe merr fitimin.';
+          }
+
+          return (
+            <div
+              className="absolute z-30 rounded-lg shadow-2xl"
+              style={{
+                left, top,
+                width: popupW,
+                background: '#1e222d',
+                border: `1px solid ${titleColor}`,
+                color: '#d1d4dc',
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div
+                className="flex items-center justify-between px-3 py-2 rounded-t-lg"
+                style={{ background: titleColor }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold text-[#131722]">{titleIcon}</span>
+                  <span className="text-sm font-bold text-[#131722]">{title}</span>
+                </div>
+                <button
+                  onClick={() => setDrawingInfo(null)}
+                  className="text-[#131722] hover:opacity-70 font-bold text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+              {/* Details */}
+              <div className="px-3 py-2 space-y-1.5">
+                {details.map((det, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-[#787b86]">{det.label}</span>
+                    <span className="font-mono font-semibold" style={{ color: det.color || '#d1d4dc' }}>
+                      {det.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {/* Divider */}
+              <div className="h-px bg-[#2a2e39] mx-3" />
+              {/* Explanation */}
+              <div className="px-3 py-2.5">
+                <p className="text-[11px] leading-relaxed text-[#d1d4dc]">
+                  {explanation}
+                </p>
+              </div>
+              {/* Actions */}
+              <div className="flex gap-2 px-3 pb-3">
+                <button
+                  onClick={() => {
+                    setDrawings(prev => prev.filter(x => x.id !== d.id));
+                    setDrawingInfo(null);
+                  }}
+                  className="flex-1 text-[11px] py-1.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 font-medium transition-colors border border-red-500/30"
+                >
+                  ✕ Fshi këtë linjë
+                </button>
+                <button
+                  onClick={() => setDrawingInfo(null)}
+                  className="flex-1 text-[11px] py-1.5 rounded bg-[#363a45] text-[#d1d4dc] hover:bg-[#434651] font-medium transition-colors"
+                >
+                  Mbyll
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
