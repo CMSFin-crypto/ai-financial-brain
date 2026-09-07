@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +30,31 @@ interface CandleData {
   volume: number;
 }
 
+// ═══ Safety helper for numeric formatting ═══
+// Prevents "Cannot read properties of undefined (reading 'toFixed')" crashes
+// when the AI returns malformed numeric fields.
+function fmt(v: unknown, digits = 2): string {
+  if (v === null || v === undefined) return '—';
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(digits);
+}
+
+// ═══ Normalize actionPlan: AI sometimes returns an object {entryZone, stopLoss, ...}
+// instead of a string. Convert it to a readable Albanian string.
+function formatActionPlan(plan: string | ActionPlan | undefined | null): string {
+  if (!plan) return 'Monitoroni indikatorët dhe prisni sinjal të qartë.';
+  if (typeof plan === 'string') return plan;
+  const parts: string[] = [];
+  if (plan.entryZone) parts.push(`Hyrje: ${plan.entryZone}`);
+  if (plan.stopLoss) parts.push(`Stop Loss: ${plan.stopLoss}`);
+  if (plan.target1) parts.push(`Target 1: ${plan.target1}`);
+  if (plan.target2) parts.push(`Target 2: ${plan.target2}`);
+  if (plan.riskRewardRatio) parts.push(`Risk:Reward: ${plan.riskRewardRatio}`);
+  if (plan.positionSizing) parts.push(`Madhësia e pozicionit: ${plan.positionSizing}`);
+  return parts.length > 0 ? parts.join(' | ') : 'Monitoroni indikatorët dhe prisni sinjal të qartë.';
+}
+
 interface Indicator {
   value: number;
   signal: string;
@@ -42,6 +67,15 @@ interface PriceAnalysis {
   priceChange: number;
   trend: string;
   trendStrength: string;
+}
+
+interface ActionPlan {
+  entryZone?: string;
+  stopLoss?: string;
+  target1?: string;
+  target2?: string;
+  riskRewardRatio?: string;
+  positionSizing?: string;
 }
 
 interface TechnicalAnalysisResult {
@@ -81,7 +115,9 @@ interface TechnicalAnalysisResult {
   patterns: Array<{ name: string; type: string; reliability: string; description: string }>;
   candlestickData: CandleData[];
   summary: string;
-  actionPlan: string;
+  // AI sometimes returns actionPlan as an object (entryZone, stopLoss, etc.) instead of a string.
+  // Support both shapes — the renderer normalizes via formatActionPlan().
+  actionPlan: string | ActionPlan;
 }
 
 // ═══ Technical indicator computations ═══
@@ -230,26 +266,72 @@ function EdgeLabels({ items, rightEdge, fontSize = 9.5 }: {
 function CandlestickChart({ data }: { data: CandleData[] }) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
+  // Listen for tooltip events from buildChart (which can't access setTooltip directly)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { text: string; x: number; y: number };
+      setTooltip(detail);
+    };
+    window.addEventListener('chart-tooltip', handler as EventListener);
+    return () => window.removeEventListener('chart-tooltip', handler as EventListener);
+  }, []);
+
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
+    try {
+      return buildChart(data);
+    } catch (err) {
+      console.error('[CHART] buildChart failed:', err);
+      return null;
+    }
+  }, [data]);
 
-    // TradingView dark palette (matching reference)
-    const BG = '#131722';
-    const GRID = '#2a2e39';
-    const GRID_OP = 0.3;
-    const TXT = '#787b86';
-    const TXT_BRIGHT = '#d1d4dc';
-    const BULL = '#26a69a';
-    const BEAR = '#ef5350';
-    const SMA20_CLR = '#f0b323'; // Gold/Yellow — fast MA
-    const SMA50_CLR = '#2962ff'; // Blue — slow MA
-    const EMA12_CLR = '#ff6d00'; // Orange — EMA
-    const BB_CLR = '#7c4dff';   // Purple — Bollinger Bands
-    const RSI_CLR = '#2962ff';  // Blue
-    const MACD_CLR = '#2962ff'; // Blue
-    const SIG_CLR = '#ff6d00';  // Orange
+  if (!chart) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
 
-    const W = 880;
+  return (
+    <div className="relative w-full h-full" onPointerDown={() => setTooltip(null)}>
+      {chart}
+      {tooltip && (
+        <div
+          className="absolute pointer-events-none z-10 px-2.5 py-1.5 rounded text-xs font-semibold"
+          style={{
+            left: tooltip.x,
+            top: tooltip.y,
+            transform: 'translate(-50%, -140%)',
+            background: '#2a2e39',
+            color: '#d1d4dc',
+            border: '1px solid #434651',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══ Chart builder — pure function, throws on error ═══
+function buildChart(data: CandleData[]) {
+  if (!data || data.length < 3) return null;
+
+  // TradingView dark palette (matching reference)
+  const BG = '#131722';
+  const GRID = '#2a2e39';
+  const GRID_OP = 0.3;
+  const TXT = '#787b86';
+  const TXT_BRIGHT = '#d1d4dc';
+  const BULL = '#26a69a';
+  const BEAR = '#ef5350';
+  const SMA20_CLR = '#f0b323'; // Gold/Yellow — fast MA
+  const SMA50_CLR = '#2962ff'; // Blue — slow MA
+  const EMA12_CLR = '#ff6d00'; // Orange — EMA
+  const BB_CLR = '#7c4dff';   // Purple — Bollinger Bands
+  const RSI_CLR = '#2962ff';  // Blue
+  const MACD_CLR = '#2962ff'; // Blue
+  const SIG_CLR = '#ff6d00';  // Orange
+
+  const W = 880;
     const H = 540;
     const R = 60; // right axis width
     const L = 2;  // left margin
@@ -348,13 +430,18 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
       // Build full-width points: left edge → first valid → ... → last valid → right edge
       const allPts = [`${L},${firstY}`, ...validPts, `${W - R},${lastY}`];
       const ptsStr = allPts.join(' ');
-      // Click handler for tooltip
+      // Click handler for tooltip — emit a CustomEvent so the parent CandlestickChart
+      // can pick it up without needing direct access to setTooltip (which lives outside buildChart).
       const clickHandler = label ? ((e: { stopPropagation: () => void; currentTarget: { closest: (s: string) => SVGSVGElement | null }; clientX: number; clientY: number }) => {
         e.stopPropagation();
         const svgEl = e.currentTarget.closest('svg');
         if (!svgEl) return;
         const rect = svgEl.getBoundingClientRect();
-        setTooltip({ text: label, x: e.clientX - rect.left, y: e.clientY - rect.top });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('chart-tooltip', {
+            detail: { text: label, x: e.clientX - rect.left, y: e.clientY - rect.top }
+          }));
+        }
       }) : undefined;
       return (
         <g key={id ?? color}>
@@ -366,9 +453,11 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
 
     // Price grid
     const pGrid: { y: number; lbl: string }[] = [];
+    const safePMin = Number.isFinite(pMin) ? pMin : 0;
+    const safePMax = Number.isFinite(pMax) ? pMax : 1;
     for (let i = 0; i <= 5; i++) {
-      const v = pMin + (pMax - pMin) * (i / 5);
-      pGrid.push({ y: yP(v), lbl: '$' + v.toFixed(1) });
+      const v = safePMin + (safePMax - safePMin) * (i / 5);
+      pGrid.push({ y: yP(v), lbl: '$' + fmt(v, 1) });
     }
 
     // BB fill
@@ -383,7 +472,8 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
     const lastRsi = rsi[n - 1];
     const lastMacd = macdData.macd[n - 1];
     const lastSig = macdData.signal[n - 1];
-    const lastClose = data[n - 1].close;
+    const lastBar = data[n - 1];
+    const lastClose = (lastBar && typeof lastBar.close === 'number') ? lastBar.close : 0;
     const lastY = yP(lastClose);
 
     return (
@@ -459,19 +549,19 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         </g>
 
         {/* Current price line + tag */}
-        <line x1={L} y1={lastY} x2={W - R} y2={lastY} stroke={data[n-1].close >= data[n-1].open ? BULL : BEAR} strokeDasharray="4 2" strokeOpacity={0.7} strokeWidth={1} />
-        <rect x={W - R + 1} y={lastY - 10} width={R - 2} height={20} rx={2} fill={data[n-1].close >= data[n-1].open ? BULL : BEAR} />
-        <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{lastClose.toFixed(2)}</text>
+        <line x1={L} y1={lastY} x2={W - R} y2={lastY} stroke={(lastBar?.close ?? 0) >= (lastBar?.open ?? 0) ? BULL : BEAR} strokeDasharray="4 2" strokeOpacity={0.7} strokeWidth={1} />
+        <rect x={W - R + 1} y={lastY - 10} width={R - 2} height={20} rx={2} fill={(lastBar?.close ?? 0) >= (lastBar?.open ?? 0) ? BULL : BEAR} />
+        <text x={W - R + 8} y={lastY + 4} fill="white" fontSize={10.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600">{fmt(lastClose, 2)}</text>
 
         {/* ═══ TradingView-style RIGHT-EDGE line labels ═══ */}
         {/* Each label sits at the Y-position where its line ends, left of the Y-axis */}
         <EdgeLabels items={[
-          ...(lastSma20 !== null ? [{ label: `SMA(${smaP}) ${lastSma20.toFixed(2)}`, y: yP(lastSma20), color: SMA20_CLR }] : []),
-          ...(lastSma50 !== null ? [{ label: `SMA(${smaLongP}) ${lastSma50.toFixed(2)}`, y: yP(lastSma50), color: SMA50_CLR }] : []),
-          ...(lastEma12 !== null ? [{ label: `EMA(${emaP}) ${lastEma12.toFixed(2)}`, y: yP(lastEma12), color: EMA12_CLR }] : []),
-          ...(bb.upper[n-1] !== null ? [{ label: `BB Upper ${bb.upper[n-1]!.toFixed(2)}`, y: yP(bb.upper[n-1]!), color: BB_CLR }] : []),
-          ...(bb.middle[n-1] !== null ? [{ label: `BB Mid ${bb.middle[n-1]!.toFixed(2)}`, y: yP(bb.middle[n-1]!), color: BB_CLR }] : []),
-          ...(bb.lower[n-1] !== null ? [{ label: `BB Lower ${bb.lower[n-1]!.toFixed(2)}`, y: yP(bb.lower[n-1]!), color: BB_CLR }] : []),
+          ...(lastSma20 !== null ? [{ label: `SMA(${smaP}) ${fmt(lastSma20, 2)}`, y: yP(lastSma20), color: SMA20_CLR }] : []),
+          ...(lastSma50 !== null ? [{ label: `SMA(${smaLongP}) ${fmt(lastSma50, 2)}`, y: yP(lastSma50), color: SMA50_CLR }] : []),
+          ...(lastEma12 !== null ? [{ label: `EMA(${emaP}) ${fmt(lastEma12, 2)}`, y: yP(lastEma12), color: EMA12_CLR }] : []),
+          ...(bb.upper[n-1] !== null ? [{ label: `BB Upper ${fmt(bb.upper[n-1], 2)}`, y: yP(bb.upper[n-1]!), color: BB_CLR }] : []),
+          ...(bb.middle[n-1] !== null ? [{ label: `BB Mid ${fmt(bb.middle[n-1], 2)}`, y: yP(bb.middle[n-1]!), color: BB_CLR }] : []),
+          ...(bb.lower[n-1] !== null ? [{ label: `BB Lower ${fmt(bb.lower[n-1], 2)}`, y: yP(bb.lower[n-1]!), color: BB_CLR }] : []),
         ]} rightEdge={W - R} fontSize={9.5} />
 
         {/* Volume label */}
@@ -496,7 +586,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         {/* RSI right-edge label */}
         {lastRsi !== null && (
           <EdgeLabels items={[
-            { label: `RSI(${rsiP}) ${lastRsi.toFixed(2)}`, y: yR(lastRsi), color: RSI_CLR },
+            { label: `RSI(${rsiP}) ${fmt(lastRsi, 2)}`, y: yR(lastRsi), color: RSI_CLR },
           ]} rightEdge={W - R} fontSize={9.5} />
         )}
 
@@ -526,8 +616,8 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         </g>
         {/* MACD right-edge labels */}
         <EdgeLabels items={[
-          ...(lastMacd !== null ? [{ label: `MACD ${lastMacd.toFixed(2)}`, y: yM(lastMacd), color: MACD_CLR }] : []),
-          ...(lastSig !== null ? [{ label: `Signal ${lastSig.toFixed(2)}`, y: yM(lastSig), color: SIG_CLR }] : []),
+          ...(lastMacd !== null ? [{ label: `MACD ${fmt(lastMacd, 2)}`, y: yM(lastMacd), color: MACD_CLR }] : []),
+          ...(lastSig !== null ? [{ label: `Signal ${fmt(lastSig, 2)}`, y: yM(lastSig), color: SIG_CLR }] : []),
         ]} rightEdge={W - R} fontSize={9.5} />
 
         {/* ═══════ X-AXIS DATE LABELS ═══════ */}
@@ -541,32 +631,7 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
         })}
       </svg>
     );
-  }, [data]);
-
-  if (!chart) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
-
-  return (
-    <div className="relative w-full h-full" onPointerDown={() => setTooltip(null)}>
-      {chart}
-      {tooltip && (
-        <div
-          className="absolute pointer-events-none z-10 px-2.5 py-1.5 rounded text-xs font-semibold"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-            transform: 'translate(-50%, -140%)',
-            background: '#2a2e39',
-            color: '#d1d4dc',
-            border: '1px solid #363a45',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          }}
-        >
-          {tooltip.text}
-        </div>
-      )}
-    </div>
-  );
+  // end of buildChart
 }
 
 export function TechnicalAnalysis() {
@@ -737,7 +802,7 @@ export function TechnicalAnalysis() {
                     </div>
                     {priceChange !== undefined && priceChange !== 0 && (
                       <p className={`text-sm font-medium tabular-nums ${priceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                        {priceChange >= 0 ? '▲' : '▼'} {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                        {priceChange >= 0 ? '▲' : '▼'} {priceChange >= 0 ? '+' : ''}{fmt(priceChange, 2)}%
                       </p>
                     )}
                   </div>
@@ -878,7 +943,7 @@ export function TechnicalAnalysis() {
                     {price && (
                       <div className="flex justify-between text-[10px]">
                         <span className="text-muted-foreground">Çmimi aktual</span>
-                        <span className="font-mono font-bold">${price.toFixed(2)}</span>
+                        <span className="font-mono font-bold">${fmt(price, 2)}</span>
                       </div>
                     )}
                   </div>
@@ -1037,7 +1102,7 @@ export function TechnicalAnalysis() {
                   <TrendingUp className="w-4 h-4" /> Plan i Veprimit
                 </h4>
                 <div className="bg-card/80 rounded-lg p-3 border border-emerald-500/20">
-                  <p className="text-sm text-foreground leading-relaxed font-medium">{analysis.actionPlan || 'Monitoroni indikatorët dhe prisni sinjal të qartë.'}</p>
+                  <p className="text-sm text-foreground leading-relaxed font-medium">{formatActionPlan(analysis.actionPlan)}</p>
                 </div>
               </div>
             </CardContent>
