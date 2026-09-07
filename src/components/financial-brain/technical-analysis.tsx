@@ -390,14 +390,41 @@ interface Drawing {
 }
 
 // ═══ TradingView-Style Technical Chart ═══
+// Wrapper component that holds drawing state across timeframe switches.
+// When `tickerSymbol` changes, drawings are cleared.
+// When only `data` changes (timeframe switch), drawings are PRESERVED.
 function CandlestickChart({
   data,
   supports = [],
   resistances = [],
+  tickerSymbol,
 }: {
   data: CandleData[];
   supports?: string[] | number[];
   resistances?: string[] | number[];
+  tickerSymbol?: string;
+}) {
+  return (
+    <CandlestickChartInner
+      key={tickerSymbol || 'unknown'}
+      data={data}
+      supports={supports}
+      resistances={resistances}
+      tickerSymbol={tickerSymbol}
+    />
+  );
+}
+
+function CandlestickChartInner({
+  data,
+  supports = [],
+  resistances = [],
+  tickerSymbol,
+}: {
+  data: CandleData[];
+  supports?: string[] | number[];
+  resistances?: string[] | number[];
+  tickerSymbol?: string;
 }) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
@@ -416,12 +443,12 @@ function CandlestickChart({
     return () => window.removeEventListener('chart-tooltip', handler as EventListener);
   }, []);
 
-  // Clear drawings when ticker data changes (new symbol = new chart)
-  useEffect(() => {
-    setDrawings([]);
-    setPendingPoint(null);
-    setActiveTool('none');
-  }, [data]);
+  // NOTE: Drawings are NOT cleared on timeframe changes.
+  // The wrapper component uses key={tickerSymbol} so the inner component
+  // (and its drawing state) is fully reset ONLY when the ticker symbol
+  // changes. When only `data` changes (timeframe switch), the inner
+  // component stays mounted and drawings reposition automatically
+  // based on the new price scale.
 
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
@@ -1359,13 +1386,44 @@ export function TechnicalAnalysis() {
     { value: '1M', label: '1 Muaj' },
   ];
 
+  // Track the timeframe that was used for the LAST successful analysis.
+  // When user changes timeframe, auto re-run analysis if we already have
+  // a ticker analyzed (so user doesn't have to click "Analizo" again).
+  const lastAnalyzedTimeframe = useRef<string>('');
+  const lastAnalyzedTicker = useRef<string>('');
+
+  useEffect(() => {
+    // Only auto-run if:
+    // 1. We have a ticker
+    // 2. We already analyzed something before (lastAnalyzedTicker is set)
+    // 3. The new timeframe is different from the one we last analyzed
+    if (
+      ticker &&
+      lastAnalyzedTicker.current &&
+      lastAnalyzedTicker.current === ticker &&
+      lastAnalyzedTimeframe.current &&
+      lastAnalyzedTimeframe.current !== timeframe
+    ) {
+      lastAnalyzedTimeframe.current = timeframe;
+      runAnalysisForTicker();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeframe]);
+
   const runAnalysisForTicker = async (tickerSymbol?: string) => {
     const sym = (tickerSymbol || ticker).trim().toUpperCase();
     if (!sym) return;
     setTicker(sym);
+    // Record what we're analyzing now so the timeframe effect doesn't loop
+    lastAnalyzedTicker.current = sym;
+    lastAnalyzedTimeframe.current = timeframe;
     setIsLoading(true);
     setError(null);
-    setAnalysis(null);
+    // NOTE: We do NOT call setAnalysis(null) here — keeping the old chart
+    // visible during loading preserves the CandlestickChart component
+    // instance and its drawn lines (Long/Short/Trend). Only the data
+    // updates when the new analysis arrives, and the drawings
+    // reposition automatically based on the new price scale.
 
     try {
       const res = await fetch('/api/technical-analysis', {
@@ -1460,8 +1518,10 @@ export function TechnicalAnalysis() {
         </div>
       )}
 
-      {/* Loading */}
-      {isLoading && (
+      {/* Loading — only show full skeleton on INITIAL load (no analysis yet).
+          On subsequent loads (timeframe switches), the existing chart stays
+          visible with a small loading badge. */}
+      {isLoading && !analysis && (
         <div className="space-y-4">
           <Skeleton className="h-[120px] rounded-xl" />
           <Skeleton className="h-[300px] rounded-xl" />
@@ -1473,8 +1533,10 @@ export function TechnicalAnalysis() {
         </div>
       )}
 
-      {/* Results */}
-      {analysis && !isLoading && (
+      {/* Results — keep mounted during loading so chart drawings (Long/Short/Trend)
+          are preserved across timeframe switches. We show a loading overlay
+          instead of unmounting the entire results block. */}
+      {analysis && (
         <div className="space-y-4">
           {/* ═══ HEADER — Ticker, Price, Signal ═══ */}
           <Card className="border-border/50 bg-card/50">
@@ -1533,15 +1595,25 @@ export function TechnicalAnalysis() {
           </Card>
 
           {/* ═══ CHART — Candlestick + Volume + Volume Profile + S/R ═══ */}
-          {analysis.candlestickData && analysis.candlestickData.length > 0 && (
-            <div className="rounded-lg overflow-hidden border border-[#2a2e39]" style={{ background: '#131722' }}>
-              <div className="h-[500px]">
-                <CandlestickChart
-                  data={analysis.candlestickData}
-                  supports={analysis.supportResistance?.supports || []}
-                  resistances={analysis.supportResistance?.resistances || []}
-                />
+          {/* Always render CandlestickChart (even during loading or when data
+              is briefly empty) so the component stays mounted across timeframe
+              switches — this preserves user-drawn lines (Long/Short/Trend). */}
+          <div className="rounded-lg overflow-hidden border border-[#2a2e39] relative" style={{ background: '#131722' }}>
+            {/* Loading overlay — shown when fetching new timeframe data */}
+            {isLoading && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 bg-amber-600/90 text-white text-[10px] px-3 py-1 rounded-full font-medium flex items-center gap-1.5 shadow-lg">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Po ngarkohet {timeframe}...
               </div>
+            )}
+            <div className="h-[500px]">
+              <CandlestickChart
+                data={analysis?.candlestickData || []}
+                supports={analysis?.supportResistance?.supports || []}
+                resistances={analysis?.supportResistance?.resistances || []}
+                tickerSymbol={analysis?.ticker}
+              />
+            </div>
               {/* Volume Profile legend */}
               <div className="flex items-center gap-3 px-3 py-1.5 border-t border-[#2a2e39] text-[10px] text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1.5">
@@ -1570,7 +1642,6 @@ export function TechnicalAnalysis() {
                 </span>
               </div>
             </div>
-          )}
 
           {/* ═══ INDICATORS — Detailed Cards ═══ */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
