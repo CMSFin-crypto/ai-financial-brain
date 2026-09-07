@@ -215,6 +215,118 @@ function computeBollingerBands(closes: number[], period: number = 20, mult: numb
   return { upper, middle, lower };
 }
 
+// ═══ Volume Profile computation ═══
+// Bins candlestick data into horizontal price levels and accumulates traded
+// volume at each level. Identifies POC (Point of Control — highest volume
+// price), VAH/VAL (Value Area High/Low — prices containing 70% of total volume
+// centered on POC), and HVN/LVN (High/Low Volume Nodes — levels with above/
+// below-average volume).
+//
+// Algorithm:
+// 1. Determine price range [pMin, pMax] from candle lows/highs.
+// 2. Divide range into NUM_BINS equal price buckets.
+// 3. For each candle, distribute its volume across the price bins it spans
+//    (open→high→low→close range), proportional to the bin overlap.
+// 4. Find POC = bin with maximum volume.
+// 5. Expand outward from POC until 70% of total volume is captured → VAH/VAL.
+// 6. Mark bins above mean+std as HVN, below mean-std as LVN.
+function computeVolumeProfile(data: CandleData[], numBins = 28): {
+  bins: { priceMid: number; vol: number; isPOC: boolean; isHVN: boolean; isLVN: boolean }[];
+  poc: number;        // Point of Control price
+  vah: number;        // Value Area High
+  val: number;        // Value Area Low
+  totalVol: number;
+  maxBinVol: number;
+  hvn: number[];      // High Volume Node prices
+  lvn: number[];      // Low Volume Node prices
+} {
+  if (!data || data.length === 0) {
+    return { bins: [], poc: 0, vah: 0, val: 0, totalVol: 0, maxBinVol: 0, hvn: [], lvn: [] };
+  }
+
+  let pMin = Infinity, pMax = -Infinity;
+  let totalVol = 0;
+  for (const d of data) {
+    if (typeof d.low === 'number' && d.low < pMin) pMin = d.low;
+    if (typeof d.high === 'number' && d.high > pMax) pMax = d.high;
+    if (typeof d.volume === 'number') totalVol += d.volume;
+  }
+  if (!Number.isFinite(pMin) || !Number.isFinite(pMax) || pMax <= pMin) {
+    return { bins: [], poc: 0, vah: 0, val: 0, totalVol: 0, maxBinVol: 0, hvn: [], lvn: [] };
+  }
+
+  const pad = (pMax - pMin) * 0.02;
+  pMin -= pad;
+  pMax += pad;
+  const binSize = (pMax - pMin) / numBins;
+  const bins = new Array(numBins).fill(0).map((_, i) => ({
+    priceMid: pMin + binSize * (i + 0.5),
+    vol: 0,
+    isPOC: false,
+    isHVN: false,
+    isLVN: false,
+  }));
+
+  // Distribute each candle's volume across the price bins it touched
+  for (const d of data) {
+    const cLow = Math.min(d.open, d.close, d.low);
+    const cHigh = Math.max(d.open, d.close, d.high);
+    const startBin = Math.max(0, Math.floor((cLow - pMin) / binSize));
+    const endBin = Math.min(numBins - 1, Math.ceil((cHigh - pMin) / binSize));
+    const binsTouched = endBin - startBin + 1;
+    if (binsTouched <= 0) continue;
+    const volPerBin = (d.volume || 0) / binsTouched;
+    for (let b = startBin; b <= endBin; b++) bins[b].vol += volPerBin;
+  }
+
+  // Find POC (max volume bin)
+  let pocIdx = 0, maxBinVol = 0;
+  for (let i = 0; i < numBins; i++) {
+    if (bins[i].vol > maxBinVol) { maxBinVol = bins[i].vol; pocIdx = i; }
+  }
+  bins[pocIdx].isPOC = true;
+
+  // Compute mean & std for HVN/LVN classification
+  const meanVol = totalVol / numBins;
+  let variance = 0;
+  for (const b of bins) variance += (b.vol - meanVol) ** 2;
+  const std = Math.sqrt(variance / numBins);
+  const hvnThreshold = meanVol + std * 0.5;
+  const lvnThreshold = Math.max(meanVol * 0.3, meanVol - std * 0.5);
+
+  const hvnPrices: number[] = [];
+  const lvnPrices: number[] = [];
+  for (const b of bins) {
+    if (b.vol >= hvnThreshold) { b.isHVN = true; hvnPrices.push(b.priceMid); }
+    if (b.vol > 0 && b.vol <= lvnThreshold) { b.isLVN = true; lvnPrices.push(b.priceMid); }
+  }
+
+  // Value Area: expand from POC until 70% of total volume is captured
+  const valueAreaPct = 0.70;
+  const targetVol = totalVol * valueAreaPct;
+  let captured = bins[pocIdx].vol;
+  let lo = pocIdx, hi = pocIdx;
+  while (captured < targetVol && (lo > 0 || hi < numBins - 1)) {
+    const upVol = hi < numBins - 1 ? bins[hi + 1].vol : -1;
+    const dnVol = lo > 0 ? bins[lo - 1].vol : -1;
+    if (upVol >= dnVol) { hi++; if (hi < numBins) captured += bins[hi].vol; }
+    else { lo--; if (lo >= 0) captured += bins[lo].vol; }
+  }
+  const vah = bins[hi].priceMid;
+  const val = bins[lo].priceMid;
+
+  return {
+    bins,
+    poc: bins[pocIdx].priceMid,
+    vah,
+    val,
+    totalVol,
+    maxBinVol,
+    hvn: hvnPrices,
+    lvn: lvnPrices,
+  };
+}
+
 // ═══ TradingView-style right-edge label group ═══
 // Renders colored tags at the end of each indicator line (left of Y-axis),
 // stacking them vertically if they overlap.
@@ -263,7 +375,15 @@ function EdgeLabels({ items, rightEdge, fontSize = 9.5 }: {
 }
 
 // ═══ TradingView-Style Technical Chart ═══
-function CandlestickChart({ data }: { data: CandleData[] }) {
+function CandlestickChart({
+  data,
+  supports = [],
+  resistances = [],
+}: {
+  data: CandleData[];
+  supports?: string[] | number[];
+  resistances?: string[] | number[];
+}) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
   // Listen for tooltip events from buildChart (which can't access setTooltip directly)
@@ -279,12 +399,12 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
     try {
-      return buildChart(data);
+      return buildChart(data, supports, resistances);
     } catch (err) {
       console.error('[CHART] buildChart failed:', err);
       return null;
     }
-  }, [data]);
+  }, [data, supports, resistances]);
 
   if (!chart) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
 
@@ -312,7 +432,11 @@ function CandlestickChart({ data }: { data: CandleData[] }) {
 }
 
 // ═══ Chart builder — pure function, throws on error ═══
-function buildChart(data: CandleData[]) {
+function buildChart(
+  data: CandleData[],
+  supports: string[] | number[] = [],
+  resistances: string[] | number[] = [],
+) {
   if (!data || data.length < 3) return null;
 
   // TradingView dark palette (matching reference)
@@ -476,6 +600,22 @@ function buildChart(data: CandleData[]) {
     const lastClose = (lastBar && typeof lastBar.close === 'number') ? lastBar.close : 0;
     const lastY = yP(lastClose);
 
+    // ═══ Volume Profile computation ═══
+    // Compute horizontal volume histogram + POC/VAH/VAL + S/R levels
+    const vp = computeVolumeProfile(data, 28);
+
+    // Normalize S/R levels to numbers (API may return strings like "315.00")
+    const srSupports = (supports || []).map(s => typeof s === 'number' ? s : parseFloat(String(s))).filter(n => Number.isFinite(n));
+    const srResistances = (resistances || []).map(r => typeof r === 'number' ? r : parseFloat(String(r))).filter(n => Number.isFinite(n));
+
+    // Volume Profile bar area — overlay on right portion of price panel
+    // Bars grow LEFTWARD from the right edge of the price panel (W-R),
+    // so they don't obscure the candles on the left side.
+    const vpRightEdge = W - R - 2;       // leave 2px gap before Y-axis labels
+    const vpMaxWidth = chartW * 0.28;    // VP bars take up to 28% of chart width
+    const vpBarHeight = candleH / Math.max(vp.bins.length, 1) * 0.85; // small gap between bars
+    const vpBarY = (price: number) => priceTop + (1 - (price - pMin) / (pMax - pMin)) * candleH - vpBarHeight / 2;
+
     return (
       <svg viewBox={`0 0 ${W} ${totalH}`} className="w-full h-full" style={{ background: BG, borderRadius: 0 }}>
         <defs>
@@ -620,9 +760,112 @@ function buildChart(data: CandleData[]) {
           ...(lastSig !== null ? [{ label: `Signal ${fmt(lastSig, 2)}`, y: yM(lastSig), color: SIG_CLR }] : []),
         ]} rightEdge={W - R} fontSize={9.5} />
 
+        {/* ═══════ VOLUME PROFILE (horizontal histogram, right side of price panel) ═══════ */}
+        {vp.bins.length > 0 && vp.maxBinVol > 0 && (
+          <g>
+            {/* Value Area (VAH→VAL) shaded background — subtle blue tint */}
+            {vp.vah > vp.val && (
+              <rect
+                x={L}
+                y={Math.min(vpBarY(vp.vah), vpBarY(vp.val))}
+                width={chartW}
+                height={Math.abs(vpBarY(vp.vah) - vpBarY(vp.val)) + vpBarHeight}
+                fill="#2962ff"
+                opacity={0.05}
+              />
+            )}
+
+            {/* VP bars — grow LEFTWARD from right edge of price panel */}
+            {vp.bins.map((bin, i) => {
+              if (bin.vol <= 0) return null;
+              const barW = (bin.vol / vp.maxBinVol) * vpMaxWidth;
+              const y = vpBarY(bin.priceMid);
+              let fill = 'rgba(41, 98, 255, 0.35)';
+              let stroke = 'rgba(41, 98, 255, 0.55)';
+              if (bin.isPOC) { fill = 'rgba(240, 179, 35, 0.85)'; stroke = '#f0b323'; }
+              else if (bin.isHVN) { fill = 'rgba(38, 166, 154, 0.5)'; stroke = 'rgba(38, 166, 154, 0.7)'; }
+              else if (bin.isLVN) { fill = 'rgba(120, 123, 134, 0.2)'; stroke = 'rgba(120, 123, 134, 0.35)'; }
+              return (
+                <rect
+                  key={"vp" + i}
+                  x={vpRightEdge - barW}
+                  y={y}
+                  width={barW}
+                  height={vpBarHeight}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={bin.isPOC ? 0.5 : 0}
+                />
+              );
+            })}
+
+            {/* POC line — extends across entire price panel */}
+            <line
+              x1={L}
+              y1={vpBarY(vp.poc) + vpBarHeight / 2}
+              x2={W - R}
+              y2={vpBarY(vp.poc) + vpBarHeight / 2}
+              stroke="#f0b323"
+              strokeWidth={1}
+              strokeDasharray="5 3"
+              opacity={0.9}
+            />
+            <g>
+              <rect x={L + 4} y={vpBarY(vp.poc) - 8} width={70} height={14} rx={2} fill="#f0b323" opacity={0.95} />
+              <text x={L + 8} y={vpBarY(vp.poc) + 2} fill="#131722" fontSize={9.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+                POC {fmt(vp.poc, 2)}
+              </text>
+            </g>
+
+            {/* VAH line */}
+            <line x1={L} y1={vpBarY(vp.vah) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.vah) + vpBarHeight / 2} stroke="#2962ff" strokeWidth={0.8} strokeDasharray="3 4" opacity={0.6} />
+            <text x={W - R - 4} y={vpBarY(vp.vah) - 2} fill="#2962ff" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" textAnchor="end">
+              VAH {fmt(vp.vah, 2)}
+            </text>
+
+            {/* VAL line */}
+            <line x1={L} y1={vpBarY(vp.val) + vpBarHeight / 2} x2={W - R} y2={vpBarY(vp.val) + vpBarHeight / 2} stroke="#2962ff" strokeWidth={0.8} strokeDasharray="3 4" opacity={0.6} />
+            <text x={W - R - 4} y={vpBarY(vp.val) + 10} fill="#2962ff" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="600" textAnchor="end">
+              VAL {fmt(vp.val, 2)}
+            </text>
+
+            <text x={L + 4} y={priceTop + 12} fill={TXT} fontSize={9} fontFamily="Trebuchet MS, sans-serif" opacity={0.7} fontWeight="600">
+              VOL PROFILE
+            </text>
+          </g>
+        )}
+
+        {/* ═══════ SUPPORT / RESISTANCE LEVELS (horizontal lines across price panel) ═══════ */}
+        {srResistances.map((r, i) => {
+          if (r < pMin || r > pMax) return null;
+          const y = yP(r);
+          return (
+            <g key={"res" + i}>
+              <line x1={L} y1={y} x2={W - R} y2={y} stroke="#ef5350" strokeWidth={0.9} strokeDasharray="6 4" opacity={0.55} />
+              <rect x={L + 4} y={y - 11} width={58} height={12} rx={2} fill="#ef5350" opacity={0.92} />
+              <text x={L + 7} y={y - 2} fill="white" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+                R ${fmt(r, 2)}
+              </text>
+            </g>
+          );
+        })}
+        {srSupports.map((s, i) => {
+          if (s < pMin || s > pMax) return null;
+          const y = yP(s);
+          return (
+            <g key={"sup" + i}>
+              <line x1={L} y1={y} x2={W - R} y2={y} stroke="#26a69a" strokeWidth={0.9} strokeDasharray="6 4" opacity={0.55} />
+              <rect x={L + 4} y={y - 1} width={58} height={12} rx={2} fill="#26a69a" opacity={0.92} />
+              <text x={L + 7} y={y + 8} fill="white" fontSize={8.5} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+                S ${fmt(s, 2)}
+              </text>
+            </g>
+          );
+        })}
+
         {/* ═══════ X-AXIS DATE LABELS ═══════ */}
         {data.map((dd, i) => {
-          if (i % labelN !== 0) return null;
+          if (i % labelN !== 0 || i === 0) return null;
           return (
             <text key={"d" + i} x={xOf(i)} y={macdTop + macdH + 14} fill={TXT} fontSize={10} textAnchor="middle" fontFamily="Trebuchet MS, sans-serif">
               {dd.date.substring(5)}
@@ -825,11 +1068,42 @@ export function TechnicalAnalysis() {
             </CardContent>
           </Card>
 
-          {/* ═══ CHART — Candlestick + Volume ═══ */}
+          {/* ═══ CHART — Candlestick + Volume + Volume Profile + S/R ═══ */}
           {analysis.candlestickData && analysis.candlestickData.length > 0 && (
             <div className="rounded-lg overflow-hidden border border-[#2a2e39]" style={{ background: '#131722' }}>
               <div className="h-[500px]">
-                <CandlestickChart data={analysis.candlestickData} />
+                <CandlestickChart
+                  data={analysis.candlestickData}
+                  supports={analysis.supportResistance?.supports || []}
+                  resistances={analysis.supportResistance?.resistances || []}
+                />
+              </div>
+              {/* Volume Profile legend */}
+              <div className="flex items-center gap-3 px-3 py-1.5 border-t border-[#2a2e39] text-[10px] text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#f0b323' }}></span>
+                  <span>POC (Point of Control)</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#26a69a' }}></span>
+                  <span>HVN (High Volume Node)</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: 'rgba(41, 98, 255, 0.5)' }}></span>
+                  <span>VAH/VAL (Value Area)</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#787b86' }}></span>
+                  <span>LVN (Low Volume Node)</span>
+                </span>
+                <span className="flex items-center gap-1.5 ml-auto">
+                  <span className="inline-block w-3 h-0.5" style={{ background: '#ef5350' }}></span>
+                  <span>Rezistenca</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-0.5" style={{ background: '#26a69a' }}></span>
+                  <span>Suporti</span>
+                </span>
               </div>
             </div>
           )}
@@ -1046,6 +1320,97 @@ export function TechnicalAnalysis() {
                 </CardContent>
               </Card>
             )}
+
+            {/* ═══ VOLUME PROFILE STATS CARD ═══ */}
+            {analysis.candlestickData && analysis.candlestickData.length > 5 && (() => {
+              const vp = computeVolumeProfile(analysis.candlestickData, 24);
+              if (!vp.bins.length || vp.maxBinVol <= 0) return null;
+              const price = analysis.priceAnalysis?.currentPrice;
+              const priceVsPOC = price && vp.poc ? ((price - vp.poc) / vp.poc) * 100 : null;
+              const inValueArea = price && vp.vah > 0 && vp.val > 0 ? (price <= vp.vah && price >= vp.val) : null;
+              return (
+                <Card className="border-blue-500/20 bg-blue-500/5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <BarChart3 className="w-3.5 h-3.5 text-blue-500" />
+                      Volume Profile
+                      <span className="text-[10px] text-muted-foreground font-normal">(24 nivele çmimi)</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2.5">
+                    {/* POC */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#f0b323' }}></span>
+                        <span className="text-xs">POC (Point of Control)</span>
+                      </div>
+                      <span className="text-sm font-mono font-bold text-amber-400">${fmt(vp.poc, 2)}</span>
+                    </div>
+                    {/* VAH */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#2962ff' }}></span>
+                        <span className="text-xs">VAH (Value Area High)</span>
+                      </div>
+                      <span className="text-sm font-mono font-bold text-blue-400">${fmt(vp.vah, 2)}</span>
+                    </div>
+                    {/* VAL */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#2962ff' }}></span>
+                        <span className="text-xs">VAL (Value Area Low)</span>
+                      </div>
+                      <span className="text-sm font-mono font-bold text-blue-400">${fmt(vp.val, 2)}</span>
+                    </div>
+                    {/* Divider */}
+                    <div className="border-t border-border/30 pt-2 space-y-2">
+                      {/* HVN count */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#26a69a' }}></span>
+                          <span className="text-xs">HVN (High Volume Nodes)</span>
+                        </div>
+                        <span className="text-xs font-mono">{vp.hvn.length} nivele</span>
+                      </div>
+                      {/* LVN count */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#787b86' }}></span>
+                          <span className="text-xs">LVN (Low Volume Nodes)</span>
+                        </div>
+                        <span className="text-xs font-mono">{vp.lvn.length} nivele</span>
+                      </div>
+                    </div>
+                    {/* Interpretation */}
+                    <div className="bg-card/50 rounded-md p-2 border border-border/30 mt-2">
+                      {priceVsPOC !== null && (
+                        <div className="flex items-center justify-between text-[11px] mb-1.5">
+                          <span className="text-muted-foreground">Çmimi vs POC</span>
+                          <span className={`font-mono font-semibold ${priceVsPOC >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {priceVsPOC >= 0 ? '+' : ''}{fmt(priceVsPOC, 2)}%
+                          </span>
+                        </div>
+                      )}
+                      {inValueArea !== null && (
+                        <div className="flex items-center justify-between text-[11px] mb-1.5">
+                          <span className="text-muted-foreground">Në Value Area</span>
+                          <span className={`font-mono font-semibold ${inValueArea ? 'text-emerald-500' : 'text-amber-500'}`}>
+                            {inValueArea ? 'PO — Brenda' : 'JO — Jashtë'}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-[11px] text-muted-foreground leading-relaxed mt-1.5">
+                        {price && vp.poc && price < vp.poc * 0.98
+                          ? 'Çmimi është nën POC — presion shitës, kërko konfirmim në HVN më të afërt për rebound.'
+                          : price && vp.poc && price > vp.poc * 1.02
+                          ? 'Çmimi është mbi POC — moment blerës, vëzhgo thyerjen e VAH për vazhdim trendi.'
+                          : 'Çmimi është afër POC — zonë e ekuilibrit, prit thyerje me vëllim.'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {analysis.patterns && analysis.patterns.length > 0 && (
               <Card className="border-border/50 bg-card/50">
