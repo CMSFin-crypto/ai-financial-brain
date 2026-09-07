@@ -460,14 +460,22 @@ export async function POST(request: NextRequest) {
 
     // ═══ Lookback range: always fetch enough data for indicators ═══
     // Need ~70+ bars for SMA50, MACD(12,26), BB(20) to compute fully
+    // User timeframes (1h/4h/1D/1W/1M) → Yahoo range values
     const LOOKBACK_MAP: Record<string, string> = {
-      '1d': '5d',
-      '5d': '3mo',
+      // Intraday: Yahoo range+interval combos
+      '1h':  '5d',   // 1 Orë  → 5 days of 1-hour candles   (~35 bars)
+      '4h':  '1mo',  // 4 Orë  → 1 month of 1-hour candles   (~150 bars)
+      '1D':  '6mo',  // 1 Ditore → 6 months of daily candles (~130 bars)
+      '1W':  '2y',   // 1 Javë → 2 years of weekly candles   (~104 bars)
+      '1M':  '10y',  // 1 Muaj → 10 years of monthly candles (~120 bars)
+      // Legacy mappings (kept for backward compatibility)
+      '1d':  '5d',
+      '5d':  '1mo',
       '1mo': '6mo',
       '3mo': '1y',
       '6mo': '1y',
-      '1y': '5y',
-      '5y': 'max',
+      '1y':  '5y',
+      '5y':  'max',
     };
     const lookbackRange = LOOKBACK_MAP[range] || '6mo';
 

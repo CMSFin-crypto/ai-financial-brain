@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -374,6 +374,21 @@ function EdgeLabels({ items, rightEdge, fontSize = 9.5 }: {
   );
 }
 
+// ═══ Drawing types ═══
+type DrawingTool = 'none' | 'trendline' | 'long' | 'short';
+
+interface Drawing {
+  id: string;
+  type: 'trendline' | 'long' | 'short';
+  // Trend line: two normalized points (0..1 of viewBox)
+  x1?: number; y1?: number;
+  x2?: number; y2?: number;
+  // Horizontal lines: just price
+  price?: number;
+  color: string;
+  label?: string;
+}
+
 // ═══ TradingView-Style Technical Chart ═══
 function CandlestickChart({
   data,
@@ -385,6 +400,10 @@ function CandlestickChart({
   resistances?: string[] | number[];
 }) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [activeTool, setActiveTool] = useState<DrawingTool>('none');
+  const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number; price: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Listen for tooltip events from buildChart (which can't access setTooltip directly)
   useEffect(() => {
@@ -396,6 +415,13 @@ function CandlestickChart({
     return () => window.removeEventListener('chart-tooltip', handler as EventListener);
   }, []);
 
+  // Clear drawings when ticker data changes (new symbol = new chart)
+  useEffect(() => {
+    setDrawings([]);
+    setPendingPoint(null);
+    setActiveTool('none');
+  }, [data]);
+
   const chart = useMemo(() => {
     if (!data || data.length < 3) return null;
     try {
@@ -406,27 +432,220 @@ function CandlestickChart({
     }
   }, [data, supports, resistances]);
 
+  // Compute price at a given Y pixel position (using same scale as buildChart)
+  const priceAtY = (y: number): number => {
+    if (!data || data.length === 0) return 0;
+    const candleH = 280 * 0.82; // matches priceH * (1 - volRatio) in buildChart
+    const hiVals = data.map(d => d.high);
+    const loVals = data.map(d => d.low);
+    const allH = Math.max(...hiVals);
+    const allL = Math.min(...loVals);
+    const pad = (allH - allL) * 0.06 || 1;
+    const pMin = allL - pad;
+    const pMax = allH + pad;
+    const ratio = 1 - (y / candleH);
+    return pMin + (pMax - pMin) * ratio;
+  };
+
+  // Convert pixel coords to viewBox coords (880×540)
+  const toViewBox = (e: React.PointerEvent<HTMLElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    const VB_W = 880, VB_H = 540;
+    const x = ((e.clientX - rect.left) / rect.width) * VB_W;
+    const y = ((e.clientY - rect.top) / rect.height) * VB_H;
+    return { x, y, nx: x / VB_W, ny: y / VB_H };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool === 'none') {
+      setTooltip(null);
+      return;
+    }
+    e.stopPropagation();
+    const pt = toViewBox(e);
+    if (!pt) return;
+    const price = priceAtY(pt.y);
+
+    if (activeTool === 'long' || activeTool === 'short') {
+      const color = activeTool === 'long' ? '#26a69a' : '#ef5350';
+      const label = activeTool === 'long' ? `LONG $${fmt(price, 2)}` : `SHORT $${fmt(price, 2)}`;
+      setDrawings(prev => [...prev, {
+        id: `draw_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: activeTool,
+        price,
+        color,
+        label,
+      }]);
+      setActiveTool('none');
+    } else if (activeTool === 'trendline') {
+      if (!pendingPoint) {
+        setPendingPoint({ x: pt.nx, y: pt.ny, price });
+      } else {
+        setDrawings(prev => [...prev, {
+          id: `draw_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'trendline',
+          x1: pendingPoint.x, y1: pendingPoint.y,
+          x2: pt.nx, y2: pt.ny,
+          color: '#f0b323',
+        }]);
+        setPendingPoint(null);
+        setActiveTool('none');
+      }
+    }
+  };
+
   if (!chart) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
 
+  // viewBox dimensions must match buildChart
+  const VB_W = 880;
+  const VB_H = 540;
+
+  // Render drawings as overlay
+  const drawingsSvg = drawings.map(d => {
+    if (d.type === 'trendline' && d.x1 !== undefined && d.y1 !== undefined && d.x2 !== undefined && d.y2 !== undefined) {
+      return (
+        <g key={d.id}>
+          <line
+            x1={d.x1 * VB_W} y1={d.y1 * VB_H}
+            x2={d.x2 * VB_W} y2={d.y2 * VB_H}
+            stroke={d.color}
+            strokeWidth={2}
+            strokeLinecap="round"
+            opacity={0.95}
+          />
+          {/* Endpoints */}
+          <circle cx={d.x1 * VB_W} cy={d.y1 * VB_H} r={3} fill={d.color} />
+          <circle cx={d.x2 * VB_W} cy={d.y2 * VB_H} r={3} fill={d.color} />
+        </g>
+      );
+    }
+    if ((d.type === 'long' || d.type === 'short') && d.price !== undefined) {
+      // Convert price to Y using same scale as buildChart
+      const candleH = 280 * 0.82;
+      const hiVals = data.map(d => d.high);
+      const loVals = data.map(d => d.low);
+      const allH = Math.max(...hiVals);
+      const allL = Math.min(...loVals);
+      const pad = (allH - allL) * 0.06 || 1;
+      const pMin = allL - pad;
+      const pMax = allH + pad;
+      const y = candleH * (1 - (d.price - pMin) / (pMax - pMin));
+      return (
+        <g key={d.id}>
+          <line
+            x1={2} y1={y}
+            x2={VB_W - 60} y2={y}
+            stroke={d.color}
+            strokeWidth={1.5}
+            strokeDasharray={d.type === 'long' ? '10 3' : '10 3'}
+            opacity={0.9}
+          />
+          <rect x={VB_W - 60} y={y - 9} width={60} height={16} rx={2} fill={d.color} opacity={0.95} />
+          <text x={VB_W - 56} y={y + 2} fill="white" fontSize={9} fontFamily="Trebuchet MS, sans-serif" fontWeight="700">
+            {d.type === 'long' ? '▲' : '▼'} ${fmt(d.price, 2)}
+          </text>
+        </g>
+      );
+    }
+    return null;
+  });
+
+  // Pending first point indicator (for trendline)
+  const pendingSvg = pendingPoint ? (
+    <circle
+      cx={pendingPoint.x * VB_W}
+      cy={pendingPoint.y * VB_H}
+      r={5}
+      fill="#f0b323"
+      stroke="white"
+      strokeWidth={1.5}
+      opacity={0.85}
+    />
+  ) : null;
+
   return (
-    <div className="relative w-full h-full" onPointerDown={() => setTooltip(null)}>
-      {chart}
-      {tooltip && (
-        <div
-          className="absolute pointer-events-none z-10 px-2.5 py-1.5 rounded text-xs font-semibold"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-            transform: 'translate(-50%, -140%)',
-            background: '#2a2e39',
-            color: '#d1d4dc',
-            border: '1px solid #434651',
-            whiteSpace: 'nowrap',
-          }}
+    <div className="relative w-full h-full">
+      {/* Drawing toolbar */}
+      <div className="absolute top-2 right-2 z-20 flex flex-col gap-1 bg-[#1e222d]/95 border border-[#2a2e39] rounded-md p-1.5 shadow-lg">
+        <button
+          onClick={() => { setActiveTool('trendline'); setPendingPoint(null); }}
+          className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
+            activeTool === 'trendline' ? 'bg-amber-600' : 'bg-[#363a45] hover:bg-[#434651]'
+          }`}
+          title="Vizato vijë trendi (2 klikime)"
         >
-          {tooltip.text}
+          ↗ Trend
+        </button>
+        <button
+          onClick={() => { setActiveTool('long'); setPendingPoint(null); }}
+          className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
+            activeTool === 'long' ? 'bg-emerald-600' : 'bg-[#363a45] hover:bg-[#434651]'
+          }`}
+          title="Vendos linjë Long (1 klikim)"
+        >
+          ▲ Long
+        </button>
+        <button
+          onClick={() => { setActiveTool('short'); setPendingPoint(null); }}
+          className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
+            activeTool === 'short' ? 'bg-red-600' : 'bg-[#363a45] hover:bg-[#434651]'
+          }`}
+          title="Vendos linjë Short (1 klikim)"
+        >
+          ▼ Short
+        </button>
+        <div className="h-px bg-[#2a2e39] my-0.5" />
+        <button
+          onClick={() => { setDrawings([]); setActiveTool('none'); setPendingPoint(null); }}
+          className="text-[10px] px-2 py-1 rounded text-[#787b86] hover:text-white hover:bg-[#434651] font-medium transition-colors"
+          title="Fshi të gjitha vizatimet"
+        >
+          ✕ Fshi
+        </button>
+      </div>
+
+      {/* Status indicator when tool is active */}
+      {activeTool !== 'none' && (
+        <div className="absolute top-2 left-2 z-20 bg-amber-600/90 text-white text-[10px] px-2.5 py-1 rounded font-medium shadow-lg">
+          {activeTool === 'trendline'
+            ? (pendingPoint ? 'Kliko pikën e 2-të për vijën e trendit' : 'Kliko pikën e 1-rë për vijën e trendit')
+            : `Kliko në chart për të vendosur linjë ${activeTool === 'long' ? 'Long (blerje)' : 'Short (shitje)'}`}
         </div>
       )}
+
+      <div
+        className={`relative w-full h-full ${activeTool !== 'none' ? 'cursor-crosshair' : ''}`}
+        onPointerDown={handlePointerDown}
+      >
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          className="w-full h-full"
+          style={{ background: '#131722', borderRadius: 0 }}
+        >
+          {chart.props.children}
+          {drawingsSvg}
+          {pendingSvg}
+        </svg>
+        {tooltip && (
+          <div
+            className="absolute pointer-events-none z-10 px-2.5 py-1.5 rounded text-xs font-semibold"
+            style={{
+              left: tooltip.x,
+              top: tooltip.y,
+              transform: 'translate(-50%, -140%)',
+              background: '#2a2e39',
+              color: '#d1d4dc',
+              border: '1px solid #434651',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {tooltip.text}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -868,16 +1087,14 @@ export function TechnicalAnalysis() {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [timeframe, setTimeframe] = useState('6mo');
+  const [timeframe, setTimeframe] = useState('1D'); // default 1 ditore
 
   const timeframes = [
-    { value: '1d', label: '1D' },
-    { value: '5d', label: '5D' },
-    { value: '1mo', label: '1Mo' },
-    { value: '3mo', label: '3Mo' },
-    { value: '6mo', label: '6Mo' },
-    { value: '1y', label: '1V' },
-    { value: '5y', label: '5V' },
+    { value: '1h', label: '1 Orë' },
+    { value: '4h', label: '4 Orë' },
+    { value: '1D', label: '1 Ditore' },
+    { value: '1W', label: '1 Javë' },
+    { value: '1M', label: '1 Muaj' },
   ];
 
   const runAnalysisForTicker = async (tickerSymbol?: string) => {

@@ -296,7 +296,15 @@ export async function fetchHistoricalData(
   const r = range || '6mo';
 
   // Determine interval based on range
-  const interval = r === '1d' ? '5m' : '1d';
+  // Yahoo Finance valid intervals: 1m, 2m, 5m, 15m, 30m, 60m, 1h, 1d, 5d, 1wk, 1mo, 3mo
+  let interval: string;
+  if (r === '1d') interval = '5m';        // 1 day → 5-min bars
+  else if (r === '5d') interval = '60m';  // 5 days → hourly bars (intraday)
+  else if (r === '1mo') interval = '60m'; // 1 month → hourly bars (intraday)
+  else if (r === '3mo' || r === '6mo' || r === '1y' || r === 'ytd') interval = '1d';   // daily bars
+  else if (r === '2y' || r === '5y') interval = '1wk';  // weekly bars
+  else if (r === '10y' || r === 'max') interval = '1mo'; // monthly bars
+  else interval = '1d';
 
   // Check cache first (include range in cache key)
   const cacheKey = `${t}_${r}`;
