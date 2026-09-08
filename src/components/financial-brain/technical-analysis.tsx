@@ -519,13 +519,18 @@ function CandlestickChartInner({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // If a drawing info popup is open, just close it on outside click
-    if (drawingInfo) {
+    // If a drawing info popup is open, just close it on outside click.
+    // BUT: only close if the click didn't come from a chart line (which
+    // dispatches 'chart-line-click' and sets lineInfo). We detect this
+    // by checking if the event target is the div itself (not a child SVG line).
+    const target = e.target as HTMLElement;
+    const isOnChartLine = target.tagName === 'line' || target.tagName === 'polyline' || target.tagName === 'rect' || target.tagName === 'circle' || target.tagName === 'text';
+
+    if (drawingInfo && !isOnChartLine) {
       setDrawingInfo(null);
       return;
     }
-    // If a chart-line info popup is open, close it on outside click
-    if (lineInfo) {
+    if (lineInfo && !isOnChartLine) {
       setLineInfo(null);
       return;
     }
