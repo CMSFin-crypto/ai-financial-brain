@@ -376,7 +376,7 @@ function EdgeLabels({ items, rightEdge, fontSize = 9.5 }: {
 }
 
 // ═══ Drawing types ═══
-type DrawingTool = 'none' | 'trendline' | 'long' | 'short';
+type DrawingTool = 'none' | 'trendline' | 'long' | 'short' | 'pan';
 
 interface Drawing {
   id: string;
@@ -435,6 +435,17 @@ function CandlestickChartInner({
   const [lineInfo, setLineInfo] = useState<{ lineType: string; label: string; price?: number; x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
+  // ─── Zoom & Pan state ───
+  // zoom: 1 = fit all data; 2 = 2x zoomed in. zoomPct (0..1) = horizontal position of the viewport.
+  const [zoom, setZoom] = useState(1);
+  const [zoomPct, setZoomPct] = useState(0); // 0 = left edge, 1 = right edge
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef<{ x: number; pct: number } | null>(null);
+
+  // ─── Trend line drag state ───
+  // While dragging a trend line, we store the start point and track the current end.
+  const [dragTrend, setDragTrend] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+
   // Listen for tooltip events from buildChart (which can't access setTooltip directly)
   useEffect(() => {
     const handler = (e: Event) => {
@@ -465,22 +476,28 @@ function CandlestickChartInner({
   // component stays mounted and drawings reposition automatically
   // based on the new price scale.
 
+  // Compute the visible data slice for zoom/pan.
+  // zoom=1 → show all data. zoom=2 → show half. zoomPct=0 → start from left.
+  const dataStart = Math.floor((zoomPct) * (data?.length || 0));
+  const dataEnd = Math.min(data?.length || 0, Math.ceil((zoomPct + 1 / zoom) * (data?.length || 0)));
+  const visibleData = (zoom === 1 || !data) ? data : data.slice(dataStart, dataEnd);
+
   const chart = useMemo(() => {
-    if (!data || data.length < 3) return null;
+    if (!visibleData || visibleData.length < 3) return null;
     try {
-      return buildChart(data, supports, resistances);
+      return buildChart(visibleData, supports, resistances);
     } catch (err) {
       console.error('[CHART] buildChart failed:', err);
       return null;
     }
-  }, [data, supports, resistances]);
+  }, [visibleData, supports, resistances]);
 
   // Compute price at a given Y pixel position (using same scale as buildChart)
   const priceAtY = (y: number): number => {
-    if (!data || data.length === 0) return 0;
+    if (!visibleData || visibleData.length === 0) return 0;
     const candleH = 280 * 0.82; // matches priceH * (1 - volRatio) in buildChart
-    const hiVals = data.map(d => d.high);
-    const loVals = data.map(d => d.low);
+    const hiVals = visibleData.map(d => d.high);
+    const loVals = visibleData.map(d => d.low);
     const allH = Math.max(...hiVals);
     const allL = Math.min(...loVals);
     const pad = (allH - allL) * 0.06 || 1;
@@ -491,7 +508,7 @@ function CandlestickChartInner({
   };
 
   // Convert pixel coords to viewBox coords (880×540)
-  const toViewBox = (e: React.PointerEvent<HTMLElement>) => {
+  const toViewBox = (e: { clientX: number; clientY: number }) => {
     const svg = svgRef.current;
     if (!svg) return null;
     const rect = svg.getBoundingClientRect();
@@ -533,20 +550,90 @@ function CandlestickChartInner({
       }]);
       setActiveTool('none');
     } else if (activeTool === 'trendline') {
-      if (!pendingPoint) {
-        setPendingPoint({ x: pt.nx, y: pt.ny, price });
-      } else {
+      // DRAG-TO-DRAW: start dragging from this point. pointermove updates end, pointerup commits.
+      setDragTrend({ startX: pt.nx, startY: pt.ny, endX: pt.nx, endY: pt.ny });
+    } else if (activeTool === 'pan') {
+      // Start panning
+      setIsPanning(true);
+      panStart.current = { x: e.clientX, pct: zoomPct };
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Update trend line end point while dragging
+    if (activeTool === 'trendline' && dragTrend) {
+      const pt = toViewBox(e);
+      if (!pt) return;
+      setDragTrend({ ...dragTrend, endX: pt.nx, endY: pt.ny });
+    }
+    // Pan: shift the visible window
+    if (activeTool === 'pan' && isPanning && panStart.current) {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const dx = e.clientX - panStart.current.x;
+      // Convert pixel delta to percentage of total data width
+      const pctDelta = dx / rect.width;
+      let newPct = panStart.current.pct - pctDelta;
+      // Clamp: keep viewport within [0, 1 - 1/zoom]
+      const maxPct = Math.max(0, 1 - 1 / zoom);
+      newPct = Math.max(0, Math.min(maxPct, newPct));
+      setZoomPct(newPct);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Commit trend line if dragging
+    if (activeTool === 'trendline' && dragTrend) {
+      const dx = Math.abs(dragTrend.endX - dragTrend.startX);
+      const dy = Math.abs(dragTrend.endY - dragTrend.startY);
+      // Only commit if the user dragged more than a tiny threshold
+      if (dx > 0.01 || dy > 0.01) {
         setDrawings(prev => [...prev, {
           id: `draw_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           type: 'trendline',
-          x1: pendingPoint.x, y1: pendingPoint.y,
-          x2: pt.nx, y2: pt.ny,
+          x1: dragTrend.startX, y1: dragTrend.startY,
+          x2: dragTrend.endX, y2: dragTrend.endY,
           color: '#f0b323',
         }]);
-        setPendingPoint(null);
-        setActiveTool('none');
       }
+      setDragTrend(null);
+      setActiveTool('none');
     }
+    // End panning
+    if (activeTool === 'pan' && isPanning) {
+      setIsPanning(false);
+      panStart.current = null;
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    }
+  };
+
+  // Mouse wheel zoom — scroll up = zoom in, scroll down = zoom out
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    // Only zoom when pan tool is active OR when not drawing
+    if (activeTool !== 'none' && activeTool !== 'pan') return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.8 : 1.25; // zoom factor
+    let newZoom = zoom * delta;
+    newZoom = Math.max(1, Math.min(20, newZoom)); // clamp 1x..20x
+    if (newZoom === zoom) return;
+    // Zoom centered on mouse position
+    const pt = toViewBox(e);
+    if (!pt) { setZoom(newZoom); return; }
+    // nx is the normalized X (0..1) of the mouse in the viewBox.
+    // We want the data point under the cursor to stay under the cursor.
+    // Visible window: [zoomPct, zoomPct + 1/zoom]
+    // Mouse position within visible window: (nx - zoomPct) * zoom
+    const visW = 1 / zoom;
+    const mouseInVis = (pt.nx - zoomPct) / visW; // 0..1 within visible window
+    const newVisW = 1 / newZoom;
+    // Keep the same data point under the cursor
+    let newPct = pt.nx - mouseInVis * newVisW;
+    const maxPct = Math.max(0, 1 - 1 / newZoom);
+    newPct = Math.max(0, Math.min(maxPct, newPct));
+    setZoom(newZoom);
+    setZoomPct(newPct);
   };
 
   if (!chart) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Asnjë të dhënë grafiku</div>;
@@ -717,7 +804,25 @@ function CandlestickChartInner({
     return null;
   });
 
-  // Pending first point indicator (for trendline)
+  // Pending trend line draft (during drag-to-draw)
+  const dragTrendSvg = dragTrend ? (
+    <g pointerEvents="none">
+      <line
+        x1={dragTrend.startX * VB_W}
+        y1={dragTrend.startY * VB_H}
+        x2={dragTrend.endX * VB_W}
+        y2={dragTrend.endY * VB_H}
+        stroke="#f0b323"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeDasharray="4 3"
+        opacity={0.7}
+      />
+      <circle cx={dragTrend.startX * VB_W} cy={dragTrend.startY * VB_H} r={4} fill="#f0b323" />
+      <circle cx={dragTrend.endX * VB_W} cy={dragTrend.endY * VB_H} r={4} fill="#f0b323" stroke="white" strokeWidth={1} />
+    </g>
+  ) : null;
+
   const pendingSvg = pendingPoint ? (
     <circle
       cx={pendingPoint.x * VB_W}
@@ -730,21 +835,23 @@ function CandlestickChartInner({
     />
   ) : null;
 
+  // visibleData, dataStart, dataEnd are computed above (shared with useMemo for chart)
+
   return (
     <div className="relative w-full h-full">
-      {/* Drawing toolbar */}
+      {/* Drawing + Zoom toolbar */}
       <div className="absolute top-2 right-2 z-20 flex flex-col gap-1 bg-[#1e222d]/95 border border-[#2a2e39] rounded-md p-1.5 shadow-lg">
         <button
-          onClick={() => { setActiveTool('trendline'); setPendingPoint(null); }}
+          onClick={() => { setActiveTool('trendline'); setPendingPoint(null); setDragTrend(null); }}
           className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
             activeTool === 'trendline' ? 'bg-amber-600' : 'bg-[#363a45] hover:bg-[#434651]'
           }`}
-          title="Vizato vijë trendi (2 klikime)"
+          title="Vizato vijë trendi (mbaj + tërhiq)"
         >
           ↗ Trend
         </button>
         <button
-          onClick={() => { setActiveTool('long'); setPendingPoint(null); }}
+          onClick={() => { setActiveTool('long'); setPendingPoint(null); setDragTrend(null); }}
           className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
             activeTool === 'long' ? 'bg-emerald-600' : 'bg-[#363a45] hover:bg-[#434651]'
           }`}
@@ -753,7 +860,7 @@ function CandlestickChartInner({
           ▲ Long
         </button>
         <button
-          onClick={() => { setActiveTool('short'); setPendingPoint(null); }}
+          onClick={() => { setActiveTool('short'); setPendingPoint(null); setDragTrend(null); }}
           className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
             activeTool === 'short' ? 'bg-red-600' : 'bg-[#363a45] hover:bg-[#434651]'
           }`}
@@ -762,8 +869,51 @@ function CandlestickChartInner({
           ▼ Short
         </button>
         <div className="h-px bg-[#2a2e39] my-0.5" />
+        {/* Zoom controls */}
         <button
-          onClick={() => { setDrawings([]); setActiveTool('none'); setPendingPoint(null); }}
+          onClick={() => {
+            const newZoom = Math.min(20, zoom * 1.5);
+            setZoom(newZoom);
+          }}
+          className="text-[10px] px-2 py-1 rounded text-white font-medium transition-colors bg-[#363a45] hover:bg-[#434651]"
+          title="Zoom in (+)"
+        >
+          🔍+
+        </button>
+        <button
+          onClick={() => {
+            const newZoom = Math.max(1, zoom / 1.5);
+            setZoom(newZoom);
+            if (newZoom === 1) setZoomPct(0);
+            else {
+              const maxPct = Math.max(0, 1 - 1 / newZoom);
+              setZoomPct(Math.min(zoomPct, maxPct));
+            }
+          }}
+          className="text-[10px] px-2 py-1 rounded text-white font-medium transition-colors bg-[#363a45] hover:bg-[#434651]"
+          title="Zoom out (-)"
+        >
+          🔍−
+        </button>
+        <button
+          onClick={() => { setActiveTool('pan'); }}
+          className={`text-[10px] px-2 py-1 rounded text-white font-medium transition-colors ${
+            activeTool === 'pan' ? 'bg-blue-600' : 'bg-[#363a45] hover:bg-[#434651]'
+          }`}
+          title="Lëviz grafikun (drag ose mouse wheel)"
+        >
+          ✋ Pan
+        </button>
+        <button
+          onClick={() => { setZoom(1); setZoomPct(0); }}
+          className="text-[10px] px-2 py-1 rounded text-[#787b86] hover:text-white hover:bg-[#434651] font-medium transition-colors"
+          title="Rikthe zoom në default"
+        >
+          ⤢ Reset
+        </button>
+        <div className="h-px bg-[#2a2e39] my-0.5" />
+        <button
+          onClick={() => { setDrawings([]); setActiveTool('none'); setPendingPoint(null); setDragTrend(null); }}
           className="text-[10px] px-2 py-1 rounded text-[#787b86] hover:text-white hover:bg-[#434651] font-medium transition-colors"
           title="Fshi të gjitha vizatimet"
         >
@@ -771,18 +921,36 @@ function CandlestickChartInner({
         </button>
       </div>
 
+      {/* Zoom indicator */}
+      {zoom > 1 && (
+        <div className="absolute bottom-2 right-2 z-20 bg-[#1e222d]/95 border border-[#2a2e39] rounded-md px-2.5 py-1 text-[10px] text-[#d1d4dc] font-mono shadow-lg">
+          🔍 {zoom.toFixed(1)}x · {dataEnd - dataStart} bars
+        </div>
+      )}
+
       {/* Status indicator when tool is active */}
       {activeTool !== 'none' && (
         <div className="absolute top-2 left-2 z-20 bg-amber-600/90 text-white text-[10px] px-2.5 py-1 rounded font-medium shadow-lg">
           {activeTool === 'trendline'
-            ? (pendingPoint ? 'Kliko pikën e 2-të për vijën e trendit' : 'Kliko pikën e 1-rë për vijën e trendit')
-            : `Kliko në chart për të vendosur linjë ${activeTool === 'long' ? 'Long (blerje)' : 'Short (shitje)'}`}
+            ? 'Mbaj + tërhiq nga pika 1 te pika 2 për vijën e trendit'
+            : activeTool === 'pan'
+            ? 'Tërhiq për të lëvizur grafikun · Scroll për zoom'
+            : `Kliko në chart për linjë ${activeTool === 'long' ? 'Long (blerje)' : 'Short (shitje)'}`}
         </div>
       )}
 
       <div
-        className={`relative w-full h-full ${activeTool !== 'none' ? 'cursor-crosshair' : ''}`}
+        className={`relative w-full h-full ${
+          activeTool === 'trendline' ? 'cursor-crosshair' :
+          activeTool === 'pan' ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') :
+          activeTool !== 'none' ? 'cursor-crosshair' : ''
+        }`}
         onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        onWheel={handleWheel}
+        style={{ touchAction: 'none' }}
       >
         <svg
           ref={svgRef}
@@ -792,6 +960,7 @@ function CandlestickChartInner({
         >
           {chart.props.children}
           {drawingsSvg}
+          {dragTrendSvg}
           {pendingSvg}
         </svg>
         {tooltip && (
