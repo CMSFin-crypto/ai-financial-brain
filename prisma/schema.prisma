@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -210,7 +210,7 @@ model EventSnapshot {
 
 model GlobalMarketSnapshot {
   id        String   @id @default(cuid())
-  date      DateTime @db.Date
+  date      DateTime
   symbol    String // "KOSPI" | "^N225" | "^HSI" | "SPY" | "QQQ" | "SMH" | "VIX" etc.
   assetType String   @default("INDEX") // "INDEX" | "ETF" | "STOCK" | "VOLATILITY"
   region    String // "ASIA_PACIFIC" | "US" | "EUROPE"
@@ -237,7 +237,7 @@ model GlobalMarketSnapshot {
 
 model SpilloverSignal {
   id             String   @id @default(cuid())
-  date           DateTime @db.Date
+  date           DateTime
   targetSymbol   String // e.g. "NVDA", "SMH", "SOXX"
   targetSector   String? // e.g. "SEMICONDUCTOR"
   setupType      String // "CONTINUATION" | "CAPITULATION" | "RELIEF_RALLY" | "NEUTRAL"
@@ -268,7 +268,7 @@ model SpilloverSignal {
 
 model SpilloverModelResult {
   id              String   @id @default(cuid())
-  date            DateTime @db.Date
+  date            DateTime
   targetSymbol    String
   modelVersion    String // "spillover-v2-logreg" | "spillover-v2-xgb"
   probabilityUp   Float // 0 to 1
@@ -288,7 +288,7 @@ model SpilloverModelResult {
 
 model RegimeSnapshot {
   id             String   @id @default(cuid())
-  date           DateTime @db.Date
+  date           DateTime
   regimeState    String // "BULL_LOW_VOL" | "BEAR_HIGH_VOL" | "PANIC_CAPITULATION" | "RELIEF_RALLY" | "RANGE_NEUTRAL"
   confidence     Float // 0 to 1
   transitionRisk Float    @default(0) // 0-1, probability of regime change within 5 days
@@ -564,7 +564,7 @@ model FeatureSnapshot {
 
 model DriftSnapshot {
   id               String   @id @default(cuid())
-  date             DateTime @db.Date
+  date             DateTime
   // Per-horizon daily accuracy
   accuracy1d       Float?
   accuracy5d       Float?
@@ -868,7 +868,7 @@ model HistoricalNewsEvent {
 
 model MarketRegimeDaily {
   id                 String   @id @default(cuid())
-  date               DateTime @unique @db.Date
+  date               DateTime @unique
   spyTrendState      String   @default("UNKNOWN") // BULL / BEAR / RANGING
   qqqTrendState      String   @default("UNKNOWN")
   vixLevel           Float    @default(0)
@@ -883,4 +883,90 @@ model MarketRegimeDaily {
   updatedAt          DateTime @updatedAt
 
   @@index([date])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADAPTIVE SCANNER SNAPSHOT ENGINE — IBKR Pullback
+// ═══════════════════════════════════════════════════════════════
+// Scanner funnel: 400 → 80–150 → 20–40 → 5–10 READY
+// Snapshots taken 5x/day during RTH, outcomes evaluated +3d
+
+model ScanSnapshot {
+  id          String   @id @default(cuid())
+  scannedAt   DateTime @default(now())
+  sessionDate DateTime
+  slot        String
+  strategy    String   @default("IBKR_PULLBACK")
+  regime      String
+  spyTrend    String
+  tickerCount Int
+  items       SnapshotItem[]
+  events      UniverseEvent[]
+
+  @@index([sessionDate, slot])
+  @@index([scannedAt])
+}
+
+model SnapshotItem {
+  id           String   @id @default(cuid())
+  snapshotId   String
+  symbol       String
+  rank         Int
+  status       String
+  score        Float
+  rsSpy        Float
+  rsSector     Float
+  distEma20    Float
+  atrPct       Float
+  volVs20d     Float
+  spreadBps    Float
+  persistenceD Int      @default(0)
+  eventRisk    String
+  gated        Boolean  @default(false)
+  gateReason   String?
+  snapshot     ScanSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([symbol, snapshotId])
+  @@index([status])
+}
+
+model UniverseEvent {
+  id         String   @id @default(cuid())
+  snapshotId String
+  symbol     String
+  action     String
+  fromStatus String?
+  toStatus   String?
+  reasonCode String
+  reasonText String
+  snapshot   ScanSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([symbol, snapshotId])
+  @@index([reasonCode])
+}
+
+model OutcomeLabel {
+  id          String   @id @default(cuid())
+  symbol      String
+  sessionDate DateTime
+  firstStatus String
+  ret1h       Float?
+  retClose    Float?
+  ret1d       Float?
+  ret3d       Float?
+  label       String
+  outlier     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([symbol, sessionDate, firstStatus])
+  @@index([label, sessionDate])
+}
+
+model ScannerFactorWeight {
+  id         String   @id @default(cuid())
+  factor     String   @unique
+  weight     Float
+  sampleSize Int      @default(0)
+  winRate    Float    @default(0)
+  updatedAt  DateTime @updatedAt
 }
