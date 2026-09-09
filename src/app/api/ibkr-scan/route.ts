@@ -965,9 +965,9 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
         topN: 80,
       });
 
-      // Extract READY candidates with VP info
-      const ready = ibkrPullbackReady(snapshot.items);
-      vpReady = ready.map((i: any) => ({
+      // Extract ALL candidates with VP info (not just READY)
+      // This lets the UI show VP for every stock card, not only VP-gated ones
+      vpReady = snapshot.items.map((i: any) => ({
         symbol: i.symbol,
         status: i.status,
         score: i.score,
@@ -980,9 +980,12 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
         vpScore: i.vpScore,
         supportBelow: i.supportBelow,
         resistanceAbove: i.resistanceAbove,
+        gated: i.gated,
+        gateReason: i.gateReason,
       }));
 
-      console.log(`[IBKR v2] VP Engine: ${allScanned.length} candidates, ${snapshot.tickerCount} ranked, ${ready.length} READY`);
+      const readyCount = snapshot.items.filter((i: any) => i.status === 'MOMENTUM_PULLBACK_READY' && !i.gated).length;
+      console.log(`[IBKR v2] VP Engine: ${allScanned.length} candidates, ${snapshot.tickerCount} ranked, ${readyCount} READY (VP data for all ${snapshot.items.length})`);
     }
   } catch (e: any) {
     console.error('[IBKR v2] VP Engine failed (non-blocking):', e?.message || e);
