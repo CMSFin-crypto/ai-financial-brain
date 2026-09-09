@@ -345,7 +345,7 @@ function NewsImpactBlock({ symbol }: { symbol: string }) {
 }
 
 // ── Stock Card ──
-function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
+function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?: any }) {
   const [expanded, setExpanded] = useState(false);
   const [rankingChanges, setRankingChanges] = useState<any[] | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
@@ -596,6 +596,74 @@ function StockCard({ stock, rank }: { stock: FunnelStock; rank: number }) {
             {!showChanges && <ChevronDown className="w-3 h-3" />}
           </button>
         </div>
+
+        {/* Volume Profile info — from Adaptive Scanner Engine */}
+        {vp && (
+          <div className="mt-2 rounded-lg bg-blue-500/5 border border-blue-500/15 p-2.5">
+            <div className="flex items-center gap-1.5 mb-2">
+              <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+              <p className="text-[12px] font-semibold text-blue-400">Volume Profile — {stock.symbol}</p>
+              {vp.vpScore != null && (
+                <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                  VP {vp.vpScore}/100
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              {vp.poc != null && (
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground">POC</span>
+                  <span className="font-mono font-bold text-amber-400">${vp.poc.toFixed(2)}</span>
+                </div>
+              )}
+              {vp.val != null && (
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground">VAL</span>
+                  <span className="font-mono font-bold text-blue-400">${vp.val.toFixed(2)}</span>
+                </div>
+              )}
+              {vp.vah != null && (
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground">VAH</span>
+                  <span className="font-mono font-bold text-blue-400">${vp.vah.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-[10px]">
+              {vp.hvnBelow != null && (
+                <span className="flex items-center gap-1">
+                  <span className="text-muted-foreground">HVN↓</span>
+                  <span className="font-mono text-emerald-400">${vp.hvnBelow.toFixed(2)}</span>
+                  {vp.supportBelow && <span className="text-emerald-400 font-bold">(support)</span>}
+                </span>
+              )}
+              {vp.hvnAbove != null && (
+                <span className="flex items-center gap-1">
+                  <span className="text-muted-foreground">HVN↑</span>
+                  <span className="font-mono text-red-400">${vp.hvnAbove.toFixed(2)}</span>
+                  {vp.resistanceAbove && <span className="text-red-400 font-bold">(resist)</span>}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+              {vp.vpLocation && (
+                <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
+                  Location: {vp.vpLocation.replace('_', ' ')}
+                </span>
+              )}
+              {vp.supportBelow && !vp.resistanceAbove && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
+                  ✓ VP_OK (support poshtë, sipër pastër)
+                </span>
+              )}
+              {vp.resistanceAbove && (
+                <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold">
+                  ⚠ NO_CHASE (resistance sipër)
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Ranking Changes expanded panel */}
         {showChanges && (
@@ -1312,6 +1380,8 @@ export function IBKRStrategy() {
 
   const readyStocks = data?.results.filter(r => r.decision === 'READY') || [];
   const otherStocks = data?.results.filter(r => r.decision !== 'READY') || [];
+  // VP data from Adaptive Scanner Engine
+  const vpMap = new Map<string, any>((data?.vpReady || []).map((v: any) => [v.symbol, v]));
 
   return (
     <div className="space-y-4">
@@ -1413,7 +1483,7 @@ export function IBKRStrategy() {
         {readyStocks.length > 0 && (
           <div className="space-y-3">
             <p className="text-[13px] text-emerald-400 font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> READY — Kandidate per IBKR Bracket Order ({readyStocks.length})</p>
-            {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} />)}
+            {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} vp={vpMap.get(s.symbol)} />)}
           </div>
         )}
 
@@ -1421,7 +1491,94 @@ export function IBKRStrategy() {
         {otherStocks.length > 0 && (
           <div className="space-y-3">
             <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2"><Eye className="w-4 h-4" /> WATCHLIST / EVENT RISK ({otherStocks.length})</p>
-            {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} />)}
+            {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} vp={vpMap.get(s.symbol)} />)}
+          </div>
+        )}
+
+        {/* VP READY stocks — from Adaptive Scanner Engine (not in IBKR top 10) */}
+        {data?.vpReady && data.vpReady.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-[13px] text-blue-400 font-medium flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              VP READY — Volume Profile konfirmoi support ({data.vpReady.length})
+            </p>
+            <p className="text-[11px] text-muted-foreground -mt-2">
+              Këto tickers kaluan VP gate: trend + pullback EMA20 + persist + volum + VP support poshtë + pa resistance sipër
+            </p>
+            {data.vpReady.map((vp: any, i: number) => (
+              <Card key={vp.symbol} className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold">{vp.symbol}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-bold">
+                        VP READY
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-mono">
+                        Score {vp.score}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                      VP {vp.vpScore}/100
+                    </span>
+                  </div>
+                  {/* VP metrics */}
+                  <div className="grid grid-cols-3 gap-2 text-[11px] mb-2">
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">POC</span>
+                      <span className="font-mono font-bold text-amber-400">${vp.poc?.toFixed(2)}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">VAL</span>
+                      <span className="font-mono font-bold text-blue-400">${vp.val?.toFixed(2)}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">VAH</span>
+                      <span className="font-mono font-bold text-blue-400">${vp.vah?.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  {/* HVN info */}
+                  <div className="flex items-center gap-3 text-[10px] mb-2">
+                    {vp.hvnBelow != null && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-muted-foreground">HVN↓</span>
+                        <span className="font-mono text-emerald-400">${vp.hvnBelow.toFixed(2)}</span>
+                        {vp.supportBelow && <span className="text-emerald-400 font-bold">✓ support</span>}
+                      </span>
+                    )}
+                    {vp.hvnAbove != null && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-muted-foreground">HVN↑</span>
+                        <span className="font-mono text-muted-foreground">${vp.hvnAbove.toFixed(2)}</span>
+                        {vp.resistanceAbove ? (
+                          <span className="text-red-400 font-bold">⚠ resist</span>
+                        ) : (
+                          <span className="text-emerald-400">pastër</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {/* Location + status badges */}
+                  <div className="flex items-center gap-2 text-[10px]">
+                    {vp.vpLocation && (
+                      <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
+                        Location: {vp.vpLocation.replace('_', ' ')}
+                      </span>
+                    )}
+                    {vp.supportBelow && !vp.resistanceAbove && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
+                        ✓ VP_OK
+                      </span>
+                    )}
+                    {vp.resistanceAbove && (
+                      <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold">
+                        ⚠ NO_CHASE
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
 
