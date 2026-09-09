@@ -20,7 +20,12 @@ interface LearningStats {
 export function Header() {
   const [stats, setStats] = useState<LearningStats | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     // Fetch AI learning stats
@@ -180,9 +185,10 @@ export function Header() {
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border px-3 py-1.5 rounded-full cursor-pointer hover:bg-muted transition-colors"
             aria-label="Ndrysho temën"
+            suppressHydrationWarning
           >
-            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            <span>{theme === 'dark' ? 'E ndritshme' : 'E errët'}</span>
+            {mounted && theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            <span suppressHydrationWarning>{mounted && theme === 'dark' ? 'E ndritshme' : 'E errët'}</span>
           </button>
           <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full">
             <Activity className="w-3.5 h-3.5 text-emerald-500" />
