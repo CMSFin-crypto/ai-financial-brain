@@ -181,15 +181,22 @@ export function Header() {
             </div>
           )}
 
-          <button
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border px-3 py-1.5 rounded-full cursor-pointer hover:bg-muted transition-colors"
-            aria-label="Ndrysho temën"
-            suppressHydrationWarning
-          >
-            {mounted && theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            <span suppressHydrationWarning>{mounted && theme === 'dark' ? 'E ndritshme' : 'E errët'}</span>
-          </button>
+          {/* Theme toggle — hidden until mounted to prevent hydration mismatch */}
+          {mounted ? (
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border px-3 py-1.5 rounded-full cursor-pointer hover:bg-muted transition-colors"
+              aria-label="Ndrysho temën"
+            >
+              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              <span>{theme === 'dark' ? 'E ndritshme' : 'E errët'}</span>
+            </button>
+          ) : (
+            <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border px-3 py-1.5 rounded-full">
+              <Moon className="w-3.5 h-3.5" />
+              <span>E errët</span>
+            </div>
+          )}
           <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full">
             <Activity className="w-3.5 h-3.5 text-emerald-500" />
             <span>Në Kohë Reale</span>
