@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     "preview-*.space-z.ai",
     "preview-chat-*.space-z.ai",
   ],
-  // Prevent stale cache on mobile browsers
+  // Prevent stale cache — rebuilt 12:22 on mobile browsers
   async headers() {
     return [
       {
