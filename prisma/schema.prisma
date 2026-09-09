@@ -924,6 +924,16 @@ model SnapshotItem {
   eventRisk    String
   gated        Boolean  @default(false)
   gateReason   String?
+  // Volume Profile fields (IBKR Pullback gate)
+  poc            Float?
+  vah            Float?
+  val            Float?
+  hvnBelow       Float?
+  hvnAbove       Float?
+  vpLocation     String?
+  vpScore        Float?
+  supportBelow   Boolean  @default(false)
+  resistanceAbove Boolean @default(false)
   snapshot     ScanSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@index([symbol, snapshotId])

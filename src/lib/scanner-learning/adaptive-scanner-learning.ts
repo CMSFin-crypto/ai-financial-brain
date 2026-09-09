@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getScanUniverse } from "@/lib/scanner/universe-400";
+import { buildVolumeProfile, type OhlcvBar, type VolumeProfile } from "@/lib/scanner/volume-profile";
 
 export type ScanStatus =
   | "DAY_1_WATCH"
@@ -22,6 +23,8 @@ export type ScanStatus =
 export type ScanCandidate = {
   symbol: string;
   score: number;
+  lastPrice: number;
+  bars: OhlcvBar[];
   rsSpy: number;
   rsSector: number;
   distEma20: number;
@@ -33,7 +36,15 @@ export type ScanCandidate = {
   dayMovePct: number;
   aboveSma50: boolean;
   aboveSma200: boolean;
+  vp?: VolumeProfile | null;
 };
+
+// ═══ Enrich candidate with Volume Profile ═══
+// Uses last 20 daily bars (swing VP) — not tick-by-tick (IBKR pacing).
+export function withVolumeProfile(c: ScanCandidate): ScanCandidate {
+  const vp = buildVolumeProfile(c.bars.slice(-20), c.lastPrice);
+  return { ...c, vp };
+}
 
 // ═══ Time slots (ET) ═══
 const SLOT_BY_ET_HOUR: Array<[number, string]> = [
@@ -92,13 +103,27 @@ export function classifyStatus(c: ScanCandidate): {
   }
 
   // Full setup: trend + pullback to EMA20 + persistence + volume confirmation
+  // VP GATE: Long READY only if VP confirms support below + no resistance above
   const pullback = c.distEma20 <= 0 && c.distEma20 >= -2.5;
   const trend = c.aboveSma50 && c.aboveSma200 && c.rsSpy > 0 && c.rsSector > 0;
-  if (trend && pullback && c.persistenceD >= 2 && c.volVs20d >= 1.2) {
+  const vp = c.vp;
+  const vpOk = !!vp && vp.supportBelow && !vp.resistanceAbove && vp.roomUpPct >= 2;
+  const vpBlock = !!vp && vp.resistanceAbove && vp.roomUpPct < 1.2;
+
+  // VP resistance above → block entry
+  if (vpBlock) {
+    return { status: "NO_TRADE", gated: true, gateReason: "HVN_RESIST_ABOVE" };
+  }
+
+  // READY: trend + pullback + persist + volume + VP support confirmed
+  if (trend && pullback && c.persistenceD >= 2 && c.volVs20d >= 1.2 && vpOk) {
     return { status: "MOMENTUM_PULLBACK_READY", gated: false };
   }
 
-  // Trend OK but waiting for pullback
+  // Trend + pullback + persist but VP not confirmed → watch (wait for support)
+  if (trend && pullback && c.persistenceD >= 2 && (!vp || vp.vpScore >= 40)) {
+    return { status: "DAY_1_WATCH", gated: true, gateReason: "WAIT_VP_SUPPORT" };
+  }
   if (trend && c.persistenceD >= 1) {
     return { status: "DAY_1_WATCH", gated: true, gateReason: "WAIT_PULLBACK" };
   }
@@ -143,8 +168,11 @@ export async function persistScanSnapshot(params: {
   const slot = currentSlot(now);
   const sessionDate = sessionDateET(now);
 
+  // Enrich candidates with Volume Profile before ranking
+  const enriched = params.candidates.map(withVolumeProfile);
+
   // Rank by score, take top N, classify each
-  const ranked = [...params.candidates]
+  const ranked = [...enriched]
     .sort((a, b) => b.score - a.score)
     .slice(0, topN)
     .map((c, i) => {
@@ -245,6 +273,16 @@ export async function persistScanSnapshot(params: {
           eventRisk: r.eventRisk,
           gated: r.gated,
           gateReason: r.gateReason,
+          // Volume Profile fields
+          poc: r.vp?.poc,
+          vah: r.vp?.vah,
+          val: r.vp?.val,
+          hvnBelow: r.vp?.nearestHvnBelow,
+          hvnAbove: r.vp?.nearestHvnAbove,
+          vpLocation: r.vp?.location,
+          vpScore: r.vp?.vpScore,
+          supportBelow: r.vp?.supportBelow ?? false,
+          resistanceAbove: r.vp?.resistanceAbove ?? false,
         })),
       },
       events: {
