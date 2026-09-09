@@ -4,7 +4,8 @@ import { ScannerStrategy } from "@prisma/client";
 
 // Check if DATABASE_URL is configured for the current environment
 function isDbConfigured(): boolean {
-  const url = process.env.DATABASE_URL;
+  // Strip quotes (Vercel may keep literal quotes from .env file)
+  const url = (process.env.DATABASE_URL || "").replace(/^["']|["']$/g, "");
   if (!url) return false;
   // SQLite needs file: protocol — won't work on Vercel serverless
   if (url.startsWith("file:")) {

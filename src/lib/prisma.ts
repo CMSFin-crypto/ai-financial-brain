@@ -7,7 +7,8 @@
 import { PrismaClient } from "@prisma/client";
 
 function isDbAvailable(): boolean {
-  const url = process.env.DATABASE_URL;
+  // Strip quotes (Vercel may keep literal quotes from .env file)
+  const url = (process.env.DATABASE_URL || "").replace(/^["']|["']$/g, "");
   if (!url) return false;
   // SQLite (file:) only works in local dev, not on Vercel serverless
   if (url.startsWith("file:")) {
