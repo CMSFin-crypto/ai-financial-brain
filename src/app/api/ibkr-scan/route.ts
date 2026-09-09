@@ -920,20 +920,19 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     console.error('[IBKR v2] Snapshot save failed (non-blocking):', e?.message || e);
   }
 
-  // ── NEW: Adaptive Scanner Engine with Volume Profile + Snapshot ──
-  // Builds ScanCandidate[] with OHLCV bars, enriches with VP,
-  // persists to ScanSnapshot/SnapshotItem/UniverseEvent tables.
+  // ── NEW: Volume Profile Engine (in-memory, no DB required) ──
+  // Calculates VP for every candidate. Works on both sandbox (with DB)
+  // and Vercel (without DB) since VP is computed in-memory.
   let vpReady: any[] = [];
   try {
-    const { persistScanSnapshot, withVolumeProfile, classifyStatus, ibkrPullbackReady } =
+    const { withVolumeProfile, classifyStatus } =
       await import('@/lib/scanner-learning/adaptive-scanner-learning');
 
-    // Build candidates from ALL scanned stocks (not just top 10) for broader VP
+    // Build candidates from ALL scanned stocks
     const allScanned: any[] = [];
     for (const stock of phase2) {
       const data = hist[stock.symbol];
       if (!data || !stock.price) continue;
-      // Use trendScore and volConfScore as proxies when direct RS/vol data is missing
       const rsProxy = stock.trendScore >= 60 ? 2 : stock.trendScore >= 50 ? 0.5 : 0;
       const volProxy = stock.volConfScore >= 80 ? 1.4 : stock.volConfScore >= 60 ? 1.2 : 1.0;
       allScanned.push({
@@ -948,47 +947,60 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
         distEma20: stock.pullbackPct || 0,
         atrPct: stock.atr ? (stock.atr / stock.price) * 100 : 0,
         volVs20d: volProxy,
-        spreadBps: stock.spreadPct ? stock.spreadPct * 100 : 5,  // spreadPct is in % (0.038 = 3.8bps)
+        spreadBps: stock.spreadPct ? stock.spreadPct * 100 : 5,
         persistenceD: stock.totalScore >= 60 ? 3 : stock.totalScore >= 45 ? 2 : 1,
         eventRisk: stock.passedEventRisk ? 'NONE' : 'WARNING',
         dayMovePct: stock.dayChangePct || 0,
         aboveSma50: stock.sma50Val ? stock.price >= stock.sma50Val : stock.passedTrend,
-        aboveSma200: stock.passedTrend, // passedTrend means above key MAs
+        aboveSma200: stock.passedTrend,
       });
     }
 
-    if (allScanned.length > 0) {
-      const snapshot = await persistScanSnapshot({
+    // Calculate VP in-memory (no DB needed) + classify each candidate
+    vpReady = allScanned
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 80)
+      .map((c, i) => {
+        const enriched = withVolumeProfile(c);
+        const cls = classifyStatus(enriched);
+        return {
+          symbol: enriched.symbol,
+          rank: i + 1,
+          status: cls.status,
+          score: enriched.score,
+          poc: enriched.vp?.poc ?? null,
+          val: enriched.vp?.val ?? null,
+          vah: enriched.vp?.vah ?? null,
+          hvnBelow: enriched.vp?.nearestHvnBelow ?? null,
+          hvnAbove: enriched.vp?.nearestHvnAbove ?? null,
+          vpLocation: enriched.vp?.location ?? null,
+          vpScore: enriched.vp?.vpScore ?? 0,
+          supportBelow: enriched.vp?.supportBelow ?? false,
+          resistanceAbove: enriched.vp?.resistanceAbove ?? false,
+          gated: cls.gated,
+          gateReason: cls.gateReason ?? null,
+        };
+      });
+
+    // Try to persist snapshot to DB (only works on sandbox with SQLite)
+    // This is non-blocking — if DB fails, VP data is still returned in-memory
+    try {
+      const { persistScanSnapshot } = await import('@/lib/scanner-learning/adaptive-scanner-learning');
+      await persistScanSnapshot({
         candidates: allScanned,
         regime: regimeOk ? 'BULL' : 'BEAR',
         spyTrend: spyA50 && spyA200 ? 'UPTREND' : 'DOWNTREND',
         topN: 80,
       });
-
-      // Extract ALL candidates with VP info (not just READY)
-      // This lets the UI show VP for every stock card, not only VP-gated ones
-      vpReady = snapshot.items.map((i: any) => ({
-        symbol: i.symbol,
-        status: i.status,
-        score: i.score,
-        poc: i.poc,
-        val: i.val,
-        vah: i.vah,
-        hvnBelow: i.hvnBelow,
-        hvnAbove: i.hvnAbove,
-        vpLocation: i.vpLocation,
-        vpScore: i.vpScore,
-        supportBelow: i.supportBelow,
-        resistanceAbove: i.resistanceAbove,
-        gated: i.gated,
-        gateReason: i.gateReason,
-      }));
-
-      const readyCount = snapshot.items.filter((i: any) => i.status === 'MOMENTUM_PULLBACK_READY' && !i.gated).length;
-      console.log(`[IBKR v2] VP Engine: ${allScanned.length} candidates, ${snapshot.tickerCount} ranked, ${readyCount} READY (VP data for all ${snapshot.items.length})`);
+      console.log(`[IBKR v2] Snapshot saved to DB: ${allScanned.length} candidates`);
+    } catch (dbErr: any) {
+      // DB not available (Vercel) — VP data already computed in-memory above
+      console.log(`[IBKR v2] DB not available, VP computed in-memory only`);
     }
+
+    console.log(`[IBKR v2] VP Engine: ${allScanned.length} candidates, ${vpReady.length} with VP data`);
   } catch (e: any) {
-    console.error('[IBKR v2] VP Engine failed (non-blocking):', e?.message || e);
+    console.error('[IBKR v2] VP Engine failed:', e?.message || e);
   }
 
   // Add VP data to result
