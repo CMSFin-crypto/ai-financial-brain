@@ -6,19 +6,27 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Allow preview domains (IM gateway) to access dev server
+  allowedDevOrigins: [
+    "*.space-z.ai",
+    "preview-*.space-z.ai",
+    "preview-chat-*.space-z.ai",
+  ],
   // Prevent stale cache on mobile browsers
   async headers() {
     return [
       {
         source: '/',
         headers: [
-          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
         ],
       },
       {
         source: '/:path*',
         headers: [
-          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
         ],
       },
     ];
