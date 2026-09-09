@@ -920,6 +920,77 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     console.error('[IBKR v2] Snapshot save failed (non-blocking):', e?.message || e);
   }
 
+  // ── NEW: Adaptive Scanner Engine with Volume Profile + Snapshot ──
+  // Builds ScanCandidate[] with OHLCV bars, enriches with VP,
+  // persists to ScanSnapshot/SnapshotItem/UniverseEvent tables.
+  let vpReady: any[] = [];
+  try {
+    const { persistScanSnapshot, withVolumeProfile, classifyStatus, ibkrPullbackReady } =
+      await import('@/lib/scanner-learning/adaptive-scanner-learning');
+
+    // Build candidates from ALL scanned stocks (not just top 10) for broader VP
+    const allScanned: any[] = [];
+    for (const stock of phase2) {
+      const data = hist[stock.symbol];
+      if (!data || !stock.price) continue;
+      // Use trendScore and volConfScore as proxies when direct RS/vol data is missing
+      const rsProxy = stock.trendScore >= 60 ? 2 : stock.trendScore >= 50 ? 0.5 : 0;
+      const volProxy = stock.volConfScore >= 80 ? 1.4 : stock.volConfScore >= 60 ? 1.2 : 1.0;
+      allScanned.push({
+        symbol: stock.symbol,
+        score: stock.totalScore || 0,
+        lastPrice: stock.price,
+        bars: data.slice(-20).map((d: any) => ({
+          high: d.high, low: d.low, close: d.close, volume: d.volume || 0,
+        })),
+        rsSpy: stock.rsVsSpy20d || rsProxy,
+        rsSector: stock.rsVsSector20d || rsProxy,
+        distEma20: stock.pullbackPct || 0,
+        atrPct: stock.atr ? (stock.atr / stock.price) * 100 : 0,
+        volVs20d: volProxy,
+        spreadBps: stock.spreadPct ? stock.spreadPct * 100 : 5,  // spreadPct is in % (0.038 = 3.8bps)
+        persistenceD: stock.totalScore >= 60 ? 3 : stock.totalScore >= 45 ? 2 : 1,
+        eventRisk: stock.passedEventRisk ? 'NONE' : 'WARNING',
+        dayMovePct: stock.dayChangePct || 0,
+        aboveSma50: stock.sma50Val ? stock.price >= stock.sma50Val : stock.passedTrend,
+        aboveSma200: stock.passedTrend, // passedTrend means above key MAs
+      });
+    }
+
+    if (allScanned.length > 0) {
+      const snapshot = await persistScanSnapshot({
+        candidates: allScanned,
+        regime: regimeOk ? 'BULL' : 'BEAR',
+        spyTrend: spyA50 && spyA200 ? 'UPTREND' : 'DOWNTREND',
+        topN: 80,
+      });
+
+      // Extract READY candidates with VP info
+      const ready = ibkrPullbackReady(snapshot.items);
+      vpReady = ready.map((i: any) => ({
+        symbol: i.symbol,
+        status: i.status,
+        score: i.score,
+        poc: i.poc,
+        val: i.val,
+        vah: i.vah,
+        hvnBelow: i.hvnBelow,
+        hvnAbove: i.hvnAbove,
+        vpLocation: i.vpLocation,
+        vpScore: i.vpScore,
+        supportBelow: i.supportBelow,
+        resistanceAbove: i.resistanceAbove,
+      }));
+
+      console.log(`[IBKR v2] VP Engine: ${allScanned.length} candidates, ${snapshot.tickerCount} ranked, ${ready.length} READY`);
+    }
+  } catch (e: any) {
+    console.error('[IBKR v2] VP Engine failed (non-blocking):', e?.message || e);
+  }
+
+  // Add VP data to result
+  (result as any).vpReady = vpReady;
+
   return result;
 }
 
