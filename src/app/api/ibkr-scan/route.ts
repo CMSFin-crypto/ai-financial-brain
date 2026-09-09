@@ -11,41 +11,9 @@ export type { FunnelStock, FunnelResponse };
 // 5 shtresa: Data → Signal → Execution → Risk → Reporting
 // ═══════════════════════════════════════════════════════════════
 
-const UNIVERSE = [
-  // Mega Caps + Tech / AI / Semiconductors (50)
-  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','AVGO','TSLA','BRK.B','LLY',
-  'CRM','ORCL','ADBE','NOW','INTU','SNOW','PLTR','DDOG','CRWD','PANW',
-  'NET','ZS','FTNT','MRVL','QCOM','TXN','MU','LRCX','AMAT','ADI',
-  'KLAC','ON','DELL','HPQ','IBM','CTSH','WDAY','VEEV','HUBS','ANSS',
-  'PAYX','CDNS','MANH','STX','AKAM','EQIX','FSLR','ENPH','GFS','ARM',
-  // Communication / Media / Platforms (15)
-  'DIS','CMCSA','NFLX','EA','TTWO','UBER','ABNB','BKNG','EXPE','ROKU',
-  'PARA','LYV','DASH','RBLX','GOOG',
-  // Consumer Discretionary / Retail (20)
-  'COST','WMT','TGT','HD','LOW','NKE','MCD','SBUX','YUM','CMG',
-  'EL','DEO','STZ','CL','KMB','RCL','LULU','TJX','AZO','DLTR',
-  // Consumer Staples (15)
-  'KO','PEP','PM','MO','BUD','UL','GIS','SJM','HSY','COTY',
-  'CPB','CHD','K','CLX','BF.B',
-  // Healthcare / Biotech / Pharma (25)
-  'UNH','JNJ','MRK','ABBV','PFE','TMO','ABT','DHR','BMY','GILD',
-  'VRTX','REGN','BIIB','ISRG','SYK','EW','BSX','MDT','HUM','CI',
-  'ELV','CVS','MOH','CNC','IDXX',
-  // Finance / Payments / Insurance (25)
-  'JPM','V','MA','BAC','GS','MS','AXP','BLK','SCHW','C',
-  'USB','PGR','CB','AON','MET','PRU','COF','SYF','DFS','NTRS',
-  'ICE','MKTX','CBOE','PYPL','CME',
-  // Energy / Oil & Gas (15)
-  'XOM','CVX','COP','SLB','EOG','OXY','MPC','PSX','VLO','DVN',
-  'FANG','PXD','CTRA','HES','WMB',
-  // Industrial / Manufacturing / Aerospace (20)
-  'CAT','GE','HON','UPS','RTX','BA','LMT','NOC','GD','DE',
-  'MMM','EMR','ITW','ETN','CMI','ROK','PH','JCI','PCAR','FDX',
-  // REITs / Infra / Telecom (10)
-  'AMT','CCI','SPG','O','PSA','WELL','DLR','VICI','IRM','EQIX',
-  // Utilities / Power (10)
-  'NEE','DUK','SO','AEP','EXC','SRE','XEL','PEG','EIX','DTE',
-];
+// Universe 400 — liquid US stocks (deduped, batchable)
+import { getScanUniverse } from '@/lib/scanner/universe-400';
+const UNIVERSE = getScanUniverse(400);
 
 const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
 
