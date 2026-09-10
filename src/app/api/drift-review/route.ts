@@ -37,10 +37,13 @@ export async function GET(request: Request) {
       history,
     });
   } catch (err) {
-    console.error('[DRIFT-REVIEW] GET failed:', err);
-    // Return empty structure instead of 500 so UI can show "no data" state
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[DRIFT-REVIEW] GET failed:', message);
+    // Return empty structure instead of 500 so UI can show "no data" state.
+    // `error` is included for diagnostics (visible in the JSON response).
     return NextResponse.json({
-      ok: true,
+      ok: false,
+      error: message,
       recorded: false,
       data: {
         computedAt: new Date().toISOString(),
