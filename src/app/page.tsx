@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -53,7 +53,7 @@ import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 import { StockPredictor } from '@/components/financial-brain/stock-predictor';
 import Link from 'next/link';
 
-function KontrolTab({ icon, title, desc, pageUrl }: { icon: React.ReactNode; title: string; desc: string; pageUrl: string }) {
+function KontrolTab({ icon, title, desc, pageUrl, status, dbActive }: { icon: React.ReactNode; title: string; desc: string; pageUrl: string; status?: React.ReactNode; dbActive?: boolean }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-4">
       <Card className="border-orange-500/20 bg-orange-500/5">
@@ -63,6 +63,7 @@ function KontrolTab({ icon, title, desc, pageUrl }: { icon: React.ReactNode; tit
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-foreground">{title}</h3>
               <p className="text-sm text-muted-foreground mt-1">{desc}</p>
+              {status && <div className="mt-3">{status}</div>}
               <div className="mt-3 flex items-center gap-2">
                 <Link href={pageUrl} className="inline-flex items-center gap-1.5 rounded-md bg-orange-500/10 border border-orange-500/30 px-3 py-1.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20 transition-colors">
                   Hape faqen e plotë <ExternalLink className="w-3 h-3" />
@@ -70,20 +71,168 @@ function KontrolTab({ icon, title, desc, pageUrl }: { icon: React.ReactNode; tit
               </div>
             </div>
           </div>
-          <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2.5">
-            <p className="text-xs text-yellow-400/90">
-              <strong>Shënim:</strong> Këto funksione kanë nevojë për database PostgreSQL. Për t&apos;i aktivizuar, shto variablin <code className="bg-yellow-500/15 px-1 rounded text-yellow-300">DATABASE_URL</code> në Vercel Environment Variables.
-            </p>
-          </div>
+          {dbActive === false && (
+            <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2.5">
+              <p className="text-xs text-yellow-400/90">
+                <strong>Shënim:</strong> Këto funksione kanë nevojë për database PostgreSQL. Për t&apos;i aktivizuar, shto variablin <code className="bg-yellow-500/15 px-1 rounded text-yellow-300">DATABASE_URL</code> në Vercel Environment Variables.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </motion.div>
   );
 }
 
+// ─── Live status types (mirrors /api/kontrol-summary) ───────
+
+type KontrolSummary = {
+  dbActive: boolean;
+  drift: {
+    totalEvaluated: number;
+    overallAccuracy: number | null;
+    trend: 'improving' | 'stable' | 'degrading' | 'insufficient_data';
+    criticalCount: number;
+    warningCount: number;
+    brierScore: number | null;
+  } | null;
+  overrides: {
+    total: number;
+    pending: number;
+    modelHitRate: number | null;
+    humanHitRate: number | null;
+    delta: number | null;
+  } | null;
+  edge: {
+    totalEnvironments: number;
+    strongEdge: number;
+    negativeEdge: number;
+    bestSector: string | null;
+    bestSectorAccuracy: number | null;
+  } | null;
+  metrics: {
+    sampleSize: number;
+    accuracy: number | null;
+    brierScore: number | null;
+    alpha: number | null;
+    winRate: number | null;
+  } | null;
+};
+
+function KontrolBadge({ tone, children }: { tone: 'good' | 'warn' | 'bad' | 'muted'; children: React.ReactNode }) {
+  const cls = tone === 'good'
+    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+    : tone === 'warn'
+      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+      : tone === 'bad'
+        ? 'bg-red-500/10 border-red-500/30 text-red-400'
+        : 'bg-muted border-border text-muted-foreground';
+  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border ${cls}`}>{children}</span>;
+}
+
+function KontrolStatusLine({ summary }: { summary: KontrolSummary }) {
+  if (!summary.dbActive) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <KontrolBadge tone="warn"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />DB JOAKTIVE</KontrolBadge>
+        <span className="text-xs text-muted-foreground">Shto DATABASE_URL (Postgres) në Vercel për ta aktivizuar panelin</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+function DriftStatus({ summary }: { summary: KontrolSummary }) {
+  if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  const d = summary.drift;
+  if (!d || d.totalEvaluated === 0) {
+    return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Predikimet e para do mbushin këtë panel</span></div>;
+  }
+  const tone = d.criticalCount > 0 ? 'bad' : d.warningCount > 0 ? 'warn' : 'good';
+  const trendLabel = d.trend === 'improving' ? 'Po përmirësohet ↑' : d.trend === 'degrading' ? 'Po keqësohet ↓' : d.trend === 'stable' ? 'Stabil' : 'Pa të dhëna';
+  const trendTone = d.trend === 'improving' ? 'text-emerald-400' : d.trend === 'degrading' ? 'text-red-400' : 'text-muted-foreground';
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <KontrolBadge tone={tone}>LIVE</KontrolBadge>
+      <span className="text-xs text-muted-foreground">Saktësia: <span className={`font-semibold ${tone === 'good' ? 'text-emerald-400' : tone === 'warn' ? 'text-amber-400' : 'text-red-400'}`}>{d.overallAccuracy?.toFixed(1)}%</span></span>
+      <span className={`text-xs font-medium ${trendTone}`}>{trendLabel}</span>
+      {d.criticalCount > 0 && <KontrolBadge tone="bad">{d.criticalCount} KRITIK</KontrolBadge>}
+      {d.criticalCount === 0 && d.warningCount > 0 && <KontrolBadge tone="warn">{d.warningCount} WARNING</KontrolBadge>}
+      {d.brierScore != null && <span className="text-xs text-muted-foreground">Brier: {d.brierScore.toFixed(3)}</span>}
+      <span className="text-xs text-muted-foreground">({d.totalEvaluated} vlerësime)</span>
+    </div>
+  );
+}
+
+function OverrideStatus({ summary }: { summary: KontrolSummary }) {
+  if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  const o = summary.overrides;
+  if (!o || o.total === 0) {
+    return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Regjistro override-in e parë në ditar</span></div>;
+  }
+  const deltaTone = (o.delta ?? 0) > 0 ? 'good' : (o.delta ?? 0) < 0 ? 'warn' : 'muted';
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <KontrolBadge tone="good">LIVE</KontrolBadge>
+      <span className="text-xs text-muted-foreground">Modeli: <span className="font-semibold">{o.modelHitRate?.toFixed(0) ?? '—'}%</span></span>
+      <span className="text-xs text-muted-foreground">Ti: <span className="font-semibold">{o.humanHitRate?.toFixed(0) ?? '—'}%</span></span>
+      {(o.modelHitRate != null || o.humanHitRate != null) && (
+        <KontrolBadge tone={deltaTone as 'good' | 'warn' | 'muted'}>
+          {(o.delta ?? 0) >= 0 ? '+' : ''}{(o.delta ?? 0).toFixed(0)}% {(o.delta ?? 0) >= 0 ? 'ti' : 'modeli'}
+        </KontrolBadge>
+      )}
+      <span className="text-xs text-muted-foreground">{o.total} override · {o.pending} në pritje</span>
+    </div>
+  );
+}
+
+function EdgeStatus({ summary }: { summary: KontrolSummary }) {
+  if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  const e = summary.edge;
+  if (!e || e.totalEnvironments === 0) {
+    return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Duhen predikime të vlerësuara për të matur edge-in</span></div>;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <KontrolBadge tone="good">LIVE</KontrolBadge>
+      <span className="text-xs text-muted-foreground">Edge i fortë: <span className="font-semibold text-emerald-400">{e.strongEdge}</span> ambiente</span>
+      {e.bestSector && <span className="text-xs text-muted-foreground">Më i miri: <span className="font-semibold">{e.bestSector}</span>{e.bestSectorAccuracy != null ? ` (${e.bestSectorAccuracy.toFixed(0)}%)` : ''}</span>}
+      {e.negativeEdge > 0 && <KontrolBadge tone="bad">{e.negativeEdge} NEGATIVE</KontrolBadge>}
+    </div>
+  );
+}
+
+function MetricsStatus({ summary }: { summary: KontrolSummary }) {
+  if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  const m = summary.metrics;
+  if (!m) {
+    return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Metrikat do shfaqen pas predikimeve të para</span></div>;
+  }
+  const accTone = (m.accuracy ?? 0) >= 55 ? 'text-emerald-400' : (m.accuracy ?? 0) >= 48 ? 'text-amber-400' : 'text-red-400';
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <KontrolBadge tone="good">LIVE</KontrolBadge>
+      <span className="text-xs text-muted-foreground">Saktësia: <span className={`font-semibold ${accTone}`}>{m.accuracy?.toFixed(1)}%</span></span>
+      {m.brierScore != null && <span className="text-xs text-muted-foreground">Brier: {m.brierScore.toFixed(3)}</span>}
+      {m.alpha != null && <span className="text-xs text-muted-foreground">Alpha: <span className={`font-semibold ${(m.alpha) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{m.alpha >= 0 ? '+' : ''}{m.alpha.toFixed(1)}%</span></span>}
+      <span className="text-xs text-muted-foreground">({m.sampleSize} mostra)</span>
+    </div>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState('ibkr');
   const [quantTicker, setQuantTicker] = useState('');
+  const [kontrol, setKontrol] = useState<KontrolSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/kontrol-summary')
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled && data && typeof data.dbActive === 'boolean') setKontrol(data as KontrolSummary); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-background" suppressHydrationWarning>
@@ -654,6 +803,8 @@ export default function Home() {
               title="Drift Review"
               desc="Gjurmon shëndetin e modelit: preciziteti sipas afatit, kalibrimi (Brier/ECE), degradimi i regjimit dhe sektorit."
               pageUrl="/drift-review"
+              dbActive={kontrol?.dbActive}
+              status={kontrol ? <DriftStatus summary={kontrol} /> : <div className="h-6 w-56 animate-pulse rounded-md bg-muted" />}
             />
           </TabsContent>
 
@@ -664,6 +815,8 @@ export default function Home() {
               title="Override Journal"
               desc="Gjurmon çdo ndërhyrje njerëzore: a ndihmoi apo dëmtoi? Modeli vs njeriu, shkaku i override."
               pageUrl="/override-journal"
+              dbActive={kontrol?.dbActive}
+              status={kontrol ? <OverrideStatus summary={kontrol} /> : <div className="h-6 w-56 animate-pulse rounded-md bg-muted" />}
             />
           </TabsContent>
 
@@ -674,6 +827,8 @@ export default function Home() {
               title="Edge Leaderboard"
               desc="Ku ka sistemi avantazhin e vërtetë? Sektorët dhe regjimet me performancën më të mirë."
               pageUrl="/edge-leaderboard"
+              dbActive={kontrol?.dbActive}
+              status={kontrol ? <EdgeStatus summary={kontrol} /> : <div className="h-6 w-56 animate-pulse rounded-md bg-muted" />}
             />
           </TabsContent>
 
@@ -684,6 +839,8 @@ export default function Home() {
               title="Model Metrics"
               desc="Brier score, ECE, precision/recall, alpha, drawdown — metrikat e plotë të kalibrit dhe performancës."
               pageUrl="/model-metrics"
+              dbActive={kontrol?.dbActive}
+              status={kontrol ? <MetricsStatus summary={kontrol} /> : <div className="h-6 w-56 animate-pulse rounded-md bg-muted" />}
             />
           </TabsContent>
         </Tabs>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { evaluateDuePredictions } from "@/lib/evaluate-due-predictions";
 import { fetchHistoricalData } from "@/lib/alpha-vantage";
 import { snapshotModelMetrics } from "@/lib/model-metrics";
+import { sendKontrolAlerts, alertsConfigured } from "@/lib/alerts";
 
 async function getPrice(symbol: string): Promise<number | null> {
   try {
@@ -38,10 +39,20 @@ export async function GET(req: NextRequest) {
       if (snap) snapshot = { id: snap.id, createdAt: snap.createdAt };
     }
 
+    // Telegram alert: CRITICAL drift (or daily digest if enabled).
+    // Never let alerting break the evaluation cron.
+    let alert = { sent: false, level: "disabled" as string, detail: alertsConfigured() ? "" : "alerts not configured" };
+    try {
+      alert = await sendKontrolAlerts();
+    } catch {
+      alert = { sent: false, level: "error", detail: "sendKontrolAlerts threw" };
+    }
+
     return NextResponse.json({
       processed: results.length,
       evaluated,
       metricsSnapshot: snapshot,
+      alert,
       results,
     });
   } catch (error) {
