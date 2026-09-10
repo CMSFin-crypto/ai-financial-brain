@@ -1,5 +1,6 @@
 // AUTO-GENERATED from prisma/postgres-init.sql — do not edit by hand.
-// Full PostgreSQL schema (55 tables) executed by /api/db-setup.
+// Full PostgreSQL schema (38 tables) executed by /api/db-setup.
+// Regenerate with: python3 /home/z/my-project/scripts/gen_db_setup_sql.py
 
 export const POSTGRES_INIT_SQL = `-- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
@@ -823,6 +824,50 @@ CREATE TABLE "ScannerFactorWeight" (
     CONSTRAINT "ScannerFactorWeight_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Top10JournalEntry" (
+    "id" TEXT NOT NULL,
+    "scanDate" TEXT NOT NULL,
+    "strategy" TEXT NOT NULL DEFAULT 'IBKR_PULLBACK',
+    "ticker" TEXT NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "rank" INTEGER NOT NULL,
+    "score" DOUBLE PRECISION,
+    "status" TEXT,
+    "price" DOUBLE PRECISION,
+    "entry" DOUBLE PRECISION,
+    "stop" DOUBLE PRECISION,
+    "target" DOUBLE PRECISION,
+    "vixLevel" DOUBLE PRECISION,
+    "vixStatus" TEXT,
+    "breadthPct" DOUBLE PRECISION,
+    "breadthStatus" TEXT,
+    "regimeLevel" TEXT,
+    "rvol" DOUBLE PRECISION,
+    "rvolStatus" TEXT,
+    "dist52wHighPct" DOUBLE PRECISION,
+    "atrPct" DOUBLE PRECISION,
+    "atrStatus" TEXT,
+    "sector" TEXT,
+    "enterReason" TEXT,
+    "changeReason" TEXT,
+    "exitedAt" TIMESTAMP(3),
+    "entryHit" BOOLEAN,
+    "entryHitAt" TIMESTAMP(3),
+    "targetHit" BOOLEAN,
+    "stopHit" BOOLEAN,
+    "mfeR" DOUBLE PRECISION,
+    "maeR" DOUBLE PRECISION,
+    "resultR" DOUBLE PRECISION,
+    "exitStatus" TEXT,
+    "evalNote" TEXT,
+    "tags" TEXT[],
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Top10JournalEntry_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -1065,6 +1110,18 @@ CREATE UNIQUE INDEX "OutcomeLabel_symbol_sessionDate_firstStatus_key" ON "Outcom
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ScannerFactorWeight_factor_key" ON "ScannerFactorWeight"("factor");
+
+-- CreateIndex
+CREATE INDEX "Top10JournalEntry_ticker_scanDate_idx" ON "Top10JournalEntry"("ticker", "scanDate");
+
+-- CreateIndex
+CREATE INDEX "Top10JournalEntry_scanDate_active_idx" ON "Top10JournalEntry"("scanDate", "active");
+
+-- CreateIndex
+CREATE INDEX "Top10JournalEntry_exitStatus_idx" ON "Top10JournalEntry"("exitStatus");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Top10JournalEntry_scanDate_ticker_strategy_key" ON "Top10JournalEntry"("scanDate", "ticker", "strategy");
 
 -- AddForeignKey
 ALTER TABLE "Trade" ADD CONSTRAINT "Trade_portfolioId_fkey" FOREIGN KEY ("portfolioId") REFERENCES "Portfolio"("id") ON DELETE SET NULL ON UPDATE CASCADE;

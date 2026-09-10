@@ -120,6 +120,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // ── Phase 3: Ditar Top 10 — vlerësimi i hyrjeve (entry/target/stop/MFE/MAE/R) ──
+    let journal: any = null;
+    try {
+      const { evaluateTop10Journal } = await import('@/lib/top10-journal');
+      journal = await evaluateTop10Journal(30);
+    } catch (e: any) {
+      journal = { error: e?.message || String(e) };
+    }
+
     const elapsedMs = Date.now() - startTime;
 
     return NextResponse.json({
@@ -128,6 +137,7 @@ export async function GET(req: NextRequest) {
       pendingChecked: pendingOutcomes.length,
       evaluated,
       weightsUpdated,
+      journal,
       errors: errors.length ? errors.slice(0, 10) : undefined,
     });
   } catch (error) {

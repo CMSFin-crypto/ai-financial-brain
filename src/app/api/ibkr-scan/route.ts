@@ -1011,6 +1011,26 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     console.error('[IBKR v2] Snapshot save failed (non-blocking):', e?.message || e);
   }
 
+  // ── DITARI TOP 10 — vetëm kandidatët e tregtimit (READY) brenda Top 10 ──
+  // Non-blocking: nëse DB nuk është aktive, skanimi vazhdon normalisht.
+  try {
+    const { ingestTop10Journal } = await import('@/lib/top10-journal');
+    const journal = await ingestTop10Journal({
+      topStocks: topStocks as any,
+      regimeDetail: {
+        vix: { level: Math.round(vixLevel * 10) / 10, status: vixStatus },
+        breadth: { pct: breadthPct, status: breadthStatus },
+        regimeLevel,
+      },
+    });
+    console.log(
+      `[IBKR v2] Ditar Top 10: ${journal.saved} të reja, ${journal.updated} rifreskime, ` +
+      `${journal.exits} dalje, ${journal.reentered} rikthime${journal.error ? ` — ERR: ${journal.error}` : ''}`
+    );
+  } catch (e: any) {
+    console.error('[IBKR v2] Journal ingest failed (non-blocking):', e?.message || e);
+  }
+
   // ── NEW: Volume Profile Engine (in-memory, no DB required) ──
   // Calculates VP for every candidate. Works on both sandbox (with DB)
   // and Vercel (without DB) since VP is computed in-memory.

@@ -980,3 +980,65 @@ model ScannerFactorWeight {
   winRate    Float    @default(0)
   updatedAt  DateTime @updatedAt
 }
+
+// ═══════════════════════════════════════════════════════════════
+// DITARI TOP 10 (IBKR Trade Journal)
+// Vetëm kandidatët tregtimi (READY) brenda Top 10 — raport i detajuar
+// shfaqet vetëm me kërkesë përmes /api/journal/stock/[symbol]
+// ═══════════════════════════════════════════════════════════════
+model Top10JournalEntry {
+  id       String @id @default(cuid())
+  scanDate String // data e sesionit ET "YYYY-MM-DD"
+  strategy String @default("IBKR_PULLBACK")
+  ticker   String
+  active   Boolean @default(true) // aktualisht në setin Top 10 READY
+
+  // Pozicioni dhe vendimi në momentin e skanimit
+  rank   Int    // 1-10
+  score  Float?
+  status String? // decision: READY
+
+  // Nivelet e tregtimit
+  price  Float?
+  entry  Float?
+  stop   Float?
+  target Float? // target3R
+
+  // Konteksti i tregut në momentin e sinjalit
+  vixLevel      Float?
+  vixStatus     String?
+  breadthPct    Float?
+  breadthStatus String?
+  regimeLevel   String?
+  rvol          Float?
+  rvolStatus    String?
+  dist52wHighPct Float?
+  atrPct        Float?
+  atrStatus     String?
+  sector        String?
+
+  // Anëtarësimi në Top 10 (pse hyri / pse doli)
+  enterReason  String?
+  changeReason String?
+  exitedAt     DateTime?
+
+  // Vlerësimi i rezultatit (plotësohet nga cron ditor)
+  entryHit   Boolean?
+  entryHitAt DateTime?
+  targetHit  Boolean?
+  stopHit    Boolean?
+  mfeR       Float? // Maximum Favorable Excursion në R
+  maeR       Float? // Maximum Adverse Excursion në R
+  resultR    Float? // rezultati final në R
+  exitStatus String? // HIT_TARGET | HIT_STOP | EXPIRED | NO_FILL | OPEN
+  evalNote   String? // diagnoza + mësimi (shqip)
+  tags       String[] // CONTINUATION, FADE, NO_RVOL, REGIME, GAVE_BACK, NO_FILL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scanDate, ticker, strategy])
+  @@index([ticker, scanDate])
+  @@index([scanDate, active])
+  @@index([exitStatus])
+}
