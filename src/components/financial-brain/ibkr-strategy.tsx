@@ -1567,6 +1567,11 @@ export function Top10JournalCard() {
   // Setup-i i tabelave (1 klik) kur mungojnë
   const [setupBusy, setSetupBusy] = useState(false);
 
+  // Vëzhguesi live i çmimeve (alarme hyrjeje)
+  const [watch, setWatch] = useState<any>(null);
+  const [watchBusy, setWatchBusy] = useState(false);
+  const [watchEvents, setWatchEvents] = useState<any[]>([]);
+
   const fetchJournal = useCallback(async () => {
     setLoading(true);
     try {
@@ -1617,6 +1622,31 @@ export function Top10JournalCard() {
     finally { setSetupBusy(false); }
   };
 
+  // Kontroll i menjëhershëm i çmimeve: nivelet e Ditarit ndaj quote-ve live
+  const runWatch = useCallback(async () => {
+    setWatchBusy(true);
+    try {
+      const res = await fetch('/api/journal/price-watch', { cache: 'no-store' });
+      if (res.ok) {
+        const w = await res.json();
+        setWatch({ ...w, checkedAtTime: new Date().toLocaleTimeString('sq-AL') });
+        if ((w.events || []).length) {
+          setWatchEvents(w.events);
+          await fetchJournal(); // rifresko badge-t (TARGET ✓ / STOP ✗)
+        }
+      }
+    } catch { /* ignore */ }
+    finally { setWatchBusy(false); }
+  }, [fetchJournal]);
+
+  // Automatikisht: 1 kontroll në hapje + çdo 15 min (sa kohë faqja është hapur)
+  useEffect(() => {
+    if (!data?.dbActive || !data?.tablesReady) return;
+    const t = setTimeout(runWatch, 1500);
+    const iv = setInterval(runWatch, 15 * 60 * 1000);
+    return () => { clearTimeout(t); clearInterval(iv); };
+  }, [data?.dbActive, data?.tablesReady, runWatch]);
+
   const entries: any[] = data?.entries || [];
   const recent: any[] = data?.recent || [];
   const totals = data?.totals;
@@ -1644,9 +1674,57 @@ export function Top10JournalCard() {
           </div>
         </div>
         <p className="text-[12px] text-muted-foreground mt-1.5">
-          Ditar i detajuar ruhet automatikisshëm vetëm për Top 10; WATCHLIST, ATR BLOCK dhe sinjalet e dobëta NUK futen.
+          Ditar i detajuar ruhet automatikisht vetëm për Top 10; WATCHLIST, ATR BLOCK dhe sinjalet e dobëta NUK futen.
           Kliko simbolin për raportin e detajuar (diagnozë + mësim).
         </p>
+
+        {/* Vëzhguesi live — alarmet e hyrjes/targetit/stop-it (Telegram) */}
+        {!loading && data?.dbActive && data?.tablesReady && (
+          <div className="mt-2.5 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.03] px-2.5 py-2 flex items-center gap-2 flex-wrap">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-[11px] text-muted-foreground">Vëzhgues Live — hyrje · stop · target</span>
+            {watch && (
+              <span className="text-[10px] text-muted-foreground/60">
+                {watch.marketOpen ? 'tregu HAPUR' : 'tregu mbyllur'}
+                {watch.checkedAtTime ? ` · kontroll ${watch.checkedAtTime}` : ''}
+              </span>
+            )}
+            {watch && !watch.alertsConfigured && (
+              <span className="text-[10px] text-amber-400/80">Telegram jo i konfiguruar (Vercel → env)</span>
+            )}
+            <button onClick={runWatch} disabled={watchBusy} className="ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50">
+              {watchBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+              {watchBusy ? 'Duke kontrolluar...' : 'Kontrollo çmimet tani'}
+            </button>
+          </div>
+        )}
+
+        {/* Njoftimet e reja nga kontrolli i fundit */}
+        {watchEvents.length > 0 && (
+          <div className="mt-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-2.5 space-y-1">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] text-emerald-400/90 uppercase tracking-wide">Njoftime të reja ({watchEvents.length})</p>
+              <button onClick={() => setWatchEvents([])} className="text-[11px] text-muted-foreground/60 hover:text-foreground">fsheh ×</button>
+            </div>
+            {watchEvents.map((ev: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-[11px]">
+                {ev.kind === 'ENTRY' && <LogIn className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                {ev.kind === 'TARGET' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                {ev.kind === 'STOP' && <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                <span className="font-bold text-foreground">{ev.ticker}</span>
+                <span className="text-muted-foreground">
+                  {ev.kind === 'ENTRY' && `hyrja ${ev.level?.toFixed(2)} u kap — çmimi ${ev.price?.toFixed(2)}`}
+                  {ev.kind === 'TARGET' && `target ${ev.level?.toFixed(2)} u kap — çmimi ${ev.price?.toFixed(2)}`}
+                  {ev.kind === 'STOP' && `stop ${ev.level?.toFixed(2)} aktivizohet — çmimi ${ev.price?.toFixed(2)}`}
+                </span>
+                {ev.alertSent && <span className="text-[10px] text-emerald-400/70">→ Telegram ✓</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Loading */}
         {loading && (

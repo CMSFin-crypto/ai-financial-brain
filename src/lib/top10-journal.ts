@@ -487,7 +487,13 @@ export async function evaluateTop10Journal(
     const pending = await prisma.top10JournalEntry.findMany({
       where: {
         scanDate: { lt: today },
-        OR: [{ exitStatus: null }, { exitStatus: "OPEN" }],
+        OR: [
+          { exitStatus: null },
+          { exitStatus: "OPEN" },
+          // Hyrje të shënuara nga vëzhguesi intraday (price-watch) pa metrika
+          // të plota — ripërpunohen me bar-e ditore (MFE/MAE/resultR/diagnozë)
+          { AND: [{ exitStatus: { in: ["HIT_TARGET", "HIT_STOP"] } }, { resultR: null }] },
+        ],
       },
       orderBy: { scanDate: "asc" },
       take: limit,
