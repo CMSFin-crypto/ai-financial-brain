@@ -328,8 +328,10 @@ async function computeCalibrationDrift(warnings: DriftWarning[]): Promise<Calibr
 // ─── No-trade rate drift ────────────────────────────────────
 
 async function computeNoTradeDrift(warnings: DriftWarning[]): Promise<NoTradeDrift> {
+  // NOTE: finalDecision is a NON-nullable String in the schema, so a
+  // "not null" filter is both unnecessary and invalid for Prisma
+  // ("Argument `not` must not be null"). Simply select all predictions.
   const all = await prisma.prediction.findMany({
-    where: { finalDecision: { not: null } },
     select: { finalDecision: true, predictedAt: true },
   });
 
