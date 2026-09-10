@@ -787,8 +787,12 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
         {stock.reasons.length > 0 && (
           <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-blue-500/5 border border-blue-500/15">
             <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-            <div className="space-y-1 min-w-0">
-              {stock.reasons.map((r, i) => <p key={i} className="text-[13px] text-blue-300/80 leading-relaxed">· {r}</p>)}
+            <div className="space-y-1 min-w-0 flex-1">
+              {stock.reasons.map((r, i) => (
+                <MiniPopover key={i} label={r} desc={getReasonExplanation(r)}>
+                  <p className="text-[13px] text-blue-300/80 leading-relaxed hover:text-blue-300 transition-colors">· {r}</p>
+                </MiniPopover>
+              ))}
             </div>
           </div>
         )}
@@ -797,8 +801,12 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
         {stock.warnings.length > 0 && (
           <div className="mt-2 flex items-start gap-2.5 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/15">
             <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-            <div className="space-y-1 min-w-0">
-              {stock.warnings.map((w, i) => <p key={i} className="text-[13px] text-amber-300/80 leading-relaxed">· {w}</p>)}
+            <div className="space-y-1 min-w-0 flex-1">
+              {stock.warnings.map((w, i) => (
+                <MiniPopover key={i} label={w.replace(/ — .*$/, '')} desc={getWarningExplanation(w)}>
+                  <p className="text-[13px] text-amber-300/80 leading-relaxed hover:text-amber-300 transition-colors">· {w}</p>
+                </MiniPopover>
+              ))}
             </div>
           </div>
         )}
@@ -1222,6 +1230,89 @@ function DetailPopover({ label, value, good, warn, desc, ideal }: {
       </PopoverContent>
     </Popover>
   );
+}
+
+// ── Popups for Reasons (blue — positive signals) ──
+function getReasonExplanation(reason: string): string {
+  if (/Pullback \d+d/.test(reason)) {
+    const ideal = /ideal/.test(reason);
+    return `Pullback — aksioni ka rënë nga maja e fundit për disa ditë radhazi pa e thyer strukturën e trendit. Kjo është baza e strategjisë Pullback Swing: hyhet kur tërheqja përfundon dhe çmimi kthehet lart. Ditët ideale: 3-6 (mjaftueshëm për të pastruar shitësit e dobët, jo aq gjatë sa të prishë trendin). Një pullback 2-8 ditësh me volum në renie është i shëndetshëm.${ideal ? ' Ky pullback është brenda rangut IDEAL (3-6 ditë).' : ''}`;
+  }
+  if (/Afer EMA 10\/20/.test(reason)) {
+    return `Afer EMA 10/20 — çmimi aktual është brenda ±3% të mesatares eksponenciale 10 ose 20-ditore. Kjo është zona klasike e hyrjes: pullback-i ka sjellë çmimin te mesatarja që institucionet e mbrojnë, dhe stop-loss-i vendoset afër (nën EMA ose swing low). Idealisht: distanca -3% deri +3%. Kujdes: nëse çmimi e thyen EMA20 me volum të lartë, pullback-i mund të thellohet.`;
+  }
+  if (/Volumi ne renie/.test(reason)) {
+    return `Volumi në renie — gjatë pullback-it, volumi ditor po bie (5 ditët e fundit < 5 ditët para tyre). Ky është SHENJË E MIRË: rënia po bëhet nga shitës të dobët (retail), jo institucione. Pullback me volum të lartë = panik; pullback me volum të ulët = pushim normal i trendit. Kur të kthehet çmimi lart me volum spike, cikli është i plotë.`;
+  }
+  if (/Volum konfirmim/.test(reason)) {
+    return `Volum konfirmim — dita e fundit ka volum mbi 1.1x mesataren 20-ditore. Kjo tregon pjesëmarrje reale blerësiash në lëvizjen aktuale. Një rikthim (bounce) nga pullback PA volum është i dyshimtë — mund të jetë vetëm një kthim teknik i shkurtër që ndalet sërish. Volumi është 'karburanti' i lëvizjes: pa të, targetat 2R/3R arrihen rrallë.`;
+  }
+  if (/^RSI \d+/.test(reason)) {
+    return `RSI në rangun e duhur — RSI (Relative Strength Index) 14-ditor është brenda zonës së pritshme për hyrje (40-65 për pullback). Nën 40 = momentum shumë i dobët (rritja ka humbet forcë); mbi 65-70 = i mbivlerësuar (rrezik kthimi i menjëhershëm). RSI ideal për hyrje swing: zona 45-60 — aksioni është rikthyer nga mbishitje pa humbur trendin.`;
+  }
+  if (/Breakout 20d \+ volum/.test(reason)) {
+    return `Breakout 20d + volum — çmimi ka thyer majën 20-ditore ME volum mbi mesataren. Ky është Entry Type A: hyrja vendoset pak mbi 20d high (high20 × 1.002) me buy stop-limit. Volumi i lartë në momentin e thyerjes është kritik — pa të, 70% e breakout-eve dështojnë (false breakout). Kujdes: mos e ndjek nëse çmimi është tashmë 3-5% mbi nivelin e thyerjes — prit re-test ose pullback.`;
+  }
+  if (/Trend continuation/.test(reason)) {
+    return `Trend continuation — aksioni nuk është në pullback as në breakout, por po ecën anash (konsolidim) MBI SMA50 pas një rritjeje. Ky është Entry Type B2: çmimi i qetë pas lëvizjes lart tregon se blerësit po mbajnë pozicionet pa shitur. Hyrja bëhet me limit në zonën aktuale me stop nën fundin e konsolidimit. Idealisht: RSI 50-65 gjatë konsolidimit.`;
+  }
+  return `Arsye pozitive e identifikuar nga scanner-i për këtë setup. Kliko elementet e tjera për detaje.`;
+}
+
+// ── Popups for Warnings (amber — caution signals) ──
+function getWarningExplanation(warning: string): string {
+  if (/^R:R /.test(warning)) {
+    return `Risk:Reward i ulët — raporti rrezik-fitim është nën 1:2. Strategjia kërkon që distanca deri te target 3R të jetë së paku 2x distanca e stop-loss. Me R:R 1:1.5, edhe me 50% win-rate humb para afatgjatë. Pse ndodh: stop-i është i gjerë (ATR i lartë ose swing low i largët) ose rezistenca e afërt këput target-in. Idealisht: R:R ≥ 2.0 (me 3R target standard).`;
+  }
+  if (/i mbivleresuar/.test(warning)) {
+    return `RSI i mbivlerësuar — RSI mbi 75 tregon se aksioni është blerë në masë të madhe në kohë të shkurtër (overbought). Rreziku: kthimi i menjëhershëm (reversal) sapo blerësit e mbarojnë. Hynë tani = blejnë në majë. Idealisht: prit RSI të ftohet nën 65 ose një pullback 3-5 ditësh para hyrjes. Kujdes: në trende shumë të forta RSI mund të qëndrojë i lartë javë të tëra — përdor stop të disiplinuar nëse je brenda.`;
+  }
+  if (/^Rreziku /.test(warning)) {
+    return `Rreziku për aksion shumë i lartë — distanca Entry→Stop kalon 8% e çmimit. Kjo do të thotë: një goditje e vetme stop të kushton 8%+ të pozicionit dhe pozicioni duhet reduktuar shumë për të mbajtur risk 1% të llogarisë. Pse ndodh: ATR i lartë (aksion volatil) ose swing low larg. Idealisht: risk për aksion 2-5%. Nëse mbi 8%: konsidero pritje për një hyrje më afër mbështetjes.`;
+  }
+  if (/^ADX /.test(warning)) {
+    return `ADX i dobët — ADX (Average Directional Index) nën 20 tregon trend pa forcë drejtuese: çmimi po ecën anash (range), jo trend. Strategjia Pullback Swing FUNKSIONON VETËM NË TRENDE — në range, pullback-et nuk kthehen sepse nuk ka blerës trendi pas tyre. ADX > 25 = trend i qartë. Kujdes: ADX bie shpesh gjatë pullback-it kur është i shëndetshëm — verifiko që rënia është e përkohshme dhe ADX ishte > 25 para pullback.`;
+  }
+  if (/i paqendrueshem per swing/.test(warning)) {
+    return `ATR% SHUMË I LARTË — ATR si % e çmimit kalon 6%: aksioni lëviz mesatarisht 6%+ në ditë. Për swing: stop-i 1.5×ATR bëhet brutal (9%+ nën entry), gap-et overnight e kalojnë lehtë, dhe pozicioni duhet të jetë shumë i vogël. Ky është gate-i i tradability: READY kthehet automatikisht në WATCHLIST derisa volatiliteti të qetësohet. Idealisht: ATR% 1.5-6%. Mbi 6% = zona day-trade, jo swing.`;
+  }
+  if (/i ngadalte per swing/.test(warning)) {
+    return `ATR% SHUMË I ULËT — ATR si % e çmimit është nën 1.5%: aksioni 'i vdekur', lëviz shumë pak në ditë. Përse është problem: target 3R me ritëm 1%/ditë kërkon javë të tëra — kapitali bllokohet, dhe komisionet/spread-i hanë pjesën e fitimit. Aksione të ngadaltë i përshtaten më shumë dividend/investim sesa swing trading. Idealisht: ATR% 1.5-6% — 1R arrihet brenda 2-5 ditësh.`;
+  }
+  if (/^RVOL /.test(warning)) {
+    return `RVOL i ulët — Volumi relativ i ditës së fundit është nën 0.8x mesatares 20-ditore: interesi tregtar po bie. Në një bounce nga pullback, RVOL i ulët = rrezik hyrjeje të rreme — nuk ka institucione pas lëvizjes, vetëm shitës të vegjël. Idealisht: prit ditën kur RVOL ≥ 1.5x (konfirmim institucional) para hyrjes. Kliko badge-n 'RVOL' lart për vlerat aktuale.`;
+  }
+  if (/^REGJIMI RISK/.test(warning)) {
+    return `REGJIMI RISK — kushtet e tregut nuk lejojnë pozicione të reja long: ose SPY/QQQ nën mesataret, ose Breadth (aksionet mbi SMA50) ka rënë nën 35%. Hyrjet bllokohen automatikisht; aksioni shkon në WATCHLIST. Pse ekziston ky gate: në regjime RISK, pullback-et nuk kthehen — vazhdojnë të bien. Çfarë të bësh: vetëm monitoro, përgatit lista për kur regjimi kthehet OK (breadth rikuperohet 2-3 ditë PARA indekseve).`;
+  }
+  if (/^REGJIMI CAUTION/.test(warning)) {
+    return `REGJIMI CAUTION — tregu funksionon por me frikë: VIX i ngritur (20-25) ose Breadth i përzier (40-55% e aksioneve mbi SMA50). Ndikimi praktik: pozicioni reduktohet automatikisht në 75%, stop-i vendoset 1.2x më i gjerë (kur VIX ELEVATED) sepse lëvizjet ditore janë më të mëdha. Hyrjet lejohen vetëm për setup-et më të forta (score 60+). Kujdes: CAUTION shpesh përparon drejt RISK — verifiko breadth çdo ditë.`;
+  }
+  if (/^REGJIMI SPY\/QQQ/.test(warning)) {
+    return `Regjimi strukturor JO OK — SPY ose QQQ janë nën SMA50/SMA200. Kur indekset janë nën këto mesatare, korektimet sistemike i tërheqin TË GJITHË aksionet poshtë, pavarësisht cilësisë individuale të setup-it. Historikisht, swing long nën këto kushte ka win-rate shumë më të ulët. Çfarë të bësh: prit indekset të rikuperojnë mbi SMA50 përpara hyrjeve të reja.`;
+  }
+  if (/^EVENT_?RISK/.test(warning)) {
+    return `EVENT RISK — ka një ngjarje kritike afër (earnings, FOMC, CPI, ose 8-K material): raporti i fitimit, takimi i FED, ose indeksi i çmimeve brenda ditëve të ardhshme. Këto ngjarje krijojnë gap-e 5-15% që stop-i NUK i mbrojnë (stop-i ekzekutohet në çmimin e hapjes, jo atë të vendosur). Përse ka gate: statistikisht humbjet më të mëdha të swing traders vijnë nga pozicionet e mbajura përmes ngjarjeve. Idealisht: hyn VETËM pas ngjarjes, kur rreziku i panjohur është zhdukur.`;
+  }
+  if (/^Sector limit/.test(warning)) {
+    return `Sector limit — sektori ka arritur limitin e pozicioneve: MAX 2 aksione për sektor. Përse ekziston: kur dy aksione të njëjti sektor (p.sh. Tech) janë tashmë në listën READY, shtimi i i treti treqfishon ekspozimin ndaj të njëjtit faktor rreziku — njoftimi i keq i sektorit i godet të tria njëherësh (korelacion i lartë). Diversifikimi real kërkon sektorë të ndryshëm. Çfarë të bësh: zgjidh kandidatin me score-in më të lartë të sektorit, ose prit që një nga të dytit të dalë nga lista.`;
+  }
+  if (/^CATALYST GATE/.test(warning)) {
+    return `CATALYST GATE — kontrolli i katalizatorit ka gjetur diçka të përzier (p.sh. 8-K material brenda 30 ditëve, sentiment neutral/pa-qartësi, ose ngjarje makro brenda 24 orësh). Statusi MIXED nuk e bllokon tregtimin plotësisht por kërkon kujdes: verifiko lajmin përpara hyrjes (sekuenca 8-K, njoftimet e kompanisë). Pozicioni mund të reduktohet automatikisht. Idealisht: catalyst CLEAR — pa lajme të paqarta, hyn me plan të plotë.`;
+  }
+  if (/^MA jo te stackuara/.test(warning)) {
+    return `MA jo të stackuara — hierarkia e mesatareve NUK është në rresht të plotë: duhet Close > EMA20 > SMA50 > SMA200. Kur një lidhje mungon, struktura e trendit ka një dobësi: p.sh. çmimi nën EMA20 = korrigjim i shkurtër në zhvillim; SMA50 nën SMA200 = problem afatgjatë. Aksione me stacked MA të plotë kanë probabilitet shumë më të lartë për të vazhduar rritjen pas pullback-it.`;
+  }
+  if (/extended/.test(warning)) {
+    return `Jo pullback i vërtetë — 'extended' — aksioni deklarohet PULLBACK por është afër majës pa rënë reale (mbi -0.5% nga maja 10-ditore). Ky është rrezik bli-në-majë: hynë kur tërheqja sapo ka filluar. Pse renditet warning: pullback-et nën 0.5% nuk kanë pastruar shitësit e dobët — bounce-i i ardhshëm ka bazë të brishtë. Idealisht: prit një rënie -2% deri -8% me volum në renie.`;
+  }
+  if (/^SECTOR RS/.test(warning)) {
+    return `SECTOR RS i dobët — aksioni po LANGET kundra ETF-në e sektorit të vet (-3% ose më keq në 20 ditë) DHE vetë sektori është nën SMA50. Doble problem: edhe aksioni edhe sektori janë të dobët. Statistikisht, aksionet që i tejkalojnë sektori i tyre kanë më shumë gjasa për të vazhduar; kur të dy janë negativ, momentum-i mungon në të dy nivelet. Idealisht: aksion LEADING (+3% kundra ETF) me sektor mbi SMA50.`;
+  }
+  if (/^WATCHLIST:/.test(warning)) {
+    return `Kufizim hyrjeje — kjo kategori e vendimit READY → WATCHLIST: kushti i treguar nuk e bllokon monitorimin, por kërkon zgjidhje përpara hyrjes reale me para. Lexo arsyet specifike të tjera në listë: regjimi, event risk, ATR% ose sector RS. Kur të gjitha kushtet kthehen në rregull, vendimi rikthehet automatikisht në READY në scan-in e ardhshëm.`;
+  }
+  return `Paralajmërim i identifikuar nga scanner-i për këtë setup. Verifiko kushtet përpara hyrjes — kliko elementet e tjera për detaje.`;
 }
 
 // ── Mini Popover (reusable for grid labels) ──
