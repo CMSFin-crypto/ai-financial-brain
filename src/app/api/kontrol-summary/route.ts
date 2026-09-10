@@ -70,10 +70,22 @@ async function safeDrift(): Promise<DriftSummary | null> {
         : trends.length > 0
           ? 'stable'
           : 'insufficient_data';
+    // Overall accuracy: AIStats.avgAccuracy can be stale (0 until the
+    // learning engine updates it) — prefer the live weighted average of
+    // the per-horizon accuracies when samples exist.
+    const withSamples = review.horizons.filter((h) => h.sampleSize > 0);
+    const liveAccuracy = withSamples.length > 0
+      ? Math.round(
+          (withSamples.reduce((s, h) => s + h.accuracy * h.sampleSize, 0) /
+            withSamples.reduce((s, h) => s + h.sampleSize, 0)) * 10
+        ) / 10
+      : null;
+    const overallAccuracy = liveAccuracy
+      ?? (review.overall.totalEvaluated > 0 ? review.overall.overallAccuracy : null);
     return {
       totalEvaluated: review.overall.totalEvaluated,
       totalPending: review.overall.totalPending,
-      overallAccuracy: review.overall.totalEvaluated > 0 ? review.overall.overallAccuracy : null,
+      overallAccuracy,
       trend,
       criticalCount: review.warnings.filter((w) => w.level === 'CRITICAL').length,
       warningCount: review.warnings.filter((w) => w.level === 'WARNING').length,
