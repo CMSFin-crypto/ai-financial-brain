@@ -604,62 +604,82 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
               <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
               <p className="text-[12px] font-semibold text-blue-400">Volume Profile — {stock.symbol}</p>
               {vp.vpScore != null && (
-                <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
-                  VP {vp.vpScore}/100
+                <span className="ml-auto">
+                  <MiniPopover label={"VP Score " + vp.vpScore + "/100"} desc={"Volume Profile Score 0-100: sa i mirë është setup-i i çmimit në raport me volumin e tregtuar gjatë 20 ditëve të fundit (Daily timeframe). Llogaritet: +35 pikë nëse ka mbështetje volumi (HVN/POC) poshtë çmimit, +20 nëse çmimi është brenda ose mbi Value Area, +25 nëse ka së paku 2% hapësirë deri te rezistenca e ardhshme, +20 nëse nuk ka rezistencë të afërt sipër. Idealisht: 80-100 = Setup i shkelqyer (kushte ideale per hyrje), 60-79 = Setup i mire (hyrje me kujdes), 40-59 = Mesatar (prit konfirmim), 0-39 = Setup i dobet (shmang)."} >
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                      VP {vp.vpScore}/100
+                    </span>
+                  </MiniPopover>
                 </span>
               )}
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px]">
               {vp.poc != null && (
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground">POC</span>
-                  <span className="font-mono font-bold text-amber-400">${vp.poc.toFixed(2)}</span>
-                </div>
+                <MiniPopover label={"POC (Point of Control) — $" + vp.poc.toFixed(2)} desc={"Pika e Kontrollit — niveli i cmimit ku eshte tregtuar VOLUMI me i madh gjate 20 ditet e fundit. Ky eshte niveli me pranimin me te larte te tregut dhe vepron si 'magnet' — cmimi ka tendence te kthehet te POC. Idealisht: POC duhet te jete POSHTE cmimit aktual (funksionon si mbeshtetje ku hyrja ka kuptim) ose shume afer cmimit gjate hyrjes ne pullback. Nese POC eshte shume lart, cmimi ka tendence te terhiqet poshte — prit pullback para hyrjes."} >
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">POC</span>
+                    <span className="font-mono font-bold text-amber-400">${vp.poc.toFixed(2)}</span>
+                  </div>
+                </MiniPopover>
               )}
               {vp.val != null && (
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground">VAL</span>
-                  <span className="font-mono font-bold text-blue-400">${vp.val.toFixed(2)}</span>
-                </div>
+                <MiniPopover label={"VAL (Value Area Low) — $" + vp.val.toFixed(2)} desc={"Fundi i Value Area — niveli me i ulet i zones ku eshte tregtuar 70% e volumit (20 dite). Poshte VAL = zone me pranim te ulet —bleresit nuk e mbeshtesin cmimin atje. Idealisht per pullback entry: hyrja afer VAL me candle rikthimi (bounce) jep R:R shume te mire sepse stop-i vendoset afer nen VAL. Kujdes: nese cmimi e thyen VAL me volum te larte, shmang long — eshte shenje renieje me te thelle."} >
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">VAL</span>
+                    <span className="font-mono font-bold text-blue-400">${vp.val.toFixed(2)}</span>
+                  </div>
+                </MiniPopover>
               )}
               {vp.vah != null && (
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground">VAH</span>
-                  <span className="font-mono font-bold text-blue-400">${vp.vah.toFixed(2)}</span>
-                </div>
+                <MiniPopover label={"VAH (Value Area High) — $" + vp.vah.toFixed(2)} desc={"Maja e Value Area — niveli me i larte i zones ku eshte tregtuar 70% e volumit (20 dite). Idealisht: cmimi aktual duhet te jete NEN VAH me hapesire per te ngjitur (target-i 2R/3R ka vend per te arritur) ose duke e thyer VAH me volum te larte (breakout i vertete drejt targets me te larta). Kujdes: nese cmimi eshte shume afer VAH dhe nuk e thyen, mund te refuzohet (rejection) poshte. VAH i thyer pa volum = breakout i rreme — mos e ndjek."} >
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">VAH</span>
+                    <span className="font-mono font-bold text-blue-400">${vp.vah.toFixed(2)}</span>
+                  </div>
+                </MiniPopover>
               )}
             </div>
             <div className="flex items-center gap-3 mt-2 text-[10px]">
               {vp.hvnBelow != null && (
-                <span className="flex items-center gap-1">
-                  <span className="text-muted-foreground">HVN↓</span>
-                  <span className="font-mono text-emerald-400">${vp.hvnBelow.toFixed(2)}</span>
-                  {vp.supportBelow && <span className="text-emerald-400 font-bold">(support)</span>}
-                </span>
+                <MiniPopover label={"HVN poshte (Support) — $" + vp.hvnBelow.toFixed(2)} desc={"High Volume Node poshte — zona ku eshte tregtuar volum te pakten 1.5x mesatarja, tani NEN cmimin aktual. Kjo eshte MBËSHTETJE e FORTE sepse investitoret e mbrojne cmimin ku kane blere me shume. Idealisht: HVN poshte brenda 1.2% te cmimit aktual = mbeshtetje e afer (shfaq '(support)' — kondita ideale per hyrje). Sa me afer, aq me i sigurt stop-loss-i dhe R:R me i mire. Kujdes: HVN poshte shume larg = stop i gjere dhe risk me i larte per share."} >
+                  <span className="flex items-center gap-1">
+                    <span className="text-muted-foreground">HVN↓</span>
+                    <span className="font-mono text-emerald-400">${vp.hvnBelow.toFixed(2)}</span>
+                    {vp.supportBelow && <span className="text-emerald-400 font-bold">(support)</span>}
+                  </span>
+                </MiniPopover>
               )}
               {vp.hvnAbove != null && (
-                <span className="flex items-center gap-1">
-                  <span className="text-muted-foreground">HVN↑</span>
-                  <span className="font-mono text-red-400">${vp.hvnAbove.toFixed(2)}</span>
-                  {vp.resistanceAbove && <span className="text-red-400 font-bold">(resist)</span>}
-                </span>
+                <MiniPopover label={"HVN sipër (Rezistencë) — $" + vp.hvnAbove.toFixed(2)} desc={"High Volume Node sipër — zona ku eshte tregtuar volum te pakten 1.5x mesatarja, tani MBI cmimin aktual. Kjo eshte REZISTENCE e forte sepse aty jane grumbulluar shume bleres qe duan te dalin ne fitim (selling pressure). Idealisht: HVN sipër duhet te jete se pakut 2% larg cmimit (hapesire mjaftueshme fitimi deri atje — 'room up'). Kujdes: nese eshte brenda 1.2% te cmimit shfaqet 'NO_CHASE' — mos e ndjek cmimin atje, prit pullback ose thyerje te konfirmuar me volum."} >
+                  <span className="flex items-center gap-1">
+                    <span className="text-muted-foreground">HVN↑</span>
+                    <span className="font-mono text-red-400">${vp.hvnAbove.toFixed(2)}</span>
+                    {vp.resistanceAbove && <span className="text-red-400 font-bold">(resist)</span>}
+                  </span>
+                </MiniPopover>
               )}
             </div>
             <div className="flex items-center gap-2 mt-1.5 text-[10px]">
               {vp.vpLocation && (
-                <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
-                  Location: {vp.vpLocation.replace('_', ' ')}
-                </span>
+                <MiniPopover label={"Location: " + vp.vpLocation.replace('_', ' ')} desc={"Vendndodhja e cmimit aktual ne raport me Value Area (zona e 70% te volumit, 20 dite): IN VA = cmimi brenda zones se pranuar — gjendje normale, balanced, entry me i sigurt (pullback brenda VA). ABOVE VA = cmimi MBI zones — moment i forte (bullish) por i zgjeruar; rrezik refuzimi pas ne VA; kerkon konfirmim volumi per te mbetur sipër. BELOW VA = cmimi NEN zones — pranim i ulet, momentum negativ; shmang long derisa cmimi te kthehet brenda VA."} >
+                  <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
+                    Location: {vp.vpLocation.replace('_', ' ')}
+                  </span>
+                </MiniPopover>
               )}
               {vp.supportBelow && !vp.resistanceAbove && (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
-                  ✓ VP_OK (support poshtë, sipër pastër)
-                </span>
+                <MiniPopover label="VP_OK — Setup Ideal" desc={"Vlerësim POZITIV: ka mbështetje volumi te afer poshte (HVN ose POC brenda 1.2% te cmimit) DHE nuk ka rezistencë të afërt sipër. Kjo eshte konfigurimi IDEAL per hyrje long: risk-i i definuar qarte (stop afer mbeshtetjes) dhe hapesire fitimi e paster sipër. Idealisht: hyr me LIMIT ORDER ne zonen e pullback, jo me market order. Ky kombinim + score mbi 60 = kandidate me prioritet per tregtim."} >
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
+                    ✓ VP_OK (support poshtë, sipër pastër)
+                  </span>
+                </MiniPopover>
               )}
               {vp.resistanceAbove && (
-                <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold">
-                  ⚠ NO_CHASE (resistance sipër)
-                </span>
+                <MiniPopover label="⚠ NO_CHASE — Mos e Ndjek Cmimin" desc={"PARALAJMERIM: ka rezistencë volumi (HVN ose VAH) brenda 1.2% SIPËR cmimit aktual. MOS e ndjek cmimin me market order — rreziku i refuzimit te cmimit eshte shume i larte dhe mund te mbetesh i bllokuar ne humbje. Idealisht bëj njerën nga keto dy: (1) PRIT pullback te mbeshtetja (HVN poshte / EMA20) dhe hyj me limit order atje, ose (2) prit THYERJE te konfirmuar te rezistencës me volum mbi mesataren + mbyllje ditore mbi VAH. Chase-i ne rezistencë = humbje te shpeshta."} >
+                  <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold">
+                    ⚠ NO_CHASE (resistance sipër)
+                  </span>
+                </MiniPopover>
               )}
             </div>
           </div>
