@@ -1963,6 +1963,87 @@ export function IBKRStrategy() {
         </CardContent>
       </Card>
 
+      {/* Learning Engine — Adaptive Scanner (lart në faqe, pas Funnel Scanner) */}
+      <Card className="border-violet-500/20 bg-violet-500/5">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitCompareArrows className="w-4 h-4 text-violet-400" />
+              <h3 className="text-[14px] font-bold text-foreground">Learning Engine</h3>
+              <span className="text-[11px] text-muted-foreground">— Adaptive Scanner Statistics</span>
+            </div>
+            <Popover open={showLearning} onOpenChange={(open) => {
+              setShowLearning(open);
+              if (open) fetchLearningSummary();
+            }}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors">
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  Statistikat
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-96 p-4 bg-popover border-border/50" side="bottom" align="end">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <GitCompareArrows className="w-5 h-5 text-violet-400" />
+                    <p className="text-sm font-semibold text-foreground">Adaptive Learning Summary</p>
+                  </div>
+                  {learningLoading && (
+                    <div className="flex items-center gap-2 py-4 justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      <span className="text-[12px] text-muted-foreground">Duke ngarkuar...</span>
+                    </div>
+                  )}
+                  {!learningLoading && !learningSummary && (
+                    <p className="text-[12px] text-muted-foreground py-2">Te dhenat nuk u ngarkuan.</p>
+                  )}
+                  {!learningLoading && learningSummary && (
+                    <div className="space-y-2.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Sinjale Total</p>
+                          <p className="text-lg font-bold text-emerald-400">{learningSummary.totalSignals ?? 0}</p>
+                        </div>
+                        <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Continuation Rate</p>
+                          <p className="text-lg font-bold text-blue-400">{learningSummary.continuationRate ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Fade Rate</p>
+                          <p className="text-lg font-bold text-amber-400">{learningSummary.fadeRate ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2.5 text-center">
+                          <p className="text-[11px] text-muted-foreground">Avg Next Day Return</p>
+                          <p className={`text-lg font-bold ${(learningSummary.averageNextDayReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(learningSummary.averageNextDayReturnPct ?? 0) > 0 ? '+' : ''}{learningSummary.averageNextDayReturnPct ?? 0}%</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-lg bg-muted/10 p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">Avg Drawdown</p>
+                          <p className="text-sm font-bold text-red-400">{learningSummary.averageDrawdownPct ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/10 p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">Target 5% Hit</p>
+                          <p className="text-sm font-bold text-emerald-400">{learningSummary.target5HitRate ?? 0}%</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/10 p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">Target 10% Hit</p>
+                          <p className="text-sm font-bold text-violet-400">{learningSummary.target10HitRate ?? 0}%</p>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/60">Weights adaptohen ±0.05 per jav, minimum 50 raste. Walk-forward test mujore.</p>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <p className="text-[12px] text-muted-foreground mt-1.5">
+            Scanner-i mbledh snapshots 7x ne dite, ndjek ndryshimet e rank/score, dhe mat rezultatet e sinjaleve. Faktoret adaptohen bazuar ne performancen historike.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Search single stock */}
       <Card className="border-violet-500/20 bg-violet-500/5">
         <CardContent className="p-4">
@@ -2185,87 +2266,6 @@ export function IBKRStrategy() {
 
       {/* Ditar Top 10 — Trade Journal (vetëm kandidatët READY; detajet me kërkesë) */}
       <Top10JournalCard />
-
-      {/* Adaptive Scanner Learning Panel */}
-      <Card className="border-violet-500/20 bg-violet-500/5">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <GitCompareArrows className="w-4 h-4 text-violet-400" />
-              <h3 className="text-[14px] font-bold text-foreground">Learning Engine</h3>
-              <span className="text-[11px] text-muted-foreground">— Adaptive Scanner Statistics</span>
-            </div>
-            <Popover open={showLearning} onOpenChange={(open) => {
-              setShowLearning(open);
-              if (open) fetchLearningSummary();
-            }}>
-              <PopoverTrigger asChild>
-                <button className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors">
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  Statistikat
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-96 p-4 bg-popover border-border/50" side="bottom" align="end">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <GitCompareArrows className="w-5 h-5 text-violet-400" />
-                    <p className="text-sm font-semibold text-foreground">Adaptive Learning Summary</p>
-                  </div>
-                  {learningLoading && (
-                    <div className="flex items-center gap-2 py-4 justify-center">
-                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                      <span className="text-[12px] text-muted-foreground">Duke ngarkuar...</span>
-                    </div>
-                  )}
-                  {!learningLoading && !learningSummary && (
-                    <p className="text-[12px] text-muted-foreground py-2">Te dhenat nuk u ngarkuan.</p>
-                  )}
-                  {!learningLoading && learningSummary && (
-                    <div className="space-y-2.5">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/15 p-2.5 text-center">
-                          <p className="text-[11px] text-muted-foreground">Sinjale Total</p>
-                          <p className="text-lg font-bold text-emerald-400">{learningSummary.totalSignals ?? 0}</p>
-                        </div>
-                        <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 p-2.5 text-center">
-                          <p className="text-[11px] text-muted-foreground">Continuation Rate</p>
-                          <p className="text-lg font-bold text-blue-400">{learningSummary.continuationRate ?? 0}%</p>
-                        </div>
-                        <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 p-2.5 text-center">
-                          <p className="text-[11px] text-muted-foreground">Fade Rate</p>
-                          <p className="text-lg font-bold text-amber-400">{learningSummary.fadeRate ?? 0}%</p>
-                        </div>
-                        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2.5 text-center">
-                          <p className="text-[11px] text-muted-foreground">Avg Next Day Return</p>
-                          <p className={`text-lg font-bold ${(learningSummary.averageNextDayReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(learningSummary.averageNextDayReturnPct ?? 0) > 0 ? '+' : ''}{learningSummary.averageNextDayReturnPct ?? 0}%</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-lg bg-muted/10 p-2 text-center">
-                          <p className="text-[10px] text-muted-foreground">Avg Drawdown</p>
-                          <p className="text-sm font-bold text-red-400">{learningSummary.averageDrawdownPct ?? 0}%</p>
-                        </div>
-                        <div className="rounded-lg bg-muted/10 p-2 text-center">
-                          <p className="text-[10px] text-muted-foreground">Target 5% Hit</p>
-                          <p className="text-sm font-bold text-emerald-400">{learningSummary.target5HitRate ?? 0}%</p>
-                        </div>
-                        <div className="rounded-lg bg-muted/10 p-2 text-center">
-                          <p className="text-[10px] text-muted-foreground">Target 10% Hit</p>
-                          <p className="text-sm font-bold text-violet-400">{learningSummary.target10HitRate ?? 0}%</p>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground/60">Weights adaptohen ±0.05 per jav, minimum 50 raste. Walk-forward test mujore.</p>
-                    </div>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <p className="text-[12px] text-muted-foreground mt-1.5">
-            Scanner-i mbledh snapshots 7x ne dite, ndjek ndryshimet e rank/score, dhe mat rezultatet e sinjaleve. Faktoret adaptohen bazuar ne performancen historike.
-          </p>
-        </CardContent>
-      </Card>
 
       {/* Strategy Reference (collapsed after scan) */}
       <Section title="Rregullat e Filtrit (Funnel Steps)" icon={Calculator} color="text-blue-400" defaultOpen={!hasScanned}>
