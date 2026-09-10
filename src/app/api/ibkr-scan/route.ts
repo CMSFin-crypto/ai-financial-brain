@@ -281,12 +281,29 @@ interface FunnelStock {
   overnightBias: string;
   gapCanSkipStop: boolean;
   stopDistPct: number;
+  // NEW: Entry quality — RVOL + 52W High
+  rvol: number;                 // relative volume (last completed day / 20d avg)
+  rvolStatus: string;           // HIGH | NORMAL | LOW
+  high52w: number;              // 52-week high
+  distFrom52wHighPct: number;   // % below 52w high
+  near52wHigh: boolean;         // within 15% of 52w high
+  // NEW: Tradability — ATR% gate
+  atrStatus: string;            // OK | TOO_VOLATILE | TOO_SLOW
+  atrTradable: boolean;         // 1.5% - 6%
 }
 
 interface FunnelResponse {
   scannedAt: string;
   regimeOk: boolean;
-  regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
+  regimeDetail: {
+    spy: { above50: boolean; above200: boolean };
+    qqq: { above50: boolean; above200: boolean };
+    vix: { level: number; status: string };
+    breadth: { pct: number; status: string };
+    regimeLevel: string;            // OK | CAUTION | RISK
+    regimeMultiplier: number;       // 1.0 | 0.75 | 0.5
+    stopVolMultiplier: number;      // 1.0 | 1.2 | 1.5
+  };
   funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; passedEventRisk: number; passedSectorLimit: number; };
   results: FunnelStock[];
   // NEW: exposure summary
@@ -305,10 +322,11 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const MAX_RISK_PCT = 1.0;   // max 1% of equity per trade
   const MAX_PER_SECTOR = 2;   // max 2 stocks per sector
 
-  // ── 0. Fetch benchmarks + sector ETFs ──
-  const [spyData, qqqData, ...sectorDataArr] = await Promise.all([
+  // ── 0. Fetch benchmarks + sector ETFs + VIX ──
+  const [spyData, qqqData, vixData, ...sectorDataArr] = await Promise.all([
     fetchHistoricalData('SPY', '1y'),
     fetchHistoricalData('QQQ', '1y'),
+    fetchHistoricalData('^VIX', '1mo'),
     ...SECTOR_ETFS.map(etf => fetchHistoricalData(etf, '1y')),
   ]);
   if (!spyData || !qqqData) throw new Error('Te dhena SPY/QQQ mungojne');
@@ -332,6 +350,10 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const regimeOk = spyA50 && spyA200 && qqqA50 && qqqA200;
   const spyRS60 = pct(spyC, 60);
 
+  // ── NEW: VIX level (volatility regime) ──
+  const vixLevel = vixData && vixData.length ? (vixData[vixData.length - 1].close || 0) : 0;
+  const vixStatus = vixLevel === 0 ? 'N/A' : vixLevel > 25 ? 'HIGH' : vixLevel >= 20 ? 'ELEVATED' : 'CALM';
+
   // ── 1. Fetch all universe OHLCV ──
   const syms = DEDUPED_UNIVERSE.filter(s => !ETF_SET.has(s));
   const hist: Record<string, HistoricalDataPoint[] | null> = {};
@@ -345,6 +367,28 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   }
 
   console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
+
+  // ── NEW: Market Breadth — % of universe above 50D SMA (leading regime indicator) ──
+  let above50Count = 0, breadthTotal = 0;
+  for (const sym of syms) {
+    const d = hist[sym];
+    if (!d || d.length < 50) continue;
+    const c = d.map(x => x.close);
+    const s50 = calculateSMA(c, 50);
+    const li = c.length - 1;
+    breadthTotal++;
+    if (c[li] > (s50[li] || 0)) above50Count++;
+  }
+  const breadthPct = breadthTotal > 0 ? Math.round((above50Count / breadthTotal) * 1000) / 10 : 50;
+  const breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
+
+  // ── NEW: Regime level — OK | CAUTION | RISK (structure + VIX + breadth) ──
+  let regimeLevel: 'OK' | 'CAUTION' | 'RISK' = 'OK';
+  if (!regimeOk || breadthPct < 35) regimeLevel = 'RISK';
+  else if (vixStatus === 'HIGH' || vixStatus === 'ELEVATED' || breadthStatus !== 'HEALTHY') regimeLevel = 'CAUTION';
+  const regimeMultiplier = regimeLevel === 'RISK' ? 0.5 : regimeLevel === 'CAUTION' ? 0.75 : 1.0;
+  const stopVolMultiplier = vixStatus === 'HIGH' ? 1.5 : vixStatus === 'ELEVATED' ? 1.2 : 1.0;
+  console.log(`[IBKR v2] Regime: ${regimeLevel} | VIX ${vixLevel.toFixed(1)} (${vixStatus}) | Breadth ${breadthPct}% (${breadthStatus}) | size x${regimeMultiplier} | stop x${stopVolMultiplier}`);
 
   // ── 2. PHASE 1 — Mechanical filter (liquidity + trend + ADX + stacked MA + event risk) ──
   const phase1: FunnelStock[] = [];
@@ -440,6 +484,8 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       overnightRiskLevel: 'SAFE', overnightBias: 'NEUTRAL',
       gapCanSkipStop: false, stopDistPct: 0,
       spreadPct: 0, liquidityScore: 0, liquidityStatus: 'N/A',
+      rvol: 0, rvolStatus: 'N/A', high52w: 0, distFrom52wHighPct: 0, near52wHigh: false,
+      atrStatus: 'N/A', atrTradable: false,
     });
   }
 
@@ -525,6 +571,15 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (mom10 > 0) mScore += 15; else mScore -= 10;
     if (mom22 > 0) mScore += 15; else mScore -= 10;
     if (mom5 < 8) mScore += 10; else mScore -= 15;
+
+    // ── NEW: 52-Week High proximity (momentum edge) ──
+    const high52w = highs.length > 0 ? Math.max(...highs) : price;
+    const distFrom52wHighPct = high52w > 0 ? ((high52w - price) / high52w) * 100 : 100;
+    const near52wHigh = distFrom52wHighPct <= 15;
+    if (near52wHigh) mScore += 10; // momentum edge: stocks near 52w high outperform
+    stock.high52w = Math.round(high52w * 100) / 100;
+    stock.distFrom52wHighPct = Math.round(distFrom52wHighPct * 100) / 100;
+    stock.near52wHigh = near52wHigh;
     stock.momentumScore = Math.round(Math.max(0, Math.min(100, mScore)));
 
     // ── D) Volume Confirmation (0-100) — 15% weight ──
@@ -542,6 +597,21 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (lastDaySpike) vScore += 15;
     if (volRatio > 0.8 && volRatio < 1.5) vScore += 10;
     if (avgVol20 > 5_000_000) vScore += 5;
+
+    // ── NEW: RVOL — Relative Volume of last completed day vs 20d average ──
+    // If the last bar is today's partial bar (market open), use previous completed day
+    const todayET = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    const lastBarDate = data[last]?.date ? data[last].date.slice(0, 10) : '';
+    const lastIsToday = lastBarDate === todayET;
+    const rvolVol = lastIsToday && vols.length >= 2 ? vols[last - 1] : vols[last];
+    const rvol = avgVol20 > 0 ? rvolVol / avgVol20 : 1;
+    const rvolStatus = rvol >= 1.5 ? 'HIGH' : rvol >= 0.8 ? 'NORMAL' : 'LOW';
+    if (rvol >= 1.5) vScore += 10; // institutional participation
+    stock.rvol = Math.round(rvol * 100) / 100;
+    stock.rvolStatus = rvolStatus;
+
     stock.volConfScore = Math.round(Math.max(0, Math.min(100, vScore)));
     stock.volRatio = Math.round(volRatio * 100) / 100;
     stock.volDeclining = volDeclining;
@@ -611,8 +681,8 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       ? Math.round((high20 * 1.002) * 100) / 100
       : Math.round(price * 100) / 100;
 
-    const stopAtr = Math.round((entry - atr * 1.5) * 100) / 100;
-    const stopSwing = Math.round((swLow - atr * 0.2) * 100) / 100;
+    const stopAtr = Math.round((entry - atr * 1.5 * stopVolMultiplier) * 100) / 100;
+    const stopSwing = Math.round((swLow - atr * 0.2 * stopVolMultiplier) * 100) / 100;
     const stop = Math.max(stopAtr, stopSwing);
 
     const riskPerShare = entry - stop;
@@ -630,7 +700,12 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     stock.riskPct = Math.round(riskPct * 100) / 100;
     stock.rewardRiskRatio = Math.round(rr * 10) / 10;
 
-    const multiplier = stock.positionSizeMultiplier > 0 ? stock.positionSizeMultiplier : 1;
+    // NEW: ATR% tradability gate (1.5%–6%)
+    const atrStatusNow = atrPct > 6 ? 'TOO_VOLATILE' : atrPct < 1.5 ? 'TOO_SLOW' : 'OK';
+    stock.atrStatus = atrStatusNow;
+    stock.atrTradable = atrStatusNow === 'OK';
+
+    const multiplier = (stock.positionSizeMultiplier > 0 ? stock.positionSizeMultiplier : 1) * regimeMultiplier;
     const pos = calcPositionSize(entry, stop, MAX_RISK_PCT * multiplier, ACCOUNT_EQUITY);
     stock.positionSize = pos.shares;
     stock.positionValue = pos.positionValue;
@@ -760,7 +835,12 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (stock.rsi > 75) warnings.push(`RSI ${stock.rsi} — i mbivleresuar`);
     if (stock.riskPct > 8) warnings.push(`Rreziku ${stock.riskPct}% — shume i larte`);
     if (stock.adx < 20) warnings.push(`ADX ${stock.adx} — trendi i dobet (duhet > 25)`);
-    if (!regimeOk) warnings.push('REGJIMI jo OK — vetem watcher');
+    // NEW: ATR% tradability warnings
+    if (stock.atrStatus === 'TOO_VOLATILE') warnings.push(`ATR ${stock.atrPct}% — shume i paqendrueshem per swing (max 6%)`);
+    if (stock.atrStatus === 'TOO_SLOW') warnings.push(`ATR ${stock.atrPct}% — i ngadalte per swing (min 1.5%, targetat duan shume dite)`);
+    // NEW: Regime level warnings (VIX + breadth enriched)
+    if (regimeLevel === 'RISK') warnings.push(`REGJIMI RISK (VIX ${vixStatus}, Breadth ${breadthPct}%) — vetem watchlist, pozicion 50% nese hyhet`);
+    else if (regimeLevel === 'CAUTION') warnings.push(`REGJIMI CAUTION (VIX ${vixStatus}, Breadth ${breadthStatus}) — pozicion ${Math.round(regimeMultiplier * 100)}%`);
     if (!stock.passedEventRisk) warnings.push(`EVENT RISK: ${stock.eventRisk}`);
     if (!stock.allowNewEntry) warnings.push(`CATALYST GATE: ${stock.catalystStatus} — mos hap long te ri`);
     else if (stock.positionSizeMultiplier < 1) warnings.push(`CATALYST GATE: ${stock.catalystStatus} — pozicion ${Math.round(stock.positionSizeMultiplier * 100)}%`);
@@ -776,11 +856,12 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const catalystOk = stock.allowNewEntry;
     const sectorRsOk = !(stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50);
 
-    if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk && catalystOk && sectorRsOk) {
+    if (hasRR && rsiOk && riskOk && scoreOk && regimeLevel !== 'RISK' && eventOk && catalystOk && sectorRsOk) {
       decision = 'READY';
-    } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) {
+    } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || regimeLevel === 'RISK')) {
       decision = 'WATCHLIST';
-      if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long tani');
+      if (regimeLevel === 'RISK') warnings.push('WATCHLIST: Regjimi RISK nuk lejon long tani');
+      if (regimeLevel === 'CAUTION') warnings.push('WATCHLIST: Regjimi CAUTION — hyrje me pozicion te reduktuar');
       if (!eventOk) warnings.push('WATCHLIST: Event risk — prit');
       if (!catalystOk) warnings.push('WATCHLIST: Catalyst gate — prit');
       if (!sectorRsOk) warnings.push('WATCHLIST: Sector RS i dobet — prit');
@@ -796,6 +877,11 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (!eventOk && decision === 'READY') {
       decision = 'EVENT_RISK';
       warnings.push('EVENT_RISK: Ngjarje kritike — mos hyr');
+    }
+    // NEW: ATR% gate — cap READY to WATCHLIST if too volatile for swing
+    if (stock.atrStatus === 'TOO_VOLATILE' && decision === 'READY') {
+      decision = 'WATCHLIST';
+      warnings.push('WATCHLIST: ATR% i larte — prit qe volatiliteti te qetsohet para hyrjes');
     }
     if (stock.rsi > 70 && stock.totalScore >= 55) {
       decision = 'EVENT_RISK';
@@ -858,6 +944,11 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     regimeDetail: {
       spy: { above50: spyA50, above200: spyA200 },
       qqq: { above50: qqqA50, above200: qqqA200 },
+      vix: { level: Math.round(vixLevel * 10) / 10, status: vixStatus },
+      breadth: { pct: breadthPct, status: breadthStatus },
+      regimeLevel,
+      regimeMultiplier,
+      stopVolMultiplier,
     },
     funnel: {
       universe: syms.length,

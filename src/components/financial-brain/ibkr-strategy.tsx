@@ -72,11 +72,28 @@ interface FunnelStock {
   spreadPct: number;
   liquidityScore: number;
   liquidityStatus: string;
+  // NEW: Entry quality — RVOL + 52W High
+  rvol: number;
+  rvolStatus: string;
+  high52w: number;
+  distFrom52wHighPct: number;
+  near52wHigh: boolean;
+  // NEW: Tradability — ATR% gate
+  atrStatus: string;
+  atrTradable: boolean;
 }
 
 interface FunnelResponse {
   scannedAt: string; regimeOk: boolean;
-  regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
+  regimeDetail: {
+    spy: { above50: boolean; above200: boolean };
+    qqq: { above50: boolean; above200: boolean };
+    vix?: { level: number; status: string };
+    breadth?: { pct: number; status: string };
+    regimeLevel?: string;
+    regimeMultiplier?: number;
+    stopVolMultiplier?: number;
+  };
   funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; passedEventRisk: number; passedSectorLimit: number; displayed: number; };
   results: FunnelStock[];
   sectorExposure?: Record<string, number>;
@@ -583,6 +600,24 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
           <MiniPopover label={"Likuiditeti " + (stock.liquidityScore ?? 0) + "/100"} desc={"Liquidity Score 0-100: kombinim 60% Dollar Volume Score + 40% Spread Score. 80-100 = High, 60-79 = Good, 40-59 = Medium, <40 = Low."} >
             <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + ((stock.liquidityScore ?? 0) >= 80 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : (stock.liquidityScore ?? 0) >= 60 ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" : (stock.liquidityScore ?? 0) >= 40 ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" : "bg-red-500/15 text-red-400 border border-red-500/20")}>
               Likuiditeti {stock.liquidityScore ?? 0}/100
+            </span>
+          </MiniPopover>
+          {/* NEW: RVOL badge */}
+          <MiniPopover label={"RVOL " + (stock.rvol ?? 0) + "x — " + (stock.rvolStatus ?? 'N/A')} desc={"Relative Volume — volumi i ditës së fundit të përfunduar përballë mesatares 20-ditore. Mat participimin institucional. Idealisht: mbi 1.5x = HIGH (institucionet janë aktivë — konfirmim i hyrjes, +10 pikë në volum score), 0.8-1.5x = NORMAL (volum standard), nën 0.8x = LOW (interesi i ulët — pullback-i mund të vazhdojë pa bounce, prit konfirmim). RVOL i lartë në ditën e rikthimit (bounce) nga pullback = sinjali më i fortë i hyrjes — dikush i madh po blen. RVOL i ulët në bounce = rrezik i hyrjes së rreme." + ((stock.rvol ?? 0) >= 1.5 ? " — VLERËSIMI: RVOL i lartë — konfirmim institucional!" : (stock.rvol ?? 0) >= 0.8 ? " — VLERËSIMI: RVOL normal." : " — VLERËSIMI: RVOL i ulët — prit volum konfirmues para hyrjes.")} >
+            <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + ((stock.rvol ?? 0) >= 1.5 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : (stock.rvol ?? 0) >= 0.8 ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" : "bg-amber-500/15 text-amber-400 border border-amber-500/20")}>
+              RVOL {(stock.rvol ?? 0).toFixed(2)}x
+            </span>
+          </MiniPopover>
+          {/* NEW: 52W High distance badge */}
+          <MiniPopover label={"52W High: $" + (stock.high52w ?? 0).toFixed(2) + " (" + (stock.distFrom52wHighPct ?? 0).toFixed(1) + "% larg)"} desc={"Distancën nga maja e 52 javëve (1 vit). Aksionet brenda 15% të maksimumit vjetor kanë avantazh statistikor momentum-i (studimet O'Neil/Minervini: liderët e tregut dalin nga bazat afër majave të reja, jo thellë poshtë). Idealisht: 0-15% = ZONA E MIRË (momentum edge, +10 pikë në momentum score — 'near 52w high'), 15-30% = mesatare (ka nevojë për rikuperim), mbi 30% = larg majës (setup i dobët për momentum swing — çmimi duhet të rifitojë shumë terren). Kujdes: aksioni PRANË maksimumit por pa bazë (base) të formuar = rrezik bli-në-majë; më i mirë është pullback brenda 15% të majës." + ((stock.near52wHigh ?? false) ? " — VLERËSIMI: Brenda 15% të majës — momentum edge aktiv!" : " — VLERËSIMI: Larg 52w high — setup-i ka më pak forcë momentum-i.")} >
+            <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + ((stock.distFrom52wHighPct ?? 100) <= 15 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : (stock.distFrom52wHighPct ?? 100) <= 30 ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" : "bg-red-500/15 text-red-400 border border-red-500/20")}>
+              52W {(stock.distFrom52wHighPct ?? 0).toFixed(1)}%
+            </span>
+          </MiniPopover>
+          {/* NEW: ATR% tradability badge */}
+          <MiniPopover label={"ATR% " + (stock.atrPct ?? 0).toFixed(2) + "% — " + (stock.atrStatus ?? 'N/A')} desc={"ATR% — Average True Range si përqindje e çmimit: sa lëviz aksioni mesatarisht në një ditë. Idealisht: 1.5-6% = OK (rangu ideal për swing trading — 1R arrihet në 2-5 ditë), mbi 6% = TOO_VOLATILE (stop-i brutal, rrezik për share shumë i madh — READY kthehet në WATCHLIST deri volatiliteti të qetësohet), nën 1.5% = TOO_SLOW (aksion 'i ngadaltë' — targetat 2R/3R duan javë të tëra, kapitali bllokohet pa dobi). ATR% të lartë gjatë regjimit CAUTION = rrezik i dyfishuar." + ((stock.atrStatus ?? '') === 'OK' ? " — VLERËSIMI: Volatilitet ideal për swing." : (stock.atrStatus ?? '') === 'TOO_VOLATILE' ? " — VLERËSIMI: Shume i paqëndrueshëm — konsidero pritje ose pozicion shume te vogel." : " — VLERËSIMI: I ngadaltë — targetat duan shume kohe.")} >
+            <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium " + ((stock.atrStatus ?? '') === 'OK' ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : (stock.atrStatus ?? '') === 'TOO_VOLATILE' ? "bg-red-500/15 text-red-400 border border-red-500/20" : "bg-amber-500/15 text-amber-400 border border-amber-500/20")}>
+              ATR {(stock.atrPct ?? 0).toFixed(1)}%
             </span>
           </MiniPopover>
           {/* Pse ndryshoi? button */}
@@ -1214,18 +1249,37 @@ function MiniPopover({ label, desc, children }: { label: string; desc: string; c
 // ── Regime Banner ──
 function RegimeBanner({ data }: { data: FunnelResponse }) {
   const { regimeDetail, regimeOk } = data;
+  const vix = regimeDetail.vix;
+  const breadth = regimeDetail.breadth;
+  const regimeLevel = regimeDetail.regimeLevel ?? (regimeOk ? 'OK' : 'RISK');
+  const regimeMultiplier = regimeDetail.regimeMultiplier ?? 1;
+  const stopVolMultiplier = regimeDetail.stopVolMultiplier ?? 1;
+  const levelColor = regimeLevel === 'OK' ? 'text-emerald-400' : regimeLevel === 'CAUTION' ? 'text-amber-400' : 'text-red-400';
   return (
-    <Card className={`${regimeOk ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+    <Card className={`${regimeLevel === 'OK' ? 'border-emerald-500/20 bg-emerald-500/5' : regimeLevel === 'CAUTION' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
-          <Shield className={`w-5 h-5 ${regimeOk ? 'text-emerald-400' : 'text-red-400'} flex-shrink-0`} />
+          <Shield className={`w-5 h-5 ${regimeLevel === 'OK' ? 'text-emerald-400' : regimeLevel === 'CAUTION' ? 'text-amber-400' : 'text-red-400'} flex-shrink-0`} />
           <div className="flex-1">
-            <p className={`text-[14px] font-semibold ${regimeOk ? 'text-emerald-400' : 'text-red-400'}`}>
-              {regimeOk ? 'REGJIMI OK — Mund te besh Long Trades' : 'REGJIMI JO OK — Vetem WATCHLIST'}
+            <p className={`text-[14px] font-semibold ${levelColor}`}>
+              {regimeLevel === 'OK' ? 'REGJIMI OK — Mund te besh Long Trades (size 100%)' : regimeLevel === 'CAUTION' ? `REGJIMI CAUTION — Hyrje me pozicion ${Math.round(regimeMultiplier * 100)}%` : 'REGJIMI RISK — Vetem WATCHLIST'}
             </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[13px]">
               <span className="text-muted-foreground">SPY: <span className={regimeDetail.spy.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.spy.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.spy.above200 ? 'Mbi 200' : 'Nen 200'}</span></span>
               <span className="text-muted-foreground">QQQ: <span className={regimeDetail.qqq.above50 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above50 ? 'Mbi 50' : 'Nen 50'}</span> · <span className={regimeDetail.qqq.above200 ? 'text-emerald-400' : 'text-red-400'}>{regimeDetail.qqq.above200 ? 'Mbi 200' : 'Nen 200'}</span></span>
+              {vix && (
+                <MiniPopover label={`VIX ${vix.level} — ${vix.status}`} desc={`VIX (Volatility Index) — frika e tregut te opcioneve S&P 500. Mat sa volatil pritet te jete tregu ne 30 ditet e ardhshme. Idealisht: nen 20 = CALM (treg i qete, kushte ideale per swing, size i plote), 20-25 = ELEVATED (kujdes — pozicion 75%, stop-i 1.2x me i gjere), mbi 25 = HIGH (rrezik i larte — pozicion 50%, stop-i 1.5x me i gjere, vetem setup-et me te forta), mbi 30 = panik. VIX i larte do te thote gap-e me te medha dhe fake breakout-e me te shumta — presicioni i sinjaleve bie. Kjo eshte arsyeja perse hyrjet reduktohen automatikisht.`} >
+                  <span className="text-muted-foreground">VIX: <span className={vix.status === 'CALM' ? 'text-emerald-400' : vix.status === 'ELEVATED' ? 'text-amber-400' : 'text-red-400 font-bold'}>{vix.level} ({vix.status})</span></span>
+                </MiniPopover>
+              )}
+              {breadth && (
+                <MiniPopover label={`Breadth ${breadth.pct}% — ${breadth.status}`} desc={`Market Breadth — % e aksioneve ne universe (400) qe jane mbi SMA50. Ky eshte indikator PARALEL I REGJIMIT: SPY mund te jete mbi SMA50 por nese pak aksione jane mbi te = renie e fshehur. Idealisht: 55-100% = HEALTHY (participim i gjere, trend i shendetshhem), 40-55% = MIXED (treg i perzier — pozicione me te vogla), nen 40% = WEAK (shume pak aksione ne trend — kujdes i madh, vetem setup perfekte), nen 35% = RISK (bllokon hyrjet). Breadth ka tendence te kthehet PARA indekseve — eshte sinjal i hershem.`} >
+                  <span className="text-muted-foreground">Breadth: <span className={breadth.status === 'HEALTHY' ? 'text-emerald-400' : breadth.status === 'MIXED' ? 'text-amber-400' : 'text-red-400 font-bold'}>{breadth.pct}% ({breadth.status})</span></span>
+                </MiniPopover>
+              )}
+              {stopVolMultiplier > 1 && (
+                <span className="text-muted-foreground">Stop: <span className="text-amber-400">x{stopVolMultiplier} (i gjere per shkak te VIX)</span></span>
+              )}
             </div>
           </div>
         </div>
