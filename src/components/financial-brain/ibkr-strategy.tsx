@@ -460,8 +460,12 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
             </p>
           </div>
           <div className="text-right flex-shrink-0">
-            <div className={`text-2xl font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}</div>
-            <div className="text-[12px] text-muted-foreground">Score</div>
+            <MiniPopover label={"Total Score " + stock.totalScore + "/100"} desc={"Score-i total (0-100) është kombinimi ponderuar i 6 nën-scoreve: 25% Trend Quality + 20% Relative Strength + 15% Momentum + 15% Volume Confirmation + 10% Setup Quality + 5% Risk Quality. Mat cilësinë e përgjithshme të setup-it për swing trading. Idealisht: 65-100 = SETUP I MIRË (jeshil) — kushte të forta për hyrje, 50-64 = MESATAR (portokalli) — hyrje vetëm me kushte të tjera pozitive (VP_OK, regjimi OK, pa event risk), 0-49 = RREZIK (kuq) — setup i dobët, shmang hyrjen ose vetëm watchlist. Kujdes: score-i i lartë NUK e kompenson event-risk — aksioni me score 88 por earnings nesër merr EVENT_RISK/NO_TRADE. Kontrollo gjithmonë edhe: Earnings, VP location, dhe regjimin e tregut përpara hyrjes." + (stock.totalScore >= 65 ? " — VLERËSIMI PËR KËTË AKSION: Score i mirë, kushtet teknike janë të forta." : stock.totalScore >= 50 ? " — VLERËSIMI PËR KËTË AKSION: Score mesatar — kërko konfirmime shtesë përpara hyrjes." : " — VLERËSIMI PËR KËTË AKSION: Score i dobët — rrezik i lartë, konsidero vetëm watchlist.")} >
+              <div className="text-right">
+                <div className={`text-2xl font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}</div>
+                <div className="text-[12px] text-muted-foreground">Score</div>
+              </div>
+            </MiniPopover>
           </div>
         </div>
 
@@ -1531,69 +1535,91 @@ export function IBKRStrategy() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-lg font-bold">{vp.symbol}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-bold">
-                        VP READY
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-mono">
-                        Score {vp.score}
-                      </span>
+                      <MiniPopover label="VP READY — Kaloi VP Gate" desc={"Kjo etiketë tregon se aksioni ka kaluar Volume Profile gate-in e Adaptive Scanner Engine: (1) trend rritës me pullback te EMA20, (2) persistencë 2+ ditë, (3) volum konfirmues, (4) VP support poshtë çmimit (HVN/POC brenda 1.2%), DHE (5) pa rezistencë volumi të afërt sipër. Idealisht: këto janë kandidatët me prioritet për tregtim — kushtet e hyrjes janë konfirmuar nga volumi i tregtuar. Kujdes: VP READY nuk e zëvendëson kontrollin e earnings/macro events — verifikoi gjithmonë Event Gate para hyrjes. Këto tickers mund të mos jenë në listën Top 10 të IBKR funnel-it sepse janë nga universe-i i plotë i 400 aksioneve."} >
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-bold">
+                          VP READY
+                        </span>
+                      </MiniPopover>
+                      <MiniPopover label={"Scanner Score " + vp.score + "/100"} desc={"Score-i i scanner-it (0-100) për këtë aksion në universe-in e 400 — i njëjti score total i përdorur për renditjen: kombinim i 6 shtresave (trend, RS, momentum, volum, setup, risk). Idealisht: mbi 65 = kandidat i fortë, 50-64 = mesatar, nën 50 = i dobët. Ky score është i ndryshëm nga VP Score (kyudit) që mat vetëm cilësinë e setup-it të çmimit kundrejt volumit." + (vp.score >= 65 ? " — VLERËSIMI: Score i fortë, kandidat me prioritet." : vp.score >= 50 ? " — VLERËSIMI: Score mesatar — kërko konfirmime shtesë." : " — VLERËSIMI: Score i ulët — kujdes.")} >
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-mono">
+                          Score {vp.score}
+                        </span>
+                      </MiniPopover>
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
-                      VP {vp.vpScore}/100
-                    </span>
+                    <MiniPopover label={"VP Score " + vp.vpScore + "/100"} desc={"Volume Profile Score 0-100: sa i mirë është setup-i i çmimit në raport me volumin e tregtuar gjatë 20 ditëve të fundit (Daily timeframe). Llogaritet: +35 pikë nëse ka mbështetje volumi (HVN/POC) poshtë çmimit, +20 nëse çmimi është brenda ose mbi Value Area, +25 nëse ka së paku 2% hapësirë deri te rezistenca e ardhshme, +20 nëse nuk ka rezistencë të afërt sipër. Idealisht: 80-100 = Setup i shkëlqyer, 60-79 = Setup i mirë, 40-59 = Mesatar, 0-39 = Setup i dobët."} >
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                        VP {vp.vpScore}/100
+                      </span>
+                    </MiniPopover>
                   </div>
                   {/* VP metrics */}
                   <div className="grid grid-cols-3 gap-2 text-[11px] mb-2">
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground">POC</span>
-                      <span className="font-mono font-bold text-amber-400">${vp.poc?.toFixed(2)}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground">VAL</span>
-                      <span className="font-mono font-bold text-blue-400">${vp.val?.toFixed(2)}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground">VAH</span>
-                      <span className="font-mono font-bold text-blue-400">${vp.vah?.toFixed(2)}</span>
-                    </div>
+                    <MiniPopover label={"POC (Point of Control) — $" + (vp.poc?.toFixed(2) ?? '—')} desc={"Pika e Kontrollit — niveli i çmimit ku është tregtuar VOLUMI më i madh gjatë 20 ditëve të fundit. Niveli me pranimin më të lartë të tregut, vepron si 'magnet' — çmimi ka tendencë të kthehet te POC. Idealisht: POC duhet të jetë POSHTË çmimit aktual (funksionon si mbështetje) ose shumë afër çmimit gjatë hyrjes në pullback."} >
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground">POC</span>
+                        <span className="font-mono font-bold text-amber-400">${vp.poc?.toFixed(2)}</span>
+                      </div>
+                    </MiniPopover>
+                    <MiniPopover label={"VAL (Value Area Low) — $" + (vp.val?.toFixed(2) ?? '—')} desc={"Fundi i Value Area — niveli më i ulët i zonës ku është tregtuar 70% e volumit (20 ditë). Poshtë VAL = zonë me pranim të ulët. Idealisht për pullback entry: hyrja afër VAL me candle rikthimi (bounce) jep R:R shumë të mirë sepse stop-i vendoset afër nën VAL. Kujdes: nëse çmimi e thyen VAL me volum të lartë, shmang long."} >
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground">VAL</span>
+                        <span className="font-mono font-bold text-blue-400">${vp.val?.toFixed(2)}</span>
+                      </div>
+                    </MiniPopover>
+                    <MiniPopover label={"VAH (Value Area High) — $" + (vp.vah?.toFixed(2) ?? '—')} desc={"Maja e Value Area — niveli më i lartë i zonës ku është tregtuar 70% e volumit (20 ditë). Idealisht: çmimi aktual duhet të jetë NËN VAH me hapësirë për të ngjitur, ose duke e thyer VAH me volum të lartë (breakout i vërtetë). Kujdes: VAH i thyer pa volum = breakout i rremë — mos e ndjek."} >
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground">VAH</span>
+                        <span className="font-mono font-bold text-blue-400">${vp.vah?.toFixed(2)}</span>
+                      </div>
+                    </MiniPopover>
                   </div>
                   {/* HVN info */}
                   <div className="flex items-center gap-3 text-[10px] mb-2">
                     {vp.hvnBelow != null && (
-                      <span className="flex items-center gap-1">
-                        <span className="text-muted-foreground">HVN↓</span>
-                        <span className="font-mono text-emerald-400">${vp.hvnBelow.toFixed(2)}</span>
-                        {vp.supportBelow && <span className="text-emerald-400 font-bold">✓ support</span>}
-                      </span>
+                      <MiniPopover label={"HVN poshte (Support) — $" + vp.hvnBelow.toFixed(2)} desc={"High Volume Node poshtë — zona ku është tregtuar volum të paktën 1.5x mesatarja, tani NËN çmimin aktual. MBËSHTETJE e fortë sepse investitorët e mbrojnë çmimin ku kanë blerë më shumë. Idealisht: brenda 1.2% të çmimit aktual = mbështetje e afërt. Sa më afërt, aq më i sigurt stop-loss-i dhe R:R më i mirë."} >
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground">HVN↓</span>
+                          <span className="font-mono text-emerald-400">${vp.hvnBelow.toFixed(2)}</span>
+                          {vp.supportBelow && <span className="text-emerald-400 font-bold">✓ support</span>}
+                        </span>
+                      </MiniPopover>
                     )}
                     {vp.hvnAbove != null && (
-                      <span className="flex items-center gap-1">
-                        <span className="text-muted-foreground">HVN↑</span>
-                        <span className="font-mono text-muted-foreground">${vp.hvnAbove.toFixed(2)}</span>
-                        {vp.resistanceAbove ? (
-                          <span className="text-red-400 font-bold">⚠ resist</span>
-                        ) : (
-                          <span className="text-emerald-400">pastër</span>
-                        )}
-                      </span>
+                      <MiniPopover label={"HVN sipër (Rezistencë) — $" + vp.hvnAbove.toFixed(2)} desc={"High Volume Node sipër — zona ku është tregtuar volum të paktën 1.5x mesatarja, tani MBI çmimin aktual. REZISTENCË e fortë sepse aty janë grumbulluar shumë blerës që duan të dalin në fitim. Idealisht: së paku 2% larg çmimit (hapësirë fitimi). Kujdes: brenda 1.2% = NO_CHASE — mos e ndjek çmimin, prit pullback ose thyerje të konfirmuar."} >
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground">HVN↑</span>
+                          <span className="font-mono text-muted-foreground">${vp.hvnAbove.toFixed(2)}</span>
+                          {vp.resistanceAbove ? (
+                            <span className="text-red-400 font-bold">⚠ resist</span>
+                          ) : (
+                            <span className="text-emerald-400">pastër</span>
+                          )}
+                        </span>
+                      </MiniPopover>
                     )}
                   </div>
                   {/* Location + status badges */}
                   <div className="flex items-center gap-2 text-[10px]">
                     {vp.vpLocation && (
-                      <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
-                        Location: {vp.vpLocation.replace('_', ' ')}
-                      </span>
+                      <MiniPopover label={"Location: " + vp.vpLocation.replace('_', ' ')} desc={"Vendndodhja e çmimit në raport me Value Area (70% volum, 20 ditë): IN VA = brenda zonës së pranuar — normale, balanced, entry më i sigurt. ABOVE VA = mbi zonë — moment i fortë por i zgjeruar, rrezik refuzimi; kërkon konfirmim volumi. BELOW VA = nën zonë — pranim i ulët, shmang long derisa kthehet në VA."} >
+                        <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
+                          Location: {vp.vpLocation.replace('_', ' ')}
+                        </span>
+                      </MiniPopover>
                     )}
                     {vp.supportBelow && !vp.resistanceAbove && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
-                        ✓ VP_OK
-                      </span>
+                      <MiniPopover label="VP_OK — Setup Ideal" desc={"Vlerësim POZITIV: ka mbështetje volumi të afërt poshtë (HVN/POC brenda 1.2%) DHE nuk ka rezistencë të afërt sipër. Konfigurimi IDEAL për hyrje long: risk-i i definuar qartë (stop afër mbështetjes) dhe hapësirë fitimi e pastër sipër. Idealisht: hyr me LIMIT ORDER në zonën e pullback."} >
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
+                          ✓ VP_OK
+                        </span>
+                      </MiniPopover>
                     )}
                     {vp.resistanceAbove && (
-                      <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold">
-                        ⚠ NO_CHASE
-                      </span>
+                      <MiniPopover label="⚠ NO_CHASE — Mos e Ndjek Çmimin" desc={"PARALAJMËRIM: ka rezistencë volumi (HVN ose VAH) brenda 1.2% SIPËR çmimit aktual. MOS e ndjek çmimin me market order — rreziku i refuzimit është i lartë. Idealisht: (1) prit pullback te mbështetja dhe hyj me limit order, ose (2) prit thyerje të konfirmuar me volum + mbyllje ditore mbi VAH."} >
+                        <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold">
+                          ⚠ NO_CHASE
+                        </span>
+                      </MiniPopover>
                     )}
                   </div>
                 </CardContent>
