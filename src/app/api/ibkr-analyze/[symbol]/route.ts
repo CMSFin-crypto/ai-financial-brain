@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
 import { checkMultiEventRisk } from '@/lib/event-risk';
+import { getScanUniverse } from '@/lib/scanner/universe-400';
 
 // ── Helpers (same as ibkr-scan v2) ──
 function calcEMA(data: number[], period: number): number[] {
@@ -48,7 +49,15 @@ type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
 interface AnalyzeResponse {
   symbol: string;
   regimeOk: boolean;
-  regimeDetail: { spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
+  regimeDetail: {
+    spy: { above50: boolean; above200: boolean };
+    qqq: { above50: boolean; above200: boolean };
+    vix?: { level: number; status: string };
+    breadth?: { pct: number; status: string };
+    regimeLevel?: string;
+    regimeMultiplier?: number;
+    stopVolMultiplier?: number;
+  };
   stock: {
     symbol: string; price: number; sector: string;
     avgVol20d: number; avgDolVol20d: number;
@@ -66,6 +75,13 @@ interface AnalyzeResponse {
     positionSize: number; positionValue: number; riskDollars: number;
     eventRisk: string; eventRiskSeverity: string;
     decision: Decision; reasons: string[]; warnings: string[];
+    // Liquidity metrics (estimates, same formula as ibkr-scan)
+    spreadPct: number; liquidityScore: number; liquidityStatus: string;
+    // Entry quality — RVOL + 52W High
+    rvol: number; rvolStatus: string;
+    high52w: number; distFrom52wHighPct: number; near52wHigh: boolean;
+    // Tradability — ATR% gate
+    atrStatus: string; atrTradable: boolean;
   } | null;
   error?: string;
 }
@@ -77,9 +93,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const MAX_RISK_PCT = 1.0;
 
   try {
-    const [spyData, qqqData, stockData] = await Promise.all([
+    const [spyData, qqqData, vixData, stockData] = await Promise.all([
       fetchHistoricalData('SPY', '1y'),
       fetchHistoricalData('QQQ', '1y'),
+      fetchHistoricalData('^VIX', '1mo'),
       fetchHistoricalData(sym, '1y'),
     ]);
 
@@ -97,6 +114,46 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const qqqA50 = qqqC[qL] > (qqqS50[qL]||0), qqqA200 = qqqC[qL] > (qqqS200[qL]||0);
     const regimeOk = spyA50 && spyA200 && qqqA50 && qqqA200;
     const spyRS60 = pct(spyC, 60);
+
+    // ── NEW: VIX level (volatility regime) — same logic as ibkr-scan ──
+    const vixLevel = vixData && vixData.length ? (vixData[vixData.length - 1].close || 0) : 0;
+    const vixStatus = vixLevel === 0 ? 'N/A' : vixLevel > 25 ? 'HIGH' : vixLevel >= 20 ? 'ELEVATED' : 'CALM';
+
+    // ── NEW: Market Breadth estimate — sample of universe (every 8th ticker ≈ 50 names) ──
+    // Full-universe breadth is computed by /api/ibkr-scan; here we use a cross-sector
+    // sample to keep the single-stock analysis fast. Null if too few respond.
+    let breadthPct: number | null = null;
+    let breadthStatus = 'N/A';
+    try {
+      const universe = getScanUniverse(400).filter(s => s !== sym);
+      const sample = universe.filter((_, i) => i % 8 === 0);
+      let above50Count = 0, breadthTotal = 0;
+      const BATCH = 25;
+      for (let i = 0; i < sample.length; i += BATCH) {
+        const batch = sample.slice(i, i + BATCH);
+        const res = await Promise.allSettled(batch.map(s => fetchHistoricalData(s, '3mo')));
+        for (const r of res) {
+          if (r.status !== 'fulfilled' || !r.value || r.value.length < 50) continue;
+          const c = r.value.map(x => x.close);
+          const s50 = calculateSMA(c, 50);
+          const li = c.length - 1;
+          breadthTotal++;
+          if (c[li] > (s50[li] || 0)) above50Count++;
+        }
+      }
+      if (breadthTotal >= 15) {
+        breadthPct = Math.round((above50Count / breadthTotal) * 1000) / 10;
+        breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
+      }
+    } catch { /* breadth is optional — regime falls back to VIX + SPY/QQQ */ }
+
+    // ── NEW: Regime level — OK | CAUTION | RISK (structure + VIX + breadth) ──
+    let regimeLevel: 'OK' | 'CAUTION' | 'RISK' = 'OK';
+    if (!regimeOk || (breadthPct != null && breadthPct < 35)) regimeLevel = 'RISK';
+    else if (vixStatus === 'HIGH' || vixStatus === 'ELEVATED' || (breadthPct != null && breadthStatus !== 'HEALTHY')) regimeLevel = 'CAUTION';
+    const regimeMultiplier = regimeLevel === 'RISK' ? 0.5 : regimeLevel === 'CAUTION' ? 0.75 : 1.0;
+    const stopVolMultiplier = vixStatus === 'HIGH' ? 1.5 : vixStatus === 'ELEVATED' ? 1.2 : 1.0;
+    console.log(`[IBKR ANALYZE] ${sym} | Regime: ${regimeLevel} | VIX ${vixLevel.toFixed(1)} (${vixStatus}) | Breadth ${breadthPct ?? 'N/A'}% (${breadthStatus}) | size x${regimeMultiplier} | stop x${stopVolMultiplier}`);
 
     // Analyze
     const closes = stockData.map(d => d.close), highs = stockData.map(d => d.high), lows = stockData.map(d => d.low);
@@ -165,6 +222,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (mom10 > 0) mScore += 15; else mScore -= 10;
     if (mom22 > 0) mScore += 15; else mScore -= 10;
     if (mom5 < 8) mScore += 10; else mScore -= 15;
+
+    // ── NEW: 52-Week High proximity (momentum edge) — same as ibkr-scan ──
+    const high52w = highs.length > 0 ? Math.max(...highs) : price;
+    const distFrom52wHighPct = high52w > 0 ? ((high52w - price) / high52w) * 100 : 100;
+    const near52wHigh = distFrom52wHighPct <= 15;
+    if (near52wHigh) mScore += 10; // momentum edge: stocks near 52w high outperform
     mScore = Math.round(Math.max(0, Math.min(100, mScore)));
 
     // Volume Score
@@ -179,6 +242,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (volDeclining) vScore += 20; if (lastDaySpike) vScore += 15;
     if (volRatio > 0.8 && volRatio < 1.5) vScore += 10;
     if (avgVol20 > 5_000_000) vScore += 5;
+
+    // ── NEW: RVOL — Relative Volume of last completed day vs 20d avg (same as ibkr-scan) ──
+    // If the last bar is today's partial bar (market open), use previous completed day
+    const todayET = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    const lastBarDate = stockData[last]?.date ? stockData[last].date.slice(0, 10) : '';
+    const lastIsToday = lastBarDate === todayET;
+    const rvolVol = lastIsToday && vols.length >= 2 ? vols[last - 1] : vols[last];
+    const rvol = avgVol20 > 0 ? rvolVol / avgVol20 : 1;
+    const rvolStatus = rvol >= 1.5 ? 'HIGH' : rvol >= 0.8 ? 'NORMAL' : 'LOW';
+    if (rvol >= 1.5) vScore += 10; // institutional participation
     vScore = Math.round(Math.max(0, Math.min(100, vScore)));
 
     // Setup
@@ -220,12 +295,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
     sScore = Math.min(100, sScore);
 
-    // Entry / Stop / Target (v2)
+    // Entry / Stop / Target (v2 — stop widened by VIX stopVolMultiplier, same as ibkr-scan)
     const isBreakout = setup === 'BREAKOUT';
     const high20 = Math.max(...highs.slice(-20));
     const entry = isBreakout ? Math.round((high20 * 1.002) * 100) / 100 : Math.round(price * 100) / 100;
-    const stopAtr = Math.round((entry - atr * 1.5) * 100) / 100;
-    const stopSwing = Math.round((swLow - atr * 0.2) * 100) / 100;
+    const stopAtr = Math.round((entry - atr * 1.5 * stopVolMultiplier) * 100) / 100;
+    const stopSwing = Math.round((swLow - atr * 0.2 * stopVolMultiplier) * 100) / 100;
     const stop = Math.max(stopAtr, stopSwing);
     const riskPerShare = entry - stop;
     const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
@@ -234,10 +309,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const target3R = Math.round((entry + riskPerShare * 3) * 100) / 100;
     const rr = riskPerShare > 0 ? 3 : 0;
 
-    // Position sizing
-    const pos = calcPositionSize(entry, stop, MAX_RISK_PCT, ACCOUNT_EQUITY);
+    // Position sizing (v2 — reduced by regime multiplier: CAUTION 75%, RISK 50%)
+    const pos = calcPositionSize(entry, stop, MAX_RISK_PCT * regimeMultiplier, ACCOUNT_EQUITY);
 
-    const horizon = atrPct < 1.5 ? '10D' : '5D';
+    const horizon = atrPct < 1.5 ? '10D' : atrPct < 3 ? '5D' : '5D';
+
+    // ── NEW: ATR% tradability gate (1.5%–6%) — same as ibkr-scan ──
+    const atrStatus = atrPct > 6 ? 'TOO_VOLATILE' : atrPct < 1.5 ? 'TOO_SLOW' : 'OK';
+    const atrTradable = atrStatus === 'OK';
 
     // Risk Score
     let rScore = 50;
@@ -257,18 +336,31 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (rsi > 75) warnings.push(`RSI ${rsi.toFixed(0)} — i mbivleresuar`);
     if (riskPct > 8) warnings.push(`Rreziku ${riskPct.toFixed(1)}% — shume i larte`);
     if (adx < 20) warnings.push(`ADX ${adx.toFixed(1)} — trend i dobet`);
-    if (!regimeOk) warnings.push('REGJIMI jo OK — vetem watcher');
+    // NEW: ATR% tradability warnings
+    if (atrStatus === 'TOO_VOLATILE') warnings.push(`ATR ${atrPct.toFixed(1)}% — shume i paqendrueshem per swing (max 6%)`);
+    if (atrStatus === 'TOO_SLOW') warnings.push(`ATR ${atrPct.toFixed(1)}% — i ngadalte per swing (min 1.5%, targetat duan shume dite)`);
+    // NEW: RVOL warning
+    if (rvolStatus === 'LOW') warnings.push(`RVOL ${rvol.toFixed(2)}x — volum i ulet ne diten e fundit, prit konfirmim para hyrjes`);
+    // NEW: Regime level warnings (VIX + breadth enriched)
+    if (regimeLevel === 'RISK') warnings.push(`REGJIMI RISK (VIX ${vixStatus}${breadthPct != null ? `, Breadth ${breadthPct}%` : ''}) — vetem watchlist, pozicion 50% nese hyhet`);
+    else if (regimeLevel === 'CAUTION') warnings.push(`REGJIMI CAUTION (VIX ${vixStatus}${breadthPct != null ? `, Breadth ${breadthPct}%` : ''}) — pozicion ${Math.round(regimeMultiplier * 100)}%`);
+    if (!regimeOk) warnings.push('REGJIMI SPY/QQQ jo OK — vetem watcher');
     if (!passedEventRisk) warnings.push(`EVENT RISK: ${eventResult.summary}`);
     if (!stackedMA) warnings.push('MA jo te stackuara');
     if (pbPct > -0.5 && setup === 'PULLBACK') warnings.push('Jo pullback i vertete — extended');
 
     const hasRR = rr >= 2.0, rsiOk = rsi >= 30 && rsi <= 75, riskOk = riskPct <= 8, scoreOk = totalScore >= 45, eventOk = passedEventRisk;
-    if (hasRR && rsiOk && riskOk && scoreOk && regimeOk && eventOk) decision = 'READY';
-    else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || !regimeOk)) { decision = 'WATCHLIST'; if (!regimeOk) warnings.push('WATCHLIST: Regjimi nuk lejon long'); if (!eventOk) warnings.push('WATCHLIST: Event risk'); }
+    if (hasRR && rsiOk && riskOk && scoreOk && regimeLevel !== 'RISK' && eventOk) decision = 'READY';
+    else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || regimeLevel === 'RISK')) { decision = 'WATCHLIST'; if (regimeLevel === 'RISK') warnings.push('WATCHLIST: Regjimi RISK nuk lejon long tani'); if (!eventOk) warnings.push('WATCHLIST: Event risk'); }
     else if (!hasRR || riskPct > 6) { if (sScore >= 50) decision = 'WATCHLIST'; else decision = 'NO_TRADE'; }
     else if (rsi > 72 || pbPct > -0.3) decision = 'EXTENDED';
     else decision = 'WATCHLIST';
     if (!eventOk && decision === 'READY') { decision = 'EVENT_RISK'; warnings.push('EVENT_RISK: Ngjarje kritike'); }
+    // NEW: ATR% gate — cap READY to WATCHLIST if too volatile for swing (same as ibkr-scan)
+    if (atrStatus === 'TOO_VOLATILE' && decision === 'READY') {
+      decision = 'WATCHLIST';
+      warnings.push('WATCHLIST: ATR% i larte — prit qe volatiliteti te qetsohet para hyrjes');
+    }
     if (rsi > 70 && totalScore >= 55) { decision = 'EVENT_RISK'; warnings.push('EVENT_RISK: RSI i larte'); }
 
     // Funnel phase results
@@ -302,8 +394,32 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
     const overnightBias = gapUpPct >= 55 ? 'BULLISH' : gapUpPct <= 45 ? 'BEARISH' : 'NEUTRAL';
 
+    // ── Liquidity Metrics (estimates — same formulas as ibkr-scan) ──
+    // Spread estimation: spreadPct = min(0.5, 1.5 / sqrt(avgDolVol / 1M))
+    const advM = avgDolVol / 1_000_000;
+    const spreadPct = advM > 0 ? Math.min(0.5, 1.5 / Math.sqrt(advM)) : 0.5;
+    const spreadPctR = Math.round(spreadPct * 1000) / 1000; // 3 decimals
+    let dvScore = 25;
+    if (avgDolVol > 100_000_000) dvScore = 100;
+    else if (avgDolVol > 50_000_000) dvScore = 85;
+    else if (avgDolVol > 20_000_000) dvScore = 70;
+    else if (avgDolVol > 10_000_000) dvScore = 50;
+    let spScore = 25;
+    if (spreadPct <= 0.10) spScore = 100;
+    else if (spreadPct <= 0.25) spScore = 80;
+    else if (spreadPct <= 0.50) spScore = 55;
+    const liquidityScore = Math.round(dvScore * 0.60 + spScore * 0.40);
+    const liquidityStatus = liquidityScore >= 80 ? 'HIGH' : liquidityScore >= 60 ? 'GOOD' : liquidityScore >= 40 ? 'MEDIUM' : 'LOW';
+
     return NextResponse.json({
-      symbol: sym, regimeOk, regimeDetail: { spy: { above50: spyA50, above200: spyA200 }, qqq: { above50: qqqA50, above200: qqqA200 } },
+      symbol: sym, regimeOk,
+      regimeDetail: {
+        spy: { above50: spyA50, above200: spyA200 },
+        qqq: { above50: qqqA50, above200: qqqA200 },
+        vix: { level: Math.round(vixLevel * 100) / 100, status: vixStatus },
+        ...(breadthPct != null ? { breadth: { pct: breadthPct, status: breadthStatus } } : {}),
+        regimeLevel, regimeMultiplier, stopVolMultiplier,
+      },
       stock: {
         symbol: sym, price, sector,
         avgVol20d: avgVol20, avgDolVol20d: avgDolVol, passedLiquidity: passedLiq, passedTrend,
@@ -321,6 +437,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         positionSize: pos.shares, positionValue: pos.positionValue, riskDollars: pos.riskDollars,
         eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
         decision, reasons, warnings,
+        // Liquidity metrics (estimates)
+        spreadPct: spreadPctR, liquidityScore, liquidityStatus,
+        // NEW: Entry quality — RVOL + 52W High
+        rvol: Math.round(rvol * 100) / 100, rvolStatus,
+        high52w: Math.round(high52w * 100) / 100,
+        distFrom52wHighPct: Math.round(distFrom52wHighPct * 100) / 100,
+        near52wHigh,
+        // NEW: Tradability — ATR% gate
+        atrStatus, atrTradable,
         // Swing Prediction fields (needed by StockCard UI)
         ema10Val: ema10[last] || 0,
         ema20Val,
@@ -332,14 +457,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         daysTo1R: atr > 0 ? Math.ceil(riskPerShare / atr) : 0,
         daysTo2R: atr > 0 ? Math.ceil((riskPerShare * 2) / atr) : 0,
         daysTo3R: atr > 0 ? Math.ceil((riskPerShare * 3) / atr) : 0,
-        // Catalyst gate defaults
+        // Catalyst gate defaults (no earnings/macro gate in single-stock view)
         catalystStatus: 'CLEAR' as const,
         daysToEarnings: null,
         macroEventWithin24h: null,
         material8KLast30d: false,
         material8KSentiment: 'none' as const,
-        positionSizeMultiplier: 1.0,
-        allowNewEntry: true,
+        positionSizeMultiplier: regimeMultiplier, // reflects VIX/breadth regime reduction
+        allowNewEntry: regimeLevel !== 'RISK',
         // Sector RS defaults
         sectorEtf: '',
         rsVsSector20d: 0,

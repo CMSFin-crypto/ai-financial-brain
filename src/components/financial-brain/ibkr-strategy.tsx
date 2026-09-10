@@ -1247,8 +1247,7 @@ function MiniPopover({ label, desc, children }: { label: string; desc: string; c
 }
 
 // ── Regime Banner ──
-function RegimeBanner({ data }: { data: FunnelResponse }) {
-  const { regimeDetail, regimeOk } = data;
+function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: FunnelResponse['regimeDetail']; regimeOk: boolean; compact?: boolean }) {
   const vix = regimeDetail.vix;
   const breadth = regimeDetail.breadth;
   const regimeLevel = regimeDetail.regimeLevel ?? (regimeOk ? 'OK' : 'RISK');
@@ -1256,12 +1255,12 @@ function RegimeBanner({ data }: { data: FunnelResponse }) {
   const stopVolMultiplier = regimeDetail.stopVolMultiplier ?? 1;
   const levelColor = regimeLevel === 'OK' ? 'text-emerald-400' : regimeLevel === 'CAUTION' ? 'text-amber-400' : 'text-red-400';
   return (
-    <Card className={`${regimeLevel === 'OK' ? 'border-emerald-500/20 bg-emerald-500/5' : regimeLevel === 'CAUTION' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
-      <CardContent className="p-4">
+    <Card className={`${compact ? 'py-0' : ''} ${regimeLevel === 'OK' ? 'border-emerald-500/20 bg-emerald-500/5' : regimeLevel === 'CAUTION' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+      <CardContent className={compact ? 'px-3.5 py-2.5' : 'p-4'}>
         <div className="flex items-center gap-3">
-          <Shield className={`w-5 h-5 ${regimeLevel === 'OK' ? 'text-emerald-400' : regimeLevel === 'CAUTION' ? 'text-amber-400' : 'text-red-400'} flex-shrink-0`} />
+          <Shield className={`w-5 h-5 ${levelColor} flex-shrink-0`} />
           <div className="flex-1">
-            <p className={`text-[14px] font-semibold ${levelColor}`}>
+            <p className={`${compact ? 'text-[13px]' : 'text-[14px]'} font-semibold ${levelColor}`}>
               {regimeLevel === 'OK' ? 'REGJIMI OK — Mund te besh Long Trades (size 100%)' : regimeLevel === 'CAUTION' ? `REGJIMI CAUTION — Hyrje me pozicion ${Math.round(regimeMultiplier * 100)}%` : 'REGJIMI RISK — Vetem WATCHLIST'}
             </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[13px]">
@@ -1278,7 +1277,9 @@ function RegimeBanner({ data }: { data: FunnelResponse }) {
                 </MiniPopover>
               )}
               {stopVolMultiplier > 1 && (
-                <span className="text-muted-foreground">Stop: <span className="text-amber-400">x{stopVolMultiplier} (i gjere per shkak te VIX)</span></span>
+                <MiniPopover label={`Stop Multiplier x${stopVolMultiplier}`} desc={`Stop-loss i zgjeruar automatikisht nga VIX: kur VIX eshte 20-25 (ELEVATED) stop-i vendoset 1.2x me gjere, kur VIX > 25 (HIGH) 1.5x me gjere. Pse: ne tregje me volatilitet te larte, levizjet normale ditorre i kalojne stop-et e ngushte — stop-i standard te nxjerre jashte pozicionit para kohe (whipsaw). E kunderta: stop me i gjere = me shume rrezik per share, ndaj pozicioni reduktohet njekohesisht (75% ose 50%).`} >
+                  <span className="text-muted-foreground">Stop: <span className="text-amber-400">x{stopVolMultiplier} (i gjere per shkak te VIX)</span></span>
+                </MiniPopover>
               )}
             </div>
           </div>
@@ -1302,6 +1303,7 @@ function StockSearchBox() {
   const [analyzedStock, setAnalyzedStock] = useState<FunnelStock | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [regimeOk, setRegimeOk] = useState(true);
+  const [regimeDetail, setRegimeDetail] = useState<FunnelResponse['regimeDetail'] | null>(null);
   const [funnelPhases, setFunnelPhases] = useState({ passedLiquidity: 0, passedTrend: 0, passedSetup: 0, passedRisk: 0 });
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1323,12 +1325,13 @@ function StockSearchBox() {
 
   const selectTicker = async (ticker: string) => {
     setShowDropdown(false); setQuery(ticker);
-    setAnalyzedStock(null); setAnalyzeError(null);
+    setAnalyzedStock(null); setAnalyzeError(null); setRegimeDetail(null);
     setAnalyzing(ticker);
     try {
       const res = await fetch(`/api/ibkr-analyze/${ticker}?_t=${Date.now()}`, { cache: 'no-store' });
       const json = await res.json();
       setRegimeOk(json.regimeOk);
+      setRegimeDetail(json.regimeDetail ?? null);
       setFunnelPhases(json.funnel || { passedLiquidity: 0, passedTrend: 0, passedSetup: 0, passedRisk: 0 });
       if (json.error && !json.stock) {
         setAnalyzeError(json.error);
@@ -1400,6 +1403,10 @@ function StockSearchBox() {
       {/* Analyzed Stock Result */}
       {analyzedStock && (
         <div className="space-y-2">
+          {/* Regime context with VIX/Breadth popups (single-stock view) */}
+          {regimeDetail && (
+            <RegimeBanner regimeDetail={regimeDetail} regimeOk={regimeOk} compact />
+          )}
           {/* Funnel diagnostic for single stock */}
           <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
             <span className={`px-2 py-1 rounded-md ${funnelPhases.passedLiquidity ? 'bg-cyan-500/20 text-cyan-400' : 'bg-red-500/10 text-red-400/60 line-through'}`}>Likuiditet {funnelPhases.passedLiquidity ? '✓' : '✗'}</span>
@@ -1532,7 +1539,7 @@ export function IBKRStrategy() {
 
       {/* Results */}
       {data && !loading && (<>
-        <RegimeBanner data={data} />
+        <RegimeBanner regimeDetail={data.regimeDetail} regimeOk={data.regimeOk} />
 
         {/* Funnel */}
         {data.funnel && <FunnelViz funnel={data.funnel} />}
