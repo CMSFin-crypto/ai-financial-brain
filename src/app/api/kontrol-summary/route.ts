@@ -125,9 +125,11 @@ async function safeMetrics(): Promise<MetricsSummary | null> {
     if (!m || m.sampleSize === 0) return null;
     return {
       sampleSize: m.sampleSize,
+      // NOTE: accuracy/winRate are proportions (0-1); alpha & brier are
+      // already in percent / absolute units — do NOT rescale them.
       accuracy: m.accuracy != null ? Math.round(m.accuracy * 1000) / 10 : null,
       brierScore: m.brierScore ?? null,
-      alpha: m.alpha != null ? Math.round(m.alpha * 1000) / 10 : null,
+      alpha: m.alpha != null ? Math.round(m.alpha * 100) / 100 : null,
       winRate: m.winRate != null ? Math.round(m.winRate * 1000) / 10 : null,
     };
   } catch {
