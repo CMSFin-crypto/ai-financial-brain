@@ -11,6 +11,7 @@ import {
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
   Copy, Check, Briefcase, FileText, ShieldAlert, Moon,
   GitCompareArrows, TrendingDown, ArrowUpRight, ArrowDownRight, LogIn, LogOut,
+  BookOpen, History,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -1516,6 +1517,366 @@ function StockSearchBox() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// DITARI TOP 10 — IBKR Trade Journal
+// Sistemi mban ditar vetëm për Top 10 (kandidatët READY).
+// Raporti i detajuar shfaqet VETËM kur klikon simbolin.
+// ═══════════════════════════════════════════════════════════════
+
+function journalStatusBadge(s: string | null | undefined, active: boolean) {
+  if (s === 'HIT_TARGET') return { cls: 'bg-emerald-500/15 text-emerald-400', label: 'TARGET ✓' };
+  if (s === 'HIT_STOP') return { cls: 'bg-red-500/15 text-red-400', label: 'STOP ✗' };
+  if (s === 'EXPIRED') return { cls: 'bg-muted/50 text-muted-foreground', label: 'SKADOI' };
+  if (s === 'NO_FILL') return { cls: 'bg-blue-500/10 text-blue-400/80', label: 'PA HYRJE' };
+  if (s === 'OPEN') return { cls: 'bg-amber-500/15 text-amber-400', label: 'HAPUR' };
+  if (active) return { cls: 'bg-cyan-500/15 text-cyan-400', label: 'NË TOP 10' };
+  return { cls: 'bg-muted/40 text-muted-foreground/70', label: 'DOLI' };
+}
+
+function tagChip(tag: string) {
+  const map: Record<string, string> = {
+    CONTINUATION: 'bg-emerald-500/10 text-emerald-400/90',
+    FADE: 'bg-red-500/10 text-red-400/90',
+    NO_RVOL: 'bg-amber-500/10 text-amber-400/90',
+    REGIME: 'bg-violet-500/10 text-violet-400/90',
+    GAVE_BACK: 'bg-orange-500/10 text-orange-400/90',
+    NO_FILL: 'bg-blue-500/10 text-blue-400/90',
+  };
+  return (
+    <span key={tag} className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${map[tag] || 'bg-muted/30 text-muted-foreground/80'}`}>
+      {tag}
+    </span>
+  );
+}
+
+export function Top10JournalCard() {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Detajet — vetëm me kërkesë
+  const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
+  const [detail, setDetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Raporti javor — vetëm me kërkesë
+  const [weekly, setWeekly] = useState<any>(null);
+  const [weeklyLoading, setWeeklyLoading] = useState(false);
+  const [showWeekly, setShowWeekly] = useState(false);
+
+  // Setup-i i tabelave (1 klik) kur mungojnë
+  const [setupBusy, setSetupBusy] = useState(false);
+
+  const fetchJournal = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/journal/today?_t=${Date.now()}`, { cache: 'no-store' });
+      if (res.ok) setData(await res.json());
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchJournal(); }, [fetchJournal, reloadKey]);
+
+  const openDetail = useCallback(async (symbol: string) => {
+    if (detailSymbol === symbol) { setDetailSymbol(null); setDetail(null); return; }
+    setDetailSymbol(symbol);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/journal/stock/${symbol}?days=30`, { cache: 'no-store' });
+      if (res.ok) setDetail(await res.json());
+    } catch { /* ignore */ }
+    finally { setDetailLoading(false); }
+  }, [detailSymbol]);
+
+  const openWeekly = useCallback(async () => {
+    if (showWeekly) { setShowWeekly(false); return; }
+    setShowWeekly(true);
+    if (weekly) return;
+    setWeeklyLoading(true);
+    try {
+      const res = await fetch('/api/journal/weekly?days=7', { cache: 'no-store' });
+      if (res.ok) setWeekly(await res.json());
+    } catch { /* ignore */ }
+    finally { setWeeklyLoading(false); }
+  }, [showWeekly, weekly]);
+
+  const runDbSetup = async () => {
+    setSetupBusy(true);
+    try {
+      const res = await fetch('/api/db-setup', { method: 'POST' });
+      if (res.ok) {
+        await fetchJournal();
+        setReloadKey(k => k + 1);
+      } else {
+        const j = await res.json().catch(() => ({}));
+        alert(j.error || 'Krijimi i tabelave dështoi.');
+      }
+    } catch { alert('Gabim rrjeti gjatë setup-it.'); }
+    finally { setSetupBusy(false); }
+  };
+
+  const entries: any[] = data?.entries || [];
+  const recent: any[] = data?.recent || [];
+  const totals = data?.totals;
+  const tablesMissing = data?.dbActive && !data?.tablesReady;
+
+  return (
+    <Card className="border-cyan-500/20 bg-cyan-500/5">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-cyan-400" />
+            <h3 className="text-[14px] font-bold text-foreground">Ditar Top 10</h3>
+            <span className="text-[11px] text-muted-foreground">— vetëm kandidatët e tregtimit (READY) në Top 10</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {totals && totals.entries > 0 && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-muted/30 text-muted-foreground">
+                total: {totals.entries} · {totals.hits}✓ · {totals.stops}✗
+              </span>
+            )}
+            <button onClick={openWeekly} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 transition-colors">
+              <History className="w-3.5 h-3.5" />
+              Raporti Javor
+            </button>
+          </div>
+        </div>
+        <p className="text-[12px] text-muted-foreground mt-1.5">
+          Ditar i detajuar ruhet automatikisshëm vetëm për Top 10; WATCHLIST, ATR BLOCK dhe sinjalet e dobëta NUK futen.
+          Kliko simbolin për raportin e detajuar (diagnozë + mësim).
+        </p>
+
+        {/* Loading */}
+        {loading && (
+          <div className="mt-3 space-y-2">
+            <Skeleton className="h-8 rounded-md" />
+            <Skeleton className="h-8 rounded-md w-2/3" />
+          </div>
+        )}
+
+        {/* DB JOAKTIVE */}
+        {!loading && data && !data.dbActive && (
+          <div className="mt-3 rounded-lg bg-amber-500/5 border border-amber-500/15 p-3 text-[12px] text-amber-400/90">
+            Ditarit i duhet PostgreSQL (Neon). Aktivizoje: Vercel → Storage → Connect Database (Neon), pastaj tabela krijohet automatikisht.
+          </div>
+        )}
+
+        {/* TABELAT MUNGOJNË */}
+        {!loading && tablesMissing && (
+          <div className="mt-3 rounded-lg bg-amber-500/5 border border-amber-500/15 p-3">
+            <p className="text-[12px] text-amber-400/90 mb-2">Databaza është aktive, por tabela e ditarit nuk ekziston ende.</p>
+            <button onClick={runDbSetup} disabled={setupBusy} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-colors disabled:opacity-50">
+              {setupBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+              {setupBusy ? 'Duke krijuar...' : 'Krijo tabelat tani (1 klik)'}
+            </button>
+          </div>
+        )}
+
+        {/* Hyrjet e ditës */}
+        {!loading && data?.dbActive && data?.tablesReady && entries.length === 0 && (
+          <div className="mt-3 rounded-lg bg-muted/5 border border-border/30 p-3 text-[12px] text-muted-foreground/80">
+            S&apos;ka hyrje në ditar për {data.scanDate}. Hyrjet krijohen automatikisht kur skanimi gjen kandidate READY brenda Top 10 — kliko &quot;Rifresko&quot; më sipër ose prit skanimin e radhës.
+          </div>
+        )}
+
+        {!loading && entries.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            {entries.map((e: any) => {
+              const sb = journalStatusBadge(e.exitStatus, e.active);
+              return (
+                <div key={e.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 border ${e.active ? 'border-cyan-500/15 bg-cyan-500/[0.03]' : 'border-border/30 bg-muted/5 opacity-70'}`}>
+                  <span className="text-[10px] font-mono text-muted-foreground/60 w-5">#{e.rank}</span>
+                  <button onClick={() => openDetail(e.ticker)} className={`text-[13px] font-bold hover:underline underline-offset-2 ${detailSymbol === e.ticker ? 'text-cyan-400 underline' : 'text-foreground'}`}>
+                    {e.ticker}
+                  </button>
+                  <span className="text-[10px] font-mono text-amber-400/80">{Math.round(e.score || 0)}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground/70 hidden sm:inline">
+                    E ${e.entry?.toFixed(2)} · S ${e.stop?.toFixed(2)} · T ${e.target?.toFixed(2)}
+                  </span>
+                  <div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+                    {e.resultR != null && (
+                      <span className={`text-[11px] font-mono font-bold ${e.resultR > 0 ? 'text-emerald-400' : e.resultR < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                        {e.resultR > 0 ? '+' : ''}{e.resultR.toFixed(2)}R
+                      </span>
+                    )}
+                    {(e.tags || []).slice(0, 3).map(tagChip)}
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${sb.cls}`}>{sb.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Detajet — shfaqen VETËM me kërkesë */}
+        {detailSymbol && (
+          <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.03] p-3">
+            {detailLoading && (
+              <div className="flex items-center gap-2 py-3 justify-center">
+                <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                <span className="text-[12px] text-muted-foreground">Duke ngarkuar raportin për {detailSymbol}...</span>
+              </div>
+            )}
+            {!detailLoading && detail?.message && (
+              <p className="text-[12px] text-muted-foreground py-2">{detail.message}</p>
+            )}
+            {!detailLoading && detail?.stats && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[15px] font-bold text-foreground">{detail.symbol}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {detail.stats.total} sinjale · {detail.stats.targetHits}✓ / {detail.stats.stopHits}✗
+                    {detail.stats.hitRate != null && ` · hit-rate ${detail.stats.hitRate}%`}
+                    {detail.stats.avgResultR != null && ` · avg ${detail.stats.avgResultR > 0 ? '+' : ''}${detail.stats.avgResultR}R`}
+                  </span>
+                </div>
+                {detail.evalNote && (
+                  <pre className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-sans bg-muted/10 rounded-md p-2.5 border border-border/30">
+                    {detail.evalNote}
+                  </pre>
+                )}
+                {detail.entries?.length > 1 && (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Historia (30 ditë)</p>
+                    {detail.entries.map((en: any) => {
+                      const sb = journalStatusBadge(en.exitStatus, en.active);
+                      return (
+                        <div key={en.id} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+                          <span className="w-[70px]">{en.scanDate}</span>
+                          <span className={sb.cls + ' px-1.5 py-0.5 rounded text-[9px] font-bold'}>{sb.label}</span>
+                          {en.resultR != null && (
+                            <span className={en.resultR > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                              {en.resultR > 0 ? '+' : ''}{en.resultR.toFixed(2)}R
+                            </span>
+                          )}
+                          {en.changeReason && <span className="text-[10px] text-muted-foreground/60 truncate hidden sm:inline">— {en.changeReason}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Raporti javor — i shkurtër, automatik */}
+        {showWeekly && (
+          <div className="mt-3 rounded-lg border border-cyan-500/20 bg-muted/5 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <History className="w-3.5 h-3.5 text-cyan-400" />
+              <p className="text-[12px] font-bold text-foreground">Raporti Javor</p>
+              <span className="text-[10px] text-muted-foreground/60">{weekly?.window?.from} → {weekly?.window?.to}</span>
+            </div>
+            {weeklyLoading && (
+              <div className="flex items-center gap-2 py-3 justify-center">
+                <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                <span className="text-[12px] text-muted-foreground">Duke llogaritur...</span>
+              </div>
+            )}
+            {!weeklyLoading && weekly?.dbActive === false && (
+              <p className="text-[12px] text-muted-foreground py-2">Databaza nuk është aktive.</p>
+            )}
+            {!weeklyLoading && weekly?.dbActive && (
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="rounded-md bg-emerald-500/5 border border-emerald-500/15 p-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">Target Hit</p>
+                    <p className="text-[15px] font-bold text-emerald-400">{weekly.totals?.targetHits ?? 0}</p>
+                  </div>
+                  <div className="rounded-md bg-red-500/5 border border-red-500/15 p-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">Stop Hit</p>
+                    <p className="text-[15px] font-bold text-red-400">{weekly.totals?.stopHits ?? 0}</p>
+                  </div>
+                  <div className="rounded-md bg-cyan-500/5 border border-cyan-500/15 p-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">Hit-Rate</p>
+                    <p className="text-[15px] font-bold text-cyan-400">{weekly.hitRate != null ? weekly.hitRate + '%' : '—'}</p>
+                  </div>
+                  <div className="rounded-md bg-violet-500/5 border border-violet-500/15 p-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">Expectancy</p>
+                    <p className={`text-[15px] font-bold ${(weekly.expectancyR ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {weekly.expectancyR != null ? (weekly.expectancyR > 0 ? '+' : '') + weekly.expectancyR + 'R' : '—'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3 text-[11px] text-muted-foreground flex-wrap">
+                  <span>Drejtimi i saktë: <strong className="text-foreground">{weekly.directionAccuracy != null ? weekly.directionAccuracy + '%' : '—'}</strong></span>
+                  <span>MFE mes.: <strong className="text-foreground">{weekly.avgMfeR != null ? '+' + weekly.avgMfeR + 'R' : '—'}</strong></span>
+                  <span>MAE mes.: <strong className="text-foreground">{weekly.avgMaeR != null ? '-' + Math.abs(weekly.avgMaeR) + 'R' : '—'}</strong></span>
+                  <span>Hapur: <strong className="text-foreground">{weekly.totals?.open ?? 0}</strong></span>
+                </div>
+                {weekly.mistakes?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-red-400/80 uppercase tracking-wide mb-1">3 gabimet më të shpeshta</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {weekly.mistakes.map((m: any) => (
+                        <span key={m.tag} className="px-2 py-0.5 rounded bg-red-500/10 text-red-400/90 text-[10px] font-mono">{m.tag} ×{m.count}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {weekly.winningFactors?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-emerald-400/80 uppercase tracking-wide mb-1">Faktorët që ndihmuan</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {weekly.winningFactors.map((m: any) => (
+                        <span key={m.tag} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400/90 text-[10px] font-mono">{m.tag} ×{m.count}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {weekly.missedWinners?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-amber-400/80 uppercase tracking-wide mb-1">Missed Winners — jashtë Top 10</p>
+                    <div className="space-y-1">
+                      {weekly.missedWinners.map((w: any) => (
+                        <div key={w.symbol} className="flex items-center gap-2 text-[11px]">
+                          <span className="font-bold text-foreground">{w.symbol}</span>
+                          <span className="text-muted-foreground/60">{w.scanDate}</span>
+                          <span className="font-mono text-amber-400">+{w.ret5dPct}%</span>
+                          <span className="text-muted-foreground/50 text-[10px] hidden sm:inline">{w.verdict}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(weekly.totals?.entries ?? 0) === 0 && (
+                  <p className="text-[12px] text-muted-foreground/70">Pa hyrje në ditar brenda dritares — ditarit mbushet pas skanimeve të ardhshme me kandidate READY.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Historia e afërt e mbyllur */}
+        {!loading && recent.length > 0 && !showWeekly && !detailSymbol && (
+          <div className="mt-3 pt-2 border-t border-border/30">
+            <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1.5">Përfundimet e fundit</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {recent.map((r: any) => {
+                const sb = journalStatusBadge(r.exitStatus, false);
+                return (
+                  <button key={r.id} onClick={() => openDetail(r.ticker)} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/10 border border-border/30 hover:border-cyan-500/30 transition-colors">
+                    <span className="text-[11px] font-bold text-foreground">{r.ticker}</span>
+                    <span className={`text-[9px] px-1 py-0.5 rounded font-bold ${sb.cls}`}>{sb.label}</span>
+                    {r.resultR != null && (
+                      <span className={`text-[10px] font-mono ${r.resultR > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.resultR > 0 ? '+' : ''}{r.resultR.toFixed(1)}R
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function IBKRStrategy() {
   const [data, setData] = useState<FunnelResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1821,6 +2182,9 @@ export function IBKRStrategy() {
           </Card>
         )}
       </>)}
+
+      {/* Ditar Top 10 — Trade Journal (vetëm kandidatët READY; detajet me kërkesë) */}
+      <Top10JournalCard />
 
       {/* Adaptive Scanner Learning Panel */}
       <Card className="border-violet-500/20 bg-violet-500/5">
