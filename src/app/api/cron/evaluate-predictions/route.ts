@@ -48,11 +48,24 @@ export async function GET(req: NextRequest) {
       alert = { sent: false, level: "error", detail: "sendKontrolAlerts threw" };
     }
 
+    // Ditar Top 10 (IBKR): vlerësimi ditor i hyrjeve — entry/target/stop,
+    // MFE/MAE në R, etiketat dhe diagnoza. /api/cron/evaluate-scanner-outcomes
+    // nuk është i planifikuar në vercel.json, kështu që ky cron ditor (5:00 UTC)
+    // garanton vlerësimin edhe pas mbylljes së tregut. Non-blocking.
+    let journal: any = null;
+    try {
+      const { evaluateTop10Journal } = await import("@/lib/top10-journal");
+      journal = await evaluateTop10Journal(30);
+    } catch (e: any) {
+      journal = { error: e?.message || String(e) };
+    }
+
     return NextResponse.json({
       processed: results.length,
       evaluated,
       metricsSnapshot: snapshot,
       alert,
+      journal,
       results,
     });
   } catch (error) {
