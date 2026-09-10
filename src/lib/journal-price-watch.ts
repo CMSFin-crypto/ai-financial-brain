@@ -163,8 +163,14 @@ export async function watchTop10Prices(): Promise<WatchResult> {
       if (!e.entryHit && entryHitNow) {
         data.entryHit = true;
         data.entryHitAt = new Date();
-        msgs.push(entryAlertMsg(e, price));
-        base.events.push({ ticker: e.ticker, kind: "ENTRY", price, level: e.entry, scanDate: e.scanDate, rank: e.rank, alertSent: false });
+        // Alarm vetëm për hyrje BREAKOUT (entry mbi çmimin e skanimit — kërkon
+        // lëvizje reale çmimi). Hyrjet pullback (entry ≤ çmimi i skanimit) janë
+        // të arritshme që në momentin e sinjalit → shënohen pa zhurmë.
+        const requiresMove = (e.entry as number) > ((e.price as number) ?? 0);
+        if (requiresMove) {
+          msgs.push(entryAlertMsg(e, price));
+          base.events.push({ ticker: e.ticker, kind: "ENTRY", price, level: e.entry, scanDate: e.scanDate, rank: e.rank, alertSent: false });
+        }
       }
 
       // Target/stop kanë kuptim vetëm PASi hyrja është kapur
