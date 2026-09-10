@@ -8,11 +8,21 @@
 // ============================================================
 
 import { NextResponse } from 'next/server';
-import { isDbAvailable } from '@/lib/prisma';
+import prisma, { isDbAvailable } from '@/lib/prisma';
 import { computeDriftReview, type DriftReviewResult } from '@/lib/drift-review';
 import { computeOverrideJournal } from '@/lib/override-journal';
 import { computeEdgeLeaderboard } from '@/lib/edge-leaderboard';
 import { calculateModelMetrics } from '@/lib/model-metrics';
+
+// True when the schema tables exist (count() succeeds on empty tables too)
+async function tablesReady(): Promise<boolean> {
+  try {
+    await prisma.prediction.count();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 type DriftSummary = {
   totalEvaluated: number;
@@ -135,6 +145,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       dbActive: false,
+      tablesReady: false,
       drift: null,
       overrides: null,
       edge: null,
@@ -143,16 +154,18 @@ export async function GET() {
     });
   }
 
-  const [drift, overrides, edge, metrics] = await Promise.all([
+  const [drift, overrides, edge, metrics, ready] = await Promise.all([
     safeDrift(),
     safeOverrides(),
     safeEdge(),
     safeMetrics(),
+    tablesReady(),
   ]);
 
   return NextResponse.json({
     ok: true,
     dbActive: true,
+    tablesReady: ready,
     drift,
     overrides,
     edge,

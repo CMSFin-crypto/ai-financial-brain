@@ -88,6 +88,7 @@ function KontrolTab({ icon, title, desc, pageUrl, status, dbActive }: { icon: Re
 
 type KontrolSummary = {
   dbActive: boolean;
+  tablesReady: boolean;
   drift: {
     totalEvaluated: number;
     overallAccuracy: number | null;
@@ -142,8 +143,63 @@ function KontrolStatusLine({ summary }: { summary: KontrolSummary }) {
   return null;
 }
 
+// Shown when DATABASE_URL is set but the schema tables don't exist yet.
+// Self-contained: runs POST /api/db-setup and reloads on success.
+function TablesSetupBlock() {
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [tone, setTone] = useState<'good' | 'bad'>('good');
+
+  const run = async () => {
+    setRunning(true);
+    setMessage(null);
+    try {
+      const r = await fetch('/api/db-setup', { method: 'POST' });
+      const j = await r.json();
+      if (j.ok && j.executed > 0) {
+        window.location.reload();
+        return;
+      }
+      if (j.ok) {
+        setTone('good');
+        setMessage('Tabelat ekzistojnë tashmë — do mbushen me predikimet e para.');
+      } else {
+        setTone('bad');
+        setMessage(j.error || 'Setup-i dështoi — kontrollo DATABASE_URL.');
+      }
+    } catch {
+      setTone('bad');
+      setMessage('Gabim rrjeti — provo përsëri.');
+    }
+    setRunning(false);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <KontrolBadge tone="warn">TABELAT MUNGOJNË</KontrolBadge>
+        <span className="text-xs text-muted-foreground">Databaza është e lidhur por skema nuk është krijuar</span>
+      </div>
+      <button
+        onClick={run}
+        disabled={running}
+        className="inline-flex items-center gap-1.5 rounded-md bg-amber-600/90 border border-amber-500/50 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-60 transition-colors"
+      >
+        {running ? 'Duke krijuar tabelat…' : 'Krijo tabelat tani (1 klik)'}
+      </button>
+      {message && <p className={`text-xs ${tone === 'good' ? 'text-emerald-400' : 'text-red-400'}`}>{message}</p>}
+    </div>
+  );
+}
+
+// Shared guard: DB active but tables missing → setup block instead of "no data"
+function tablesMissing(summary: KontrolSummary): boolean {
+  return summary.dbActive && summary.tablesReady === false;
+}
+
 function DriftStatus({ summary }: { summary: KontrolSummary }) {
   if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  if (tablesMissing(summary)) return <TablesSetupBlock />;
   const d = summary.drift;
   if (!d || d.totalEvaluated === 0) {
     return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Predikimet e para do mbushin këtë panel</span></div>;
@@ -166,6 +222,7 @@ function DriftStatus({ summary }: { summary: KontrolSummary }) {
 
 function OverrideStatus({ summary }: { summary: KontrolSummary }) {
   if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  if (tablesMissing(summary)) return <TablesSetupBlock />;
   const o = summary.overrides;
   if (!o || o.total === 0) {
     return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Regjistro override-in e parë në ditar</span></div>;
@@ -188,6 +245,7 @@ function OverrideStatus({ summary }: { summary: KontrolSummary }) {
 
 function EdgeStatus({ summary }: { summary: KontrolSummary }) {
   if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  if (tablesMissing(summary)) return <TablesSetupBlock />;
   const e = summary.edge;
   if (!e || e.totalEnvironments === 0) {
     return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Duhen predikime të vlerësuara për të matur edge-in</span></div>;
@@ -204,6 +262,7 @@ function EdgeStatus({ summary }: { summary: KontrolSummary }) {
 
 function MetricsStatus({ summary }: { summary: KontrolSummary }) {
   if (!summary.dbActive) return <KontrolStatusLine summary={summary} />;
+  if (tablesMissing(summary)) return <TablesSetupBlock />;
   const m = summary.metrics;
   if (!m) {
     return <div className="flex flex-wrap items-center gap-2"><KontrolBadge tone="muted">PA TË DHËNA</KontrolBadge><span className="text-xs text-muted-foreground">Metrikat do shfaqen pas predikimeve të para</span></div>;

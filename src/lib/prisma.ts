@@ -8,15 +8,12 @@ import { PrismaClient } from "@prisma/client";
 
 // Accepts postgresql://, postgres:// (Neon default), mysql://
 // Exported so API routes can report dbActive status to the UI.
+// NOTE: the schema provider is postgresql, so SQLite file: URLs are
+// never usable — they report as unavailable.
 export function isDbAvailable(): boolean {
   // Strip quotes (Vercel may keep literal quotes from .env file)
   const url = (process.env.DATABASE_URL || "").replace(/^["']|["']$/g, "").trim();
   if (!url) return false;
-  // SQLite (file:) only works in local dev, not on Vercel serverless
-  if (url.startsWith("file:")) {
-    return process.env.VERCEL !== "1";
-  }
-  // PostgreSQL/MySQL work everywhere (postgres:// is Neon's default scheme)
   return /^postgres(ql)?:/i.test(url) || /^mysql:/i.test(url);
 }
 
