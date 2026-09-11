@@ -467,6 +467,53 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const breadthPct = breadthTotal > 0 ? Math.round((above50Count / breadthTotal) * 1000) / 10 : 50;
   const breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
 
+  // ── Task 16b: SEKTORËT E HOLLE — plotësim anëtarësh vetëm për breadth-in e sektorit ──
+  // getScanUniverse(400) = DEDUPED.slice(0,400) pret fundin e listës, ku ndodhen emrat
+  // e Energy (40 në SECTOR_MAP) dhe Materials (17) → Energy mbetet me 2 anëtarë dhe
+  // breadth-i e tij është zhurmë statistikore (2/2 = 100% STRONG!). Plotësojmë sektorët
+  // me < 18 anëtarë duke marrë emra nga SECTOR_MAP që NUK janë në universin e skanuar.
+  // ⚠️ Vetëm për sector breadth + popup: NUK ndikon në market breadth (titullin 400),
+  // NUK hyn në funnel (rezultatet e skanimit mbeten të njëjta).
+  const SECTOR_MIN_MEMBERS = 18;
+  const countedSet = new Set(syms);
+  const extrasPerSec: Record<string, number> = {};
+  const breadthExtras: string[] = [];
+  for (const [t, sec] of Object.entries(SECTOR_MAP)) {
+    if (countedSet.has(t) || ETF_SET.has(t)) continue;
+    const agg = sectorAgg[sec];
+    if (!agg) continue; // vetëm sektorë që ekzistojnë në univers
+    const projected = agg.total + (extrasPerSec[sec] ?? 0);
+    if (projected >= SECTOR_MIN_MEMBERS) continue;
+    extrasPerSec[sec] = (extrasPerSec[sec] ?? 0) + 1;
+    breadthExtras.push(t);
+  }
+  if (breadthExtras.length > 0) {
+    console.log(`[IBKR v2] Sektorë të hollë — plotësim breadth me ${breadthExtras.length} emra: ${Object.entries(extrasPerSec).map(([s, n]) => `${s}+${n}`).join(', ')}`);
+    for (let i = 0; i < breadthExtras.length; i += BATCH) {
+      const batch = breadthExtras.slice(i, i + BATCH);
+      const res = await Promise.allSettled(batch.map(async s => ({ s, d: await fetchHistoricalData(s, '1y') })));
+      for (const r of res) {
+        if (r.status !== 'fulfilled' || !r.value.d || r.value.d.length < 50) continue;
+        const { s: es, d: ed } = r.value;
+        const c = ed.map(x => x.close);
+        const s50 = calculateSMA(c, 50);
+        const li = c.length - 1;
+        const sec = SECTOR_MAP[es] || 'Other';
+        if (!sectorAgg[sec]) continue;
+        sectorAgg[sec].total++;
+        const isAbove = c[li] > (s50[li] || 0);
+        const dayChg = li >= 1 && c[li - 1] > 0 ? ((c[li] - c[li - 1]) / c[li - 1]) * 100 : 0;
+        sectorAgg[sec].members.push({ t: es, a: isAbove, chg: Math.round(dayChg * 10) / 10 });
+        if (isAbove) sectorAgg[sec].above++;
+        if (li >= 1) {
+          if (c[li] > c[li - 1]) sectorAgg[sec].adv++;
+          else if (c[li] < c[li - 1]) sectorAgg[sec].dec++;
+        }
+      }
+      if (i + BATCH < breadthExtras.length) await new Promise(r => setTimeout(r, 250));
+    }
+  }
+
   // Per-sector breadth with labels, sorted strongest → weakest
   // Task 16: tickers = anëtarët e sektorit (max 20 mbi + 10 nën SMA50) — kështu useri sheh ÇFARË kompanish përbëjnë breadth-in e sektorit
   const MAX_ABOVE = 20, MAX_BELOW = 10;

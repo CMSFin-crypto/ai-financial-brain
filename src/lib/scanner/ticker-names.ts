@@ -109,6 +109,18 @@ export const TICKER_NAMES: Record<string, string> = {
   ESTC: 'Elastic', CFLT: 'Confluent', AI: 'C3.ai', BBAI: 'BigBear.ai', PINS: 'Pinterest',
   SNAP: 'Snap Inc', RDDT: 'Reddit', MTCH: 'Match Group', BMBL: 'Bumble', IAC: 'IAC',
   ZG: 'Zillow', YELP: 'Yelp', USB: 'US Bancorp',
+  // Energy (plotësim për sektorë të hollë — Task 16b)
+  COP: 'ConocoPhillips', SLB: 'SLB (Schlumberger)', EOG: 'EOG Resources', OXY: 'Occidental',
+  MPC: 'Marathon Petroleum', PSX: 'Phillips 66', VLO: 'Valero', DVN: 'Devon Energy',
+  FANG: 'Diamondback', PXD: 'Pioneer Natural Res', CTRA: 'Coterra Energy', HES: 'Hess Corp',
+  WMB: 'Williams Companies', FSLR: 'First Solar', ENPH: 'Enphase Energy', MRO: 'Marathon Oil',
+  APA: 'APA Corp', SM: 'SM Energy', RRC: 'Range Resources', AR: 'Antero Resources',
+  HAL: 'Halliburton', BKR: 'Baker Hughes', NOV: 'NOV Inc', PTEN: 'Patterson-UTI',
+  // Materials / mining (plotësim — Task 16b)
+  FCX: 'Freeport-McMoRan', NEM: 'Newmont', GOLD: 'Barrick Gold', AEM: 'Agnico Eagle',
+  WPM: 'Wheaton PM', FNV: 'Franco-Nevada', RGLD: 'Royal Gold', PAAS: 'Pan American Silver',
+  CDE: 'Coeur Mining', HL: 'Hecla Mining', NUE: 'Nucor', STLD: 'Steel Dynamics',
+  RS: 'Reliance Steel', CLF: 'Cleveland-Cliffs', X: 'US Steel', CMC: 'Commercial Metals',
 };
 
 /** Emri i kompanisë për një ticker (fallback: undefined) */
