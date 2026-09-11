@@ -199,19 +199,19 @@ export async function computeFactorInsights() {
       if (inZone.length < MIN_ZONE_N) continue;
       const w = inZone.filter((r) => classify(r.outcome) === "WIN").length;
       const l = inZone.filter((r) => classify(r.outcome) === "LOSS").length;
-      if (w + l < MIN_ZONE_N) continue;
       const zr = inZone.map(retOf).filter((r): r is number => r != null);
       const zAvg = zr.length ? zr.reduce((a, b) => a + b, 0) / zr.length : 0;
-      const zRate = w / (w + l);
+      const zoneDecisive = w + l;
+      const zRate = zoneDecisive > 0 ? w / zoneDecisive : 0;
       zones.push({
         factor: def.factor,
         zone: bucket.label,
-        n: w + l,
+        n: inZone.length, // total sinjale në zonë
         wins: w,
         losses: l,
-        winRate: Math.round(zRate * 100),
+        winRate: zoneDecisive > 0 ? Math.round(zRate * 100) : -1, // -1 = pa vendime
         avgReturn: Math.round(zAvg * 100) / 100,
-        edge: Math.round((zRate - baselineWinRate) * 100), // pikë përqindje
+        edge: zoneDecisive > 0 ? Math.round((zRate - baselineWinRate) * 100) : 0, // pikë përqindje
       });
     }
   }

@@ -2167,16 +2167,23 @@ export function IBKRStrategy() {
                             <div className="space-y-1.5">
                               {insights.zones.slice(0, 7).map((z: any, i: number) => (
                                 <div key={i} className="flex items-center gap-2 p-1.5 rounded-md bg-muted/15">
-                                  {z.edge > 0
+                                  {z.winRate < 0
+                                    ? <Activity className="w-3.5 h-3.5 text-muted-foreground/60 flex-shrink-0" />
+                                    : z.edge > 0
                                     ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                                     : <ArrowDownRight className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
                                   <div className="flex-1 min-w-0">
                                     <p className="text-[11.5px] font-medium text-foreground truncate">{z.zone}</p>
-                                    <p className="text-[10px] text-muted-foreground">{z.winRate}% fitore · n={z.n} · kthimi {(z.avgReturn > 0 ? '+' : '') + z.avgReturn}%</p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {z.winRate >= 0 ? `${z.winRate}% fitore · ` : 'pa vendime · '}
+                                      n={z.n} · kthimi {(z.avgReturn > 0 ? '+' : '') + z.avgReturn}%
+                                    </p>
                                   </div>
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${z.edge > 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
-                                    {z.edge > 0 ? '+' : ''}{z.edge}pp
-                                  </span>
+                                  {z.winRate >= 0 && (
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${z.edge > 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                                      {z.edge > 0 ? '+' : ''}{z.edge}pp
+                                    </span>
+                                  )}
                                 </div>
                               ))}
                             </div>
