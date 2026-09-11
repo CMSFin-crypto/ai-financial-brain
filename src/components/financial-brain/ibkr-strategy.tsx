@@ -25,6 +25,11 @@ interface FunnelStock {
   passedStackedMA: boolean; passedADX: boolean; passedEventRisk: boolean;
   trendScore: number; rsScore: number; momentumScore: number;
   volConfScore: number; setupScore: number; riskScore: number; totalScore: number; learningAdj?: number;
+  // Task 15: Sector Breadth Gate
+  sectorBreadthLabel?: 'DEAD' | 'WEAK' | 'OK' | 'STRONG' | string;
+  sectorBreadthPct?: number;
+  targetRRecommended?: number | null;
+  scaleOutRule?: string;
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string; rsi: number; atr: number; atrPct: number; adx: number;
   volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
@@ -91,7 +96,8 @@ interface FunnelResponse {
     qqq: { above50: boolean; above200: boolean };
     vix?: { level: number; status: string };
     breadth?: { pct: number; status: string };
-    sectorBreadth?: { sector: string; pct: number; status: string; above: number; total: number }[];
+    sectorBreadth?: { sector: string; pct: number; status: string; label?: string; above: number; total: number; adv?: number; dec?: number }[];
+    sectorBreadthSummary?: { weakDeadSectors: number; totalSectors: number; capTargets: boolean; note: string };
     regimeLevel?: string;
     regimeMultiplier?: number;
     stopVolMultiplier?: number;
@@ -506,14 +512,40 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
           <ScoreCell label="Risk" value={stock.riskScore} />
         </div>
 
-        {/* Entry / Stop / Target — 5 columns with 3R */}
+        {/* Entry / Stop / Target — 5 columns with 3R (targeti i rekomanduar nga sektori theksohet me ★) */}
         <div className="mt-3 grid grid-cols-5 gap-1.5">
           <EntryBox label="ENTRY" value={stock.entry} color="text-blue-400" bg="bg-blue-500/5 border-blue-500/15" />
           <EntryBox label="STOP" value={stock.stop} color="text-red-400" bg="bg-red-500/5 border-red-500/15" />
-          <EntryBox label="TARGET 1R" value={stock.target1R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/15" />
-          <EntryBox label="TARGET 2R" value={stock.target2R} color="text-emerald-400" bg="bg-emerald-500/5 border-emerald-500/20" />
+          <EntryBox
+            label={stock.targetRRecommended === 1 ? 'TARGET 1R ★' : 'TARGET 1R'}
+            value={stock.target1R}
+            color={stock.targetRRecommended === 1 ? (stock.sectorBreadthLabel === 'WEAK' ? 'text-amber-300' : 'text-emerald-300') : 'text-emerald-400'}
+            bg={stock.targetRRecommended === 1 ? (stock.sectorBreadthLabel === 'WEAK' ? 'bg-amber-500/10 border-amber-500/45 ring-1 ring-amber-500/25' : 'bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/30') : 'bg-emerald-500/5 border-emerald-500/15'}
+          />
+          <EntryBox
+            label={stock.targetRRecommended === 2 ? 'TARGET 2R ★' : 'TARGET 2R'}
+            value={stock.target2R}
+            color={stock.targetRRecommended === 2 ? 'text-emerald-300' : 'text-emerald-400'}
+            bg={stock.targetRRecommended === 2 ? 'bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/30' : 'bg-emerald-500/5 border-emerald-500/20'}
+          />
           <EntryBox label="TARGET 3R" value={stock.target3R} color="text-emerald-300" bg="bg-emerald-500/10 border-emerald-500/30" />
         </div>
+        {/* Sector Breadth Gate — shënimi për targetin e rekomanduar sipas sektorit */}
+        {stock.sectorBreadthLabel === 'DEAD' ? (
+          <p className="mt-1.5 text-[11px] text-red-400 font-medium">Sektori {stock.sector} DEAD ({stock.sectorBreadthPct}% mbi SMA50) — pa READY: pullback-et e këtij sektori vdesin</p>
+        ) : stock.sectorBreadthLabel && stock.targetRRecommended != null && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <MiniPopover
+              label={`Sektori ${stock.sector}: ${stock.sectorBreadthLabel} (${stock.sectorBreadthPct}%) → target ${stock.targetRRecommended}R`}
+              desc={`Sector Breadth Gate: ${stock.sectorBreadthPct}% e aksioneve të sektorit ${stock.sector} janë mbi SMA50. Rregulli: STRONG (≥55%) → target 2R (continuation real). OK (40-55%) → target 1.5R. WEAK (20-40%) → size 50%, target 1R me dalje graduale. Pse: i njëjti setup në sektor të ndryshëm ka probabilitet të ndryshëm për 2R — pullback-et në sektor të vdekur nuk kthehen. Bracket order-i i gjeneruar përdor këtë target.`}
+            >
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${stock.sectorBreadthLabel === 'WEAK' ? 'bg-amber-500/15 text-amber-300 border-amber-500/25' : stock.sectorBreadthLabel === 'STRONG' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25' : 'bg-sky-500/15 text-sky-300 border-sky-500/25'}`}>
+                Sektori {stock.sectorBreadthLabel} → target {stock.targetRRecommended}R
+              </span>
+            </MiniPopover>
+            {stock.scaleOutRule && <span className="text-[10px] text-muted-foreground">{stock.scaleOutRule}</span>}
+          </div>
+        )}
 
         <div className="mt-2.5 rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2.5">
           <div className="flex items-center gap-1.5 mb-2">
@@ -1352,11 +1384,18 @@ function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: Funne
   const vix = regimeDetail.vix;
   const breadth = regimeDetail.breadth;
   const sectorBreadth = regimeDetail.sectorBreadth ?? [];
+  const sbSummary = regimeDetail.sectorBreadthSummary;
   const [showSectors, setShowSectors] = useState(false);
   const regimeLevel = regimeDetail.regimeLevel ?? (regimeOk ? 'OK' : 'RISK');
   const regimeMultiplier = regimeDetail.regimeMultiplier ?? 1;
   const stopVolMultiplier = regimeDetail.stopVolMultiplier ?? 1;
   const levelColor = regimeLevel === 'OK' ? 'text-emerald-400' : regimeLevel === 'CAUTION' ? 'text-amber-400' : 'text-red-400';
+  // Ngjyra sipas labels të Sector Breadth Gate: STRONG / OK / WEAK / DEAD
+  const lblColor = (l?: string) => l === 'STRONG' ? 'text-emerald-400 font-semibold' : l === 'OK' ? 'text-sky-400' : l === 'WEAK' ? 'text-amber-400' : l === 'DEAD' ? 'text-red-400 font-bold' : 'text-muted-foreground';
+  const lblBar = (l?: string) => l === 'STRONG' ? 'bg-emerald-500' : l === 'OK' ? 'bg-sky-500' : l === 'WEAK' ? 'bg-amber-500' : 'bg-red-500';
+  const sbLabel = (sb: { status: string; label?: string }) => (sb.label || sb.status);
+  const strongest = sectorBreadth[0];
+  const weakest = sectorBreadth.length > 1 ? sectorBreadth[sectorBreadth.length - 1] : undefined;
   return (
     <Card className={`${compact ? 'py-0' : ''} ${regimeLevel === 'OK' ? 'border-emerald-500/20 bg-emerald-500/5' : regimeLevel === 'CAUTION' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
       <CardContent className={compact ? 'px-3.5 py-2.5' : 'p-4'}>
@@ -1396,6 +1435,21 @@ function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: Funne
                 </MiniPopover>
               )}
             </div>
+            {/* Rreshti kompakt: sektori me i forte dhe me i dobet (gjithmonë i dukshëm) */}
+            {strongest && weakest && (
+              <div className="mt-1.5 text-[12px] text-muted-foreground flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+                <MiniPopover label={`${strongest.sector} ${strongest.pct}% — ${sbLabel(strongest)}`} desc={`Sektori me i forte: ${strongest.sector} — ${strongest.pct}% e aksioneve mbi SMA50 (${sbLabel(strongest)}). Sektoret STRONG (≥55%) lejojne target 2R: pullback-et e tyre kane continuation real.`}>
+                  <span>{strongest.sector} <span className="font-medium">{strongest.pct}%</span> <span className={lblColor(sbLabel(strongest))}>{sbLabel(strongest)}</span></span>
+                </MiniPopover>
+                <span className="text-muted-foreground/40">·</span>
+                <MiniPopover label={`${weakest.sector} ${weakest.pct}% — ${sbLabel(weakest)}`} desc={`Sektori me i dobet: ${weakest.sector} — vetëm ${weakest.pct}% mbi SMA50 (${sbLabel(weakest)}). Sektoret DEAD (<20%) bllokojnë çdo READY: pullback-et e tyre vdesin, 2R s'ka probabilitet. Kliko 'Sektoret' për listën e plotë.`}>
+                  <span>{weakest.sector} <span className="font-medium">{weakest.pct}%</span> <span className={lblColor(sbLabel(weakest))}>{sbLabel(weakest)}</span></span>
+                </MiniPopover>
+              </div>
+            )}
+            {sbSummary?.capTargets && (
+              <p className="mt-1 text-[11px] text-red-400/90">{sbSummary.note}</p>
+            )}
             {showSectors && sectorBreadth.length > 0 && (
               <div className="mt-3 pt-3 border-t border-border/60">
                 <div className="flex items-center justify-between mb-2">
@@ -1404,13 +1458,14 @@ function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: Funne
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
                   {sectorBreadth.map(sb => {
-                    const barColor = sb.pct >= 55 ? 'bg-emerald-500' : sb.pct >= 40 ? 'bg-amber-500' : 'bg-red-500';
-                    const textColor = sb.pct >= 55 ? 'text-emerald-400' : sb.pct >= 40 ? 'text-amber-400' : 'text-red-400';
+                    const l = sbLabel(sb);
+                    const barColor = lblBar(l);
+                    const textColor = lblColor(l);
                     return (
                       <MiniPopover
                         key={sb.sector}
-                        label={`${sb.sector}: ${sb.pct}% — ${sb.status}`}
-                        desc={`Sektori ${sb.sector}: ${sb.above} nga ${sb.total} aksione (${sb.pct}%) jane mbi SMA50. Pse ka rendesi: breadth-i total mund te fsheh ndarje te medha — nje sektor mund te jete ne trend te shendetshhem ndersa nje tjeter po copetohet. Sektoret me > 55% = participim i gjere (pullback-et e tyre kthehen me shpesh — kandidature me te mira per skanerin). 40-55% = i perzier (kujdes). Nen 40% = i dobet (pullback-et e tij shpesh vazhdojne te bien — shmang ose redukto madhesine). Vertetim praktik: kur breadth-i total eshte nen 40% por sektori yt ka > 55%, sinjalet e sektorit jane me te besueshme se mesatarja e tregut.`}
+                        label={`${sb.sector}: ${sb.pct}% — ${l}`}
+                        desc={`Sektori ${sb.sector}: ${sb.above} nga ${sb.total} aksione (${sb.pct}%) jane mbi SMA50; ${sb.adv ?? 0} në rritje / ${sb.dec ?? 0} në renie diten e fundit. Vendimi i IBKR per kete sektor: STRONG (≥55%) → READY lejohet, target 2R ka kuptim. OK (40-55%) → READY por target 1.5R. WEAK (20-40%) → size 50%, target 1R (50% ne 1R + stop breakeven), READY vetem me score ≥80. DEAD (<20%) → pa READY fare — pullback-et e sektorit vdesin, 2R s'ka probabilitet. Pse ka rendesi: breadth-i total e fsheh tregun — SPY mund te jete OK por nje READY industrial me ADX>25 prape s'e arrin 2R sepse sektori i tij eshte i vdekur.`}
                       >
                         <div className="w-full flex items-center gap-2 text-[12px] py-0.5">
                           <span className="w-[86px] flex-shrink-0 truncate text-muted-foreground">{sb.sector}</span>
@@ -1418,6 +1473,7 @@ function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: Funne
                             <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${Math.max(2, sb.pct)}%` }} />
                           </div>
                           <span className={`w-[38px] text-right font-medium ${textColor}`}>{sb.pct}%</span>
+                          <span className={`w-[52px] text-right text-[10px] font-medium ${textColor}`}>{l}</span>
                           <span className="w-[42px] text-right text-[10px] text-muted-foreground/70">{sb.above}/{sb.total}</span>
                         </div>
                       </MiniPopover>

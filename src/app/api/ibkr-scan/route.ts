@@ -219,6 +219,19 @@ function generateBracketOrder(symbol: string, action: 'BUY' | 'SELL', entry: num
 // ── Types ──
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
 
+// ── Task 15: Sector Breadth Gate ──
+type SectorLabel = 'DEAD' | 'WEAK' | 'OK' | 'STRONG';
+interface SectorBreadthItem {
+  sector: string;
+  pct: number;
+  status: string;   // backward-compat (same value as label)
+  label: SectorLabel;
+  above: number;
+  total: number;
+  adv: number;
+  dec: number;
+}
+
 interface FunnelStock {
   symbol: string;
   price: number;
@@ -241,6 +254,11 @@ interface FunnelStock {
   riskScore: number;
   totalScore: number;
   learningAdj?: number; // sa pikë shtoi/hoqi Learning Engine në score
+  // Task 15: Sector Breadth Gate
+  sectorBreadthLabel?: SectorLabel;   // DEAD | WEAK | OK | STRONG — gjendja e sektorit të tij
+  sectorBreadthPct?: number;          // % e sektorit mbi SMA50
+  targetRRecommended?: number | null; // 1 | 1.5 | 2 | null (DEAD = pa target)
+  scaleOutRule?: string;              // rregulli i daljes graduale (WEAK)
   // Setup detail
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string;
@@ -344,7 +362,8 @@ interface FunnelResponse {
     qqq: { above50: boolean; above200: boolean };
     vix: { level: number; status: string };
     breadth: { pct: number; status: string };
-    sectorBreadth?: { sector: string; pct: number; status: string; above: number; total: number }[];
+    sectorBreadth?: SectorBreadthItem[];
+    sectorBreadthSummary?: { weakDeadSectors: number; totalSectors: number; capTargets: boolean; note: string };
     regimeLevel: string;            // OK | CAUTION | RISK
     regimeMultiplier: number;       // 1.0 | 0.75 | 0.5
     stopVolMultiplier: number;      // 1.0 | 1.2 | 1.5
@@ -414,9 +433,13 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
 
   // ── NEW: Market Breadth — % of universe above 50D SMA (leading regime indicator) ──
-  // Grouped per sector: sector breadth shows WHERE participation is strong/weak.
+  // Grouped per sector: breadth-i i sektorit tregon KU ka continuation dhe KU pullback-et vdesin.
+  // Labels (Task 15 — Sector Breadth Gate): DEAD <20% · WEAK 20-40% · OK 40-55% · STRONG ≥55%
+  const SECTOR_DEAD_PCT = 20, SECTOR_WEAK_PCT = 40, SECTOR_STRONG_PCT = 55;
+  const sectorLabel = (p: number): SectorLabel =>
+    p < SECTOR_DEAD_PCT ? 'DEAD' : p < SECTOR_WEAK_PCT ? 'WEAK' : p >= SECTOR_STRONG_PCT ? 'STRONG' : 'OK';
   let above50Count = 0, breadthTotal = 0;
-  const sectorAgg: Record<string, { above: number; total: number }> = {};
+  const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number }> = {};
   for (const sym of syms) {
     const d = hist[sym];
     if (!d || d.length < 50) continue;
@@ -425,26 +448,46 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const li = c.length - 1;
     breadthTotal++;
     const sec = SECTOR_MAP[sym] || 'Other';
-    if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0 };
+    if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0 };
     sectorAgg[sec].total++;
     if (c[li] > (s50[li] || 0)) { above50Count++; sectorAgg[sec].above++; }
+    if (li >= 1) {
+      if (c[li] > c[li - 1]) sectorAgg[sec].adv++;
+      else if (c[li] < c[li - 1]) sectorAgg[sec].dec++;
+    }
   }
   const breadthPct = breadthTotal > 0 ? Math.round((above50Count / breadthTotal) * 1000) / 10 : 50;
   const breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
 
-  // Per-sector breadth, sorted strongest → weakest
-  const sectorBreadth = Object.entries(sectorAgg)
+  // Per-sector breadth with labels, sorted strongest → weakest
+  const sectorBreadth: SectorBreadthItem[] = Object.entries(sectorAgg)
     .map(([sector, a]) => {
       const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
+      const label = sectorLabel(p);
       return {
         sector,
         pct: p,
-        status: p >= 55 ? 'HEALTHY' : p >= 40 ? 'MIXED' : 'WEAK',
+        status: label,
+        label,
         above: a.above,
         total: a.total,
+        adv: a.adv,
+        dec: a.dec,
       };
     })
     .sort((x, y) => y.pct - x.pct);
+
+  // Market-level rule: 8+/11 sektorë WEAK/DEAD → as 2R as te Top 10 (është treg, jo aksion)
+  const weakDeadSectors = sectorBreadth.filter(s => s.label === 'WEAK' || s.label === 'DEAD').length;
+  const capTargetsMarketWide = weakDeadSectors >= 8;
+  const sectorBreadthSummary = {
+    weakDeadSectors,
+    totalSectors: sectorBreadth.length,
+    capTargets: capTargetsMarketWide,
+    note: capTargetsMarketWide
+      ? `${weakDeadSectors}/${sectorBreadth.length} sektorë WEAK/DEAD — tregu në konsolidim: targetat kapohen në 1R edhe për Top 10`
+      : `${weakDeadSectors}/${sectorBreadth.length} sektorë WEAK/DEAD`,
+  };
 
   // ── NEW: Regime level — OK | CAUTION | RISK (structure + VIX + breadth) ──
   let regimeLevel: 'OK' | 'CAUTION' | 'RISK' = 'OK';
@@ -1007,6 +1050,69 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
 
   const passedRisk = phase3.length;
 
+  // ── TASK 15: SECTOR BREADTH GATE (pas vendimit, para Top 10) ──
+  // Rregullat: DEAD (<20%) bllokon çdo READY; WEAK (20-40%) size 50% + target 1R +
+  // READY vetëm me score ≥80; OK 1.5R; STRONG 2R. Nëse 8+/11 sektorë WEAK/DEAD →
+  // targetat kapohen në 1R për të gjithë (përfshirë Top 10) — është treg, jo aksion.
+  const sectorBreadthMap: Record<string, SectorBreadthItem> = {};
+  for (const sb of sectorBreadth) sectorBreadthMap[sb.sector] = sb;
+
+  for (const stock of phase3) {
+    const sb = sectorBreadthMap[stock.sector];
+    if (!sb) continue;
+    stock.sectorBreadthLabel = sb.label;
+    stock.sectorBreadthPct = sb.pct;
+
+    if (sb.label === 'DEAD') {
+      // Sektori i vdekur: pullback-et e tij vdesin — 2R s'ka probabilitet
+      stock.targetRRecommended = null;
+      if (stock.decision === 'READY') {
+        stock.decision = 'WATCHLIST';
+        stock.bracketOrder = null;
+        stock.warnings.push(`SEKTORI DEAD: ${stock.sector} vetëm ${sb.pct}% mbi SMA50 — pa READY, 2R s'ka probabilitet`);
+      } else {
+        stock.warnings.push(`SEKTORI DEAD: ${stock.sector} ${sb.pct}% mbi SMA50 — mos hy`);
+      }
+    } else if (sb.label === 'WEAK') {
+      // Size 50%, target 1R, dalje graduale; READY vetëm me score ≥80
+      stock.targetRRecommended = 1;
+      stock.scaleOutRule = '50% në 1R, stop breakeven';
+      if (stock.positionSize > 0) {
+        stock.positionSize = Math.floor(stock.positionSize * 0.5);
+        stock.positionValue = Math.round(stock.positionValue * 0.5 * 100) / 100;
+        stock.riskDollars = Math.round(stock.riskDollars * 0.5 * 100) / 100;
+      }
+      if (stock.decision === 'READY' && stock.totalScore < 80) {
+        stock.decision = 'WATCHLIST';
+        stock.bracketOrder = null;
+        stock.warnings.push(`SEKTORI WEAK: ${stock.sector} ${sb.pct}% mbi SMA50 — READY vetëm me score ≥80 (tani ${stock.totalScore})`);
+      } else {
+        stock.warnings.push(`SEKTORI WEAK: ${stock.sector} ${sb.pct}% mbi SMA50 — size 50%, target 1R, 50% në 1R + stop breakeven`);
+      }
+    } else {
+      stock.targetRRecommended = sb.label === 'STRONG' ? 2 : 1.5;
+      if (stock.decision === 'READY') {
+        stock.warnings.push(`SEKTORI ${sb.label}: ${stock.sector} ${sb.pct}% mbi SMA50 — target ${stock.targetRRecommended}R ka kuptim`);
+      }
+    }
+
+    // Market-wide cap: 8+/11 sektorë WEAK/DEAD → as 2R as te Top 10
+    if (capTargetsMarketWide && stock.targetRRecommended != null && stock.targetRRecommended > 1) {
+      stock.targetRRecommended = 1;
+      stock.scaleOutRule = '50% në 1R, stop breakeven';
+      if (stock.decision === 'READY') {
+        stock.warnings.push(`TREGU: ${weakDeadSectors}/${sectorBreadth.length} sektorë WEAK/DEAD — targetat kapohen në 1R (është treg, jo aksion)`);
+      }
+    }
+
+    // Bracket-i përdor targetin e rekomanduar nga sektori (jo gjithmonë 3R)
+    if (stock.decision === 'READY' && stock.positionSize > 0 && stock.targetRRecommended != null) {
+      const tR = stock.targetRRecommended;
+      const tPrice = Math.round((stock.entry + tR * (stock.entry - stock.stop)) * 100) / 100;
+      stock.bracketOrder = generateBracketOrder(stock.symbol, 'BUY', stock.entry, stock.stop, tPrice, stock.positionSize);
+    }
+  }
+
   // ── 5. PHASE 4 — Sector exposure limit + Top 10 final ──
   const sectorCount: Record<string, number> = {};
   const afterSectorLimit: FunnelStock[] = [];
@@ -1050,6 +1156,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       vix: { level: Math.round(vixLevel * 10) / 10, status: vixStatus },
       breadth: { pct: breadthPct, status: breadthStatus },
       sectorBreadth,
+      sectorBreadthSummary,
       regimeLevel,
       regimeMultiplier,
       stopVolMultiplier,

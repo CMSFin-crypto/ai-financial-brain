@@ -72,6 +72,11 @@ interface AnalyzeResponse {
     decision: Decision; reasons: string[]; warnings: string[];
     // Liquidity metrics (estimates, same formula as ibkr-scan)
     spreadPct: number; liquidityScore: number; liquidityStatus: string;
+    // Task 15: Sector Breadth Gate
+    sectorBreadthLabel?: string;
+    sectorBreadthPct?: number;
+    targetRRecommended?: number | null;
+    scaleOutRule?: string;
     // Entry quality — RVOL + 52W High
     rvol: number; rvolStatus: string;
     high52w: number; distFrom52wHighPct: number; near52wHigh: boolean;
@@ -119,12 +124,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // sample to keep the single-stock analysis fast. Null if too few respond.
     let breadthPct: number | null = null;
     let breadthStatus = 'N/A';
-    let sectorBreadth: { sector: string; pct: number; status: string; above: number; total: number }[] = [];
+    let sectorBreadth: { sector: string; pct: number; status: string; label: string; above: number; total: number; adv: number; dec: number }[] = [];
     try {
       const universe = getScanUniverse(400).filter(s => s !== sym);
       const sample = universe.filter((_, i) => i % 8 === 0);
       let above50Count = 0, breadthTotal = 0;
-      const sectorAgg: Record<string, { above: number; total: number }> = {};
+      const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number }> = {};
       const BATCH = 25;
       for (let i = 0; i < sample.length; i += BATCH) {
         const batch = sample.slice(i, i + BATCH);
@@ -137,18 +142,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           const li = c.length - 1;
           breadthTotal++;
           const sec = SECTOR_MAP[batch[j]] || 'Other';
-          if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0 };
+          if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0 };
           sectorAgg[sec].total++;
           if (c[li] > (s50[li] || 0)) { above50Count++; sectorAgg[sec].above++; }
+          if (li >= 1) {
+            if (c[li] > c[li - 1]) sectorAgg[sec].adv++;
+            else if (c[li] < c[li - 1]) sectorAgg[sec].dec++;
+          }
         }
       }
       if (breadthTotal >= 15) {
         breadthPct = Math.round((above50Count / breadthTotal) * 1000) / 10;
         breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
+        // Task 15 labels: DEAD <20% · WEAK 20-40% · OK 40-55% · STRONG ≥55%
         sectorBreadth = Object.entries(sectorAgg)
           .map(([sector, a]) => {
             const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
-            return { sector, pct: p, status: p >= 55 ? 'HEALTHY' : p >= 40 ? 'MIXED' : 'WEAK', above: a.above, total: a.total };
+            const label = p < 20 ? 'DEAD' : p < 40 ? 'WEAK' : p >= 55 ? 'STRONG' : 'OK';
+            return { sector, pct: p, status: label, label, above: a.above, total: a.total, adv: a.adv, dec: a.dec };
           })
           .sort((x, y) => y.pct - x.pct);
       }
@@ -370,6 +381,53 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
     if (rsi > 70 && totalScore >= 55) { decision = 'EVENT_RISK'; warnings.push('EVENT_RISK: RSI i larte'); }
 
+    // ── TASK 15: SECTOR BREADTH GATE (same rules as ibkr-scan) ──
+    // DEAD (<20%) bllokon READY; WEAK (20-40%) size 50% + target 1R + READY vetëm score≥80; OK 1.5R; STRONG 2R.
+    const mySectorSb = sectorBreadth.find(s => s.sector === sector);
+    let sectorBreadthLabel: string | undefined;
+    let sectorBreadthPct: number | undefined;
+    let targetRRecommended: number | null | undefined;
+    let scaleOutRule: string | undefined;
+    let finalPos = { ...pos };
+    if (mySectorSb) {
+      sectorBreadthLabel = mySectorSb.label;
+      sectorBreadthPct = mySectorSb.pct;
+      if (mySectorSb.label === 'DEAD') {
+        targetRRecommended = null;
+        if (decision === 'READY') {
+          decision = 'WATCHLIST';
+          warnings.push(`SEKTORI DEAD: ${sector} vetëm ${mySectorSb.pct}% mbi SMA50 — pa READY, 2R s'ka probabilitet`);
+        } else {
+          warnings.push(`SEKTORI DEAD: ${sector} ${mySectorSb.pct}% mbi SMA50 — mos hy`);
+        }
+      } else if (mySectorSb.label === 'WEAK') {
+        targetRRecommended = 1;
+        scaleOutRule = '50% në 1R, stop breakeven';
+        finalPos = {
+          shares: Math.floor(pos.shares * 0.5),
+          positionValue: Math.round(pos.positionValue * 0.5 * 100) / 100,
+          riskDollars: Math.round(pos.riskDollars * 0.5 * 100) / 100,
+          riskPct: Math.round(pos.riskPct * 0.5 * 100) / 100,
+        };
+        if (decision === 'READY' && totalScore < 80) {
+          decision = 'WATCHLIST';
+          warnings.push(`SEKTORI WEAK: ${sector} ${mySectorSb.pct}% mbi SMA50 — READY vetëm me score ≥80 (tani ${totalScore})`);
+        } else {
+          warnings.push(`SEKTORI WEAK: ${sector} ${mySectorSb.pct}% mbi SMA50 — size 50%, target 1R, 50% në 1R + stop breakeven`);
+        }
+      } else {
+        targetRRecommended = mySectorSb.label === 'STRONG' ? 2 : 1.5;
+        if (decision === 'READY') warnings.push(`SEKTORI ${mySectorSb.label}: ${sector} ${mySectorSb.pct}% mbi SMA50 — target ${targetRRecommended}R ka kuptim`);
+      }
+      // Market-wide cap: 8+/11 sektorë WEAK/DEAD → targetat kapohen në 1R
+      const weakDead = sectorBreadth.filter(s => s.label === 'WEAK' || s.label === 'DEAD').length;
+      if (weakDead >= 8 && targetRRecommended != null && targetRRecommended > 1) {
+        targetRRecommended = 1;
+        scaleOutRule = '50% në 1R, stop breakeven';
+        if (decision === 'READY') warnings.push(`TREGU: ${weakDead}/${sectorBreadth.length} sektorë WEAK/DEAD — targetat kapohen në 1R (është treg, jo aksion)`);
+      }
+    }
+
     // Funnel phase results
     const passedLiquidity = passedLiq ? 1 : 0;
     const passedTrendPhase = passedTrend ? 1 : 0;
@@ -442,7 +500,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         rsVsSPY: Math.round(rsSpy22 * 100) / 100, rsVsQQQ: Math.round(rsQqq22 * 100) / 100, rsVsSPY60d: Math.round(rsSpy60 * 100) / 100,
         entry, stop, target1R, target2R, target3R,
         riskPct: Math.round(riskPct * 100) / 100, rewardRiskRatio: rr, swingLow: Math.round(swLow * 100) / 100,
-        positionSize: pos.shares, positionValue: pos.positionValue, riskDollars: pos.riskDollars,
+        positionSize: finalPos.shares, positionValue: finalPos.positionValue, riskDollars: finalPos.riskDollars,
+        // Task 15: Sector Breadth Gate
+        sectorBreadthLabel, sectorBreadthPct, targetRRecommended, scaleOutRule,
         eventRisk: eventResult.summary, eventRiskSeverity: eventResult.worstEvent.severity,
         decision, reasons, warnings,
         // Liquidity metrics (estimates)
