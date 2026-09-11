@@ -13,6 +13,7 @@ export type { FunnelStock, FunnelResponse };
 
 // Universe 400 — liquid US stocks (deduped, batchable)
 import { getScanUniverse } from '@/lib/scanner/universe-400';
+import { getCompanyName } from '@/lib/scanner/ticker-names';
 const UNIVERSE = getScanUniverse(400);
 
 const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
@@ -221,6 +222,8 @@ type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
 
 // ── Task 15: Sector Breadth Gate ──
 type SectorLabel = 'DEAD' | 'WEAK' | 'OK' | 'STRONG';
+// Task 16: anëtarët e sektorit për popup — t: ticker, n: emri i kompanisë, a: mbi SMA50, chg: % ditor
+export interface SectorMemberTicker { t: string; n?: string; a: boolean; chg: number; }
 interface SectorBreadthItem {
   sector: string;
   pct: number;
@@ -230,6 +233,7 @@ interface SectorBreadthItem {
   total: number;
   adv: number;
   dec: number;
+  tickers?: SectorMemberTicker[]; // Task 16: max 20 mbi + 10 nën SMA50 (të renditura sipas chg ditor)
 }
 
 interface FunnelStock {
@@ -439,7 +443,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const sectorLabel = (p: number): SectorLabel =>
     p < SECTOR_DEAD_PCT ? 'DEAD' : p < SECTOR_WEAK_PCT ? 'WEAK' : p >= SECTOR_STRONG_PCT ? 'STRONG' : 'OK';
   let above50Count = 0, breadthTotal = 0;
-  const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number }> = {};
+  const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number; members: { t: string; a: boolean; chg: number }[] }> = {};
   for (const sym of syms) {
     const d = hist[sym];
     if (!d || d.length < 50) continue;
@@ -448,9 +452,13 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const li = c.length - 1;
     breadthTotal++;
     const sec = SECTOR_MAP[sym] || 'Other';
-    if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0 };
+    if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0, members: [] };
     sectorAgg[sec].total++;
-    if (c[li] > (s50[li] || 0)) { above50Count++; sectorAgg[sec].above++; }
+    const isAbove = c[li] > (s50[li] || 0);
+    // Task 16: chg ditor për renditjen e anëtarëve në popup-in e sektorit
+    const dayChg = li >= 1 && c[li - 1] > 0 ? ((c[li] - c[li - 1]) / c[li - 1]) * 100 : 0;
+    sectorAgg[sec].members.push({ t: sym, a: isAbove, chg: Math.round(dayChg * 10) / 10 });
+    if (isAbove) { above50Count++; sectorAgg[sec].above++; }
     if (li >= 1) {
       if (c[li] > c[li - 1]) sectorAgg[sec].adv++;
       else if (c[li] < c[li - 1]) sectorAgg[sec].dec++;
@@ -460,10 +468,20 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
 
   // Per-sector breadth with labels, sorted strongest → weakest
+  // Task 16: tickers = anëtarët e sektorit (max 20 mbi + 10 nën SMA50) — kështu useri sheh ÇFARË kompanish përbëjnë breadth-in e sektorit
+  const MAX_ABOVE = 20, MAX_BELOW = 10;
   const sectorBreadth: SectorBreadthItem[] = Object.entries(sectorAgg)
     .map(([sector, a]) => {
       const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
       const label = sectorLabel(p);
+      const aboveMembers = a.members.filter(m => m.a).sort((x, y) => y.chg - x.chg).slice(0, MAX_ABOVE);
+      const belowMembers = a.members.filter(m => !m.a).sort((x, y) => y.chg - x.chg).slice(0, MAX_BELOW);
+      const tickers: SectorMemberTicker[] = [...aboveMembers, ...belowMembers].map(m => ({
+        t: m.t,
+        n: getCompanyName(m.t),
+        a: m.a,
+        chg: m.chg,
+      }));
       return {
         sector,
         pct: p,
@@ -473,6 +491,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
         total: a.total,
         adv: a.adv,
         dec: a.dec,
+        tickers,
       };
     })
     .sort((x, y) => y.pct - x.pct);

@@ -96,7 +96,7 @@ interface FunnelResponse {
     qqq: { above50: boolean; above200: boolean };
     vix?: { level: number; status: string };
     breadth?: { pct: number; status: string };
-    sectorBreadth?: { sector: string; pct: number; status: string; label?: string; above: number; total: number; adv?: number; dec?: number }[];
+    sectorBreadth?: { sector: string; pct: number; status: string; label?: string; above: number; total: number; adv?: number; dec?: number; tickers?: SectorMemberTicker[] }[];
     sectorBreadthSummary?: { weakDeadSectors: number; totalSectors: number; capTargets: boolean; note: string };
     regimeLevel?: string;
     regimeMultiplier?: number;
@@ -106,6 +106,9 @@ interface FunnelResponse {
   results: FunnelStock[];
   sectorExposure?: Record<string, number>;
 }
+
+// Task 16: anëtari i sektorit në popup-in e breadth-it — t: simboli, n: emri i kompanisë, a: mbi SMA50, chg: % ditor
+interface SectorMemberTicker { t: string; n?: string; a: boolean; chg: number; }
 
 // ── Decision styling ──
 const DECISION_STYLE: Record<Decision, { bg: string; text: string; border: string; label: string }> = {
@@ -1379,6 +1382,93 @@ function MiniPopover({ label, desc, children }: { label: string; desc: string; c
   );
 }
 
+// ── Task 16: Rreshti i sektorit me popup-in e KOMPANIVE ──
+// Kur useri klikon një sektor në panelin e breadth-it, popup-i shfaq
+// anëtarët konkretë (max 20 mbi + 10 nën SMA50) me simbol, emër, chg ditor.
+function SectorMemberChip({ m, above }: { m: SectorMemberTicker; above: boolean }) {
+  return (
+    <span
+      title={m.n ? `${m.t} — ${m.n}` : m.t}
+      className={`inline-flex flex-col items-start px-1.5 py-1 rounded-md border transition-transform hover:scale-105 ${above ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-muted/40 border-border/60'}`}
+    >
+      <span className="flex items-center gap-1 text-[10px] leading-none">
+        <span className="font-bold font-mono text-foreground/90">{m.t}</span>
+        <span className={`font-mono font-medium ${m.chg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{m.chg >= 0 ? '+' : ''}{m.chg}%</span>
+      </span>
+      {m.n && <span className="text-[8px] leading-tight text-muted-foreground/75 max-w-[104px] truncate mt-0.5">{m.n}</span>}
+    </span>
+  );
+}
+
+function SectorBreadthRow({
+  sb,
+  lblColor,
+  lblBar,
+}: {
+  sb: NonNullable<FunnelResponse['regimeDetail']['sectorBreadth']>[number];
+  lblColor: (l?: string) => string;
+  lblBar: (l?: string) => string;
+}) {
+  const l = sb.label || sb.status;
+  const barColor = lblBar(l);
+  const textColor = lblColor(l);
+  const members = sb.tickers ?? [];
+  const aboveM = members.filter(m => m.a);
+  const belowM = members.filter(m => !m.a);
+  const belowTotal = Math.max(0, sb.total - sb.above);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="hover:brightness-125 transition-all cursor-pointer group w-full text-left">
+          <div className="w-full flex items-center gap-2 text-[12px] py-0.5">
+            <span className="w-[86px] flex-shrink-0 truncate text-muted-foreground group-hover:text-foreground/90 transition-colors">{sb.sector}</span>
+            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${Math.max(2, sb.pct)}%` }} />
+            </div>
+            <span className={`w-[38px] text-right font-medium ${textColor}`}>{sb.pct}%</span>
+            <span className={`w-[52px] text-right text-[10px] font-medium ${textColor}`}>{l}</span>
+            <span className="w-[42px] text-right text-[10px] text-muted-foreground/70">{sb.above}/{sb.total}</span>
+          </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-80 sm:w-[26rem] p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <h3 className="text-sm font-bold text-foreground">{sb.sector}: {sb.pct}% — {l}</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{sb.above} nga {sb.total} aksione mbi SMA50 · {sb.adv ?? 0} në rritje / {sb.dec ?? 0} në renie ditor</p>
+        </div>
+        <div className="px-4 py-3 space-y-3">
+          {members.length > 0 ? (
+            <>
+              {aboveM.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90 mb-1.5">Mbi SMA50 — {sb.above} kompani{aboveM.length < sb.above ? ` (top ${aboveM.length} sipas chg ditor)` : ''}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {aboveM.map(m => <SectorMemberChip key={m.t} m={m} above />)}
+                  </div>
+                </div>
+              )}
+              {belowM.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400/80 mb-1.5">Nën SMA50 — {belowTotal} kompani{belowM.length < belowTotal ? ` (top ${belowM.length} sipas chg ditor)` : ''}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {belowM.map(m => <SectorMemberChip key={m.t} m={m} above={false} />)}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">Lista e kompanive nuk është e disponueshme për këtë pamje (kampion i reduktuar) — hap skanimin e plotë për listën komplete.</p>
+          )}
+          <p className="text-[10px] text-muted-foreground/70 leading-relaxed border-t border-border/60 pt-2">
+            {members.length > 0 && <>Renditura sipas ndryshimit ditor; ngjyra jeshile = mbi SMA50. </>}
+            Rregulli i IBKR: STRONG (≥55%) → READY lejohet, target 2R. OK (40-55%) → READY, target 1.5R. WEAK (20-40%) → size 50%, target 1R, READY vetëm me score ≥80. DEAD (&lt;20%) → pa READY — pullback-et e këtij sektori vdesin.
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ── Regime Banner ──
 function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: FunnelResponse['regimeDetail']; regimeOk: boolean; compact?: boolean }) {
   const vix = regimeDetail.vix;
@@ -1457,29 +1547,11 @@ function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: Funne
                   <span className="text-[10px] text-muted-foreground/70">{sectorBreadth.length} sektore · renditur nga me i forti</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-                  {sectorBreadth.map(sb => {
-                    const l = sbLabel(sb);
-                    const barColor = lblBar(l);
-                    const textColor = lblColor(l);
-                    return (
-                      <MiniPopover
-                        key={sb.sector}
-                        label={`${sb.sector}: ${sb.pct}% — ${l}`}
-                        desc={`Sektori ${sb.sector}: ${sb.above} nga ${sb.total} aksione (${sb.pct}%) jane mbi SMA50; ${sb.adv ?? 0} në rritje / ${sb.dec ?? 0} në renie diten e fundit. Vendimi i IBKR per kete sektor: STRONG (≥55%) → READY lejohet, target 2R ka kuptim. OK (40-55%) → READY por target 1.5R. WEAK (20-40%) → size 50%, target 1R (50% ne 1R + stop breakeven), READY vetem me score ≥80. DEAD (<20%) → pa READY fare — pullback-et e sektorit vdesin, 2R s'ka probabilitet. Pse ka rendesi: breadth-i total e fsheh tregun — SPY mund te jete OK por nje READY industrial me ADX>25 prape s'e arrin 2R sepse sektori i tij eshte i vdekur.`}
-                      >
-                        <div className="w-full flex items-center gap-2 text-[12px] py-0.5">
-                          <span className="w-[86px] flex-shrink-0 truncate text-muted-foreground">{sb.sector}</span>
-                          <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${Math.max(2, sb.pct)}%` }} />
-                          </div>
-                          <span className={`w-[38px] text-right font-medium ${textColor}`}>{sb.pct}%</span>
-                          <span className={`w-[52px] text-right text-[10px] font-medium ${textColor}`}>{l}</span>
-                          <span className="w-[42px] text-right text-[10px] text-muted-foreground/70">{sb.above}/{sb.total}</span>
-                        </div>
-                      </MiniPopover>
-                    );
-                  })}
+                  {sectorBreadth.map(sb => (
+                    <SectorBreadthRow key={sb.sector} sb={sb} lblColor={lblColor} lblBar={lblBar} />
+                  ))}
                 </div>
+                <p className="mt-2 text-[10px] text-muted-foreground/60">Kliko mbi një sektor për të shfaqur kompanitë që e përbëjnë (mbi/nën SMA50)</p>
               </div>
             )}
           </div>

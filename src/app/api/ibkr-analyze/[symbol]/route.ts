@@ -3,6 +3,7 @@ import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
 import { checkMultiEventRisk } from '@/lib/event-risk';
 import { getScanUniverse } from '@/lib/scanner/universe-400';
+import { getCompanyName } from '@/lib/scanner/ticker-names';
 import { SECTOR_MAP } from '@/app/api/ibkr-scan/route';
 
 // ── Helpers (same as ibkr-scan v2) ──
@@ -124,12 +125,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // sample to keep the single-stock analysis fast. Null if too few respond.
     let breadthPct: number | null = null;
     let breadthStatus = 'N/A';
-    let sectorBreadth: { sector: string; pct: number; status: string; label: string; above: number; total: number; adv: number; dec: number }[] = [];
+    let sectorBreadth: { sector: string; pct: number; status: string; label: string; above: number; total: number; adv: number; dec: number; tickers?: { t: string; n?: string; a: boolean; chg: number }[] }[] = [];
     try {
       const universe = getScanUniverse(400).filter(s => s !== sym);
       const sample = universe.filter((_, i) => i % 8 === 0);
       let above50Count = 0, breadthTotal = 0;
-      const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number }> = {};
+      const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number; members: { t: string; a: boolean; chg: number }[] }> = {};
       const BATCH = 25;
       for (let i = 0; i < sample.length; i += BATCH) {
         const batch = sample.slice(i, i + BATCH);
@@ -142,9 +143,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           const li = c.length - 1;
           breadthTotal++;
           const sec = SECTOR_MAP[batch[j]] || 'Other';
-          if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0 };
+          if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0, members: [] };
           sectorAgg[sec].total++;
-          if (c[li] > (s50[li] || 0)) { above50Count++; sectorAgg[sec].above++; }
+          const isAbove = c[li] > (s50[li] || 0);
+          const dayChg = li >= 1 && c[li - 1] > 0 ? ((c[li] - c[li - 1]) / c[li - 1]) * 100 : 0;
+          sectorAgg[sec].members.push({ t: batch[j], a: isAbove, chg: Math.round(dayChg * 10) / 10 });
+          if (isAbove) { above50Count++; sectorAgg[sec].above++; }
           if (li >= 1) {
             if (c[li] > c[li - 1]) sectorAgg[sec].adv++;
             else if (c[li] < c[li - 1]) sectorAgg[sec].dec++;
@@ -155,11 +159,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         breadthPct = Math.round((above50Count / breadthTotal) * 1000) / 10;
         breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
         // Task 15 labels: DEAD <20% · WEAK 20-40% · OK 40-55% · STRONG ≥55%
+        // Task 16: anëtarët e kampionit për popup-in e sektorit (kampion ≈50 emra → disa për sektor; lista e plotë 20+ vjen nga /api/ibkr-scan)
         sectorBreadth = Object.entries(sectorAgg)
           .map(([sector, a]) => {
             const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
             const label = p < 20 ? 'DEAD' : p < 40 ? 'WEAK' : p >= 55 ? 'STRONG' : 'OK';
-            return { sector, pct: p, status: label, label, above: a.above, total: a.total, adv: a.adv, dec: a.dec };
+            const aboveMembers = a.members.filter(m => m.a).sort((x, y) => y.chg - x.chg);
+            const belowMembers = a.members.filter(m => !m.a).sort((x, y) => y.chg - x.chg);
+            const tickers = [...aboveMembers, ...belowMembers].map(m => ({ t: m.t, n: getCompanyName(m.t), a: m.a, chg: m.chg }));
+            return { sector, pct: p, status: label, label, above: a.above, total: a.total, adv: a.adv, dec: a.dec, tickers };
           })
           .sort((x, y) => y.pct - x.pct);
       }
