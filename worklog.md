@@ -175,3 +175,21 @@ Stage Summary:
 - Cikli i të mësuarit tani është I MBYLLTUR: sinjal → vlerësim automatik (cron ditor ose buton manual) → analiza zonash → peshat aplikohen në skanerin e radhës → RankingChanges reflektojnë mësimin
 - Anti-nëmëri: deduplikim (ticker,ditë), NO_EDGE jashtë fitoreve/humbjeve, min mostra 30/5-zonë, clamp ×0.75–1.25, smoothing ±0.05
 - Në pritje: deploy → POST /api/scanner/learn në prod → verifikim i 200 outcome-ve PENDING + insights reale
+
+---
+Task ID: 13 (verifikimi final)
+Agent: Super Z (main)
+Task: Verifikimi live i ciklit të të mësuarit në prod
+
+Work Log:
+- POST /api/scanner/learn × 5 në prod: 280 nga 470 outcomes u vlerësuan me daily bars reale Yahoo (zero gabime pas fix-it MARKET_OPEN_UTC, commit 565fe12)
+- 190 PENDING të mbetura janë nga sot (11 Shtator) — pret seancën e plotë; cron ditor 05:00 UTC i vlerëson automatikisht
+- GET /api/scanner-learning/insights: 10 sinjale unike (ticker-ditë), 2/30 vendime, 6 zona funksionale (RSI 50-60, ADX 25-35, Trend 70+, Volum 70+, Likuid 80+, BULL)
+- GET /api/scanner-learning/summary: nga 0 → 280 sinjale me statistika reale (fadeRate 20%, avgDrawdown -1.28%)
+- agent-browser: butoni "Mësimet" i pranishëm, popover hapet me mostra reale, zona, peshat neutrale, progresi 2/30, butoni "Përditëso tani" — screenshot /home/z/my-project/download/mesimet-learning-engine.png
+- Commits: d8fedc1 (feature) → 565fe12 (fix typo) → bbab868 (UI zona pa vendime)
+
+Stage Summary:
+- Cikli i të mësuarit I VERIFIKUAR end-to-end në prod: vlerësim real → zona → peshat (neutrale deri 30 vendime, pastaj ×0.75-1.25 automatikisht)
+- Mostra unike ~10/ditë (skanerit e përsëritura deduplikohen) → peshat aktivizohen brenda ~2-3 ditësh tregtare
+- Tregu aktual BEAR: 0 fitore/2 humbje/8 NO_EDGE — sistemi e pasqyron saktë
