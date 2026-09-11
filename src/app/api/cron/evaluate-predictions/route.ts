@@ -4,6 +4,8 @@ import { fetchHistoricalData } from "@/lib/alpha-vantage";
 import { snapshotModelMetrics } from "@/lib/model-metrics";
 import { sendKontrolAlerts, alertsConfigured } from "@/lib/alerts";
 
+export const maxDuration = 60;
+
 async function getPrice(symbol: string): Promise<number | null> {
   try {
     const data = await fetchHistoricalData(symbol, "5d");
@@ -60,12 +62,31 @@ export async function GET(req: NextRequest) {
       journal = { error: e?.message || String(e) };
     }
 
+    // ── LEARNING ENGINE — cikli i të mësuarit nga e kaluara ──
+    // 1) Vlerëson rezultatet PENDING të skanerit me daily bars reale
+    // 2) Analizon zonat e faktorëve (RSI/ADX/Trend/Volum/Likuiditet/Regjimi)
+    // 3) Përditëson multiplikatorët — skaneri i rradhës i aplikon automatikisht
+    // Non-blocking: nëse dështon, pjesa tjetër e cron-it vazhdon.
+    let learning: any = null;
+    try {
+      const { runLearningCycle } = await import("@/lib/scanner-learning/factor-insights");
+      learning = await runLearningCycle();
+    } catch (e: any) {
+      learning = { error: e?.message || String(e) };
+    }
+
     return NextResponse.json({
       processed: results.length,
       evaluated,
       metricsSnapshot: snapshot,
       alert,
       journal,
+      learning: learning && {
+        evaluation: learning.evaluation,
+        sample: learning.insights?.sample,
+        multipliers: learning.insights?.multipliers,
+        error: learning.error,
+      },
       results,
     });
   } catch (error) {

@@ -11,7 +11,7 @@ import {
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
   Copy, Check, Briefcase, FileText, ShieldAlert, Moon,
   GitCompareArrows, TrendingDown, ArrowUpRight, ArrowDownRight, LogIn, LogOut,
-  BookOpen, History,
+  BookOpen, History, Brain, Sparkles,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -24,7 +24,7 @@ interface FunnelStock {
   passedLiquidity: boolean; passedTrend: boolean;
   passedStackedMA: boolean; passedADX: boolean; passedEventRisk: boolean;
   trendScore: number; rsScore: number; momentumScore: number;
-  volConfScore: number; setupScore: number; riskScore: number; totalScore: number;
+  volConfScore: number; setupScore: number; riskScore: number; totalScore: number; learningAdj?: number;
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string; rsi: number; atr: number; atrPct: number; adx: number;
   volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
@@ -482,6 +482,14 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
               <div className="text-right">
                 <div className={`text-2xl font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}</div>
                 <div className="text-[12px] text-muted-foreground">Score</div>
+                {stock.learningAdj != null && Math.abs(stock.learningAdj) >= 1 && (
+                  <MiniPopover label={`Mësimi ${stock.learningAdj > 0 ? '+' : ''}${stock.learningAdj}`} desc={"Learning Engine e rregulloi këtë score bazuar në rezultatet historike reale: faktorët që kanë fituar në të kaluarën (p.sh. Trend i fortë, RSI në zonën fituese) marrin peshë më të lartë, dhe faktorët me performancë të dobët ulen. Diferenca tregon saktësisht sa pikë shtoi/hoqi mësimi."} >
+                    <div className={`mt-0.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${stock.learningAdj > 0 ? 'bg-violet-500/15 text-violet-300 border border-violet-500/20' : 'bg-amber-500/15 text-amber-300 border border-amber-500/20'}`}>
+                      <Brain className="w-2.5 h-2.5" />
+                      {stock.learningAdj > 0 ? '+' : ''}{stock.learningAdj}
+                    </div>
+                  </MiniPopover>
+                )}
               </div>
             </MiniPopover>
           </div>
@@ -1966,6 +1974,32 @@ export function IBKRStrategy() {
   const [learningLoading, setLearningLoading] = useState(false);
   const [showLearning, setShowLearning] = useState(false);
 
+  // Learning Insights state (Mësimet nga e kaluara)
+  const [insights, setInsights] = useState<any | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const [learnRunning, setLearnRunning] = useState(false);
+
+  const fetchInsights = useCallback(async (force = false) => {
+    if (!force && insights) return;
+    setInsightsLoading(true);
+    try {
+      const res = await fetch('/api/scanner-learning/insights', { cache: 'no-store' });
+      if (res.ok) setInsights(await res.json());
+    } catch { /* ignore */ }
+    finally { setInsightsLoading(false); }
+  }, [insights]);
+
+  const runLearningNow = useCallback(async () => {
+    setLearnRunning(true);
+    try {
+      await fetch('/api/scanner/learn', { method: 'POST' });
+      await fetchInsights(true); // rifresko pas ciklit
+      setLearningSummary(null); // rifresko edhe statistikat kur hapen
+    } catch { /* ignore */ }
+    finally { setLearnRunning(false); }
+  }, [fetchInsights]);
+
   const fetchLearningSummary = useCallback(async () => {
     if (learningSummary) return;
     setLearningLoading(true);
@@ -2048,12 +2082,140 @@ export function IBKRStrategy() {
             <div className="flex items-center gap-2">
               <GitCompareArrows className="w-4 h-4 text-violet-400" />
               <h3 className="text-[14px] font-bold text-foreground">Learning Engine</h3>
-              <span className="text-[11px] text-muted-foreground">— Adaptive Scanner Statistics</span>
+              <span className="text-[11px] text-muted-foreground">— mëson nga rezultatet e kaluara</span>
             </div>
-            <Popover open={showLearning} onOpenChange={(open) => {
-              setShowLearning(open);
-              if (open) fetchLearningSummary();
-            }}>
+            <div className="flex items-center gap-2">
+              {/* ═══ MËSIMET — çfarë mësoi sistemi nga e kaluara ═══ */}
+              <Popover open={showInsights} onOpenChange={(open) => {
+                setShowInsights(open);
+                if (open) fetchInsights();
+              }}>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-violet-500/15 border border-violet-500/40 text-violet-300 hover:bg-violet-500/25 transition-colors">
+                    <Brain className="w-3.5 h-3.5" />
+                    Mësimet
+                    {insights?.sample?.enoughData && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400" title="Mësim aktiv — peshat aplikohen në skaner" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[380px] p-4 bg-popover border-border/50 max-h-[70vh] overflow-y-auto" side="bottom" align="end">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Brain className="w-5 h-5 text-violet-400" />
+                      <p className="text-sm font-semibold text-foreground">Çfarë mësoi sistemi</p>
+                      <button
+                        onClick={runLearningNow}
+                        disabled={learnRunning || insightsLoading}
+                        className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors disabled:opacity-50"
+                        title="Vlerëso rezultatet e reja + përditëso peshat"
+                      >
+                        {learnRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        {learnRunning ? 'Duke mësuar...' : 'Përditëso tani'}
+                      </button>
+                    </div>
+
+                    {insightsLoading && !insights && (
+                      <div className="flex items-center gap-2 py-4 justify-center">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        <span className="text-[12px] text-muted-foreground">Duke ngarkuar mësimet...</span>
+                      </div>
+                    )}
+
+                    {!insightsLoading && !insights && (
+                      <p className="text-[12px] text-muted-foreground py-2">Mësimet nuk u ngarkuan.</p>
+                    )}
+
+                    {!insightsLoading && insights && (
+                      <div className="space-y-3">
+                        {/* Mostra e të mësuarit */}
+                        <div className="rounded-lg bg-violet-500/10 border border-violet-500/20 p-2.5">
+                          <div className="flex items-center justify-between text-[12px]">
+                            <span className="text-muted-foreground">Mësuar nga</span>
+                            <span className="text-violet-300 font-bold">{insights.sample?.evaluated ?? 0} rezultate</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[12px] mt-1">
+                            <span className="text-muted-foreground">Fitore bazë (continuation)</span>
+                            <span className="text-emerald-400 font-bold">{insights.sample?.baselineWinRate ?? 0}%</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[12px] mt-1">
+                            <span className="text-muted-foreground">Kthimi mesatar</span>
+                            <span className={`font-bold ${(insights.sample?.avgReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(insights.sample?.avgReturnPct ?? 0) > 0 ? '+' : ''}{insights.sample?.avgReturnPct ?? 0}%</span>
+                          </div>
+                          {/* Progresi */}
+                          <div className="mt-2">
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                              <span>Progresi i mostrës</span>
+                              <span>{insights.sample?.decisive ?? 0}/{insights.sample?.minRequired ?? 30} vendime</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-muted/30 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${Math.min(100, ((insights.sample?.decisive ?? 0) / (insights.sample?.minRequired ?? 30)) * 100)}%`,
+                                  background: insights.sample?.enoughData ? 'rgb(167 139 250)' : 'rgb(245 158 11)',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Zonat e faktorëve */}
+                        {insights.zones?.length > 0 ? (
+                          <div>
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Zonat që dallohen</p>
+                            <div className="space-y-1.5">
+                              {insights.zones.slice(0, 7).map((z: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 p-1.5 rounded-md bg-muted/15">
+                                  {z.edge > 0
+                                    ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                    : <ArrowDownRight className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11.5px] font-medium text-foreground truncate">{z.zone}</p>
+                                    <p className="text-[10px] text-muted-foreground">{z.winRate}% fitore · n={z.n} · kthimi {(z.avgReturn > 0 ? '+' : '') + z.avgReturn}%</p>
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${z.edge > 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                                    {z.edge > 0 ? '+' : ''}{z.edge}pp
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[12px] text-muted-foreground">Ende nuk ka zona me mostër të mjaftueshme (min 5 raste për zonë).</p>
+                        )}
+
+                        {/* Peshat e aplikuara */}
+                        <div className="rounded-lg bg-muted/10 border border-border/30 p-2.5">
+                          <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">Peshat e aplikuara në skaner</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { k: 'Trend', v: insights.multipliers?.TREND },
+                              { k: 'Volum', v: insights.multipliers?.VOLUME },
+                              { k: 'Momentum', v: insights.multipliers?.MOMENTUM },
+                              { k: 'Likuiditet', v: insights.multipliers?.LIQUIDITY },
+                            ].map(({ k, v }) => (
+                              <span key={k} className={`text-[11px] px-2 py-0.5 rounded-full font-mono border ${v == null ? 'text-muted-foreground bg-muted/10 border-border/30' : v > 1 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' : v < 1 ? 'bg-red-500/15 text-red-400 border-red-500/20' : 'text-muted-foreground bg-muted/10 border-border/30'}`}>
+                                {k} ×{v ?? 1}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground/70 mt-2 leading-relaxed">
+                            {insights.sample?.enoughData
+                              ? 'Këto pesha janë AKTIVE — skaneri i rradhë i aplikimit automatikisht në score. Aksionet me faktorë fitues ngjiten lart, me faktorë humbës bien poshtë. Kufiri: ×0.75–×1.25, lëvizja max ±0.05 për ditë.'
+                              : `Akoma nuk ka të dhëna të mjaftueshme (duhen ${insights.sample?.minRequired ?? 30} fitore+humbje). Peshat mbeten neutrale (×1) deri atëherë. Vlerësimi automatik: çdo ditë 05:00 UTC pas mbylljes së tregut.`}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Popover open={showLearning} onOpenChange={(open) => {
+                setShowLearning(open);
+                if (open) fetchLearningSummary();
+              }}>
               <PopoverTrigger asChild>
                 <button className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors">
                   <BarChart3 className="w-3.5 h-3.5" />
@@ -2115,9 +2277,10 @@ export function IBKRStrategy() {
                 </div>
               </PopoverContent>
             </Popover>
+            </div>
           </div>
           <p className="text-[12px] text-muted-foreground mt-1.5">
-            Scanner-i mbledh snapshots 7x ne dite, ndjek ndryshimet e rank/score, dhe mat rezultatet e sinjaleve. Faktoret adaptohen bazuar ne performancen historike.
+            Sistemi mëson vetë nga e kaluara: vlerëson rezultatet e sinjaleve me daily bars reale, zbulon zonat fituese (RSI, ADX, Trend, Volum, Regjim) dhe i aplikon si pesha në skanerin e radhës — automatikisht, çdo ditë në 05:00 UTC.
           </p>
         </CardContent>
       </Card>

@@ -197,6 +197,7 @@ interface FunnelStock {
   // Phase 3: risk
   riskScore: number;
   totalScore: number;
+  learningAdj?: number; // sa pikë shtoi/hoqi Learning Engine në score
   // Setup detail
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string;
@@ -491,6 +492,20 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
 
   const passedLiquidity = phase1.filter(s => s.passedLiquidity).length;
   const passedTrend = phase1.filter(s => s.passedTrend).length;
+
+  // ── LEARNING ENGINE — peshat e mësuara nga rezultatet e kaluara ──
+  // Multiplikatorët (0.75–1.25) vijnë nga analiza e outcome-ve historike
+  // dhe rregullojnë kontributin e çdo faktori në totalScore.
+  let LW: { TREND: number; RS: number; MOMENTUM: number; VOLUME: number; SETUP: number; LIQUIDITY: number; RISK: number; learnedFrom: number; updatedAt: string | null } = {
+    TREND: 1, RS: 1, MOMENTUM: 1, VOLUME: 1, SETUP: 1, LIQUIDITY: 1, RISK: 1, learnedFrom: 0, updatedAt: null,
+  };
+  try {
+    const { getLearnedMultipliers } = await import('@/lib/scanner-learning/factor-insights');
+    LW = await getLearnedMultipliers();
+    if (LW.learnedFrom > 0) console.log(`[IBKR v2] Learning Engine AKTIV: ${LW.learnedFrom} rezultate — Trend ×${LW.TREND}, Volum ×${LW.VOLUME}, Momentum ×${LW.MOMENTUM}, Likuiditet ×${LW.LIQUIDITY}`);
+  } catch (e: any) {
+    console.log('[IBKR v2] Learning weights unavailable (neutral):', e?.message || e);
+  }
 
   // ── 3. PHASE 2 — Technical analysis on trend-passed stocks ──
   const phase2: FunnelStock[] = [];
@@ -808,8 +823,20 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (!stock.passedEventRisk) rScore -= 25;
     stock.riskScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
-    // ── Total Score ──
-    stock.totalScore = Math.round(
+    // ── Total Score — me peshat e mësuara nga Learning Engine ──
+    // Peshat bazë: 25% Trend + 20% RS + 15% Momentum + 15% Volume + 10% Setup + 10% Likuiditet + 5% Risk
+    // Multiplikatorët e mësuar i shumëzojnë peshat bazë, pastaj rinormalizohen (shuma = 1)
+    const effW = {
+      trend: 0.25 * LW.TREND,
+      rs: 0.20 * LW.RS,
+      momentum: 0.15 * LW.MOMENTUM,
+      volume: 0.15 * LW.VOLUME,
+      setup: 0.10 * LW.SETUP,
+      liq: 0.10 * LW.LIQUIDITY,
+      risk: 0.05 * LW.RISK,
+    };
+    const wSum = Object.values(effW).reduce((a, b) => a + b, 0) || 1;
+    const baseScore = Math.round(
       stock.trendScore * 0.25 +
       stock.rsScore * 0.20 +
       stock.momentumScore * 0.15 +
@@ -818,6 +845,19 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       50 * 0.10 +
       stock.riskScore * 0.05
     );
+    stock.totalScore = Math.round(
+      (stock.trendScore * effW.trend +
+        stock.rsScore * effW.rs +
+        stock.momentumScore * effW.momentum +
+        stock.volConfScore * effW.volume +
+        sScore * effW.setup +
+        50 * effW.liq +
+        stock.riskScore * effW.risk) / wSum
+    );
+    // Diferenca nga mësimi (për UI): sa pikë shtoi/hoqi sistemi i të nxënit
+    if (LW.learnedFrom > 0) {
+      stock.learningAdj = Math.round((stock.totalScore - baseScore) * 10) / 10;
+    }
 
     if (setup !== 'NONE') phase2.push(stock);
   }
@@ -962,6 +1002,20 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     },
     results: topStocks,
     sectorExposure,
+    learning: {
+      applied: LW.learnedFrom > 0,
+      learnedFrom: LW.learnedFrom,
+      updatedAt: LW.updatedAt,
+      multipliers: {
+        trend: LW.TREND,
+        rs: LW.RS,
+        momentum: LW.MOMENTUM,
+        volume: LW.VOLUME,
+        setup: LW.SETUP,
+        liquidity: LW.LIQUIDITY,
+        risk: LW.RISK,
+      },
+    },
   };
 
   // ── Save snapshots to Adaptive Scanner Learning Engine (non-blocking) ──

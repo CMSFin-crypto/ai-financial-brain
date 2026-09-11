@@ -138,3 +138,40 @@ Stage Summary:
 - Signal outcomes are created as PENDING and can be evaluated via POST /api/scanner-learning/outcomes
 - Prisma migration needs to be run in production (DATABASE_URL not PostgreSQL locally)
 - UI for "Pse ndryshoi?" and "Cka mesoi sistemi" not yet added (requires migration first)
+Task ID: 12
+Agent: Super Z (main)
+Task: User pyeti për butonin "Pse ndryshoi?" — çfarë funksioni ka dhe çfarë tregon paneli "Ndryshimet e Renditjes" që hap.
+
+Work Log:
+- Lexova StockCard në src/components/financial-brain/ibkr-strategy.tsx (rreshtat 584-597: butoni, 669-725: paneli i hapur, 356-381: fetchRankingChanges)
+- Kontrollova endpoint /api/scanner-learning/changes (route.ts) — query prisma.rankingChange me toSnapshot include
+- Kontrollova saveScannerSnapshot() në scanner-snapshot-service.ts (krijon RankingChange me compare vs snapshot i mëparshëm) dhe explainRankingChange() në adaptive-scanner-learning.ts (gjeneron action + reasons)
+- Verifikova LIVE prod: GET /api/scanner-learning/changes → 8 ndryshime, skanimi i fundit 2026-09-11 08:06 UTC (BAC #10→#10 81→81 SCORE_UP, GILD #9→#9 82→82, MRK #8→#8 82→82)
+
+Stage Summary:
+- Butoni "Pse ndryshoi?" (vjollcë, ikona GitCompareArrows) është në çdo kartë aksioni te "Rezultatet", pranë badge-ve ADV/Spread/Likuiditeti
+- Klikimi hap/mbyll panelin "Ndryshimet e Renditjes — [SYMBOL]" dhe sjell deri në 5 ndryshimet e fundit nga tabela RankingChange (saktësisht për atë ticker, strategjia IBKR_PULLBACK)
+- RankingChange krijohet automatikisht në çdo skanim: saveScannerSnapshot() krahxon snapshot-in e ri me të mëparshëm dhe regjistron ENTERED_LIST / EXITED_LIST / RANK_UP / RANK_DOWN / SCORE_UP / SCORE_DOWN / STATUS_CHANGED + oldRank→newRank + scoreChange + reasons
+- I përgjigja userit në shqip me shembuj realë nga prod. Sot skanimet janë afër në kohë, ndaj arsyeja është "Nuk ka ndryshim material ne faktoret kryesore" (scores pa ndryshim).
+
+---
+Task ID: 13
+Agent: Super Z (main)
+Task: "Mëso nga e Kaluara" — Learning Engine nga statistikë pasive në sistem që MËSON realisht nga rezultatet historike dhe i aplikon peshat në skaner.
+
+Work Log:
+- Sinkronizova repo-n lokale me remote (reset 6bf4cf2 → 96bf04c) — sandbox-i i ri ishte pas prod
+- Diagjnostikova ciklin e kthyer: 200 SignalOutcome PENDING në prod, asnju i vlerësuar; scannerFactorWeight shkruhej por NUK lexohej kurrë nga skaneri; saveOutcomes() ishte kod i vdekur
+- krijuar src/lib/scanner-learning/backfill-outcomes.ts — vlerësim me Yahoo daily bars reale (jo quote live), konventa premarket/same-day, deduplikim (ticker,ditë), MFE/MAE + fallback labeling
+- krijuar src/lib/scanner-learning/factor-insights.ts — zona faktorësh (RSI/ADX/Trend/Volum/Likuiditet/Regjimi/Rank) × fitore reale → multiplikatorë TREND/VOLUME/MOMENTUM/LIQUIDITY (×0.75–1.25, max ±0.05/update, MIN 30 vendime), persistim në ScannerFactorWeight, cache 5 min
+- ibkr-scan: score-i tani i shumëzuar me multiplikatorët e mësuar + rinormalizim; fusha e re learningAdj në FunnelStock; meta "learning" në response
+- /api/scanner/learn (POST: cikli i plotë; GET: status) — maxDuration 60
+- /api/scanner-learning/insights (GET) — zonat + peshat + progresi për UI
+- cron evaluate-predictions (05:00 UTC): shtova runLearningCycle() non-blocking — mësim automatik ditor
+- UI: butoni "Mësimet" (ikona Brain) në Learning Engine me popover "Çfarë mësoi sistemi" (mostra, baza, zonat me edge ±pp, peshat aktive, progresi, butoni "Përditëso tani"); shenja "Mësimi ±X" te score-i i çdo karte aksioni (MiniPopover me shpjegim)
+- tsc --noEmit: zero gabime në skedarët e rinj (të parakohshmet tolerohen nga ignoreBuildErrors)
+
+Stage Summary:
+- Cikli i të mësuarit tani është I MBYLLTUR: sinjal → vlerësim automatik (cron ditor ose buton manual) → analiza zonash → peshat aplikohen në skanerin e radhës → RankingChanges reflektojnë mësimin
+- Anti-nëmëri: deduplikim (ticker,ditë), NO_EDGE jashtë fitoreve/humbjeve, min mostra 30/5-zonë, clamp ×0.75–1.25, smoothing ±0.05
+- Në pritje: deploy → POST /api/scanner/learn në prod → verifikim i 200 outcome-ve PENDING + insights reale

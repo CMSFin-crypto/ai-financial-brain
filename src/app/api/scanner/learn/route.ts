@@ -1,32 +1,56 @@
 import { NextResponse } from 'next/server';
-import { updateWeeklyWeights } from '@/lib/scanner-learning/outcomes-and-weights';
+import { runLearningCycle, computeFactorInsights, getLearnedMultipliers } from '@/lib/scanner-learning/factor-insights';
+import { getOutcomeProgress } from '@/lib/scanner-learning/backfill-outcomes';
+
+export const maxDuration = 60;
 
 // ═══ POST /api/scanner/learn ═══
-// Triggers weekly weight update from recent outcome labels.
-// Cron: run 1x/week (e.g., Sunday 22:00 ET) after outcomes have settled.
+// Cikli i PLOTË i të mësuarit:
+//   1. Vlerëson rezultatet PENDING me të dhëna historike reale
+//   2. Analizon zonat e faktorëve (RSI, ADX, Trend, Volum, Likuiditet, Regjimi)
+//   3. Përditëson multiplikatorët — të cilët skaneri i aplikon automatikisht
 //
-// Response:
-//   { updated: true, n: 142, winRate: 0.52, fadeRate: 0.18, weights: [...] }
-//   or
-//   { updated: false, reason: "min_sample", n: 23, minRequired: 40 }
+// Thirret automatikisht nga cron ditor 05:00 UTC, ose manualisht nga UI.
 export async function POST() {
   try {
-    const result = await updateWeeklyWeights();
-    return NextResponse.json(result);
-  } catch (error) {
+    const result = await runLearningCycle();
+    return NextResponse.json({
+      ok: true,
+      evaluation: result.evaluation, // { checked, evaluated, skipped, uniqueTickerDays }
+      insights: result.insights, // { sample, zones, multipliers }
+      weights: result.weights, // rreshtat e ruajtura në ScannerFactorWeight
+    });
+  } catch (error: any) {
     console.error('[SCANNER-LEARN] Error:', error);
     return NextResponse.json(
-      { error: 'Përditësimi i peshave dështoi', detail: String(error) },
+      { error: 'Cikli i të mësuarit dështoi', detail: String(error?.message || error) },
       { status: 500 }
     );
   }
 }
 
+// ═══ GET /api/scanner/learn ═══
+// Statusi aktual: peshat aktive + progresi i mostrës.
 export async function GET() {
-  return NextResponse.json({
-    endpoint: '/api/scanner/learn',
-    method: 'POST',
-    description: 'Përditëso peshat e faktorëve nga outcomes e fundit (continuation vs fade)',
-    schedule: '1x/week pas close + 3 ditë',
-  });
+  try {
+    const [weights, progress, insights] = await Promise.all([
+      getLearnedMultipliers(),
+      getOutcomeProgress(),
+      computeFactorInsights().catch(() => null),
+    ]);
+    return NextResponse.json({
+      endpoint: '/api/scanner/learn',
+      method: 'POST',
+      description: 'Vlerëso rezultatet + përditëso peshat e faktorëve nga e kaluara',
+      autoSchedule: 'çdo ditë 05:00 UTC (cron evaluate-predictions)',
+      progress,
+      weights,
+      baseline: insights?.sample ?? null,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: 'Statusi nuk u lexua', detail: String(error?.message || error) },
+      { status: 500 }
+    );
+  }
 }
