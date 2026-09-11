@@ -193,3 +193,49 @@ Stage Summary:
 - Cikli i të mësuarit I VERIFIKUAR end-to-end në prod: vlerësim real → zona → peshat (neutrale deri 30 vendime, pastaj ×0.75-1.25 automatikisht)
 - Mostra unike ~10/ditë (skanerit e përsëritura deduplikohen) → peshat aktivizohen brenda ~2-3 ditësh tregtare
 - Tregu aktual BEAR: 0 fitore/2 humbje/8 NO_EDGE — sistemi e pasqyron saktë
+
+---
+Task ID: 14
+Agent: Super Z (main)
+Task: "A mundem me i nda sektoret te breadth" — breadth-i i ndarë sipas sektorit
+
+Work Log:
+- ibkr-scan: breadth loop grupohet sipas SECTOR_MAP → sectorBreadth[] (pct, above/total, sorted)
+- SECTOR_MAP u exportua dhe u përdorë edhe në ibkr-analyze (u fshi dublikimi lokal ~55 emra)
+- UI RegimeBanner: buton 'Sektoret' + grid me bar-e ngjyresh për 11 sektorë
+- Zgjerova SECTOR_MAP 400/400 (236 simbole të reja: Tech/Communication/Consumer/Staples/Healthcare/Finance/Industrial/Utilities/REITs/Materials) — 'Other' zbret nga 224/400 në ~0
+- Fix bug-e të parakohshme: O (Realty Income) Energy→REITs, VLO restore Energy; hequr 9 duplikime
+- Verifikuar live: 11 sektorë realë, Energy 100%, Industrial 8.3%, Utilities 4.5%
+
+Stage Summary:
+- sectorBreadth në regimeDetail të /api/ibkr-scan dhe /api/ibkr-analyze
+- Mbulimi i plotë i universit përmirëson edhe sectorExposure + limitin MAX_PER_SECTOR=2
+- Commits: 51c3752 (sector breadth) → d55c93e (SECTOR_MAP 400/400)
+
+---
+Task ID: 15
+Agent: Super Z (main)
+Task: "Breadth-i i sektorit të vendosë, jo vetëm të shfaqet" — Sector Breadth Gate me rregullat e sakta të userit
+
+Work Log:
+- Labels të reja: DEAD (<20%) · WEAK (20-40%) · OK (40-55%) · STRONG (≥55%) + adv/dec për sektor
+- Gate në ibkr-scan (pas vendimit, para Top 10):
+  * DEAD: READY→WATCHLIST, bracketOrder=null, targetRRecommended=null, warning 'SEKTORI DEAD — pa READY, 2R s'ka probabilitet'
+  * WEAK: size 50% (shares/value/risk gjysmohen), target 1R, scaleOutRule '50% në 1R, stop breakeven', READY vetëm me score ≥80
+  * OK: target 1.5R · STRONG: 2R
+  * Rregull tregu: 8+/11 sektorë WEAK/DEAD → targetat kapohen në 1R për të gjithë (capTargets + note në regimeDetail.sectorBreadthSummary)
+  * Bracket order rrigjenerohet me targetin e rekomanduar (entry + tR×risk), jo gjithmonë 3R
+- ibkr-analyze: i njëjti gate për aksionin e vetëm (finalPos, mySectorSb lookup)
+- UI:
+  * Rresht kompakt gjithmonë i dukshëm: 'Energy 100% STRONG · Materials 0% DEAD' (MiniPopover shpjegim secilit)
+  * Note e kuqe kur capTargets (8+/11)
+  * Grid i zgjerueshëm: kolonë e re label (STRONG/OK/WEAK/DEAD) me ngjyra emerald/sky/amber/red + adv/dec në popover
+  * StockCard: target-i i rekomanduar theksohet me ★ + ring (amber për WEAK, emerald për STRONG), chip 'Sektori {label} → target {tR}R', rresht i kuq për DEAD
+- Verifikim live (11 Shtator): DE (Industrial 8.3% DEAD) → targetR=None 'mos hy'; AWK (Utilities DEAD) bllokohet; CVX (Energy STRONG) → 2R; OKTA/HPQ (Tech OK) → 1.5R; summary 6/11 WEAK/DEAD (capTargets=false)
+- VLM verifikoi vizualisht bannerin dhe kartën (chip + ★ OK, pa probleme)
+
+Stage Summary:
+- Sector Breadth Gate i plotë end-to-end: computation → labels → decision gate → size/target/bracket → UI
+- I njëjti setup në sektor të ndryshëm trajtohet ndryshe (NVDA Tech 51% = trade; CAT Industrial 8% = WATCHLIST)
+- Sot regjimi është RISK (breadth 32.9%) — sector gate shtohet SIPËR regjimit; kur regjimi rikthehet OK, DEAD/WEAK vazhdojnë të bllokojnë/shkurtojnë
+- Commit: 70e76a3
