@@ -239,3 +239,34 @@ Stage Summary:
 - I njëjti setup në sektor të ndryshëm trajtohet ndryshe (NVDA Tech 51% = trade; CAT Industrial 8% = WATCHLIST)
 - Sot regjimi është RISK (breadth 32.9%) — sector gate shtohet SIPËR regjimit; kur regjimi rikthehet OK, DEAD/WEAK vazhdojnë të bllokojnë/shkurtojnë
 - Commit: 70e76a3
+
+---
+Task ID: 16
+Agent: Super Z (main)
+Task: "kur ta shtypi popup me i qite te pakten 10-20 kompani qe bejne pjese aty" — Kompanitë konkrete në popup-in e sektorit (breadth)
+
+Work Log:
+- File i re src/lib/scanner/ticker-names.ts: hartë statike ticker → emri i kompanisë për universe-400 (përfshirë plotësimin Energy/Materials ~430 emra)
+- ibkr-scan route (Task 16):
+  * sectorAgg mban tani members[] me { t, a: mbi SMA50, chg: % ditor } për secilin simbol
+  * SectorBreadthItem.tickers = max 20 mbi + 10 nën SMA50, të renditura sipas chg ditor, me emrin e kompanisë (getCompanyName)
+  * Payload: ~+10KB (11 sektorë × max 30 anëtarë)
+- Task 16b — SEKTORËT E HOLLE (zbulim i rëndësishëm):
+  * getScanUniverse(400) = DEDUPED.slice(0,400) pret fundin e listës brute → Energy mbetej me 2 anëtarë (XOM, CVX) dhe Materials me 1 (LIN) — breadth zhurmë statistikore
+  * Plotësim: sektorët me < 18 anëtarë plotësohen me emra nga SECTOR_MAP jo në univers (Energy +16: COP/SLB/EOG/OXY/MPC/PSX/VLO/DVN/FANG/PXD/CTRA/HES/WMB/FSLR/ENPH/MRO; Materials +16: FCX/NEM/GOLD/AEM/WPM/FNV/RGLD/PAAS/CDE/HL/NUE/STLD/RS/CLF/X/CMC) — 32 fetch shtesë 1y
+  * ⚠️ Vetëm për sector breadth/popup: NUK prek market breadth (titulli 400), NUK hyn në funnel
+- ibkr-analyze route: tickers nga kampioni i tij (~50 emra, disa për sektor) + fallback message në UI kur lista mungon
+- UI (ibkr-strategy.tsx):
+  * Komponentë të re: SectorMemberChip (chip me simbol bold + chg% të ngjyrosur + emri 8px nën) dhe SectorBreadthRow (Popover i dedikuar)
+  * Popup: header 'Sektori: X% — LABEL' + 'A nga B aksione mbi SMA50 · adv/dec ditor', sezioni 'Mbi SMA50 — N kompani' (chips jeshile), 'Nën SMA50 — M kompani' (chips gri), footer me rregullat IBKR të shkurtuara
+  * Nën grid u shtua hinti 'Kliko mbi një sektor për të shfaqur kompanitë'
+  * MiniPopover i vjetër i rreshtit të sektorit u zëvendësua plotësisht
+- Typecheck: 0 gabime të re (të trashëguarat para/pas identike — compare me git stash)
+- Commits: 653bdfc (Task 16) → 5d6e23a (Task 16b)
+
+Stage Summary:
+- Verifikim live prod (11 Shtator 10:52 UTC): të 11 sektorët kanë tickers me emra — Communication 27, Tech/Healthcare 30, Consumer 25, Finance 19, Staples 16, Industrial 14, REITs 12, Utilities 11
+- Energy: 100% STRONG (2/2) → 78.6% STRONG (11/14 REALË) — labeli tani bazohet në 14 kompani jo 2
+- Materials: 0% DEAD (0/1!) → 75% STRONG (12/16 REALË) — ndryshim FONDAMENTAL: aksionet e Materials (p.sh. LIN) nuk bllokohen më gabimisht nga 'DEAD' i rremë; weakDeadSectors 5→4
+- Market breadth mbeti 32.9% WEAK (i pandryshuar) — plotësimi s'e preku
+- Tani useri klikon sektorin → sheh kompanitë konkrete që e përbëjnë me emra, chg ditor dhe statusin mbi/nën SMA50
