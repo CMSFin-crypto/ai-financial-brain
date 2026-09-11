@@ -26,7 +26,7 @@ type DailyBar = { date: string; open: number; high: number; low: number; close: 
 function barsAfterSnapshot(bars: DailyBar[], snapshotAt: Date): DailyBar[] {
   const scanDateStr = snapshotAt.toISOString().split("T")[0];
   // Skanim para 13:30 UTC → seanca e njëjtë ditë është pas sinjalit
-  const openSameDayMs = Date.parse(`${scanDateStr}T${MARKET_OPEN}:30:00Z`);
+  const openSameDayMs = Date.parse(`${scanDateStr}T${MARKET_OPEN_UTC}:30:00Z`);
   const beforeOpen = snapshotAt.getTime() < openSameDayMs;
   return bars.filter((b) => (beforeOpen ? b.date >= scanDateStr : b.date > scanDateStr));
 }
