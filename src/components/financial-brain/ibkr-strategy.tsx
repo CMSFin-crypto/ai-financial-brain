@@ -91,6 +91,7 @@ interface FunnelResponse {
     qqq: { above50: boolean; above200: boolean };
     vix?: { level: number; status: string };
     breadth?: { pct: number; status: string };
+    sectorBreadth?: { sector: string; pct: number; status: string; above: number; total: number }[];
     regimeLevel?: string;
     regimeMultiplier?: number;
     stopVolMultiplier?: number;
@@ -1350,6 +1351,8 @@ function MiniPopover({ label, desc, children }: { label: string; desc: string; c
 function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: FunnelResponse['regimeDetail']; regimeOk: boolean; compact?: boolean }) {
   const vix = regimeDetail.vix;
   const breadth = regimeDetail.breadth;
+  const sectorBreadth = regimeDetail.sectorBreadth ?? [];
+  const [showSectors, setShowSectors] = useState(false);
   const regimeLevel = regimeDetail.regimeLevel ?? (regimeOk ? 'OK' : 'RISK');
   const regimeMultiplier = regimeDetail.regimeMultiplier ?? 1;
   const stopVolMultiplier = regimeDetail.stopVolMultiplier ?? 1;
@@ -1376,12 +1379,53 @@ function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: Funne
                   <span className="text-muted-foreground">Breadth: <span className={breadth.status === 'HEALTHY' ? 'text-emerald-400' : breadth.status === 'MIXED' ? 'text-amber-400' : 'text-red-400 font-bold'}>{breadth.pct}% ({breadth.status})</span></span>
                 </MiniPopover>
               )}
+              {sectorBreadth.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowSectors(v => !v)}
+                  className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+                  aria-expanded={showSectors}
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSectors ? 'rotate-180' : ''}`} />
+                  Sektoret
+                </button>
+              )}
               {stopVolMultiplier > 1 && (
                 <MiniPopover label={`Stop Multiplier x${stopVolMultiplier}`} desc={`Stop-loss i zgjeruar automatikisht nga VIX: kur VIX eshte 20-25 (ELEVATED) stop-i vendoset 1.2x me gjere, kur VIX > 25 (HIGH) 1.5x me gjere. Pse: ne tregje me volatilitet te larte, levizjet normale ditorre i kalojne stop-et e ngushte — stop-i standard te nxjerre jashte pozicionit para kohe (whipsaw). E kunderta: stop me i gjere = me shume rrezik per share, ndaj pozicioni reduktohet njekohesisht (75% ose 50%).`} >
                   <span className="text-muted-foreground">Stop: <span className="text-amber-400">x{stopVolMultiplier} (i gjere per shkak te VIX)</span></span>
                 </MiniPopover>
               )}
             </div>
+            {showSectors && sectorBreadth.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/60">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Breadth sipas sektorit — % e aksioneve mbi SMA50</p>
+                  <span className="text-[10px] text-muted-foreground/70">{sectorBreadth.length} sektore · renditur nga me i forti</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                  {sectorBreadth.map(sb => {
+                    const barColor = sb.pct >= 55 ? 'bg-emerald-500' : sb.pct >= 40 ? 'bg-amber-500' : 'bg-red-500';
+                    const textColor = sb.pct >= 55 ? 'text-emerald-400' : sb.pct >= 40 ? 'text-amber-400' : 'text-red-400';
+                    return (
+                      <MiniPopover
+                        key={sb.sector}
+                        label={`${sb.sector}: ${sb.pct}% — ${sb.status}`}
+                        desc={`Sektori ${sb.sector}: ${sb.above} nga ${sb.total} aksione (${sb.pct}%) jane mbi SMA50. Pse ka rendesi: breadth-i total mund te fsheh ndarje te medha — nje sektor mund te jete ne trend te shendetshhem ndersa nje tjeter po copetohet. Sektoret me > 55% = participim i gjere (pullback-et e tyre kthehen me shpesh — kandidature me te mira per skanerin). 40-55% = i perzier (kujdes). Nen 40% = i dobet (pullback-et e tij shpesh vazhdojne te bien — shmang ose redukto madhesine). Vertetim praktik: kur breadth-i total eshte nen 40% por sektori yt ka > 55%, sinjalet e sektorit jane me te besueshme se mesatarja e tregut.`}
+                      >
+                        <div className="w-full flex items-center gap-2 text-[12px] py-0.5">
+                          <span className="w-[86px] flex-shrink-0 truncate text-muted-foreground">{sb.sector}</span>
+                          <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${Math.max(2, sb.pct)}%` }} />
+                          </div>
+                          <span className={`w-[38px] text-right font-medium ${textColor}`}>{sb.pct}%</span>
+                          <span className="w-[42px] text-right text-[10px] text-muted-foreground/70">{sb.above}/{sb.total}</span>
+                        </div>
+                      </MiniPopover>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </CardContent>

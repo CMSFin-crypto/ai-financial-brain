@@ -3,6 +3,7 @@ import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
 import { checkMultiEventRisk } from '@/lib/event-risk';
 import { getScanUniverse } from '@/lib/scanner/universe-400';
+import { SECTOR_MAP } from '@/app/api/ibkr-scan/route';
 
 // ── Helpers (same as ibkr-scan v2) ──
 function calcEMA(data: number[], period: number): number[] {
@@ -35,14 +36,7 @@ function calcPositionSize(entry: number, stop: number, riskBudgetPct: number, ac
   return { shares, positionValue: Math.round(positionValue * 100) / 100, riskDollars: Math.round(riskDollars * 100) / 100, riskPct: Math.round(actualRiskPct * 100) / 100 };
 }
 
-const SECTOR_MAP: Record<string, string> = {
-  AAPL:'Tech',MSFT:'Tech',NVDA:'Tech',AMZN:'Consumer',GOOGL:'Tech',META:'Tech',AVGO:'Tech',TSLA:'Consumer',BRK_B:'Finance',LLY:'Healthcare',
-  CRM:'Tech',ORCL:'Tech',ADBE:'Tech',NOW:'Tech',INTU:'Tech',SNOW:'Tech',PLTR:'Tech',DDOG:'Tech',CRWD:'Tech',PANW:'Tech',
-  NET:'Tech',ZS:'Tech',FTNT:'Tech',MRVL:'Tech',QCOM:'Tech',TXN:'Tech',MU:'Tech',LRCX:'Tech',AMAT:'Tech',ADI:'Tech',
-  JPM:'Finance',V:'Finance',MA:'Finance',BAC:'Finance',GS:'Finance',MS:'Finance',XOM:'Energy',CVX:'Energy',
-  UNH:'Healthcare',JNJ:'Healthcare',MRK:'Healthcare',ABBV:'Healthcare',PFE:'Healthcare',CAT:'Industrial',DE:'Industrial',
-  NEE:'Utilities',DIS:'Consumer',NFLX:'Communication',KO:'Staples',PEP:'Staples',WMT:'Consumer',HD:'Consumer',
-};
+// SECTOR_MAP — imported from ibkr-scan (full 400-name coverage, shared source of truth)
 
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
 
@@ -54,6 +48,7 @@ interface AnalyzeResponse {
     qqq: { above50: boolean; above200: boolean };
     vix?: { level: number; status: string };
     breadth?: { pct: number; status: string };
+    sectorBreadth?: { sector: string; pct: number; status: string; above: number; total: number }[];
     regimeLevel?: string;
     regimeMultiplier?: number;
     stopVolMultiplier?: number;
@@ -124,26 +119,38 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // sample to keep the single-stock analysis fast. Null if too few respond.
     let breadthPct: number | null = null;
     let breadthStatus = 'N/A';
+    let sectorBreadth: { sector: string; pct: number; status: string; above: number; total: number }[] = [];
     try {
       const universe = getScanUniverse(400).filter(s => s !== sym);
       const sample = universe.filter((_, i) => i % 8 === 0);
       let above50Count = 0, breadthTotal = 0;
+      const sectorAgg: Record<string, { above: number; total: number }> = {};
       const BATCH = 25;
       for (let i = 0; i < sample.length; i += BATCH) {
         const batch = sample.slice(i, i + BATCH);
         const res = await Promise.allSettled(batch.map(s => fetchHistoricalData(s, '3mo')));
-        for (const r of res) {
+        for (let j = 0; j < res.length; j++) {
+          const r = res[j];
           if (r.status !== 'fulfilled' || !r.value || r.value.length < 50) continue;
           const c = r.value.map(x => x.close);
           const s50 = calculateSMA(c, 50);
           const li = c.length - 1;
           breadthTotal++;
-          if (c[li] > (s50[li] || 0)) above50Count++;
+          const sec = SECTOR_MAP[batch[j]] || 'Other';
+          if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0 };
+          sectorAgg[sec].total++;
+          if (c[li] > (s50[li] || 0)) { above50Count++; sectorAgg[sec].above++; }
         }
       }
       if (breadthTotal >= 15) {
         breadthPct = Math.round((above50Count / breadthTotal) * 1000) / 10;
         breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
+        sectorBreadth = Object.entries(sectorAgg)
+          .map(([sector, a]) => {
+            const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
+            return { sector, pct: p, status: p >= 55 ? 'HEALTHY' : p >= 40 ? 'MIXED' : 'WEAK', above: a.above, total: a.total };
+          })
+          .sort((x, y) => y.pct - x.pct);
       }
     } catch { /* breadth is optional — regime falls back to VIX + SPY/QQQ */ }
 
@@ -418,6 +425,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         qqq: { above50: qqqA50, above200: qqqA200 },
         vix: { level: Math.round(vixLevel * 100) / 100, status: vixStatus },
         ...(breadthPct != null ? { breadth: { pct: breadthPct, status: breadthStatus } } : {}),
+        ...(sectorBreadth.length > 0 ? { sectorBreadth } : {}),
         regimeLevel, regimeMultiplier, stopVolMultiplier,
       },
       stock: {

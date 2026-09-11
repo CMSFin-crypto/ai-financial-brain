@@ -36,8 +36,8 @@ const SECTOR_ETF_MAP: Record<string, string> = {
 
 const SECTOR_ETFS = [...new Set(Object.values(SECTOR_ETF_MAP))];
 
-// ── Sector map ──
-const SECTOR_MAP: Record<string, string> = {
+// ── Sector map (shared with ibkr-analyze for sector breadth) ──
+export const SECTOR_MAP: Record<string, string> = {
   // Tech / AI / Semiconductors
   AAPL:'Tech',MSFT:'Tech',NVDA:'Tech',AMZN:'Consumer',GOOGL:'Tech',META:'Tech',
   AVGO:'Tech',TSLA:'Consumer','BRK.B':'Finance',LLY:'Healthcare',
@@ -301,6 +301,7 @@ interface FunnelResponse {
     qqq: { above50: boolean; above200: boolean };
     vix: { level: number; status: string };
     breadth: { pct: number; status: string };
+    sectorBreadth?: { sector: string; pct: number; status: string; above: number; total: number }[];
     regimeLevel: string;            // OK | CAUTION | RISK
     regimeMultiplier: number;       // 1.0 | 0.75 | 0.5
     stopVolMultiplier: number;      // 1.0 | 1.2 | 1.5
@@ -370,7 +371,9 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
 
   // ── NEW: Market Breadth — % of universe above 50D SMA (leading regime indicator) ──
+  // Grouped per sector: sector breadth shows WHERE participation is strong/weak.
   let above50Count = 0, breadthTotal = 0;
+  const sectorAgg: Record<string, { above: number; total: number }> = {};
   for (const sym of syms) {
     const d = hist[sym];
     if (!d || d.length < 50) continue;
@@ -378,10 +381,27 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const s50 = calculateSMA(c, 50);
     const li = c.length - 1;
     breadthTotal++;
-    if (c[li] > (s50[li] || 0)) above50Count++;
+    const sec = SECTOR_MAP[sym] || 'Other';
+    if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0 };
+    sectorAgg[sec].total++;
+    if (c[li] > (s50[li] || 0)) { above50Count++; sectorAgg[sec].above++; }
   }
   const breadthPct = breadthTotal > 0 ? Math.round((above50Count / breadthTotal) * 1000) / 10 : 50;
   const breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
+
+  // Per-sector breadth, sorted strongest → weakest
+  const sectorBreadth = Object.entries(sectorAgg)
+    .map(([sector, a]) => {
+      const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
+      return {
+        sector,
+        pct: p,
+        status: p >= 55 ? 'HEALTHY' : p >= 40 ? 'MIXED' : 'WEAK',
+        above: a.above,
+        total: a.total,
+      };
+    })
+    .sort((x, y) => y.pct - x.pct);
 
   // ── NEW: Regime level — OK | CAUTION | RISK (structure + VIX + breadth) ──
   let regimeLevel: 'OK' | 'CAUTION' | 'RISK' = 'OK';
@@ -986,6 +1006,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       qqq: { above50: qqqA50, above200: qqqA200 },
       vix: { level: Math.round(vixLevel * 10) / 10, status: vixStatus },
       breadth: { pct: breadthPct, status: breadthStatus },
+      sectorBreadth,
       regimeLevel,
       regimeMultiplier,
       stopVolMultiplier,
