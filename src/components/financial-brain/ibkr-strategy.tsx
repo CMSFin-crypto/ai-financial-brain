@@ -510,7 +510,7 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
           <ScoreCell label="Trend" value={stock.trendScore} />
           <ScoreCell label="RS" value={stock.rsScore} />
           <ScoreCell label="Momentum" value={stock.momentumScore} />
-          <ScoreCell label="Volum" value={stock.volConfScore} />
+          <VolumeScoreCell stock={stock} />
           <ScoreCell label="Setup" value={stock.setupScore} />
           <ScoreCell label="Risk" value={stock.riskScore} />
         </div>
@@ -1163,6 +1163,75 @@ function ScoreCell({ label, value }: { label: string; value: number }) {
             <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
             <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
           </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Task 17: Volume Score me zbërthim konkret për secilin kandidat
+function VolumeScoreCell({ stock }: { stock: FunnelStock }) {
+  const value = stock.volConfScore;
+  const c = value >= 70 ? 'text-emerald-400' : value >= 50 ? 'text-amber-400' : 'text-red-400';
+  const ratioOk = stock.volRatio > 0.8 && stock.volRatio < 1.5;
+  const avgVolM = stock.avgVol20d / 1_000_000;
+  const avgVolOk = stock.avgVol20d > 5_000_000;
+
+  const parts = [
+    { label: 'Baza e score-it', pts: 50, ok: true, always: true, detail: 'pikët fillestare — score-i llogaritet mbi 50' },
+    { label: 'Volumi në rënie gjatë pullback-ut', pts: 20, ok: stock.volDeclining, always: false, detail: 'mesatarja e 5 ditëve të fundit është nën 95% e 5 ditëve para tyre — korektimi po bëhet nënqetësi, jo me presion shitës' },
+    { label: 'Spike i ditës së fundit', pts: 15, ok: stock.lastDaySpike, always: false, detail: 'volumi i ditës së fundit > 1.1x mesatarja 20-ditore — interes blerës po kthehet (konfirmim i lëvizjes)' },
+    { label: `Raporti 3d/20d = ${stock.volRatio}x`, pts: 10, ok: ratioOk, always: false, detail: 'mesatarja 3-ditore vs mesatarja 20-ditore — normale brenda 0.8x – 1.5x (as e fikët, as e nxehtë)' },
+    { label: `Mesatarja 20-ditore = ${avgVolM.toFixed(1)}M aksione/ditë`, pts: 5, ok: avgVolOk, always: false, detail: 'mbi 5 milionë aksione në ditë — likuiditet i qëndrueshëm institucional' },
+  ];
+
+  const computed = parts.reduce((s, p) => s + (p.always || p.ok ? p.pts : 0), 0);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="rounded-md p-1.5 text-center bg-muted/5 hover:bg-muted/10 transition-all cursor-pointer group w-full">
+          <div className="flex items-center justify-center gap-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">Volum</p>
+            <Info className="w-2.5 h-2.5 opacity-0 group-hover:opacity-50 transition-opacity" />
+          </div>
+          <p className={`text-[14px] font-bold ${c}`}>{value}</p>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="center" className="w-80 sm:w-96 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+            <p className="text-sm font-bold text-foreground">Volum — {stock.symbol}</p>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${value >= 70 ? 'bg-emerald-500/15 text-emerald-400' : value >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'}`}>{value}/100</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Zbërthimi konkret: cilat kushte i plotësoi ky kandidat</p>
+        </div>
+        <div className="px-4 pb-4 space-y-1.5">
+          {parts.map((p, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-md bg-muted/10 p-2">
+              {p.always || p.ok
+                ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                : <XCircle className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-medium text-foreground leading-snug">{p.label}</p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-0.5">{p.detail}</p>
+              </div>
+              <span className={`text-[11px] font-bold font-mono flex-shrink-0 ${p.always ? 'text-muted-foreground' : p.ok ? 'text-emerald-400' : 'text-muted-foreground/40 line-through'}`}>+{p.pts}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between rounded-md border border-border/50 px-2.5 py-2">
+            <p className="text-[11px] text-muted-foreground">Totali i score-it</p>
+            <p className={`text-[13px] font-bold font-mono ${c}`}>{computed}/100</p>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {stock.setup === 'BREAKOUT'
+              ? 'Për BREAKOUT: pjesa vendimtare është spike-i i ditës së fundit — pa të, thyerja e 20d high mund të jetë e rreme (false breakout).'
+              : stock.setup === 'PULLBACK'
+              ? 'Për PULLBACK: ideali është volum në rënie gjatë korektimit + spike në candle-in e rikthimit — "blije nënqetësi, shite me zhurmë".'
+              : 'Volumi konfirmon çdo lloj entry-je: pa konfirmim volumi, sinjalet teknike kanë besueshmëri më të ulët.'}
+            {' '}Mbi 65 = konfirmim i mirë. Nën 40 = pa konfirmim volumi.
+          </p>
         </div>
       </PopoverContent>
     </Popover>
