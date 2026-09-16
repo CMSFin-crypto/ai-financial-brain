@@ -415,6 +415,54 @@ export async function GET() {
       console.error('[CAMS] Snapshot save failed (non-blocking):', e?.message || e);
     }
 
+    // ── Task 19: Ditari Javor — ruaj Top 10 në journal (non-blocking) ──
+    try {
+      const { ingestCamsJournal } = await import('@/lib/cams-journal');
+      const res = await ingestCamsJournal(
+        top10.map((row) => ({
+          ticker: row.symbol,
+          rank: top10.indexOf(row) + 1,
+          price: row.price,
+          sector: row.sector,
+          score: row.result.camsScore,
+          tier: row.result.tier,
+          setup: row.result.setup,
+          entry: row.result.entry,
+          stop: row.result.stop,
+          target3R: row.result.target3R,
+          rvol: row.pf.rvol,
+          atrPct: row.pf.atrPct,
+          rsi14: row.pf.rsi14,
+          adx14: row.pf.adx14,
+          extensionAtr: row.result.extensionAtr,
+          extensionFiltered: row.result.extensionFiltered,
+          daysToEarnings: row.cat.daysToEarnings,
+          gapUp: row.pf.gapUp,
+          sub: {
+            catalyst: row.result.catalystScore,
+            acceleration: row.result.accelerationScore,
+            structure: row.result.structureScore,
+            revision: row.result.revisionScore,
+            regime: row.result.regimeScore,
+            penalty: row.result.penalty,
+          },
+          catalystEvidence: row.result.catalystEvidence,
+          warnings: row.result.warnings,
+          regime: {
+            spyAbove50, spyAbove200, qqqAbove50, qqqAbove200,
+            sectorAbove50: row.regime.sectorAbove50,
+            sectorVsSpy20d: row.regime.sectorVsSpy20d,
+          },
+          high20: row.pf.high20,
+          consolidationHigh: row.pf.consolidationHigh,
+        }))
+      );
+      if (res.error) console.error('[CAMS] Journal ingest error:', res.error);
+      else console.log(`[CAMS] Journal: ${res.saved} re + ${res.updated} rifreskuar`);
+    } catch (e: any) {
+      console.error('[CAMS] Journal ingest failed (non-blocking):', e?.message || e);
+    }
+
     // ── Response ──
     const results = top10.map((row, i) => ({
       rank: i + 1,
@@ -434,6 +482,27 @@ export async function GET() {
       sectorRankPct: row.pf.sectorRankPct,
       daysToEarnings: row.cat.daysToEarnings,
       gapUp: row.pf.gapUp,
+      // Task 19: diagnostika për zbërthimin konkret të sub-score-ve në UI
+      diag: {
+        ema10: Math.round(row.pf.ema10 * 100) / 100,
+        ema200: Math.round(row.pf.ema200 * 100) / 100,
+        ema20Slope: Math.round(row.pf.ema20Slope * 100) / 100,
+        ema50Slope: Math.round(row.pf.ema50Slope * 100) / 100,
+        closeLocation: Math.round(row.pf.closeLocation * 100) / 100,
+        ret5d: Math.round(row.pf.ret5d * 100) / 100,
+        high20: Math.round(row.pf.high20 * 100) / 100,
+        consolidationDays: row.pf.consolidationDays,
+        consolidationHigh: Math.round(row.pf.consolidationHigh * 100) / 100,
+        pullbackDays: row.pf.pullbackDays,
+        swingLow: Math.round(row.pf.swingLow * 100) / 100,
+        epsSurprisePct: row.cat.epsSurprisePct,
+        analystRevisionScore: row.cat.analystRevisionScore,
+        daysSinceEarnings: row.cat.daysSinceEarnings,
+        material8KSentiment: row.cat.material8KSentiment,
+        spyAbove50, spyAbove200, qqqAbove50, qqqAbove200,
+        sectorAbove50: row.regime.sectorAbove50,
+        sectorVsSpy20d: Math.round(row.regime.sectorVsSpy20d * 100) / 100,
+      },
     }));
 
     return NextResponse.json({

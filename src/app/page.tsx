@@ -14,6 +14,7 @@ import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
 import { IBKRStrategy } from '@/components/financial-brain/ibkr-strategy';
 import { CAMSStrategy } from '@/components/financial-brain/cams-strategy';
+import { WeeklyJournal } from '@/components/financial-brain/weekly-journal';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
 import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
@@ -47,6 +48,7 @@ import {
   ExternalLink,
   FileText,
   ArrowRight,
+  BookOpen,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -328,6 +330,9 @@ export default function Home() {
                   <TabsTrigger value="cams" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <Crosshair className="w-3.5 h-3.5 mr-1.5" />CAMS
                   </TabsTrigger>
+                  <TabsTrigger value="journal" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" />Ditari Javor
+                  </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
                   </TabsTrigger>
@@ -417,6 +422,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="cams" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <Crosshair className="w-3 h-3 mr-1" />CAMS
+                  </TabsTrigger>
+                  <TabsTrigger value="journal" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BookOpen className="w-3 h-3 mr-1" />Ditari
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
@@ -518,6 +526,18 @@ export default function Home() {
               className="space-y-4"
             >
               <CAMSStrategy />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Ditari Javor (Task 19) */}
+          <TabsContent value="journal" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <WeeklyJournal />
             </motion.div>
           </TabsContent>
 

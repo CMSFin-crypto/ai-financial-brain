@@ -862,6 +862,7 @@ CREATE TABLE "Top10JournalEntry" (
     "exitStatus" TEXT,
     "evalNote" TEXT,
     "tags" TEXT[],
+    "context" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -1155,5 +1156,23 @@ ALTER TABLE "SnapshotItem" ADD CONSTRAINT "SnapshotItem_snapshotId_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "UniverseEvent" ADD CONSTRAINT "UniverseEvent_snapshotId_fkey" FOREIGN KEY ("snapshotId") REFERENCES "ScanSnapshot"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- ═══ Task 19: Ditari Javor — kolona context (CAMS) + tabela e shënimeve javore ═══
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "context" JSONB;
+
+CREATE TABLE IF NOT EXISTS "WeeklyReviewNote" (
+    "id" TEXT NOT NULL,
+    "weekStart" TEXT NOT NULL,
+    "strategy" TEXT NOT NULL DEFAULT 'CAMS',
+    "ticker" TEXT NOT NULL DEFAULT '',
+    "note" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "WeeklyReviewNote_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "WeeklyReviewNote_weekStart_strategy_ticker_key" ON "WeeklyReviewNote"("weekStart", "strategy", "ticker");
+CREATE INDEX IF NOT EXISTS "WeeklyReviewNote_strategy_weekStart_idx" ON "WeeklyReviewNote"("strategy", "weekStart");
 
 `;

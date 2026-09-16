@@ -270,3 +270,60 @@ Stage Summary:
 - Materials: 0% DEAD (0/1!) → 75% STRONG (12/16 REALË) — ndryshim FONDAMENTAL: aksionet e Materials (p.sh. LIN) nuk bllokohen më gabimisht nga 'DEAD' i rremë; weakDeadSectors 5→4
 - Market breadth mbeti 32.9% WEAK (i pandryshuar) — plotësimi s'e preku
 - Tani useri klikon sektorin → sheh kompanitë konkrete që e përbëjnë me emra, chg ditor dhe statusin mbi/nën SMA50
+
+---
+Task ID: 18
+Agent: main (Super Z)
+Task: Strategjia CAMS — Catalyst, Acceleration, Momentum & Structure (tab i re nën kërkesë të detajuar të userit)
+
+Work Log:
+- Specifikimi i userit: formula CAMS = 0.35C + 0.25A + 0.20S + 0.10R + 0.10M − P me tiers 80+/70+/60+/<60, extension filter (close−EMA20)/ATR14 ≤ 2.0, risk 0.25–0.75%, max 2/sektor, PEAD setup modeli Dell/VEEV/CRM
+- Ripërdorim i motorëve ekistues: fetchEarnings (pead-engine, Alpha Vantage, cache 4h), computeAnalystRevisionScore (analyst-revision-engine), checkMultiEventRisk (event-risk, 8K sentiment + earnings dates), universe-400, SECTOR_MAP nga ibkr-scan (import ESM si ibkr-analyze)
+- File i re src/lib/cams/cams-engine.ts (pure scoring):
+  * C (0–100): EPS surprise deri +30 (≥5% beat), reagimi i tregut gap-up ≥3% me RVol ≥1.5x deri +30, 8-K pozitive +20, PEAD drift deri +20; EPS miss −25; 8K negative → cap 30
+  * A (0–100): RVol ≥1.8x +24, close top-25% +16, mbi EMA20/50/200 +20, EMA20>EMA50 slopes +16, top 15% sektori +16, 5d pozitiv pa ekstension +8
+  * S (0–100): breakout 20d +30, pullback 2–5d EMA10/20 +30, konsolidim 3–10d +20, RSI 55–72 +10, ADX>20 +10
+  * R (0–100): revision engine normalizuar; pa të dhëna = 50 neutral
+  * M (0–100): SPY/QQQ SMA50/200 +15 secili, ETF sektori mbi SMA50 +20, RS sektorial +20
+  * P: extension >2 ATR (−20) / >3 ATR (−30), earnings ≤1d (−25) / ≤3d (−12), dolvol <$50M (−5), ATR% >5 (−10), gap-down i sapo (−10)
+  * detectSetup: PEAD_CONTINUATION (katalizator + konsolidim) | PULLBACK | BREAKOUT | NONE
+  * Entry: konsolidim→buy-stop mbi high; breakout→high20×1.002; pullback→limit aktual. Stop = max(swingLow−0.2ATR, entry−1.5ATR). Targete 1R/2R/3R. Size: 0.5% normal, 0.25% high-risk
+- API /api/cams-scan (maxDuration 120): 400 universe Yahoo batched 8×250ms → prefilter ($5/1M/$20M) → sector percentiles → prelim score → enrichment AV top 12 (EPS real + revisions, kufiri 25/ditë) → re-score → Top 10 max 2/sektor → snapshots si CATALYST_MOMENTUM (Learning Engine ekzistues i vlerëson outcome-t automatikisht)
+- UI cams-strategy.tsx: header me formulën + tiers, scan button, regjimi banner, funnel chips, kartat me rank/tier/setup badge, formula e dukshme numerike, 5 sub-score me popups, entry/stop/1R/2R/3R, risk budget + shares, evidenca e katalizatorit (violet), paralajmërimet (orange), invalidimi, seksioni Rregullat e Riskut (6 rregullat e spec-it)
+- page.tsx: tab "CAMS" në grupin Tregu pas IBKR (desktop + mobile) me ikonë Crosshair violet
+- Fix gjatë zhvillimit: leftover JSX placeholder në QQQ span, leading-snunk typo
+- node_modules u zhduk nga sandbox midis komandëve → bun install --frozen-lockfile ri-instaloi 827 paketat
+- Typecheck: 0 gabime në skedarët e rinj (total 144 = të trashëguara, ignoreBuildErrors: true)
+- Sandbox reset midis turns: Task 17 (1addae3) ishte në origin por jo lokalisht → rebase i pastër para push
+- Commit 3487e46 → push → deploy ~2min
+
+Stage Summary:
+- Verifikim live prod (16 Shtator 11:33 UTC): HTTP 200, 19.5s, funnel 400 → 375 me të dhëna → 300 likuide → 34 me katalizator → Top 10
+- Rezultet aktuale: të gjitha NO_TRADE (max CAMS 57) — HONEST sepse regjimi është JO OK (SPY/QQQ nën SMA) dhe R=50 neutral; pa inflacion artificially. TEVA #1 (gap +6.3%, 3.7x volum), CRM #4 (gap +11.9% earnings-i real i 27 Gushtit, 4.7x volum!)
+- ⚠️ ALPHA_VANTAGE_API_KEY s'është në Vercel env → enrichment i fikur (0/12). Pa të: C bazohet në gap-proxy + 8K (max ~50). Me key: EPS real + revisions deri +30 më shumë. USER duhet ta shtojë në Vercel Settings → Environment Variables
+- Modelet Dell/VEEV/CRM të userit të mbuluara: CRM u kap realisht (#4, PEAD continuation pas earnings +11.9% gap)
+- Në regjim BULL me AV key, priten score 70–90+ për setup-e si Dell-i
+- Backtest 2–3 vjeçar i ndarë sipas llojit të setup-it (earnings continuation / sector rebound / commodity momentum / event-driven / small-cap momentum) — hapi tjetër i propozuar i spec-it, s'është zbatuar ende
+
+---
+Task ID: 19
+Agent: Super Z (main)
+Task: Popup për secilin tregues ("çka ka bo dhe si duhet të jetë") + Ditari Javor Top 10 me vlerësim javor, analizë "çfarë ndikoi" dhe shënime të përdoruesit
+
+Work Log:
+- Prisma: Top10JournalEntry + context Json? (sub-score-t CAMS, setup, gap, nivele në momentin e sinjalit); model i re WeeklyReviewNote (weekStart, strategy, ticker, note — unique triolonja; ticker="" = shënimi i përgjithshëm i javës); db-setup-sql.ts: ALTER ADD COLUMN IF NOT EXISTS context + CREATE TABLE IF NOT EXISTS WeeklyReviewNote (idempotent)
+- IBKR UI (ibkr-strategy.tsx): 5 score-t statikë (Trend/RS/Momentum/Setup/Risk) zëvendësuan me qeliza zbërthimi konkrete në stilin e Task 17 — BreakdownScoreCell me ✅/❌ + pikë + vlerat aktuale (SMA50/200, Golden Cross, stacked, higher-highs, ADX; RS 22/60d vs SPY + sektori; mom5/10/22 + 52v; setup-specifike PULLBACK/BREAKOUT/TREND_CONT; riskPct, R:R, ATR%, event risk) + footer "si duhet të jetë"; SCORE_DETAILS dhe ScoreCell statik u hoqën
+- ibkr-scan + ibkr-analyze: ekspozuan mom5/mom10/mom22 + higherHighs20 në response (të dyja rrugët që ushqejnë StockCard)
+- CAMS UI (cams-strategy.tsx): 5 sub-score-t (Katalizatori/Accelerimi/Struktura/Revisjonët/Regjimi) u bënë konkrete — CamsBreakdownCell me kushtet reale (EPS beat/miss, gap+rvol, PEAD drift i mbajtur, 8-K; RVol 1.8x, close location, EMA stack, slopes, sektori, ret5d; breakout/high20, pullback EMA10/20, konsolidim, RSI, ADX; revisionet e normalizuara; SPY/QQQ/SMA50/200 + sektori); SUBSCORE_DETAILS statik u hoq
+- Shiriti i treguesve bruto në kartën CAMS ($, RVol, RSI, ADX, Top% sektor, 20d) → IndChip i klikueshëm me popup "Çfarë ka bo? / Si duhet të jetë? / Pse ka rëndësi?"
+- cams-scan route: response + diag (ema10/200, slopes, closeLocation, ret5d, high20, konsolidim, pullback, swingLow, epsSurprise, revision, 8K, regime) + ingestCamsJournal pas çdo skanimi (non-blocking)
+- src/lib/cams-journal.ts (i re): getWeekStartStr (e hëna ISO); ingestCamsJournal (upsert ditë+ticker+CAMS me kontekst JSON + tags SETUP_/TIER_/NO_RVOL/EXTENDED/EARNINGS_SOON/REGIME); computeOutcome (ret 5/10/20d, max runup/drawdown, entry/stop/target3R hits brenda 10 bar-eve, volum pas/kundrejt 20d, theu high20); buildAnalysis shqip (gap-u u mbajt/mbush, breakout u krye jo, volumi u forcua/ra, NO_FILL, plani funksionoi, regjimi në sinjal, lidhja me sub-score-t e fitoreve/humbjeve); buildWeekLessons (krahasimi i faktorëve fitues vs humbës, modelet NO_RVOL/EXTENDED/gap-fill); buildWeeklyReview (grupim sipas javës, skanimi i fundit për ticker, fetch bar-e 6mo batched 6x150ms, nota të mara nga WeeklyReviewNote); saveWeeklyNote (upsert)
+- API /api/cams-journal: GET ?weeks=&strategy= (CAMS|IBKR) me maxDuration 60; PUT { weekStart, ticker?, note, strategy? } → ruaj shënim
+- UI weekly-journal.tsx (i re) + tab "Ditari Javor" në page.tsx (desktop+mobile): toggle CAMS/IBKR; kartë jave me stats (u rritën/ranë/në pritje, 10d mesatarja, më i miri/më i keqi); "Mësimet e javës — automatike"; rresht aksioni i zgjerueshëm me analizën "çfarë ndikoi", sub-score-t në sinjal, tag-at dhe shënimin personal me Ruaj; shënimi javor i përgjithshëm me Ruaj;PCA empty state + loading
+- prisma generate pas ndryshimit të skemës; tsc: 144 gabime — njësoj si bazësja (të trashëguara, asnjë e re nga kjo detyrë)
+
+Stage Summary:
+- Popup-et tani janë KONKRETE: çdo score në IBKR dhe çdo sub-score në CAMS tregon saktë cilat kushte i plotësoi ky aksion, me vlerat aktuale dhe pragun ideal — jo më përshkrime generike
+- Ditari Javor: çdo skanim CAMS/IBKR ruan Top 10; rishikimi javor llogarit me çmime reale a u rritën (5/10/20 ditë), çfarë ndikoi (gap, breakout, volum, regjim, ekzekutimi i planit) dhe nxjerr mësime automatike fitues-vs-humbës
+- Përpara përdorimit: duhet thirrur /api/db-setup një herë në prod (shton kolonën context + tabelën WeeklyReviewNote) dhe një skanim CAMS pas deploy-it që ditari të fillojë të mbushet
+- Strategjia IBKR në ditar përdor hyrjet ekzistuese (vetëm READY); CAMS i mban të 10 kandidatët pavarësisht tier-it

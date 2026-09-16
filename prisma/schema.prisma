@@ -1034,6 +1034,11 @@ model Top10JournalEntry {
   evalNote   String? // diagnoza + mësimi (shqip)
   tags       String[] // CONTINUATION, FADE, NO_RVOL, REGIME, GAVE_BACK, NO_FILL
 
+  // Task 19: Konteksti i plotë i strategjisë në momentin e sinjalit (CAMS:
+  // sub-score-t, setup-i, gap-u, nivelet, evidenca e katalizatorit) —
+  // përdoret nga Ditari Javor për analizën "çfarë ndikoi".
+  context Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1041,4 +1046,23 @@ model Top10JournalEntry {
   @@index([ticker, scanDate])
   @@index([scanDate, active])
   @@index([exitStatus])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DITARI JAVOR — shënimet e përdoruesit (Task 19)
+// Një shënim për (javë, strategji, ticker) — ticker="" = shënimi
+// i përgjithshëm i javës (mësimet e javës nga useri).
+// ═══════════════════════════════════════════════════════════════
+model WeeklyReviewNote {
+  id        String   @id @default(cuid())
+  weekStart String // data e hënës së javës "YYYY-MM-DD"
+  strategy  String   @default("CAMS") // CAMS | IBKR
+  ticker    String   @default("") // "" = shënim javor i përgjithshëm
+  note      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekStart, strategy, ticker])
+  @@index([strategy, weekStart])
 }

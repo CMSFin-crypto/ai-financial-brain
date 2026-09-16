@@ -9,11 +9,11 @@ import {
   BarChart3, DollarSign, Clock, Layers, Zap, ArrowRight, Calculator,
   ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff, Activity,
   Filter, ArrowDown, CircleDot, Info, Search, X, Loader2,
-  Copy, Check, Briefcase, FileText, ShieldAlert, Moon,
+  Copy, Check, Briefcase, FileText, ShieldAlert, Moon, Minus,
   GitCompareArrows, TrendingDown, ArrowUpRight, ArrowDownRight, LogIn, LogOut,
   BookOpen, History, Brain, Sparkles,
 } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 
 // ── Types ──
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
@@ -32,6 +32,8 @@ interface FunnelStock {
   scaleOutRule?: string;
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string; rsi: number; atr: number; atrPct: number; adx: number;
+  // Task 19: momentum raw për popup-in konkret
+  mom5: number; mom10: number; mom22: number; higherHighs20: boolean;
   volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
   pullbackDays: number; pullbackPct: number;
   distFromEMA10: number; distFromEMA20: number;
@@ -507,12 +509,12 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
 
         {/* Score breakdown - 6 sub-scores */}
         <div className="mt-3 grid grid-cols-6 gap-1.5">
-          <ScoreCell label="Trend" value={stock.trendScore} />
-          <ScoreCell label="RS" value={stock.rsScore} />
-          <ScoreCell label="Momentum" value={stock.momentumScore} />
+          <TrendScoreCell stock={stock} />
+          <RsScoreCell stock={stock} />
+          <MomentumScoreCell stock={stock} />
           <VolumeScoreCell stock={stock} />
-          <ScoreCell label="Setup" value={stock.setupScore} />
-          <ScoreCell label="Risk" value={stock.riskScore} />
+          <SetupScoreCell stock={stock} />
+          <RiskScoreCell stock={stock} />
         </div>
 
         {/* Entry / Stop / Target — 5 columns with 3R (targeti i rekomanduar nga sektori theksohet me ★) */}
@@ -1109,66 +1111,6 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
   );
 }
 
-const SCORE_DETAILS: Record<string, { ideal: string; desc: string }> = {
-  'Trend': {    desc: 'Mat cilesine e trendit rrites: cmimi mbi SMA50 (+20), cmimi mbi SMA200 (+20), SMA50 mbi SMA200 / Golden Cross (+15), Stacked MA — Close > EMA20 > SMA50 > SMA200 (+15), higher-high structure (+15), dhe ADX > 25 — trend i forte (+15). Nje score i larte tregon nje trend te forte, te shendetshem, multi-timeframe.',    ideal: 'mbi 75 = trend i forte. Nen 50 = trend i dobet ose i perzier.',  },
-  'RS': {
-    desc: 'Relative Strength — sa me mire ka performuar aksioni krah SPY ne 22d dhe 60d te fundit. RS 22d ka 25 pike peshe, RS 60d ka 25 pike. Nese RS > 0, aksioni po e tebin tregun. Institucionet po akumulojne — kjo jep edge.',
-    ideal: 'mbi 60 = outperformer i qarte. 40-60 = ne rregull. Nen 40 = underperformer.',
-  },
-  'Momentum': {
-    desc: 'Mat forcen e lëvizjes se fundit: nese 5d change eshte me i vogel se 2% (+10), 10d positive (+15), 22d positive (+15), dhe nuk eshte i ekstenduar — 5d nen 8% (+10). Momentum i mire pa ekstension tregon nje aksion ne rritje te shendetshme.',
-    ideal: 'mbi 65 = momentum i forte. Nen 40 = rihet ose i ftohte.',
-  },
-  'Volum': {
-    desc: 'Konfirmon lëvizjen me volum: volumi ne renie gjate pullback-it (+20), spike volumi ne diten e fundit (+15), volumi relativ 0.8-1.5x mesatarja (+10), dhe volumn mesatar mbaltes mbi 5M (+5). Pullback me volum ne renie + rikthim me volum = konfirmim.',
-    ideal: 'mbi 65 = volum i mire. Nen 40 = pa konfirmim volumi.',
-  },
-  'Setup': {
-    desc: 'Vlereson cilësinë e setup-it konkret: Pullback 3-6d ideal (+20), afer EMA 10/20 (+20), volum ne renie (+15), spike konfirmimi (+15), RSI 40-65 (+10). Breakout 20d high + volum. Me i larte score-i, aq me i besueshem setup-i.',
-    ideal: 'mbi 60 = setup i fort. 40-60 = i mesem. Nen 40 = i dobët.',
-  },
-  'Risk': {
-    desc: 'Mat cilësinë e risk-reward: risk per aksion nen 3% (+20) ose 3-5% (+10), R:R mbi 2 (+15) ose 1.5-2 (+5), ATR nen 2% (+10) ose mbi 4% (-10). Risk score i larte = stop i ngushte me target te gjere.',
-    ideal: 'mbi 60 = kushtet e mira risk. Nen 40 = rrezik i larte ose R:R i dobet.',
-  },
-};
-
-function ScoreCell({ label, value }: { label: string; value: number }) {
-  const c = value >= 70 ? 'text-emerald-400' : value >= 50 ? 'text-amber-400' : 'text-red-400';
-  const detail = SCORE_DETAILS[label];
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button className="rounded-md p-1.5 text-center bg-muted/5 hover:bg-muted/10 transition-all cursor-pointer group w-full">
-          <div className="flex items-center justify-center gap-0.5">
-            <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
-            <Info className="w-2.5 h-2.5 opacity-0 group-hover:opacity-50 transition-opacity" />
-          </div>
-          <p className={`text-[14px] font-bold ${c}`}>{value}</p>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side="bottom" align="center" className="w-72 sm:w-80 p-0 overflow-hidden">
-        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-foreground">Score: {label}</p>
-            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${value >= 70 ? 'bg-emerald-500/15 text-emerald-400' : value >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'}`}>{value}/100</span>
-          </div>
-        </div>
-        <div className="px-4 pb-4 space-y-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Si llogaritet?</p>
-            <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.desc}</p>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
-            <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 // Task 17: Volume Score me zbërthim konkret për secilin kandidat
 function VolumeScoreCell({ stock }: { stock: FunnelStock }) {
   const value = stock.volConfScore;
@@ -1245,6 +1187,212 @@ const ENTRY_DETAILS: Record<string, string> = {
   'TARGET 2R': 'Target 2R — çmimi ku fitimi është 2x rrezikun. Shumica e trader-ët e preferuar mbyllin 50-70% të pozicionit këtu dhe lënë rrestën për 3R me trailing stop.',
   'TARGET 3R': 'Target 3R — çmimi ku fitimi është 3x rrezikun. Kjo është zona përfundimtare e targetit. Strategjia kërkon R:R minimal 1:2, por 1:3 është ideali. Target 3R llogaritet si Entry + 3 x (Entry - Stop).',
 };
+
+// ═══ Task 19: Zbërthimi konkret i secilit score — "çka ka bo dhe si duhet të jetë" ═══
+// I njëjti stil me VolumeScoreCell (Task 17), por për Trend/RS/Momentum/Setup/Risk.
+
+interface BreakdownPart {
+  label: string;
+  pts: number;       // +pikë ose −pikë (penalitet)
+  active: boolean;   // a kontribuoi në score
+  detail: string;
+  base?: boolean;    // pikë bazë (gjithmonë e numëruar)
+  neutral?: boolean; // as + as − (s'aplikohet)
+}
+
+function BreakdownScoreCell({
+  label, value, symbol, icon, parts, footer,
+}: {
+  label: string; value: number; symbol: string; icon: ReactNode;
+  parts: BreakdownPart[]; footer: string;
+}) {
+  const c = value >= 70 ? 'text-emerald-400' : value >= 50 ? 'text-amber-400' : 'text-red-400';
+  const computed = Math.round(parts.reduce((s, p) => s + (p.base || (p.active && !p.neutral) ? p.pts : 0), 0));
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="rounded-md p-1.5 text-center bg-muted/5 hover:bg-muted/10 transition-all cursor-pointer group w-full">
+          <div className="flex items-center justify-center gap-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+            <Info className="w-2.5 h-2.5 opacity-0 group-hover:opacity-50 transition-opacity" />
+          </div>
+          <p className={`text-[14px] font-bold ${c}`}>{value}</p>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="center" className="w-80 sm:w-96 p-0 overflow-hidden">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            {icon}
+            <p className="text-sm font-bold text-foreground">{label} — {symbol}</p>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${value >= 70 ? 'bg-emerald-500/15 text-emerald-400' : value >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'}`}>{value}/100</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Zbërthimi konkret: çka ka bo ky kandidat</p>
+        </div>
+        <div className="px-4 pb-4 space-y-1.5">
+          {parts.map((p, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-md bg-muted/10 p-2">
+              {p.base
+                ? <Minus className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                : p.neutral
+                ? <Minus className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+                : p.active
+                ? (p.pts >= 0
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                    : <XCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 flex-shrink-0" />)
+                : (p.pts >= 0
+                    ? <XCircle className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+                    : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />)}
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-medium text-foreground leading-snug">{p.label}</p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-0.5">{p.detail}</p>
+              </div>
+              <span className={`text-[11px] font-bold font-mono flex-shrink-0 ${
+                p.base ? 'text-muted-foreground'
+                : p.neutral ? 'text-muted-foreground/40'
+                : p.active ? (p.pts >= 0 ? 'text-emerald-400' : 'text-red-400')
+                : (p.pts >= 0 ? 'text-muted-foreground/40 line-through' : 'text-muted-foreground/40')
+              }`}>{p.pts >= 0 ? '+' : ''}{p.pts}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between rounded-md border border-border/50 px-2.5 py-2">
+            <p className="text-[11px] text-muted-foreground">Totali i score-it</p>
+            <p className={`text-[13px] font-bold font-mono ${c}`}>{computed}/100</p>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">{footer}</p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TrendScoreCell({ stock }: { stock: FunnelStock }) {
+  const parts: BreakdownPart[] = [
+    { label: 'Çmimi mbi SMA50', pts: 20, active: stock.aboveSMA50, detail: 'çmimi aktual është mbi mesatares lëvizëse 50-ditore — trendi afatmesëm është rritës' },
+    { label: 'Çmimi mbi SMA200', pts: 20, active: stock.aboveSMA200, detail: 'mbi mesataren 200-ditore — trendi afatgjatë është rritës (insticionet e ndjekin këtë)' },
+    { label: 'SMA50 mbi SMA200 (Golden Cross)', pts: 15, active: stock.sma50Above200, detail: 'mesatarja e shkurtër mbi të gjatën — konfirmim klasik i trendit rritës' },
+    { label: 'MA të stivuara', pts: 15, active: stock.stackedMA, detail: 'Close > EMA20 > SMA50 > SMA200 — renditja e plotë, trendi më i shëndetshëm që mund të ketë' },
+    { label: 'Strukturë higher-high', pts: 15, active: stock.higherHighs20, detail: 'maja e 20 ditëve të fundit është më e lartë se 20 ditët para saj — aksioni po bën maja gjithmonë e më të larta' },
+    { label: `ADX = ${stock.adx} (duhet > 25)`, pts: 15, active: stock.adx > 25, detail: 'forca e trendit — mbi 25 trendi ka energji reale, nën 20 është i ngatërruar me sideway' },
+  ];
+  return (
+    <BreakdownScoreCell
+      label="Trend" value={stock.trendScore} symbol={stock.symbol}
+      icon={<TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
+      parts={parts}
+      footer="Idealisht: mbi 75 = trend i fortë multi-timeframe. Nën 50 = trend i dobët ose i përzier — mos e detyro."
+    />
+  );
+}
+
+function RsScoreCell({ stock }: { stock: FunnelStock }) {
+  const rs22 = stock.rsVsSPY;
+  const rs60 = stock.rsVsSPY60d;
+  const pts22 = rs22 > 0 ? Math.min(25, rs22 * 3) : -Math.min(25, Math.abs(rs22) * 3);
+  const pts60 = rs60 > 0 ? Math.min(25, rs60 * 2) : -Math.min(25, Math.abs(rs60) * 2);
+  const sectorBoost =
+    stock.sectorRsStatus === 'LEADING' && stock.sectorAboveSma50 ? 8 :
+    stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50 ? -8 : 0;
+  const parts: BreakdownPart[] = [
+    { label: 'Baza e score-it', pts: 50, active: true, base: true, detail: 'pikët fillestare — score-i llogaritet mbi 50, pastaj shtohet/zbritet sipas performancës relative' },
+    { label: `RS 22-ditor vs SPY: ${rs22 > 0 ? '+' : ''}${rs22}%`, pts: Math.round(pts22), active: true, detail: 'sa ka performuar aksioni kundrejt SPY në muajin e fundit — pozitiv = po e ndalon tregun prapa (insticionet po akumulojnë)' },
+    { label: `RS 60-ditor vs SPY: ${rs60 > 0 ? '+' : ''}${rs60}%`, pts: Math.round(pts60), active: true, detail: 'performanca afatmesëme vs SPY — ky është testi më i rëndësishëm i forcës reale' },
+    sectorBoost === 0
+      ? { label: `Sektori: ${stock.sectorRsStatus} (neutral)`, pts: 0, active: false, neutral: true, detail: 'sektori nuk jep bonus as penalitet — ecën në linjë me pritjet' }
+      : { label: `Sektori ${stock.sectorRsStatus} ${stock.sectorAboveSma50 ? 'mbi' : 'nën'} SMA50`, pts: sectorBoost, active: true, detail: sectorBoost > 0 ? 'sektori po drejton tregut dhe është në trend rritës — erë mbështetëse' : 'sektori po mbetet pas dhe është nën mesataren — kundër-bashkë' },
+  ];
+  return (
+    <BreakdownScoreCell
+      label="RS" value={stock.rsScore} symbol={stock.symbol}
+      icon={<Activity className="w-3.5 h-3.5 text-blue-400" />}
+      parts={parts}
+      footer="Idealisht: mbi 60 = outperformer i qartë. 40–60 = në rregull. Nën 40 = po mbetet pas tregut — peshoje ulët."
+    />
+  );
+}
+
+function MomentumScoreCell({ stock }: { stock: FunnelStock }) {
+  // Mbrojtje nga të dhëna të cache-ruara pa fushat e reja
+  const m5 = stock.mom5 ?? 0, m10 = stock.mom10 ?? 0, m22 = stock.mom22 ?? 0;
+  const parts: BreakdownPart[] = [
+    { label: 'Baza e score-it', pts: 50, active: true, base: true, detail: 'pikët fillestare — shtohen/zbriten sipas lëvizjes së fundit' },
+    { label: `5-ditor: ${m5 > 0 ? '+' : ''}${m5}%`, pts: m5 > -2 ? 10 : -10, active: true, detail: 'java e fundit pa rënie të thellë (mbi −2%) — rënia e madhe do të thoshte prishje e momentit' },
+    { label: `10-ditor: ${m10 > 0 ? '+' : ''}${m10}%`, pts: m10 > 0 ? 15 : -10, active: true, detail: 'dy javët e fundit duhet të jenë pozitive — konfirmim që lëvizja nuk është një-ditore' },
+    { label: `22-ditor: ${m22 > 0 ? '+' : ''}${m22}%`, pts: m22 > 0 ? 15 : -10, active: true, detail: 'muaji i fundit pozitiv — baza e momentum-it afatmesëm' },
+    { label: `Pa ekstension: 5d ${m5 < 8 ? 'nën 8% ✓' : `${m5}% — e zgjatur!`}`, pts: m5 < 8 ? 10 : -15, active: true, detail: 'ritje pa kontroll (mbi 8% në 5 ditë) është e rrezikshme — ekstension i nxitur kthehet zakonisht prapa' },
+    { label: `Afër majës 52v: ${stock.distFrom52wHighPct}% poshtë`, pts: stock.near52wHigh ? 10 : 0, active: stock.near52wHigh, detail: 'brenda 15% të majës vjetore — momentum edge: aksionet afër majave kanë pak rezistencë mbi dhe vazhdojnë më shpesh' },
+  ];
+  return (
+    <BreakdownScoreCell
+      label="Momentum" value={stock.momentumScore} symbol={stock.symbol}
+      icon={<Zap className="w-3.5 h-3.5 text-amber-400" />}
+      parts={parts}
+      footer="Idealisht: mbi 65 = momentum i fortë pa ekstension. Nën 40 = i ftohtë ose i rikthyer."
+    />
+  );
+}
+
+function SetupScoreCell({ stock }: { stock: FunnelStock }) {
+  const parts: BreakdownPart[] = [];
+  if (stock.setup === 'PULLBACK') {
+    const idealDays = stock.pullbackDays >= 3 && stock.pullbackDays <= 6;
+    parts.push(
+      { label: `Pullback ${stock.pullbackDays} ditë (${stock.pullbackPct}%)`, pts: 30, active: true, base: true, detail: 'korektim 2–8 ditë brenda trendit — bazë e setup-it pullback' },
+      { label: idealDays ? `Kohëzgjatja ${stock.pullbackDays}d (ideale 3–6)` : `Kohëzgjatja ${stock.pullbackDays}d (ideale 3–6)`, pts: idealDays ? 20 : 10, active: true, detail: '3–6 ditë = ritmi ideal i korektimit; më shumë se 6 fillon të humbasë energji' },
+      { label: `Afër EMA10/20 (${stock.distFromEMA10}% / ${stock.distFromEMA20}%)`, pts: 20, active: Math.abs(stock.distFromEMA10) < 3 || Math.abs(stock.distFromEMA20) < 3, detail: 'brenda 3% të EMA10 ose EMA20 — zona klasike ku trendi i shëndetshëm gjen mbështetje' },
+      { label: 'Volumi në rënie gjatë pullback-ut', pts: 15, active: stock.volDeclining, detail: 'shitësit nuk kanë presion — korektim i qetë, jo panik' },
+      { label: 'Spike volumi ditën e fundit', pts: 15, active: stock.lastDaySpike, detail: 'blerësit po kthehen — konfirmimi i candle-it të rikthimit' },
+      { label: `RSI ${stock.rsi} (zona 40–65)`, pts: 10, active: stock.rsi >= 40 && stock.rsi <= 65, detail: 'jo i mbishitur, jo i shuar — dhoma e frymëmarrjes për vazhdim' },
+    );
+  } else if (stock.setup === 'BREAKOUT') {
+    parts.push(
+      { label: 'Breakout 20-ditor + volum', pts: 55, active: true, base: true, detail: 'çmimi brenda 2% të majës 20-ditore me spike volumi — bazë e setup-it breakout' },
+      { label: `RSI ${stock.rsi} (zona 45–65)`, pts: 15, active: stock.rsi >= 45 && stock.rsi <= 65, detail: 'momentum i mjaftueshëm për thyerje por pa ekstrem — RSI mbi 70 në momentin e thyerjes ka më shumë rrezik fade' },
+    );
+  } else if (stock.setup === 'TREND_CONT') {
+    parts.push(
+      { label: 'Vazhdim trendi (pa korektim)', pts: 40, active: true, base: true, detail: 'çmimi po ecën lateral pranë majave mbi SMA50 — jo pullback klasik, jo breakout i sapo' },
+      { label: `RSI ${stock.rsi} (zona 50–65)`, pts: 15, active: stock.rsi >= 50 && stock.rsi <= 65, detail: 'momentum i qëndrueshëm' },
+      { label: 'Spike volumi ditën e fundit', pts: 10, active: stock.lastDaySpike, detail: 'konfirmim i interesit blerës sot' },
+    );
+  } else {
+    parts.push(
+      { label: 'Asnjë setup i vlefshëm', pts: 0, active: true, base: true, detail: 'aksioni nuk është as në pullback të qartë, as në breakout, as në vazhdim trendi të pastër — prit që të formohet setup-i' },
+    );
+  }
+  return (
+    <BreakdownScoreCell
+      label="Setup" value={stock.setupScore} symbol={stock.symbol}
+      icon={<Target className="w-3.5 h-3.5 text-violet-400" />}
+      parts={parts}
+      footer={`Setup-i aktual: ${stock.setup}. Idealisht: mbi 60 = setup i fortë me nivele të qarta. Nën 40 = pa pikë hyrjeje të përcaktuar.`}
+    />
+  );
+}
+
+function RiskScoreCell({ stock }: { stock: FunnelStock }) {
+  const riskPts = stock.riskPct <= 3 ? 20 : stock.riskPct <= 5 ? 10 : stock.riskPct > 7 ? -20 : 0;
+  const rrPts = stock.rewardRiskRatio >= 2 ? 15 : stock.rewardRiskRatio >= 1.5 ? 5 : -15;
+  const atrPts = stock.atrPct < 2 ? 10 : stock.atrPct > 4 ? -10 : 0;
+  const parts: BreakdownPart[] = [
+    { label: 'Baza e score-it', pts: 50, active: true, base: true, detail: 'pikët fillestare — shtohen/zbriten sipas kushteve të riskut' },
+    riskPts === 0
+      ? { label: `Distaca stop: ${stock.riskPct}% (zona 5–7%)`, pts: 0, active: false, neutral: true, detail: 'as bonus as penalitet — brenda zonës neutrale' }
+      : { label: `Distaca stop: ${stock.riskPct}%`, pts: riskPts, active: true, detail: riskPts > 0 ? 'stop i ngushtë — humbja potenciale për aksion është e vogël' : 'stop i gjerë — humbja për aksion është e madhe, duhet pozicion më i vogël' },
+    { label: `R:R = 1:${stock.rewardRiskRatio}`, pts: rrPts, active: true, detail: 'raporti shpërblim/rrezik deri në 3R — minimumi i pranueshëm është 1:2, ideali 1:3' },
+    atrPts === 0
+      ? { label: `ATR ${stock.atrPct}% (zona 2–4%)`, pts: 0, active: false, neutral: true, detail: 'volatilitet normal — as i ngadaltë as i egërsuar' }
+      : { label: `ATR ${stock.atrPct}%`, pts: atrPts, active: true, detail: atrPts > 0 ? 'lëvizje ditore e qetë — stop-i kapet më vështirë nga zhurma' : 'lëvizje ditore e madhe — stop-i goditet më lehtë nga zhurma e tregut' },
+    { label: `Event risk: ${stock.eventRisk}`, pts: -25, active: !stock.passedEventRisk, detail: 'evente të afërta (earnings, FOMC, CPI) që mund ta kthejnë çmimin në çdo drejtim pavarësisht teknikës' },
+  ];
+  return (
+    <BreakdownScoreCell
+      label="Risk" value={stock.riskScore} symbol={stock.symbol}
+      icon={<ShieldAlert className="w-3.5 h-3.5 text-red-400" />}
+      parts={parts}
+      footer="Idealisht: mbi 60 = kushte të mira risk–shpërblim. Nën 40 = rrezik i lartë ose R:R i dobët — zvogëlo madhësinë ose kaloje."
+    />
+  );
+}
 
 function EntryBox({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
   return (

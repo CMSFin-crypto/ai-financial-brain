@@ -62,6 +62,8 @@ interface AnalyzeResponse {
     trendScore: number; rsScore: number; momentumScore: number; volConfScore: number; setupScore: number; riskScore: number; totalScore: number;
     setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE'; horizon: string;
     rsi: number; atr: number; atrPct: number; adx: number;
+    // Task 19: momentum raw për popup-in konkret
+    mom5: number; mom10: number; mom22: number; higherHighs20: boolean;
     volRatio: number; volDeclining: boolean; lastDaySpike: boolean;
     pullbackDays: number; pullbackPct: number; distFromEMA10: number; distFromEMA20: number;
     aboveSMA50: boolean; aboveSMA200: boolean; sma50Above200: boolean; stackedMA: boolean;
@@ -501,6 +503,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         trendScore: tScore, rsScore, momentumScore: mScore, volConfScore: vScore, setupScore: sScore, riskScore: rScore, totalScore,
         setup, horizon, rsi: Math.round(rsi * 10) / 10, atr: Math.round(atr * 100) / 100, atrPct: Math.round(atrPct * 100) / 100,
         adx: Math.round(adx * 10) / 10,
+        // Task 19: momentum raw për popup-in konkret
+        mom5: Math.round(mom5 * 100) / 100, mom10: Math.round(mom10 * 100) / 100, mom22: Math.round(mom22 * 100) / 100,
+        higherHighs20: h20b > h20a,
         volRatio: Math.round(volRatio * 100) / 100, volDeclining, lastDaySpike,
         pullbackDays: pbDays, pullbackPct: Math.round(pbPct * 100) / 100,
         distFromEMA10: Math.round(dist10 * 100) / 100, distFromEMA20: Math.round(dist20 * 100) / 100,
