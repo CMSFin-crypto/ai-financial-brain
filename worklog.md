@@ -327,3 +327,28 @@ Stage Summary:
 - Ditari Javor: çdo skanim CAMS/IBKR ruan Top 10; rishikimi javor llogarit me çmime reale a u rritën (5/10/20 ditë), çfarë ndikoi (gap, breakout, volum, regjim, ekzekutimi i planit) dhe nxjerr mësime automatike fitues-vs-humbës
 - Përpara përdorimit: duhet thirrur /api/db-setup një herë në prod (shton kolonën context + tabelën WeeklyReviewNote) dhe një skanim CAMS pas deploy-it që ditari të fillojë të mbushet
 - Strategjia IBKR në ditar përdor hyrjet ekzistuese (vetëm READY); CAMS i mban të 10 kandidatët pavarësisht tier-it
+
+---
+Task ID: 20
+Agent: Super Z (main)
+Task: (1) Rikthimi i strategjisë IBKR në gjendjen Task 17 (useri: "mos ndrysho asgje në IBKR — ndryshimet vetëm në CAMS") + (2) Për secilin Top 10 CAMS: çfarë po negociohet, lajme të rëndësishme me peshë të madhe të ardhshme dhe impakti pozitiv/negativ
+
+Work Log:
+- Rikthim: ibkr-strategy.tsx + api/ibkr-scan + api/ibkr-analyze u rikthyen me git checkout 1addae3 — popup-et 6/6 të Task 19 u hoqën nga IBKR; mbetet vetëm VolumeScoreCell i Task 17 (i kërkuar nga useri). Verifikuar: git diff 1addae3 për 3 fajllat = 0 rreshta
+- Motori i re src/lib/cams/news-intel.ts (mbi Google News RSS ekzistues, pa API key):
+  * DREJTIMI: ~90 fjalë kyçe pozitive + ~85 negative me peshë → POZITIV/NEGATIV/NEUTRAL
+  * STATUSI NE_NEGOCIATE: in talks/negotiat/considering/pending/proposed/reportedly/could/seeks/awaiting → "çfarë po negociohet ende, nuk ka mbaruar"
+  * PESHA E ARDHSHME LART/MESËM/ULËT: baza sipas kategorisë (M&A/FDA 80, kontratë 75, earnings 65...) + magnituda (billion/record/multi-year +12) + pritje +8 + freskia +5
+  * SHPJEGIMI shqip: çfarë është + impakti i pritshëm + shtesa sipas kategorisë (M&A në diskutim, FDA 20-100%, PEAD, insider)
+  * Anti-rreme: OPINION_PATTERNS (Is X a Buy / predict / here's our) kapen ≤45; INSTITUTIONAL_WEAK (13F/position) ≤55; dedublifikim titujsh nga burime të ndryshme
+  * Cache 15-min + cache 10-min i RSS nën saj
+- API /api/cams-news?symbol=X (i re): validim simboli, getCamsNewsIntel, note verifikimi
+- UI cams-strategy.tsx: NewsIntelSection në secilën kartë Top 10 (mbas katalizatorit, para paralajmërimeve) — auto-fetch me useEffect, chips përmbledhëse (▲pozitive ▼negative ⏳në negociatë, peshë të lartë), 3 lajmet kryesore + "Shiko të gjitha", badge drejtimi/peshe/statusi + link në burim + impakti + disclaimeri
+- Testime lokale: DELL (Silver Lake share sale → NEGATIV LART KONFIRMUAR; proposed sale → NE_NEGOCIATE), NVDA (opinion pieces → MESËM pas kapjes), PFE (gjithçka neutrale korrekte)
+- tsc: 144 gabime totale = bazësja paraprake (0 të reja nga kjo detyrë — verifikuar me git stash); next build OK, /api/cams-news në output
+
+Stage Summary:
+- IBKR është saktësisht siç ishte pas Task 17; CAMS mban popup-et + Ditarin Javor + tani Lajmet & Negociatat
+- Push 3139819 solli në prod Task 18 (CAMS) + Task 19 (popup + ditar) + Task 20 njëkohësisht — ishin 2 kommite të pa-push-uar
+- Pas deploy-it: duhet thirrur /api/db-setup në prod (kolona context + WeeklyReviewNote) dhe një skanim CAMS fillestar
+- ALPHA_VANTAGE_API_KEY vazhdon të mungojë në Vercel (enrichment EPS i fikur) — useri duhet ta shtojë
