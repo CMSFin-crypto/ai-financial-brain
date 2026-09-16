@@ -13,6 +13,7 @@ import { QuantDashboard } from '@/components/financial-brain/quant-dashboard';
 import { SectorScanner } from '@/components/financial-brain/sector-scanner';
 import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar';
 import { IBKRStrategy } from '@/components/financial-brain/ibkr-strategy';
+import { CAMSStrategy } from '@/components/financial-brain/cams-strategy';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
 import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
@@ -324,6 +325,9 @@ export default function Home() {
                   <TabsTrigger value="ibkr" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Briefcase className="w-3.5 h-3.5 mr-1.5" />IBKR
                   </TabsTrigger>
+                  <TabsTrigger value="cams" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Crosshair className="w-3.5 h-3.5 mr-1.5" />CAMS
+                  </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
                   </TabsTrigger>
@@ -410,6 +414,9 @@ export default function Home() {
                 <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="ibkr" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Briefcase className="w-3 h-3 mr-1" />IBKR
+                  </TabsTrigger>
+                  <TabsTrigger value="cams" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Crosshair className="w-3 h-3 mr-1" />CAMS
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
@@ -499,6 +506,18 @@ export default function Home() {
               className="space-y-4"
             >
               <IBKRStrategy />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: CAMS Strategy */}
+          <TabsContent value="cams" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <CAMSStrategy />
             </motion.div>
           </TabsContent>
 
