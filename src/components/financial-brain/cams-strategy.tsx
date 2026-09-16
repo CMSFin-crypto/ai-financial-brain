@@ -7,7 +7,8 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import {
   TrendingUp, AlertTriangle, CheckCircle2, XCircle, Target, BarChart3,
   RefreshCw, Activity, Info, Loader2, Zap, Shield, ShieldAlert, Flame,
-  Trophy, Eye, Crosshair, Gauge, Minus, Layers,
+  Trophy, Eye, Crosshair, Gauge, Minus, Layers, Newspaper, ExternalLink,
+  Clock, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useState, useEffect, type ReactNode } from 'react';
 
@@ -401,6 +402,150 @@ function LevelBox({ label, value, color, bg }: { label: string; value: number; c
   );
 }
 
+// ═══ Task 20: Lajme & Negociata — çfarë po negociohet & impakti i ardhshëm ═══
+// Për secilin kandidat Top 10: lajmet e fundit të analizuara — drejtimi
+// (POZITIV/NEGATIV), pesha e ardhshme (LART/MESËM/ULËT) dhe nëse
+// diçka po negociohet ende (nuk ka mbaruar = peshë e madhe e ardhshme).
+
+interface NewsIntelItemUI {
+  headline: string; source: string; publishedAt: string; url: string;
+  categoryLabel: string;
+  direction: 'POZITIV' | 'NEGATIV' | 'NEUTRAL';
+  futureWeight: 'LART' | 'MESËM' | 'ULËT';
+  status: 'NE_NEGOCIATE' | 'KONFIRMUAR' | 'INFO';
+  impactNote: string;
+  daysAgo: number | null;
+}
+
+interface NewsIntelApi {
+  symbol: string;
+  items: NewsIntelItemUI[];
+  summary: {
+    total: number; positive: number; negative: number; neutral: number;
+    negotiating: number; highWeight: number;
+    netBias: 'POZITIV' | 'NEGATIV' | 'NEUTRAL'; headline: string;
+  };
+  note?: string;
+  error?: string;
+}
+
+function newsTimeAgo(daysAgo: number | null): string {
+  if (daysAgo == null) return '';
+  if (daysAgo === 0) return 'sot';
+  if (daysAgo === 1) return 'dje';
+  if (daysAgo <= 7) return `${daysAgo} ditë më parë`;
+  return `${daysAgo} ditë`;
+}
+
+function NewsIntelSection({ symbol }: { symbol: string }) {
+  const [data, setData] = useState<NewsIntelApi | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    (async () => {
+      try {
+        const res = await fetch(`/api/cams-news?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok || json.error) { setFailed(true); setData(null); }
+        else setData(json);
+      } catch {
+        if (!cancelled) { setFailed(true); setData(null); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [symbol]);
+
+  if (loading) {
+    return (
+      <div className="mt-2 rounded-lg bg-blue-500/5 border border-blue-500/15 p-2.5 flex items-center gap-2">
+        <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin flex-shrink-0" />
+        <p className="text-[11.5px] text-muted-foreground">Duke marrë lajmet &amp; negociatat e fundit për {symbol}...</p>
+      </div>
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className="mt-2 rounded-lg bg-muted/5 border border-border/30 p-2.5 flex items-center gap-2">
+        <AlertTriangle className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <p className="text-[11.5px] text-muted-foreground">Lajmet për {symbol} s&apos;u morën tani — provo skanimin sërish më vonë.</p>
+      </div>
+    );
+  }
+
+  if (!data || data.items.length === 0) {
+    return (
+      <div className="mt-2 rounded-lg bg-muted/5 border border-border/30 p-2.5 flex items-center gap-2">
+        <Newspaper className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <p className="text-[11.5px] text-muted-foreground">S&apos;u gjetën lajme të fundit relevante për {symbol} — pa lajm nuk do të thotë problem, thjesht s&apos;ka ngjarje të reja.</p>
+      </div>
+    );
+  }
+
+  const s = data.summary;
+  const shown = expanded ? data.items : data.items.slice(0, 3);
+
+  return (
+    <div className="mt-2 rounded-lg bg-blue-500/5 border border-blue-500/15 p-2.5">
+      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <Newspaper className="w-3.5 h-3.5 text-blue-400" />
+        <p className="text-[12px] font-semibold text-blue-400">Lajme &amp; Negociata — çfarë po negociohet &amp; impakti</p>
+        {s.positive > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 font-medium">▲ {s.positive} pozitive</span>}
+        {s.negative > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/25 text-red-400 font-medium">▼ {s.negative} negative</span>}
+        {s.negotiating > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-300 font-medium">⏳ {s.negotiating} në negociatë</span>}
+        {s.highWeight > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-400 font-medium">{s.highWeight} me peshë të lartë</span>}
+      </div>
+
+      <div className="space-y-1.5">
+        {shown.map((n, i) => (
+          <div key={i} className="rounded-md bg-muted/5 border border-border/30 p-2 space-y-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${n.direction === 'POZITIV' ? 'bg-emerald-500/15 text-emerald-400' : n.direction === 'NEGATIV' ? 'bg-red-500/15 text-red-400' : 'bg-muted/30 text-muted-foreground'}`}>
+                {n.direction === 'POZITIV' ? '▲ POZITIV' : n.direction === 'NEGATIV' ? '▼ NEGATIV' : '● NEUTRAL'}
+              </span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${n.futureWeight === 'LART' ? 'bg-violet-500/15 text-violet-400' : n.futureWeight === 'MESËM' ? 'bg-amber-500/10 text-amber-400' : 'bg-muted/20 text-muted-foreground'}`}>
+                {n.futureWeight === 'LART' ? 'PESHA E LARTË' : n.futureWeight === 'MESËM' ? 'PESHË MESËM' : 'PESHË E ULËT'}
+              </span>
+              {n.status === 'NE_NEGOCIATE' && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-1">
+                  <Clock className="w-2.5 h-2.5" /> NË NEGOCIATË / PRITË
+                </span>
+              )}
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-border/30 text-muted-foreground">{n.categoryLabel}</span>
+              <span className="ml-auto text-[10px] text-muted-foreground flex-shrink-0">{newsTimeAgo(n.daysAgo)}</span>
+            </div>
+            <a href={n.url} target="_blank" rel="noopener noreferrer" className="block text-[12px] font-medium text-foreground hover:text-blue-400 leading-snug">
+              {n.headline}
+              <ExternalLink className="w-2.5 h-2.5 inline ml-1 opacity-40" />
+            </a>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">{n.impactNote}</p>
+            <p className="text-[10px] text-muted-foreground/60">Burimi: {n.source}</p>
+          </div>
+        ))}
+      </div>
+
+      {data.items.length > 3 && (
+        <button onClick={() => setExpanded(!expanded)} className="mt-2 text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+          {expanded ? 'Shfaq më pak' : `Shiko të gjitha lajmet (${data.items.length})`}
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </button>
+      )}
+
+      <p className="mt-2 text-[10px] text-muted-foreground/60 border-t border-border/20 pt-1.5">
+        {data.note || 'Analizë automatike e titujve — verifiko gjithmonë në burim.'}
+      </p>
+    </div>
+  );
+}
+
 // ── Karta CAMS ──
 
 function CamsCard({ stock }: { stock: CamsStock }) {
@@ -520,6 +665,9 @@ function CamsCard({ stock }: { stock: CamsStock }) {
             </ul>
           </div>
         )}
+
+        {/* Lajme & Negociata — Task 20: çfarë po negociohet, lajme me peshë, impakti pozitiv/negativ */}
+        <NewsIntelSection symbol={stock.symbol} />
 
         {/* Paralajmërimet */}
         {stock.warnings.length > 0 && (

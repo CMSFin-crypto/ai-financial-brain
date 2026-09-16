@@ -263,11 +263,6 @@ interface FunnelStock {
   sectorBreadthPct?: number;          // % e sektorit mbi SMA50
   targetRRecommended?: number | null; // 1 | 1.5 | 2 | null (DEAD = pa target)
   scaleOutRule?: string;              // rregulli i daljes graduale (WEAK)
-  // Momentum raw (Task 19: për zbërthimin konkret të score-it)
-  mom5: number;
-  mom10: number;
-  mom22: number;
-  higherHighs20: boolean;
   // Setup detail
   setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE';
   horizon: string;
@@ -632,7 +627,6 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       trendScore: 0, rsScore: 0, momentumScore: 0, volConfScore: 0, setupScore: 0,
       riskScore: 0, totalScore: 0,
       setup: 'NONE', horizon: '',
-      mom5: 0, mom10: 0, mom22: 0, higherHighs20: false,
       rsi: 0, atr: 0, atrPct: 0, adx: Math.round(adx * 10) / 10,
       volRatio: 0, volDeclining: false, lastDaySpike: false,
       pullbackDays: 0, pullbackPct: 0, distFromEMA10: 0, distFromEMA20: 0,
@@ -717,7 +711,6 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const h20b = Math.max(...highs.slice(-20));
     if (h20b > h20a) tScore += 15;
     if (stock.adx > 25) tScore += 15;
-    stock.higherHighs20 = h20b > h20a; // Task 19: për popup-in konkret të Trend score
     stock.trendScore = Math.min(100, tScore);
 
     // ── B) Relative Strength (0-100) — 20% weight ──
@@ -771,9 +764,6 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const distFrom52wHighPct = high52w > 0 ? ((high52w - price) / high52w) * 100 : 100;
     const near52wHigh = distFrom52wHighPct <= 15;
     if (near52wHigh) mScore += 10; // momentum edge: stocks near 52w high outperform
-    stock.mom5 = Math.round(mom5 * 100) / 100;
-    stock.mom10 = Math.round(mom10 * 100) / 100;
-    stock.mom22 = Math.round(mom22 * 100) / 100;
     stock.high52w = Math.round(high52w * 100) / 100;
     stock.distFrom52wHighPct = Math.round(distFrom52wHighPct * 100) / 100;
     stock.near52wHigh = near52wHigh;
