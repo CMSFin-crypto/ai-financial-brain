@@ -352,3 +352,27 @@ Stage Summary:
 - Push 3139819 solli në prod Task 18 (CAMS) + Task 19 (popup + ditar) + Task 20 njëkohësisht — ishin 2 kommite të pa-push-uar
 - Pas deploy-it: duhet thirrur /api/db-setup në prod (kolona context + WeeklyReviewNote) dhe një skanim CAMS fillestar
 - ALPHA_VANTAGE_API_KEY vazhdon të mungojë në Vercel (enrichment EPS i fikur) — useri duhet ta shtojë
+
+---
+Task ID: 21
+Agent: Super Z (main)
+Task: Verifikimi i plotë i strategjisë CAMS në prod pas shtimit të ALPHA_VANTAGE_API_KEY në Vercel (kërkesa e userit: "shiko a është në rregull CAMS dhe a është API ok")
+
+Work Log:
+- Sinkronizimi: lokali ishte 5 komitime pas (Task 17-20) + 21 diff-e mode-only të vjetra → core.fileMode false + checkout + pull
+- Verifikimi /api/cams-scan (08:07 UTC): HTTP 200, 19.6s, funnel 400→375 me të dhëna→299 likuide→30 me katalizator→Top 10; regime JO OK (SPY/QQQ nën SMA50, mbi SMA200) → të gjitha NO_TRADE — sjellje e saktë (jo inflacion artifical)
+- ALPHA_VANTAGE: "alphaVantage": true — key-i i userit në Vercel u mor me sukses; enrichment real punoi (SNAP epsSurprisePct -25% → catalystScore ra 39→14 sa ishte me të dhëna reale)
+- /api/db-setup thirrur në prod: ok=true, executed 5 (kolona context + tabela WeeklyReviewNote) — ishte parakusht i pat kryer për Ditarin
+- Bug i gjetur te paneli Lajme & Negociata (Task 20): "Salesforce Outage Hits Customers Worldwide, CRM Stock Falls" klasifikohej NEUTRAL/LART/Kontratë — tri shkaqe: (1) 'outage' etj. mungonin në NEGATIVE_KEYWORDS, (2) 'customer' në CATEGORY_KEYWORDS kontratës matchonte "Customers", (3) mungonin format e kohës së shkuar (fell/rose/plunged) dhe lëvizjet %
+- Fix news-intel.ts: +12 fjalë incidenti (outage 3, data breach 4, cyberattack 4, ransomware 4...), +8 kohë e shkuar (fell, plunged, sank, rose, surged, gained...), PCT_UP_RE/PCT_DOWN_RE (±2 me kufij fjalësh: "fell 5%", "up 12%"), INCIDENT_KEYWORDS → mbivendos kategorinë me etiketë "Incident operativ / Siguri" + shënim impakti, NOISE_PATTERNS (options chain, quotes & news — faqe citimesh jo-lajm), OPINION_PATTERNS +justify/analyst says/here's why, MAGNITUDE +widespread/worldwide, 'expected to rise' (+2)
+- Fix stock-news-fetcher.ts: 'customer' → 'customer win'/'new customer' (outage s'është kontratë) — skedar i përbashkët me 5-Pillars, jo me IBKR
+- Test lokal (bun): Outage→NEGATIV/LART/Incident operativ ✅, Mizuho "Expected to Rise"→POZITIV ✅, "fell 5%"→NEGATIV ✅, options chain→filtruar ✅
+- Verifikim prod pas deploy (0d4b579): CRM summary 5 lajme: 1 pozitiv, 2 negative, 2 neutral · prirje NEGATIV — realiste për javën e CRM-it (outage + rënie)
+- Diagnostikë e re (abfaaca): journal (saved/updated/error) në response-in e cams-scan → zbuloi journal: {saved:0, updated:10} — Ditari po shkruhej që nga skanimi i parë; leximi im fillestar kishte fushën e gabuar (stocks jo entries)
+- Verifikimi final i Ditarit Javor: java 2026-09-14 me Top 10 reale (ANET 67, CRM 69, PLTR 65, QCOM, U 63, UMC, IQV, MSFT, SNAP, TMO), verdict PENDING (saktë — duhen ditë tregtimi), mësimet automatike pret 10 ditë siç duhet; PUT i shënimeve round-trip OK
+- IBKR: git diff 1addae3 HEAD për ibkr-strategy.tsx + ibkr-scan + ibkr-analyze = BOSH — i paprekur; komimet e mia prekën vetëm cams/news-fetcher
+
+Stage Summary:
+- CAMS funksional në prod: scan + API key OK + Ditari Javor u mbush + Lajmet & Negociatat tani klasifikojnë saktë (outage=NEGATIV incident, jo "kontratë neutrale")
+- ALPHA_VANTAGE free tier = 25 kërkesa/ditë; çdo skanim ha deri 12 (top 12 enrichment) → ~2 skanime me EPS të plotë në ditë; nesër reset. Opsioni i propozuar: cache i earnings-ave në DB (të dhëna tremujore — 1 kërkesë/simbol/quarter në vend të çdo skanim)
+- NO_TRADE për të gjithë sot është i saktë (regjimi JO OK); kur SPY/QQQ kthehen mbi SMA50 priten 70-90+
