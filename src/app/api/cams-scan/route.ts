@@ -416,6 +416,8 @@ export async function GET() {
     }
 
     // ── Task 19: Ditari Javor — ruaj Top 10 në journal (non-blocking) ──
+    // Rezultati kthehet edhe në response për diagnostikë (journal.saved / journal.error)
+    let journalDiag: { saved: number; updated: number; error?: string } = { saved: 0, updated: 0 };
     try {
       const { ingestCamsJournal } = await import('@/lib/cams-journal');
       const res = await ingestCamsJournal(
@@ -459,8 +461,10 @@ export async function GET() {
       );
       if (res.error) console.error('[CAMS] Journal ingest error:', res.error);
       else console.log(`[CAMS] Journal: ${res.saved} re + ${res.updated} rifreskuar`);
+      journalDiag = { saved: res.saved, updated: res.updated, ...(res.error ? { error: res.error } : {}) };
     } catch (e: any) {
       console.error('[CAMS] Journal ingest failed (non-blocking):', e?.message || e);
+      journalDiag = { saved: 0, updated: 0, error: e?.message || String(e) };
     }
 
     // ── Response ──
@@ -528,6 +532,7 @@ export async function GET() {
           ? `EPS real + revisionsh për ${enrichedCount}/12 top kandidatë`
           : 'Pa EPS real — katalizatori bazohet në reagimin e tregut (gap+volum) dhe 8-K',
       },
+      journal: journalDiag,
       results,
     });
   } catch (err: any) {
