@@ -156,7 +156,7 @@ function decodeEntities(str: string): string {
 const CATEGORY_KEYWORDS: Record<CatalystCategory, string[]> = {
   earnings: ['earnings', 'revenue', 'profit', 'loss', 'eps', 'quarterly', 'q1 ', 'q2 ', 'q3 ', 'q4 ', 'fiscal', 'beat estimates', 'missed', 'topped', 'guided', 'outlook', 'guidance'],
   fda: ['fda', 'clinical', 'trial', 'phase ', 'drug', 'approval', 'treatment', 'therapy', 'biotech', 'pipeline', 'ndc', 'blades', 'cder'],
-  contract: ['contract', 'deal', 'partnership', 'agreement', 'collaboration', 'joint venture', 'signed', 'awarded', 'win ', 'supply', 'customer'],
+  contract: ['contract', 'deal', 'partnership', 'agreement', 'collaboration', 'joint venture', 'signed', 'awarded', 'win ', 'supply', 'customer win', 'new customer'],
   regulatory: ['sec ', 'regulation', 'regulatory', 'compliance', 'approved', 'clearance', 'certification', 'permit', 'license', 'sanction'],
   merger: ['merger', 'acquisition', 'buyout', 'takeover', 'buy ', 'acquires', 'acquired', 'combines', 'spinoff', 'ipo', 'spac'],
   product: ['launch', 'product', 'release', 'unveiled', 'introduces', 'new version', 'update', 'upgrade', 'feature', 'innovation'],

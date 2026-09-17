@@ -87,8 +87,10 @@ const POSITIVE_KEYWORDS: Array<[string, number]> = [
   // Qëndrimet e analistëve
   ['upgrade', 2], ['upgrades', 2], ['raises price target', 2], ['raises target', 2], ['outperform', 2],
   ['initiates buy', 2], ['bullish', 1],
-  // Reagimi i çmimit (konfirmim, jo shkak)
+  // Reagimi i çmimit (konfirmim, jo shkak) — koha e tashme dhe e shkuar
   ['surges', 1], ['soars', 1], ['jumps', 1], ['rallies', 1], ['climbs', 1], ['rises', 1], ['hits high', 1], ['all-time high', 2],
+  ['surged', 1], ['soared', 1], ['jumped', 1], ['rallied', 1], ['climbed', 1], ['rose', 1], ['gained', 1], ['gains', 1],
+  ['edges up', 1], ['expected to rise', 2],
 ];
 
 const NEGATIVE_KEYWORDS: Array<[string, number]> = [
@@ -112,8 +114,12 @@ const NEGATIVE_KEYWORDS: Array<[string, number]> = [
   // Analistë
   ['downgrade', 2], ['downgrades', 2], ['cuts price target', 2], ['cuts target', 2], ['underperform', 2],
   ['bearish', 1],
-  // Reagimi i çmimit
+  // Incidente operative / siguria (outage, hacker-a, prishje shërbimi)
+  ['outage', 3], ['service disruption', 3], ['disruption', 2], ['downtime', 2], ['system failure', 3],
+  ['data breach', 4], ['breach', 2], ['cyberattack', 4], ['cyber attack', 4], ['ransomware', 4], ['hacked', 3], ['glitch', 2],
+  // Reagimi i çmimit (konfirmim, jo shkak) — koha e tashme dhe e shkuar
   ['plunges', 2], ['sinks', 2], ['tumbles', 2], ['slides', 1], ['drops', 1], ['falls', 1], ['slumps', 2],
+  ['plunged', 2], ['sank', 2], ['tumbled', 2], ['slumped', 2], ['dropped', 1], ['fell', 1], ['slid', 1], ['lost', 1],
 ];
 
 // ── 2) STATUSI: negociatë / pritje — çfarë NUK ka mbaruar ende ──
@@ -138,6 +144,7 @@ const CONFIRMED_KEYWORDS = [
 const MAGNITUDE_KEYWORDS = [
   'billion', 'multi-year', 'multi-billion', 'record', 'largest', 'biggest', 'major', 'massive',
   'landmark', 'historic', 'significant', 'transformative', 'unprecedented', 'huge',
+  'widespread', 'worldwide',
 ];
 
 // Copra opinioni/analize (jo ngjarje) — NUK janë katalizatorë: pesha ulet në MESËM/ULËT.
@@ -145,12 +152,28 @@ const MAGNITUDE_KEYWORDS = [
 const OPINION_PATTERNS = [
   'stock a buy', 'is it too late', 'should you buy', 'worth buying', 'a buy now',
   'best stocks', 'stock analysis', 'what to know', 'how to trade', 'is trending',
-  "here's what", "here's our", 'here\u2019s what', 'here\u2019s our', 'wall street sees',
-  'predict', 'forecast', 'analysts say', 'investors should',
+  "here's what", "here's our", "here's why", 'here\u2019s what', 'here\u2019s our', 'here\u2019s why', 'wall street sees',
+  'predict', 'forecast', 'analysts say', 'analyst says', 'investors should', 'justify',
 ];
 
 // Lajme institucionale të dobëta (13F / zënie pozicioni) — informative, mesatare jo të larta
 const INSTITUTIONAL_WEAK = ['position increased', 'position decreased', '13f', 'stake in', 'form 4'];
+
+// Incidente operative — kategoria mbivendoset (outage s'është "kontratë" as "earnings")
+const INCIDENT_KEYWORDS = [
+  'outage', 'disruption', 'downtime', 'system failure', 'data breach', 'cyberattack',
+  'cyber attack', 'ransomware', 'hacked', 'glitch',
+];
+
+// Zhurmë jo-lajm (faqe citimesh / zinxhirë opcioni) — filtrohen plotësisht
+const NOISE_PATTERNS = [
+  'options chain', 'options alert', 'quotes & news', 'stock quotes',
+  'interactive chart', 'trending tickers',
+];
+
+// Lëvizje % e shprehur në titull ("fell 5%", "up 12%") — konfirmim i drejtimit me kufij fjalësh
+const PCT_UP_RE = /\b(rose|risen|rises|jumped|jumps|surged|surges|climbed|climbs|rallied|rallies|gained|gains|soared|soars|advanced|advances|up)\s+\d+(\.\d+)?\s*%/;
+const PCT_DOWN_RE = /\b(fell|fallen|falls|dropped|drops|plunged|plunges|sank|sinks|slid|slides|tumbled|tumbles|slumped|slumps|lost|down)\s+\d+(\.\d+)?\s*%/;
 
 // Peshëza bazë sipas kategorisë (0-100)
 const CATEGORY_BASE_WEIGHT: Record<CatalystCategory, number> = {
@@ -164,6 +187,8 @@ function scoreDirection(headlineLower: string): number {
   let score = 0;
   for (const [kw, w] of POSITIVE_KEYWORDS) if (headlineLower.includes(kw)) score += w;
   for (const [kw, w] of NEGATIVE_KEYWORDS) if (headlineLower.includes(kw)) score -= w;
+  if (PCT_UP_RE.test(headlineLower)) score += 2;    // "rose 5%" — lëvizje e konfirmuar
+  if (PCT_DOWN_RE.test(headlineLower)) score -= 2;  // "fell 5%" — lëvizje e konfirmuar
   return score;
 }
 
@@ -186,7 +211,7 @@ function computeWeight(category: CatalystCategory, headlineLower: string, status
 
 // ── Shpjegimi në shqip: çfarë do të thotë + impakti i ardhshëm ──
 
-function buildImpactNote(category: CatalystCategory, direction: NewsDirection, status: NewsStatus, weight: NewsWeight): string {
+function buildImpactNote(category: CatalystCategory, direction: NewsDirection, status: NewsStatus, weight: NewsWeight, isIncident = false): string {
   const parts: string[] = [];
 
   // Çfarë është
@@ -205,7 +230,9 @@ function buildImpactNote(category: CatalystCategory, direction: NewsDirection, s
     macro: 'faktor makroekonomik',
     other: 'lajm i kompanisë',
   };
-  parts.push(`Kjo është ${what[category]}.`);
+  parts.push(isIncident
+    ? 'Kjo është incident operativ (ndërprerje shërbisi ose problem sigurie).'
+    : `Kjo është ${what[category]}.`);
 
   // Statusi
   if (status === 'NE_NEGOCIATE') {
@@ -233,6 +260,9 @@ function buildImpactNote(category: CatalystCategory, direction: NewsDirection, s
   if (category === 'insider' && direction === 'POZITIV') {
     parts.push('Blerjet e drejtuesve janë sinjal i ngadaltë por i besueshëm — ata e njohin kompaninë më mirë se tregu.');
   }
+  if (isIncident) {
+    parts.push('Incidentet operative (outage, hacker-a, prishje shërbimi) rrezikojnë besimin e klientëve dhe të ardhurat afatshkurtër — ndiq sa zgjat ndërprerja dhe si reagon kompania.');
+  }
 
   return parts.join(' ');
 }
@@ -254,7 +284,10 @@ export function analyzeNewsIntel(items: StockNewsItem[], ticker: string): NewsIn
 
   // Rilevancë (e lehtë, përpara analizës së plotë):
   // mbaj lajmet që përmendin ticker-in OSE kanë kategori të qartë
-  const enriched = items.map(item => ({ item, h: item.headline.toLowerCase() }));
+  // + filtro zhurmën (faqe citimesh/zinxhirë opcioni — nuk janë lajme)
+  const enriched = items
+    .map(item => ({ item, h: item.headline.toLowerCase() }))
+    .filter(({ h }) => !NOISE_PATTERNS.some(p => h.includes(p)));
   const relevant = enriched.filter(({ item, h }) =>
     h.includes(tick) || (item.category && item.category !== 'other' && item.category !== 'macro')
   );
@@ -269,12 +302,14 @@ export function analyzeNewsIntel(items: StockNewsItem[], ticker: string): NewsIn
       const direction: NewsDirection = dirScore >= 2 ? 'POZITIV' : dirScore <= -2 ? 'NEGATIV' : 'NEUTRAL';
       const status = detectStatus(h, direction !== 'NEUTRAL');
       const daysAgo = parseDaysAgo(item.publishedAt);
-      let weightScore = computeWeight(item.category || 'other', h, status, daysAgo, dirScore);
+      // Incidenti operativ mbivendos kategorinë (outage s'është "kontratë" as "earnings")
+      const isIncident = INCIDENT_KEYWORDS.some(kw => h.includes(kw));
+      const category: CatalystCategory = isIncident ? 'product' : (item.category || 'other');
+      let weightScore = computeWeight(category, h, status, daysAgo, dirScore);
       // Kapja e rreme "M&A" nga fjala "buy" në artikuj opinioni ("Is X a Buy?")
       if (INSTITUTIONAL_WEAK.some(p => h.includes(p))) weightScore = Math.min(weightScore, 55);
       if (OPINION_PATTERNS.some(p => h.includes(p))) weightScore = Math.min(weightScore, 45);
       const futureWeight: NewsWeight = weightScore >= 65 ? 'LART' : weightScore >= 40 ? 'MESËM' : 'ULËT';
-      const category = item.category || 'other';
 
       const out: NewsIntelItem = {
         headline: item.headline,
@@ -282,12 +317,12 @@ export function analyzeNewsIntel(items: StockNewsItem[], ticker: string): NewsIn
         publishedAt: item.publishedAt,
         url: item.url,
         category,
-        categoryLabel: CATEGORY_LABELS[category],
+        categoryLabel: isIncident ? 'Incident operativ / Siguri' : CATEGORY_LABELS[category],
         direction,
         futureWeight,
         weightScore,
         status,
-        impactNote: buildImpactNote(category, direction, status, futureWeight),
+        impactNote: buildImpactNote(category, direction, status, futureWeight, isIncident),
         daysAgo,
       };
       return out;
