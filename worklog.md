@@ -376,3 +376,25 @@ Stage Summary:
 - CAMS funksional në prod: scan + API key OK + Ditari Javor u mbush + Lajmet & Negociatat tani klasifikojnë saktë (outage=NEGATIV incident, jo "kontratë neutrale")
 - ALPHA_VANTAGE free tier = 25 kërkesa/ditë; çdo skanim ha deri 12 (top 12 enrichment) → ~2 skanime me EPS të plotë në ditë; nesër reset. Opsioni i propozuar: cache i earnings-ave në DB (të dhëna tremujore — 1 kërkesë/simbol/quarter në vend të çdo skanim)
 - NO_TRADE për të gjithë sot është i saktë (regjimi JO OK); kur SPY/QQQ kthehen mbi SMA50 priten 70-90+
+
+---
+Task ID: 22
+Agent: Super Z (main)
+Task: EarningsCache në DB (miratuar nga useri: "ok beje pra ashtu shtoje") — kursimi i kuotës ditore Alpha Vantage për enrichment-in CAMS
+
+Work Log:
+- Model i re Prisma EarningsCache (symbol unique, reports Json deri 8 tremujorë, fetchedAt, index në fetchedAt) + DDL idempotent në db-setup-sql.ts (CREATE TABLE IF NOT EXISTS + 2 indekse)
+- src/lib/cams/earnings-cache.ts (i re): fetchEarningsCached — provo DB → nëse miss/i vjetër → fetchEarnings (AV, cache 4h në memorie) → upsert në DB vetëm për rezultate jo-bosh (zbrazëtirat s'fshihen: mund të jenë rate-limit, skanimi tjetër provon përsëri)
+- Logjika e freskisë (testuar 6 raste, të gjitha ✅): e marrë <7 ditë → freskët; raportimi i fundit <55 ditë → freskët (tremujori i ri s'pritet); përndryshe refetch → efektivisht ~1 kërkesë/simbol deri sa të dalë tremujori i ri
+- cams-scan route: enrichWithEarnings kthen tani { data, cached, fresh } + response enrichment më cached/fresh dhe note me detaje
+- UI cams-strategy.tsx: vetëm tipi (cached?/fresh? opcionalë)
+- prisma generate + tsc: 144 = bazësja (0 të reja)
+- Push 8c50ce3 → deploy → /api/db-setup në prod: ok, executed 8 (+3 të rejat)
+- Verifikim live me 2 skanime: #1 fresh:1 (TEVA u ruajt në DB) → #2 cached:1 + fresh:1 (TEVA identik 1180%/90 — round-trip JSON i saktë; IQV nga cache në memorie e instancës së ngrohtë dhe u ruajt në DB për herë të ardhshme)
+- Konteksti kuotës: skanimet e sotme (4×12 kërkesa përpara cache-it) e kishin harxhuar kuotën 25/ditë → prandaj vetëm 1-2 simbole kishin EPS sot; nesër quota reset-ohet dhe cache-i mbushet gradualisht — pas ngrohjes, skanimet e përsëritura konsumojnë ~0 kuotë
+- IBKR + pead-engine: git diff 1addae3 = BOSH — të paprekura (fetchEarnings i thirrur brenda wrapper-it të ri, jo modifikuar)
+
+Stage Summary:
+- Cache i earnings-ave në DB funksional në prod: skanimi i dytë shërbeu TEVA nga Postgres me vlera identike dhe 0 kërkesa AV
+- Pas nesërmit (reset i kuotës) Top 12 mbushet në 1-2 skanime dhe pastaj qëndron javët me radhë — useri mund të skanojë pa limit pa u ndalur nga AV
+- Verifikimi: enrichment.cached/fresh i dukshëm në response dhe në note-in e UI-së
