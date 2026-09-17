@@ -121,12 +121,20 @@ function detectPullback(data: HistoricalDataPoint[]): number {
 }
 
 // ── Alpha Vantage enrichment (EPS surprise + revisions — vetëm top 12) ──
+// Task 22: me cache në DB (EarningsCache) — ~1 kërkesë/simbol deri sa tremujori
+// i ri të dalë, në vend të 12 kërkesave për çdo skanim (kuota 25/ditë).
 
-async function enrichWithEarnings(symbols: string[]): Promise<Map<string, { epsSurprisePct: number | null; revisionScore: number | null; daysSince: number | null }>> {
-  const out = new Map<string, { epsSurprisePct: number | null; revisionScore: number | null; daysSince: number | null }>();
+interface EnrichResult {
+  data: Map<string, { epsSurprisePct: number | null; revisionScore: number | null; daysSince: number | null }>;
+  cached: number; // të shërbyera nga DB (0 kuotë)
+  fresh: number;   // të marra tani nga Alpha Vantage
+}
+
+async function enrichWithEarnings(symbols: string[]): Promise<EnrichResult> {
+  const out: EnrichResult = { data: new Map(), cached: 0, fresh: 0 };
   if (!process.env.ALPHA_VANTAGE_API_KEY) return out;
 
-  const { fetchEarnings } = await import('@/lib/pead-engine');
+  const { fetchEarningsCached } = await import('@/lib/cams/earnings-cache');
   const { computeAnalystRevisionScore } = await import('@/lib/analyst-revision-engine');
 
   // Në grupe të vogla — AV ka limit ~25 kërkesa/ditë (cache 4h brenda instancës)
@@ -134,8 +142,9 @@ async function enrichWithEarnings(symbols: string[]): Promise<Map<string, { epsS
     const batch = symbols.slice(i, i + 6);
     await Promise.allSettled(batch.map(async (sym) => {
       try {
-        const reports = await fetchEarnings(sym);
+        const { reports, fromCache } = await fetchEarningsCached(sym);
         if (!reports || reports.length === 0) return;
+        if (fromCache) out.cached++; else out.fresh++;
         const latest = reports[0];
         const rev = computeAnalystRevisionScore({ symbol: sym, earningsReports: reports });
 
@@ -144,7 +153,7 @@ async function enrichWithEarnings(symbols: string[]): Promise<Map<string, { epsS
           const d = new Date(latest.reportedDate);
           daysSince = Math.floor((Date.now() - d.getTime()) / 86_400_000);
         }
-        out.set(sym, {
+        out.data.set(sym, {
           epsSurprisePct: latest.surprisePct,
           revisionScore: rev.revisionScore,
           daysSince,
@@ -339,9 +348,10 @@ export async function GET() {
     }));
     prelim.sort((a, b) => b.result.camsScore - a.result.camsScore);
 
-    // ── Faza 3: enrichment me EPS real për top 12 (kufiri AV ~25/ditë) ──
+    // ── Faza 3: enrichment me EPS real për top 12 (kufiri AV ~25/ditë, cache në DB) ──
     const topForEnrich = prelim.slice(0, 12).map(s => s.symbol);
-    const earningsData = await enrichWithEarnings(topForEnrich);
+    const earningsRes = await enrichWithEarnings(topForEnrich);
+    const earningsData = earningsRes.data;
     let enrichedCount = 0;
     for (const row of prelim.slice(0, 12)) {
       const e = earningsData.get(row.symbol);
@@ -528,8 +538,10 @@ export async function GET() {
       enrichment: {
         alphaVantage: !!process.env.ALPHA_VANTAGE_API_KEY,
         enriched: enrichedCount,
+        cached: earningsRes.cached,
+        fresh: earningsRes.fresh,
         note: enrichedCount > 0
-          ? `EPS real + revisionsh për ${enrichedCount}/12 top kandidatë`
+          ? `EPS real + revisionsh për ${enrichedCount}/12 top kandidatë (${earningsRes.cached} nga cache, ${earningsRes.fresh} nga API)`
           : 'Pa EPS real — katalizatori bazohet në reagimin e tregut (gap+volum) dhe 8-K',
       },
       journal: journalDiag,

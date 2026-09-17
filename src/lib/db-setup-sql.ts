@@ -1175,4 +1175,19 @@ CREATE TABLE IF NOT EXISTS "WeeklyReviewNote" (
 CREATE UNIQUE INDEX IF NOT EXISTS "WeeklyReviewNote_weekStart_strategy_ticker_key" ON "WeeklyReviewNote"("weekStart", "strategy", "ticker");
 CREATE INDEX IF NOT EXISTS "WeeklyReviewNote_strategy_weekStart_idx" ON "WeeklyReviewNote"("strategy", "weekStart");
 
+-- ═══ Task 22: Cache e earnings-ave (CAMS) — kursen kuotën ditore Alpha Vantage ═══
+CREATE TABLE IF NOT EXISTS "EarningsCache" (
+    "id" TEXT NOT NULL,
+    "symbol" TEXT NOT NULL,
+    "reports" JSONB NOT NULL,
+    "source" TEXT NOT NULL DEFAULT 'alpha_vantage',
+    "fetchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "EarningsCache_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "EarningsCache_symbol_key" ON "EarningsCache"("symbol");
+CREATE INDEX IF NOT EXISTS "EarningsCache_fetchedAt_idx" ON "EarningsCache"("fetchedAt");
+
 `;

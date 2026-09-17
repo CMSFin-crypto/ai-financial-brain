@@ -1066,3 +1066,21 @@ model WeeklyReviewNote {
   @@unique([weekStart, strategy, ticker])
   @@index([strategy, weekStart])
 }
+
+// ═══════════════════════════════════════════════════════════════
+// EARNINGS CACHE (Task 22) — raportet tremujore EPS nga Alpha Vantage
+// ruhen në DB që skanimet e përsëritura CAMS të mos harxhojnë kuotën
+// ditore (free tier 25/ditë). Të dhënat janë tremujore → 1 kërkesë për
+// simbol deri sa tremujori i ri të bëhet i pritshëm (~55 ditë pas
+// raportimit të fundit). Përdoret vetëm nga enrichment-i CAMS.
+// ═══════════════════════════════════════════════════════════════
+model EarningsCache {
+  id        String   @id @default(cuid())
+  symbol    String   @unique
+  reports   Json // EarningsReport[] (deri 8 tremujorë, më i riu i pari)
+  source    String   @default("alpha_vantage")
+  fetchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fetchedAt])
+}

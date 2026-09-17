@@ -74,7 +74,7 @@ interface CamsResponse {
   durationSec: number;
   regime: { ok: boolean; spy: { above50: boolean; above200: boolean }; qqq: { above50: boolean; above200: boolean } };
   funnel: { universe: number; withData: number; passedLiquidity: number; withCatalyst: number; scored60plus: number; displayed: number };
-  enrichment: { alphaVantage: boolean; enriched: number; note: string };
+  enrichment: { alphaVantage: boolean; enriched: number; cached?: number; fresh?: number; note: string };
   results: CamsStock[];
   error?: string;
 }
