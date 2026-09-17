@@ -398,3 +398,26 @@ Stage Summary:
 - Cache i earnings-ave në DB funksional në prod: skanimi i dytë shërbeu TEVA nga Postgres me vlera identike dhe 0 kërkesa AV
 - Pas nesërmit (reset i kuotës) Top 12 mbushet në 1-2 skanime dhe pastaj qëndron javët me radhë — useri mund të skanojë pa limit pa u ndalur nga AV
 - Verifikimi: enrichment.cached/fresh i dukshëm në response dhe në note-in e UI-së
+
+---
+Task ID: 23
+Agent: Super Z (main)
+Task: Fix IBKR — përditësimi i kontradiktës së userit: te analiza e BIO Healthcare dilte WEAK (33.3%), ndërsa te Top 10 IQV dilte STRONG (64.3%) — e njëjta strategji, e njëjta ditë (vetëm IBKR, CAMS s'u prek)
+
+Work Log:
+- Diagnoza: dy code-paths të ndryshme për breadth-in e sektorit brenda IBKR:
+  * ibkr-scan (Top 10): mostër e plotë — universi i skanuar + plotësimi Task 16b (Healthcare 36/56 = 64.3% STRONG)
+  * ibkr-analyze/[symbol]: rrjeta 'çdo i 8-ti i universit' (~50 emra për 11 sektorë) → Healthcare rastësisht 6 anëtarë (2/6 = 33.3% WEAK) — 1 aksion = ±17pp në etiketë
+- Impakt real: Sector Breadth Gate (target 1R/2R, size 50%, READY vetëm score≥80) vendosej nga mostra 6-anëtare te analiza → BIO merrte target 1R + size 50% kur realisht sektori ishte STRONG (2R)
+- Fix ibkr-analyze/[symbol]/route.ts: sektori i VETË aksionit merr të gjithë anëtarët e universit të atij sektori (jo më rrjeta 1/8) + plotësim deri 18 anëtarë nga SECTOR_MAP për sektorët e hollë (Materials/Energy — logjika e Task 16b); anëtarët plotësues NUK hyjnë në market breadth (rrjeta 1/8 mbetet burimi i vetëm — pa shtrembërim nga over-reprezantimi i sektorit të aksionit të analizuar); kufizimi i popup-it 20-mbi + 10-nën si te skanimi
+- tsc: 144 = bazësja (0 të reja)
+- Push 354ac56 → verifikim live:
+  * BIO: 35/55 = 63.6% STRONG → target 2R (para: 2/6 = 33.3% WEAK → 1R + size 50%); market breadth nënçmuar prej rrjetës 36.2% WEAK — i pandryshuar, saktë
+  * NEM (Materials, rruga e sektorit të hollë): 10/15 = 66.7% STRONG, në linjë me skanimin 11/16 = 68.8% (NEM përjashtohet nga mostra e vetes)
+  * Kohët e përgjigjes: 1.3-1.5s (cache i Yahoo i ngrohtë)
+- CAMS + pjesa tjetër e IBKR (ibkr-scan, ibkr-strategy.tsx): të paprekura — vetëm ibkr-analyze/[symbol]/route.ts u ndryshua
+
+Stage Summary:
+- Etiketat e sektorit tani janë KONSISTENTE midis Top 10 (scan) dhe analizës së stokut të vetëm (analyze) — i njëjti sektor, e njëjta ditë, e njëjta përfundim
+- Porta e sektorit (1R/2R/size) tani vendoset nga mostër ~50+ anëtarësh, jo 3-8 të rastit
+- Useri kishte të drejtë — ishte bug real me impakt në tregti, tani i rregulluar dhe verifikuar live
