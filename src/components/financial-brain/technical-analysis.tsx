@@ -1655,7 +1655,7 @@ function buildChart(
               let stroke = 'rgba(41, 98, 255, 0.55)';
               if (bin.isPOC) { fill = 'rgba(240, 179, 35, 0.85)'; stroke = '#f0b323'; }
               else if (bin.isHVN) { fill = 'rgba(38, 166, 154, 0.5)'; stroke = 'rgba(38, 166, 154, 0.7)'; }
-              else if (bin.isLVN) { fill = 'rgba(120, 123, 134, 0.2)'; stroke = 'rgba(120, 123, 134, 0.35)'; }
+              else if (bin.isLVN) { fill = 'rgba(236, 72, 153, 0.28)'; stroke = 'rgba(236, 72, 153, 0.55)'; }
               return (
                 <rect
                   key={"vp" + i}
@@ -2229,7 +2229,7 @@ export function TechnicalAnalysis() {
                   <span>VAH/VAL (Value Area)</span>
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#787b86' }}></span>
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#ec4899' }}></span>
                   <span>LVN (Low Volume Node)</span>
                 </span>
                 <span className="flex items-center gap-1.5 ml-auto">
@@ -2513,7 +2513,7 @@ export function TechnicalAnalysis() {
                       {/* LVN count */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
-                          <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#787b86' }}></span>
+                          <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#ec4899' }}></span>
                           <span className="text-xs">LVN (Low Volume Nodes)</span>
                         </div>
                         <span className="text-xs font-mono">{vp.lvn.length} nivele</span>
