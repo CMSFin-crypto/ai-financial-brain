@@ -123,12 +123,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // ── NEW: Market Breadth estimate — sample of universe (every 8th ticker ≈ 50 names) ──
     // Full-universe breadth is computed by /api/ibkr-scan; here we use a cross-sector
     // sample to keep the single-stock analysis fast. Null if too few respond.
+    //
+    // Task 23 FIX: sektori i VETË aksionit merr mostër të plotë (të gjithë anëtarët
+    // e universit të atij sektori + plotësim deri 18 nga SECTOR_MAP si te skanimi),
+    // sepse Sector Breadth Gate (target 1R/2R, size 50%) vendoset nga kjo etiketë.
+    // Para fix-it secëtori i aksionit mbetej me 3-8 anëtarë të rastit nga rrjeta 1/8 —
+    // p.sh. Healthcare 2/6 = 33% WEAK te analiza, ndërsa 36/56 = 64% STRONG te skanimi.
+    // Anëtarët plotësues të sektorit të vet NUK hyjnë në market breadth (rrjeta 1/8
+    // mbetet e vetmja burim për breadth-in e tregut — pa shtrembërim nga over-reprezantimi).
     let breadthPct: number | null = null;
     let breadthStatus = 'N/A';
     let sectorBreadth: { sector: string; pct: number; status: string; label: string; above: number; total: number; adv: number; dec: number; tickers?: { t: string; n?: string; a: boolean; chg: number }[] }[] = [];
     try {
+      const stockSector = SECTOR_MAP[sym] || 'Other';
       const universe = getScanUniverse(400).filter(s => s !== sym);
-      const sample = universe.filter((_, i) => i % 8 === 0);
+      const gridSet = new Set(universe.filter((_, i) => i % 8 === 0));
+      const ownSectorAll = universe.filter(s => (SECTOR_MAP[s] || 'Other') === stockSector);
+      const ownExtraSet = new Set(ownSectorAll.filter(s => !gridSet.has(s)));
+      const sample = [...gridSet, ...ownExtraSet];
       let above50Count = 0, breadthTotal = 0;
       const sectorAgg: Record<string, { above: number; total: number; adv: number; dec: number; members: { t: string; a: boolean; chg: number }[] }> = {};
       const BATCH = 25;
@@ -141,17 +153,54 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           const c = r.value.map(x => x.close);
           const s50 = calculateSMA(c, 50);
           const li = c.length - 1;
-          breadthTotal++;
+          const isGrid = !ownExtraSet.has(batch[j]); // vetëm rrjeta numërohet në market breadth
+          if (isGrid) breadthTotal++;
           const sec = SECTOR_MAP[batch[j]] || 'Other';
           if (!sectorAgg[sec]) sectorAgg[sec] = { above: 0, total: 0, adv: 0, dec: 0, members: [] };
           sectorAgg[sec].total++;
           const isAbove = c[li] > (s50[li] || 0);
           const dayChg = li >= 1 && c[li - 1] > 0 ? ((c[li] - c[li - 1]) / c[li - 1]) * 100 : 0;
           sectorAgg[sec].members.push({ t: batch[j], a: isAbove, chg: Math.round(dayChg * 10) / 10 });
-          if (isAbove) { above50Count++; sectorAgg[sec].above++; }
+          if (isAbove) sectorAgg[sec].above++;
+          if (isGrid && isAbove) above50Count++;
           if (li >= 1) {
             if (c[li] > c[li - 1]) sectorAgg[sec].adv++;
             else if (c[li] < c[li - 1]) sectorAgg[sec].dec++;
+          }
+        }
+      }
+
+      // Task 23: sektor të hollë (Materials/Energy...) — plotëso sektorin e vet deri
+      // 18 anëtarë nga SECTOR_MAP (e njëjta logjikë si Task 16b te skanimi) që pesha e
+      // portës të mos jetë zhurmë statistikore. Vetëm për sectorAgg — jo për market breadth.
+      const OWN_SECTOR_MIN = 18;
+      const ownAgg = sectorAgg[stockSector];
+      if (ownAgg && ownAgg.total > 0 && ownAgg.total < OWN_SECTOR_MIN) {
+        const counted = new Set(sample);
+        const extras: string[] = [];
+        for (const t of Object.keys(SECTOR_MAP)) {
+          if (extras.length + ownAgg.total >= OWN_SECTOR_MIN) break;
+          if (SECTOR_MAP[t] !== stockSector || counted.has(t) || t === sym) continue;
+          extras.push(t);
+        }
+        for (let i = 0; i < extras.length; i += BATCH) {
+          const batch = extras.slice(i, i + BATCH);
+          const res = await Promise.allSettled(batch.map(s => fetchHistoricalData(s, '3mo')));
+          for (let j = 0; j < res.length; j++) {
+            const r = res[j];
+            if (r.status !== 'fulfilled' || !r.value || r.value.length < 50) continue;
+            const c = r.value.map(x => x.close);
+            const s50 = calculateSMA(c, 50);
+            const li = c.length - 1;
+            const isAbove = c[li] > (s50[li] || 0);
+            const dayChg = li >= 1 && c[li - 1] > 0 ? ((c[li] - c[li - 1]) / c[li - 1]) * 100 : 0;
+            ownAgg.total++;
+            ownAgg.members.push({ t: batch[j], a: isAbove, chg: Math.round(dayChg * 10) / 10 });
+            if (isAbove) ownAgg.above++;
+            if (li >= 1) {
+              if (c[li] > c[li - 1]) ownAgg.adv++;
+              else if (c[li] < c[li - 1]) ownAgg.dec++;
+            }
           }
         }
       }
@@ -164,8 +213,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           .map(([sector, a]) => {
             const p = a.total > 0 ? Math.round((a.above / a.total) * 1000) / 10 : 0;
             const label = p < 20 ? 'DEAD' : p < 40 ? 'WEAK' : p >= 55 ? 'STRONG' : 'OK';
-            const aboveMembers = a.members.filter(m => m.a).sort((x, y) => y.chg - x.chg);
-            const belowMembers = a.members.filter(m => !m.a).sort((x, y) => y.chg - x.chg);
+            const aboveMembers = a.members.filter(m => m.a).sort((x, y) => y.chg - x.chg).slice(0, 20);
+            const belowMembers = a.members.filter(m => !m.a).sort((x, y) => y.chg - x.chg).slice(0, 10);
             const tickers = [...aboveMembers, ...belowMembers].map(m => ({ t: m.t, n: getCompanyName(m.t), a: m.a, chg: m.chg }));
             return { sector, pct: p, status: label, label, above: a.above, total: a.total, adv: a.adv, dec: a.dec, tickers };
           })
