@@ -2461,7 +2461,9 @@ export function TechnicalAnalysis() {
 
             {/* ═══ VOLUME PROFILE STATS CARD ═══ */}
             {analysis.candlestickData && analysis.candlestickData.length > 5 && (() => {
-              const vp = computeVolumeProfile(analysis.candlestickData, 24);
+              // 28 bins — IDENTIK me grafikun (CandlestickChart, rreshti i computeVolumeProfile)
+              // që POC/VAH/VAL/HVN/LVN të përputhen saktësisht mes grafikut dhe këtij paneli.
+              const vp = computeVolumeProfile(analysis.candlestickData, 28);
               if (!vp.bins.length || vp.maxBinVol <= 0) return null;
               const price = analysis.priceAnalysis?.currentPrice;
               const priceVsPOC = price && vp.poc ? ((price - vp.poc) / vp.poc) * 100 : null;
