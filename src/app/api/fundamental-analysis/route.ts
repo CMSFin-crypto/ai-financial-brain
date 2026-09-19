@@ -150,7 +150,8 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string, liveP
     p.rating === 'HOLD' ? 50 + Math.floor(Math.random() * 12) :
     30 + Math.floor(Math.random() * 10);
 
-  const marketCap = effectivePrice * p.shares;
+  // shares është në MILIONA aksione (p.sh. AAPL 15280 = 15.28 miliardë) — prandaj × 1e6
+  const marketCap = effectivePrice * p.shares * 1e6;
   const marketCapStr = marketCap > 1e12 ? `$${(marketCap / 1e12).toFixed(1)}T` :
     marketCap > 1e9 ? `$${(marketCap / 1e9).toFixed(0)}B` : `$${(marketCap / 1e6).toFixed(0)}M`;
 
@@ -328,7 +329,8 @@ export async function POST(request: NextRequest) {
         // Recalculate market cap with real price if we have shares info
         const raw = getStock(tickerUpper);
         if (raw?.shares) {
-          const mcap = livePrice.price * raw.shares;
+          // shares është në MILIONA aksione — saktëso me × 1e6 (para: AAPL dilte $5M në vend të ~$5T)
+          const mcap = livePrice.price * raw.shares * 1e6;
           v.marketCap = mcap > 1e12
             ? `$${(mcap / 1e12).toFixed(1)}T`
             : mcap > 1e9
