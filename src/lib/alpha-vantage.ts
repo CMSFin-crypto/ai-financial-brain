@@ -427,6 +427,10 @@ export interface YahooFundamentals {
   returnOnEquity: number;
   freeCashflow: number;
   epsForward: number;
+  // Data e ardhshme e fitimeve (formati YYYY-MM-DD) — vetëm nga Yahoo earningsTrend
+  nextEarningsDate?: string;
+  // Kapitalizimi i tregut në dollarë brutë — vetëm nga baza lokale JSON ("$4.51T")
+  marketCap?: number;
   source: string;
   fetchedAt: string;
 }
@@ -469,12 +473,13 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
     const et = body.earningsTrend || {};
     const eh = body.earningsHistory || {};
 
-    // Extract earnings trend for forward EPS
+    // Extract earnings trend for forward EPS + next earnings date (period "0q" = tremujori i ardhshëm)
     const trendData = et.trend || [];
     let epsForward = extractNum(fd.forwardEps);
     if (!epsForward && trendData.length > 0) {
       epsForward = extractNum(trendData[0]?.earningsEstimate?.avgForecast);
     }
+    const nextEarningsDate = String(trendData[0]?.endDate || '').slice(0, 10);
 
     // Extract quarterly growth from earnings history
     const historyData = eh.history || [];
@@ -517,7 +522,8 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
       targetMeanPrice: targetMean,
       targetHighPrice: extractNum(fd.targetHighPrice?.raw),
       targetLowPrice: extractNum(fd.targetLowPrice?.raw),
-      recommendationKey: extractNum(fd.recommendationKey) ? String(fd.recommendationKey) : '',
+      // FIX: extractNum mbi stringun 'buy' kthente gjithmonë 0 → recommendationKey bëhej '' (kurrë e panë konsumatorët)
+      recommendationKey: String(fd.recommendationKey || ''),
       numberOfAnalystOpinions: extractNum(fd.numberOfAnalystOpinions?.raw),
       totalRevenue: extractNum(fd.totalRevenue?.raw),
       ebitda: extractNum(fd.ebitda?.raw),
@@ -527,6 +533,7 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
       returnOnEquity: extractNum(fd.returnOnEquity?.raw),
       freeCashflow: extractNum(fd.freeCashflow?.raw),
       epsForward,
+      nextEarningsDate,
       source: `yahoo_finance (${base})`,
       fetchedAt: new Date().toISOString(),
     };
@@ -565,6 +572,18 @@ export async function getRealFundamentals(ticker: string): Promise<YahooFundamen
   if (r2 && r2.currentPrice > 0) {
     fundCache.set(t, { data: r2, fetchedAt: Date.now() });
     return r2;
+  }
+
+  // FALLBACK: baza lokale JSON (njësoj si rruga batch) — Yahoo v10 shpesh kthen 401
+  const localData = loadLocalFundamentals();
+  const d = localData[t];
+  if (d) {
+    const local = localToYahooFundamentals(t, d);
+    if (local) {
+      fundCache.set(t, { data: local, fetchedAt: Date.now() });
+      console.log(`[FUND] ${t}: Yahoo v10 unavailable, using local JSON fallback`);
+      return local;
+    }
   }
 
   console.warn(`[FUND] Could not fetch fundamentals for ${ticker}`);
@@ -678,6 +697,18 @@ function loadLocalFundamentals(): Record<string, any> {
    }
 }
 
+// Helper to parse money strings like "$4.51T" / "$974B" / "$46M" to raw dollars
+function parseMoneyStr(val: unknown): number {
+  const s = String(val ?? '').trim();
+  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
+  if (isNaN(n) || n === 0) return 0;
+  if (/T/i.test(s)) return n * 1e12;
+  if (/B/i.test(s)) return n * 1e9;
+  if (/M/i.test(s)) return n * 1e6;
+  if (/K/i.test(s)) return n * 1e3;
+  return n;
+}
+
 // Convert local JSON data to YahooFundamentals interface format
 function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFundamentals | null {
   const price = typeof d.price === 'number' ? d.price : parseFloat(String(d.price));
@@ -715,6 +746,8 @@ function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFun
     returnOnEquity: parsePercent(d.roe),
     freeCashflow: 0, // not in local JSON
     epsForward: parseNum(d.fwdEps),
+    nextEarningsDate: '',
+    marketCap: parseMoneyStr(d.marketCap),
     source: 'local_json',
     fetchedAt: new Date().toISOString(),
   };

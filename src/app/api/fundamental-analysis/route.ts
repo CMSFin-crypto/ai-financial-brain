@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI, parseAIResponse, AIError } from '@/lib/ai';
 import { getStock, type StockProfile } from '@/lib/market-data';
-import { getRealPrice, injectPricesIntoPrompt } from '@/lib/alpha-vantage';
+import { getRealPrice, injectPricesIntoPrompt, getRealFundamentals, type YahooFundamentals } from '@/lib/alpha-vantage';
 
 interface FundamentalAnalysisRequest {
   ticker: string;
@@ -91,7 +91,14 @@ You MUST respond ONLY with a valid JSON object (no markdown, no code blocks):
   "summary": "2-3 sentence overall fundamental analysis summary",
   "verdict": "Is this stock fundamentally sound? What's the investment thesis?",
   "risks": ["Key risk 1", "Key risk 2", "Key risk 3"]
-}`;
+}
+
+CRITICAL DATA RULES (non-negotiable):
+1. The numeric values in the JSON example above are PLACEHOLDERS for structure only — NEVER copy them into your answer.
+2. For every metric listed in the "REAL FUNDAMENTAL DATA" section of the user message, you MUST use those EXACT numbers. Do NOT substitute your own remembered values.
+3. nextEarningsDate MUST be a FUTURE date (after today). Use the date from the real data section when provided.
+4. marketCap, peRatio, forwardPE, targetPrice and all price-derived metrics MUST be consistent with the current real price provided.
+5. Fields NOT covered by the real data section (P/S, ROA, ROI, dividend yield, 3-year averages, surprises) — estimate from your knowledge, but keep them consistent with the real data provided.`;
 
 // ═══════════════════════════════════════════
 // DEMO DATA — realistic simulation when AI is unreachable
@@ -261,6 +268,205 @@ function generateDemoFundamentalAnalysis(ticker: string, company?: string, liveP
 
 export const maxDuration = 60;
 
+// ═══════════════════════════════════════════
+// REAL DATA HELPERS — injektim në prompt + mbivendosje e përgjigjes
+// (Pa këta, AI kthen vlera nga kujtesa e vjetër e modelit: P/E të gabuar,
+//  datë fitimesh që ka kaluar, targete analistësh të vjetruara.)
+// ═══════════════════════════════════════════
+
+function formatBigMoney(n: number): string {
+  return n >= 1e12 ? `$${(n / 1e12).toFixed(1)}T` : n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${(n / 1e6).toFixed(0)}M`;
+}
+
+// Yahoo kthen D/E në përqindje (172 = 1.72); JSON-lokali e mban si raport (0.8) — normalizoje
+function deRatio(f: YahooFundamentals): number {
+  if (f.debtToEquity <= 0) return 0;
+  return f.source.startsWith('yahoo') ? f.debtToEquity / 100 : f.debtToEquity;
+}
+
+/** Shkallëzo raportet e varura nga çmimi (P/E, P/B, EV/EBITDA...) me çmimin live.
+ *  Të dhënat nga snapshot-i lokal kanë çmimin e dikurshëm — p.sh. AAPL: P/E 37.2 @ $307,
+ *  por çmimi live është $336 → P/E real i tani = 37.2 × 336/307 = 40.7.
+ *  Targetet e analistëve NUK shkallëzohen (janë mendime, jo funksione të çmimit). */
+function adjustFundamentalsToLivePrice(f: YahooFundamentals, livePrice: number | null): YahooFundamentals {
+  if (!livePrice || livePrice <= 0 || f.currentPrice <= 0) return f;
+  const scale = livePrice / f.currentPrice;
+  if (Math.abs(scale - 1) < 0.01) return f; // brenda 1% — s'ka nevojë
+  return {
+    ...f,
+    currentPrice: livePrice,
+    trailingPE: f.trailingPE > 0 ? f.trailingPE * scale : f.trailingPE,
+    forwardPE: f.forwardPE > 0 ? f.forwardPE * scale : f.forwardPE,
+    pegRatio: f.pegRatio > 0 ? f.pegRatio * scale : f.pegRatio,
+    priceToBook: f.priceToBook > 0 ? f.priceToBook * scale : f.priceToBook,
+    enterpriseToEbitda: f.enterpriseToEbitda > 0 ? f.enterpriseToEbitda * scale : f.enterpriseToEbitda,
+    marketCap: f.marketCap && f.marketCap > 0 ? f.marketCap * scale : f.marketCap,
+  };
+}
+
+/** Shton bllokun e të dhënave reale në prompt që AI mos të gjejë nga kujtesa e vjetër */
+function buildFundamentalsContext(userMessage: string, f: YahooFundamentals): string {
+  const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const lines: string[] = [];
+  if (f.currentPrice > 0) lines.push(`- Current price: $${f.currentPrice.toFixed(2)}`);
+  if (f.trailingPE > 0) lines.push(`- Trailing P/E: ${f.trailingPE.toFixed(1)}`);
+  if (f.forwardPE > 0) lines.push(`- Forward P/E: ${f.forwardPE.toFixed(1)}`);
+  if (f.pegRatio > 0) lines.push(`- PEG: ${f.pegRatio.toFixed(2)}`);
+  if (f.priceToBook > 0) lines.push(`- P/B: ${f.priceToBook.toFixed(1)}`);
+  if (f.enterpriseToEbitda > 0) lines.push(`- EV/EBITDA: ${f.enterpriseToEbitda.toFixed(1)}`);
+  if (f.grossMargins > 0) lines.push(`- Gross margin: ${pct(f.grossMargins)}`);
+  if (f.operatingMargins > 0) lines.push(`- Operating margin: ${pct(f.operatingMargins)}`);
+  if (f.profitMargins > 0) lines.push(`- Net margin: ${pct(f.profitMargins)}`);
+  if (f.revenueGrowth > 0) lines.push(`- Revenue growth: ${pct(f.revenueGrowth)}`);
+  if (f.earningsGrowth > 0) lines.push(`- Earnings growth: ${pct(f.earningsGrowth)}`);
+  if (f.revenueQuarterlyGrowth > 0) lines.push(`- Quarterly revenue growth: ${pct(f.revenueQuarterlyGrowth)}`);
+  if (f.earningsQuarterlyGrowth > 0) lines.push(`- Quarterly earnings growth: ${pct(f.earningsQuarterlyGrowth)}`);
+  if (f.returnOnEquity > 0) lines.push(`- ROE: ${pct(f.returnOnEquity)}`);
+  const de = deRatio(f);
+  if (de > 0) lines.push(`- Debt/Equity: ${de.toFixed(2)}`);
+  if (f.freeCashflow > 0) lines.push(`- Free cash flow: ${formatBigMoney(f.freeCashflow)}`);
+  if (f.epsForward > 0) lines.push(`- Forward EPS: $${f.epsForward.toFixed(2)}`);
+  if (f.currentPrice > 0 && f.trailingPE > 0) lines.push(`- Trailing EPS: $${(f.currentPrice / f.trailingPE).toFixed(2)}`);
+  if (f.nextEarningsDate) lines.push(`- Next earnings date: ${f.nextEarningsDate}`);
+  if (f.targetMeanPrice > 0) {
+    lines.push(`- Analyst mean target: $${f.targetMeanPrice.toFixed(2)}` +
+      (f.targetLowPrice > 0 ? ` (low $${f.targetLowPrice.toFixed(2)}` : '') +
+      (f.targetHighPrice > 0 ? ` / high $${f.targetHighPrice.toFixed(2)})` : ''));
+  }
+  if (f.recommendationKey) {
+    lines.push(`- Analyst consensus rating: ${f.recommendationKey}` + (f.numberOfAnalystOpinions > 0 ? ` (${f.numberOfAnalystOpinions} analysts)` : ''));
+  }
+
+  if (lines.length === 0) return userMessage;
+
+  return userMessage + `\n\n═══ REAL FUNDAMENTAL DATA (live market data, source: ${f.source}) ═══\n` +
+    `CRITICAL: These are the CURRENT, VERIFIED values for this ticker. Use them EXACTLY for the corresponding JSON fields.\n` +
+    `Do NOT use remembered or outdated values for any metric listed here.\n\n` +
+    lines.join('\n') +
+    `\n\nFor metrics NOT listed above, estimate from your knowledge but keep them consistent with these real numbers.`;
+}
+
+/** Mbivendos fushat e AI-s me të dhëna reale — kjo është rrjeta e sigurisë përfundimtare kundër halucinacioneve */
+function applyRealFundamentals(
+  analysis: Record<string, unknown> | null | undefined,
+  f: YahooFundamentals,
+  livePriceNum: number | null,
+): void {
+  if (!analysis || typeof analysis !== 'object') return;
+
+  const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const r1 = (v: number) => +v.toFixed(1);
+  const price = livePriceNum && livePriceNum > 0 ? livePriceNum : (f.currentPrice > 0 ? f.currentPrice : 0);
+  const tickerForShares = String(analysis.ticker || '').toUpperCase();
+  const raw = getStock(tickerForShares);
+
+  // ── Valuation ──
+  const v = analysis.valuation as Record<string, unknown> | undefined;
+  if (v && typeof v === 'object') {
+    if (f.trailingPE > 0) v.peRatio = r1(f.trailingPE);
+    if (f.forwardPE > 0) v.forwardPE = r1(f.forwardPE);
+    if (f.pegRatio > 0) v.pegRatio = +f.pegRatio.toFixed(2);
+    if (f.priceToBook > 0) v.priceToBook = r1(f.priceToBook);
+    if (f.enterpriseToEbitda > 0) v.evToEbitda = r1(f.enterpriseToEbitda);
+    // P/S: (1) nga të ardhura reale kur ka, (2) tjetër P/E × NetMargin (matematikisht e saktë)
+    if (price > 0 && f.totalRevenue > 0 && raw?.shares) {
+      v.priceToSales = r1((price * raw.shares * 1e6) / f.totalRevenue);
+    } else if (f.trailingPE > 0 && f.profitMargins > 0) {
+      v.priceToSales = r1(f.trailingPE * f.profitMargins);
+    }
+    // Market Cap: (1) çmim live × shares, (2) snapshot lokal i shkallëzuar me çmimin live
+    if (price > 0 && raw?.shares) {
+      const mcap = price * raw.shares * 1e6;
+      v.marketCap = mcap > 1e12 ? `$${(mcap / 1e12).toFixed(1)}T` : mcap > 1e9 ? `$${(mcap / 1e9).toFixed(0)}B` : `$${(mcap / 1e6).toFixed(0)}M`;
+    } else if (f.marketCap && f.marketCap > 0) {
+      v.marketCap = formatBigMoney(f.marketCap);
+    }
+  }
+
+  // ── Profitability ──
+  const p = analysis.profitability as Record<string, unknown> | undefined;
+  if (p && typeof p === 'object') {
+    if (f.grossMargins > 0) p.grossMargin = pct(f.grossMargins);
+    if (f.operatingMargins > 0) p.operatingMargin = pct(f.operatingMargins);
+    if (f.profitMargins > 0) p.netMargin = pct(f.profitMargins);
+    if (f.returnOnEquity > 0) p.returnOnEquity = pct(f.returnOnEquity);
+  }
+
+  // ── Growth ──
+  const g = analysis.growth as Record<string, unknown> | undefined;
+  if (g && typeof g === 'object') {
+    if (f.revenueGrowth > 0) g.revenueGrowth = pct(f.revenueGrowth);
+    if (f.earningsGrowth > 0) g.earningsGrowth = pct(f.earningsGrowth);
+    if (f.revenueQuarterlyGrowth > 0) g.quarterlyRevenueGrowth = pct(f.revenueQuarterlyGrowth);
+    if (f.earningsQuarterlyGrowth > 0) g.quarterlyEarningsGrowth = pct(f.earningsQuarterlyGrowth);
+  }
+
+  // ── Financial Health ──
+  const h = analysis.financialHealth as Record<string, unknown> | undefined;
+  if (h && typeof h === 'object') {
+    const de = deRatio(f);
+    if (de > 0) h.debtToEquity = +de.toFixed(2);
+    if (f.freeCashflow > 0) h.freeCashFlow = formatBigMoney(f.freeCashflow);
+  }
+
+  // ── Earnings ──
+  const e = analysis.earnings as Record<string, unknown> | undefined;
+  if (e && typeof e === 'object') {
+    if (f.epsForward > 0) e.forwardEps = f.epsForward.toFixed(2);
+    // EPS trailing = çmimi / P/E — matematikisht e saktë nga të dhënat reale
+    if (f.currentPrice > 0 && f.trailingPE > 0) e.eps = (f.currentPrice / f.trailingPE).toFixed(2);
+    if (f.nextEarningsDate) {
+      e.nextEarningsDate = f.nextEarningsDate;
+    } else {
+      // Mos shfaq kurrë datë fitimesh që ka kaluar — kthe "—"
+      const d = String(e.nextEarningsDate || '');
+      const ts = Date.parse(d);
+      if (d && !isNaN(ts) && ts < Date.now()) e.nextEarningsDate = '—';
+    }
+  }
+
+  // ── Analyst Consensus ──
+  const ac = analysis.analystConsensus as Record<string, unknown> | undefined;
+  if (ac && typeof ac === 'object') {
+    if (f.targetMeanPrice > 0) ac.targetPrice = f.targetMeanPrice.toFixed(2);
+    if (f.targetLowPrice > 0) ac.lowTarget = f.targetLowPrice.toFixed(2);
+    if (f.targetHighPrice > 0) ac.highTarget = f.targetHighPrice.toFixed(2);
+    if (f.recommendationKey) {
+      const map: Record<string, string> = {
+        strong_buy: 'STRONG_BUY', buy: 'BUY', hold: 'HOLD',
+        underperform: 'SELL', sell: 'SELL', strong_sell: 'STRONG_SELL',
+      };
+      const mapped = map[f.recommendationKey.toLowerCase()];
+      if (mapped) ac.rating = mapped;
+    }
+    // Shkallëzo B/H/S me numrin real të analistëve (ruan proporcionin e AI)
+    if (f.numberOfAnalystOpinions > 0) {
+      const b = Number(ac.buyRatings) || 0;
+      const hd = Number(ac.holdRatings) || 0;
+      const s = Number(ac.sellRatings) || 0;
+      const total = b + hd + s;
+      const n = f.numberOfAnalystOpinions;
+      if (total > 0) {
+        const nb = Math.max(1, Math.round((b / total) * n));
+        const nh = Math.round((hd / total) * n);
+        ac.buyRatings = nb;
+        ac.holdRatings = nh;
+        ac.sellRatings = Math.max(0, n - nb - nh);
+      } else {
+        // Pa shpërndarje nga AI — derivo një të arsyeshme nga konsensusi real
+        const rec = (f.recommendationKey || 'hold').toLowerCase();
+        const w = rec === 'strong_buy' || rec === 'buy' ? [0.7, 0.22]
+          : rec === 'hold' ? [0.35, 0.45] : [0.15, 0.35];
+        const nb = Math.round(n * w[0]);
+        const nh = Math.round(n * w[1]);
+        ac.buyRatings = nb;
+        ac.holdRatings = nh;
+        ac.sellRatings = Math.max(0, n - nb - nh);
+      }
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: FundamentalAnalysisRequest = await request.json();
@@ -273,16 +479,29 @@ export async function POST(request: NextRequest) {
     const companyInfo = company ? ` (${company})` : '';
     const tickerUpper = ticker.trim().toUpperCase();
 
-    // ═══ FETCH REAL PRICE BEFORE AI CALL ═══
-    const livePrice = await getRealPrice(tickerUpper);
+    // ═══ FETCH REAL PRICE + REAL FUNDAMENTALS BEFORE AI CALL ═══
+    const [livePrice, rawFund] = await Promise.all([
+      getRealPrice(tickerUpper),
+      getRealFundamentals(tickerUpper).catch(() => null),
+    ]);
     const realPriceNum = livePrice ? livePrice.price : null;
+    // Përshtat raportet e snapshot-it me çmimin live (P/E etj. të konsistueshme me tani)
+    const realFund = rawFund ? adjustFundamentalsToLivePrice(rawFund, realPriceNum) : null;
     console.log(`[FUNDAMENTAL] Real price for ${tickerUpper}:`, livePrice ? `$${livePrice.price} [${livePrice.source}]` : 'unavailable');
+    console.log(`[FUNDAMENTAL] Real fundamentals for ${tickerUpper}:`,
+      realFund ? `PE=${realFund.trailingPE} fwdPE=${realFund.forwardPE} target=$${realFund.targetMeanPrice} [${realFund.source}]` : 'unavailable');
 
     let userMessage = `Perform a comprehensive fundamental analysis for ${tickerUpper}${companyInfo}. Include valuation metrics, profitability ratios, growth rates, financial health, earnings data, competitive advantage (moat), and analyst consensus. Provide a clear investment verdict.`;
+    // AI-i s'e di datën e sotme pa këtë — kthen datë fitimesh të kaluara (2025-01-22 etj.)
+    userMessage += `\n\nToday's date is ${new Date().toISOString().slice(0, 10)}. Any date you output (including nextEarningsDate) MUST be in the future relative to today.`;
 
     // Inject real prices into prompt
     if (livePrice) {
       userMessage = injectPricesIntoPrompt(userMessage, { [tickerUpper]: livePrice });
+    }
+    // Inject real fundamentals into prompt (P/E, margjina, targete, EPS — jo vetëm çmimi)
+    if (realFund) {
+      userMessage = buildFundamentalsContext(userMessage, realFund);
     }
 
     // Try real AI first, fall back to demo
@@ -296,9 +515,10 @@ export async function POST(request: NextRequest) {
         retries: 0,
       });
     } catch {
-      // AI unavailable — use demo data with REAL price for ALL calculations
+      // AI unavailable — use demo data, but override me të dhëna reale aty ku ka
       console.log(`[DEMO MODE] AI unavailable for fundamental-analysis of ${tickerUpper}, using simulation with real price: $${realPriceNum || 'N/A'}`);
       const demo = generateDemoFundamentalAnalysis(tickerUpper, company, realPriceNum);
+      if (realFund) applyRealFundamentals(demo as unknown as Record<string, unknown>, realFund, realPriceNum);
       return NextResponse.json({ analysis: demo, demo: true });
     }
 
@@ -321,12 +541,13 @@ export async function POST(request: NextRequest) {
 
     const analysis = parseAIResponse(content, fallback);
 
-    // Force real price into AI response (AI may hallucinate prices)
-    if (livePrice && analysis && typeof analysis === 'object') {
-      // Update price-related fields with real data
+    // Force real price + real fundamentals into AI response (AI may hallucinate stale values)
+    if (realFund) {
+      applyRealFundamentals(analysis as unknown as Record<string, unknown>, realFund, realPriceNum);
+    } else if (livePrice && analysis && typeof analysis === 'object') {
+      // Vetëm çmimi real i disponueshëm — së paku rregullo marketCap
       if ('valuation' in analysis && analysis.valuation && typeof analysis.valuation === 'object') {
         const v = analysis.valuation as Record<string, unknown>;
-        // Recalculate market cap with real price if we have shares info
         const raw = getStock(tickerUpper);
         if (raw?.shares) {
           // shares është në MILIONA aksione — saktëso me × 1e6 (para: AAPL dilte $5M në vend të ~$5T)
