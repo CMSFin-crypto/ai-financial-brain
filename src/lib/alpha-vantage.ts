@@ -744,7 +744,7 @@ function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFun
     totalCash: 0,   // not in local JSON
     debtToEquity: parseNum(d.debtEq),
     returnOnEquity: parsePercent(d.roe),
-    freeCashflow: 0, // not in local JSON
+    freeCashflow: parseMoneyStr(d.fcf), // "$101.1B" → 101.1e9
     epsForward: parseNum(d.fwdEps),
     nextEarningsDate: '',
     marketCap: parseMoneyStr(d.marketCap),
