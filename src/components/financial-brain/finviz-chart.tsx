@@ -530,7 +530,7 @@ export function FinvizChart({ initialTicker = 'EXPE', onAnalyze }: FinvizChartPr
                   hdrUp ? 'text-emerald-400' : 'text-red-400'
                 }`}
               >
-                {hdrUp ? '▲' : '▼'} {fmtPrice(Math.abs(data.price - data.previousClose))} (
+                {hdrUp ? '▲' : '▼'} {Math.abs(data.price - data.previousClose).toFixed(2)} (
                 {(((data.price - data.previousClose) / (data.previousClose || 1)) * 100).toFixed(2)}%)
               </div>
             )}
@@ -727,7 +727,7 @@ export function FinvizChart({ initialTicker = 'EXPE', onAnalyze }: FinvizChartPr
               {legendChg != null && (
                 <span style={{ color: legendChg >= 0 ? UP : DOWN }}>
                   {legendChg >= 0 ? '+' : ''}
-                  {fmtAxisPrice(legendChg)} ({legendPct}%)
+                  {legendChg.toFixed(2)} ({legendPct}%)
                 </span>
               )}
               <span className="text-gray-400">
