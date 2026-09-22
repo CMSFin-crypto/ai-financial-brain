@@ -360,6 +360,9 @@ function applyRealFundamentals(
   const tickerForShares = String(analysis.ticker || '').toUpperCase();
   const raw = getStock(tickerForShares);
 
+  // Çmimi aktual — përdoret nga popup-at e UI-së (p.sh. upside i targetPrice)
+  if (price > 0) analysis.currentPrice = price;
+
   // ── Valuation ──
   const v = analysis.valuation as Record<string, unknown> | undefined;
   if (v && typeof v === 'object') {

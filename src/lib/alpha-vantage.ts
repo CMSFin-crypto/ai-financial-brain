@@ -446,18 +446,68 @@ function extractNum(val: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+// ─── Yahoo cookie + crumb auth (required for v10 quoteSummary) ───
+// Without crumb Yahoo returns 401 "Invalid Crumb". Verified live 2026-09.
+let yahooCrumbState: { crumb: string; cookie: string; fetchedAt: number } | null = null;
+const YAHOO_CRUMB_TTL_MS = 30 * 60 * 1000;
+
+async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
+  if (yahooCrumbState && Date.now() - yahooCrumbState.fetchedAt < YAHOO_CRUMB_TTL_MS) {
+    return { crumb: yahooCrumbState.crumb, cookie: yahooCrumbState.cookie };
+  }
+  try {
+    // Step 1: fc.yahoo.com sets the consent cookies (404 response is fine)
+    const cookieRes = await fetch('https://fc.yahoo.com', {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': BROWSER_HEADERS['User-Agent'] as string },
+    });
+    const setCookies = cookieRes.headers.getSetCookie?.() || [];
+    const cookie = setCookies.map(c => c.split(';')[0]).join('; ');
+
+    // Step 2: exchange cookie for crumb.
+    // ⚠️ CRITICAL: do NOT send 'Accept: application/json' here — Yahoo returns
+    // 406 Not Acceptable for getcrumb with that header (verified via testing).
+    const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        'User-Agent': BROWSER_HEADERS['User-Agent'] as string,
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+    });
+    if (!crumbRes.ok) return null;
+    const crumb = (await crumbRes.text()).trim();
+    if (!crumb || crumb.length > 32 || crumb.includes('{') || crumb.includes('<')) return null;
+    yahooCrumbState = { crumb, cookie, fetchedAt: Date.now() };
+    console.log(`[FUND] Yahoo crumb obtained (len ${crumb.length})`);
+    return { crumb, cookie };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    console.log(`[FUND] crumb fetch failed: ${msg}`);
+    return yahooCrumbState ? { crumb: yahooCrumbState.crumb, cookie: yahooCrumbState.cookie } : null;
+  }
+}
+
 async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<YahooFundamentals | null> {
   const base = YAHOO_ENDPOINTS[endpointIndex] || YAHOO_ENDPOINTS[0];
-  const modules = 'financialData,defaultKeyStatistics,earningsTrend,earningsHistory';
+  // summaryDetail shtohet për trailingPE / marketCap / previousClose (financialData nuk i ka)
+  const modules = 'financialData,defaultKeyStatistics,earningsTrend,earningsHistory,summaryDetail';
   try {
-    const url = `${base}/v10/finance/quoteSummary/${ticker}?modules=${modules}`;
+    // v10 quoteSummary REQUIRES a valid crumb — obtain cookie+crumb first
+    const auth = await getYahooCrumb();
+    const url = auth
+      ? `${base}/v10/finance/quoteSummary/${ticker}?modules=${modules}&crumb=${encodeURIComponent(auth.crumb)}`
+      : `${base}/v10/finance/quoteSummary/${ticker}?modules=${modules}`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(10000),
-      headers: BROWSER_HEADERS,
+      headers: {
+        ...BROWSER_HEADERS,
+        ...(auth?.cookie ? { Cookie: auth.cookie } : {}),
+      },
     });
 
     if (!res.ok) {
-      console.log(`[FUND] ${ticker}: quoteSummary ${base} returned ${res.status}`);
+      console.log(`[FUND] ${ticker}: quoteSummary ${base} returned ${res.status}${res.status === 401 ? ' (invalid crumb — resetting)' : ''}`);
+      if (res.status === 401) yahooCrumbState = null; // force fresh crumb next time
       return null;
     }
 
@@ -472,6 +522,7 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
     const dks = body.defaultKeyStatistics || {};
     const et = body.earningsTrend || {};
     const eh = body.earningsHistory || {};
+    const sd = body.summaryDetail || {};
 
     // Extract earnings trend for forward EPS + next earnings date (period "0q" = tremujori i ardhshëm)
     const trendData = et.trend || [];
@@ -506,10 +557,10 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
 
     const result: YahooFundamentals = {
       currentPrice,
-      previousClose: extractNum(fd.previousClose?.raw),
-      trailingPE: extractNum(fd.trailingPE?.raw),
-      forwardPE: extractNum(fd.forwardPE?.raw),
-      pegRatio: extractNum(dks.pegRatio?.raw),
+      previousClose: extractNum(sd.previousClose?.raw) || extractNum(fd.previousClose?.raw),
+      trailingPE: extractNum(sd.trailingPE?.raw) || extractNum(fd.trailingPE?.raw),
+      forwardPE: extractNum(sd.forwardPE?.raw) || extractNum(fd.forwardPE?.raw),
+      pegRatio: extractNum(dks.pegRatio?.raw) || extractNum(sd.pegRatio?.raw),
       priceToBook: extractNum(fd.priceToBook?.raw),
       enterpriseToEbitda: extractNum(dks.enterpriseToEbitda?.raw),
       grossMargins: extractNum(fd.grossMargins?.raw),
@@ -534,6 +585,8 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
       freeCashflow: extractNum(fd.freeCashflow?.raw),
       epsForward,
       nextEarningsDate,
+      // marketCap live nga summaryDetail (në dollarë brutë); JSON-lokali e mbush si fallback
+      marketCap: extractNum(sd.marketCap?.raw) || undefined,
       source: `yahoo_finance (${base})`,
       fetchedAt: new Date().toISOString(),
     };
