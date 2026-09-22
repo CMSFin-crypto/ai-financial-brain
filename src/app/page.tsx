@@ -22,6 +22,7 @@ import { EarningsCalendar } from '@/components/financial-brain/earnings-calendar
 import { EconomicCalendar } from '@/components/financial-brain/economic-calendar';
 import { StockScreener } from '@/components/financial-brain/stock-screener';
 import { SecFilings } from '@/components/financial-brain/sec-filings';
+import { MarketMap } from '@/components/financial-brain/market-map';
 
 import {
   Brain,
@@ -49,6 +50,7 @@ import {
   FileText,
   ArrowRight,
   BookOpen,
+  LayoutGrid,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -339,6 +341,9 @@ export default function Home() {
                   <TabsTrigger value="sector" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3.5 h-3.5 mr-1.5" />Sektoret
                   </TabsTrigger>
+                  <TabsTrigger value="market-map" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <LayoutGrid className="w-3.5 h-3.5 mr-1.5" />Map e Tregut
+                  </TabsTrigger>
                   <TabsTrigger value="fear-greed" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Gauge className="w-3.5 h-3.5 mr-1.5" />Fear & Greed
                   </TabsTrigger>
@@ -431,6 +436,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Radar className="w-3 h-3 mr-1" />Sektoret
+                  </TabsTrigger>
+                  <TabsTrigger value="market-map" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <LayoutGrid className="w-3 h-3 mr-1" />Map e Tregut
                   </TabsTrigger>
                   <TabsTrigger value="fear-greed" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Gauge className="w-3 h-3 mr-1" />F&G
@@ -630,6 +638,18 @@ export default function Home() {
                 </CardContent>
               </Card>
               <SectorScanner onSelectStock={(t) => { setQuantTicker(t); setActiveTab('quant'); }} />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Map e Tregut (Finviz-style heatmap) */}
+          <TabsContent value="market-map" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <MarketMap onSelectStock={(t) => { setQuantTicker(t); setActiveTab('quant'); }} />
             </motion.div>
           </TabsContent>
 
