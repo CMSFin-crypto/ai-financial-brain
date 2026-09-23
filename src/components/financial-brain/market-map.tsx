@@ -381,48 +381,106 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
     if (!hovered) return null;
     const { stock } = hovered;
     const color = changeColor(stock.changePercent);
+    // ── Kompanitë e të njëjtit sektor si listë me lëvizjet (stil Finviz) ──
+    const members = stocks
+      .filter(s => s.sectorKey === stock.sectorKey)
+      .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
+    const withChg = members.filter(m => Number.isFinite(m.changePercent));
+    const wSum = withChg.reduce((sum, m) => sum + (m.marketCap || 0), 0);
+    const sectorAvg =
+      wSum > 0
+        ? withChg.reduce((sum, m) => sum + (m.marketCap || 0) * m.changePercent, 0) / wSum
+        : null;
+    // Lartësia e parashikuar për pozicionim pa prerje
+    const listRows = Math.min(members.length, 20);
+    const estH = 132 + listRows * 17 + 34;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
     return (
       <div
-        className="fixed z-50 pointer-events-none rounded-lg border border-slate-600 bg-slate-900/95 shadow-2xl px-3 py-2.5 min-w-[180px]"
+        className="fixed z-50 pointer-events-none overflow-hidden rounded-lg border border-slate-600 bg-slate-900/95 shadow-2xl w-[300px]"
         style={{
-          left: Math.min(hovered.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1920) - 230),
-          top: Math.min(hovered.y + 14, (typeof window !== 'undefined' ? window.innerHeight : 1080) - 210),
+          left: Math.max(8, Math.min(hovered.x + 14, vw - 310)),
+          top: Math.max(8, Math.min(hovered.y + 14, vh - estH - 10)),
         }}
       >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-bold text-white">{stock.symbol}</span>
-          <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: color.bg, color: color.text }}>
-            {fmtPct(stock.changePercent)}
+        {/* Kokë — kompania mbi të cilën është miu */}
+        <div className="px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-bold text-white">{stock.symbol}</span>
+            <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: color.bg, color: color.text }}>
+              {fmtPct(stock.changePercent)}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-300 mt-0.5 truncate">{stock.name}</div>
+          <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-400">Çmimi</span>
+              <span className="font-semibold text-white">{fmtPrice(stock.price)}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-400">Mbyllja</span>
+              <span className="text-slate-300">{fmtPrice(stock.previousClose)}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-400">Kapitalizimi</span>
+              <span className="text-slate-300">{fmtMcap(stock.marketCap)}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-400">Volumi</span>
+              <span className="text-slate-300">{fmtVol(stock.volume)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Kreu i listës së sektorit */}
+        <div className="flex items-center justify-between border-t border-slate-700/70 bg-slate-800/70 px-3 py-1">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-300">
+            {stock.sector} · {members.length} kompani
           </span>
+          {sectorAvg != null && Number.isFinite(sectorAvg) && (
+            <span className={`text-[10px] font-bold ${sectorHeaderColor(sectorAvg)}`}>
+              {fmtPct(sectorAvg)}
+            </span>
+          )}
         </div>
-        <div className="text-[11px] text-slate-300 mt-0.5 truncate max-w-[200px]">{stock.name}</div>
-        <div className="text-[10px] text-slate-500 mt-0.5">{stock.sector}</div>
-        <div className="mt-2 pt-1.5 border-t border-slate-700/70 space-y-1 text-[11px]">
-          <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Çmimi</span>
-            <span className="font-semibold text-white">{fmtPrice(stock.price)}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Mbyllja e djeshme</span>
-            <span className="text-slate-300">{fmtPrice(stock.previousClose)}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Kapitalizimi</span>
-            <span className="text-slate-300">{fmtMcap(stock.marketCap)}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Volumi</span>
-            <span className="text-slate-300">{fmtVol(stock.volume)}</span>
-          </div>
+
+        {/* Lista: të gjitha kompanitë e sektorit me lëvizjet ditore */}
+        <div className="max-h-[220px] overflow-y-auto py-0.5">
+          {members.map(m => {
+            const isMe = m.symbol === stock.symbol;
+            const up = Number.isFinite(m.changePercent) ? m.changePercent >= 0 : null;
+            return (
+              <div
+                key={m.symbol}
+                className={`grid grid-cols-[44px_1fr_52px] items-center gap-1 px-3 py-[2px] text-[10.5px] ${
+                  isMe ? 'border-l-2 border-blue-400 bg-blue-500/15' : ''
+                }`}
+              >
+                <span className="font-bold text-slate-100">
+                  {isMe ? '\u25b8' : ''} {m.symbol}
+                </span>
+                <span className="truncate text-slate-400">{m.name}</span>
+                <span
+                  className={`text-right font-bold ${
+                    up == null ? 'text-slate-500' : up ? 'text-emerald-400' : 'text-red-400'
+                  }`}
+                >
+                  {fmtPct(m.changePercent)}
+                </span>
+              </div>
+            );
+          })}
         </div>
+
         {onSelectStock && (
-          <div className="mt-2 pt-1.5 border-t border-slate-700/70 flex items-center gap-1 text-[10px] text-emerald-400">
-            <MousePointerClick className="w-3 h-3" /> Kliko për analizë të thelluar me AI
+          <div className="flex items-center gap-1 border-t border-slate-700/70 bg-slate-900/95 px-3 py-1 text-[9.5px] text-emerald-400">
+            <MousePointerClick className="w-3 h-3" /> Kliko pllakën për grafikun Finviz / analizën me AI
           </div>
         )}
       </div>
     );
-  }, [hovered, onSelectStock]);
+  }, [hovered, stocks, onSelectStock]);
 
   return (
     <motion.div
