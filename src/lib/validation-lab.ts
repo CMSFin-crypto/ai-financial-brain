@@ -431,7 +431,8 @@ export async function getValidationSummary(
     assessedAt: new Date().toISOString(),
     modelVersion,
     totalPredictions: totalPreds,
-    evaluatedPredictions,
+    // total i predikimeve të VLERËSUARA (IS + OOS) — më parë referencë e papërcaktuar
+    evaluatedPredictions: evaluatedPreds,
     walkForward,
     overfitting,
     benchmarkComparison,

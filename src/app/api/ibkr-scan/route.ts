@@ -3,7 +3,8 @@ import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
 import { checkMultiEventRisk } from '@/lib/event-risk';
 
-export { runIBKRScan };
+// runIBKRScan deklarohet + eksportohet direkt më poshtë (pa re-export të
+// parakohshëm — esbuild/tsx e refuzon dyshimin e emrit, SWC e toleronte).
 export type { FunnelStock, FunnelResponse };
 
 // ═══════════════════════════════════════════════════════════════

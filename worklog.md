@@ -441,3 +441,44 @@ Work Log:
 Stage Summary:
 - Map e Tregut tani ka saktësisht sjelljen Finviz të kërkuar: hover mbi ÇFARËDO kompanie → hapet popup me të gjitha kompanitë e të njëjtit sektor si listë me lëvizjet e tyre ditore + mesataren e ponderuar të sektorit
 - Branch backup-task27-local ruan implementimin alternativ të plotë (spark batch API me periudha 1D-1Y + chart modal Elite dark) për ripërdorim të mundshëm në ardhmë (p.sh. zgjerim për lëvizje javore/mujore në map)
+
+---
+Task ID: 26-VERIFY (Faza 2 — verifikimi me checklist teknik dhe raport krahasues)
+Agent: Super Z (main)
+Task: "vazhdo me testimin dhe verifikimin e Task 26" — verifikimi i plotë me 7 testet automatike të spec-it, A/B backtest me konfigurimin e userit (400/10v/risk 0.5%+1.0%/WF 36-6-6), checklist-i UI-ut, prova point-in-time nga run-i real, paper trading dhe vendimi final.
+
+Work Log:
+- Sinkronizim: lokali ishte pas (Task 16) → reset në origin/main 0861bd3 (Task 26 Faza 2 + përmirsimi i mbulimit EDGAR); 21 diff-e lokale ishin vetëm mode-changes ( të humbura zero)
+- scripts/test-task26-verification.ts (I RI — 66 kontrolle në 7 testet E SAKTA të spec-it):
+  1) test_fundamental_timestamp_not_after_signal — timeline usableFrom=filed+1, asOf() hidh availableAt>signal, MOTOR: filing i keq days[240] → asnjë tregti TECH2 me sinjal ≥ usableFrom
+  2) test_missing_fundamental_is_not_zero — null→PASS naChecks=4 (jo zero), metrikat undefined (jo 0), 3 simbole pa timeline → tregti IDENTIKE me A, strict kontrast: FUND_MISSING_DATA bllokon
+  3) test_technical_only_does_not_use_fundamentals — A me fundamentet KEQIA për të gjithë = A pa fundamentet (JSON identik, zero FUND_*)
+  4) test_both_variants_use_same_execution_model — B me të gjitha mirë = A deri në qindarkë (entry/stop/target/shares/dates/r); izolimi: signals(B)+FUND_*=signals(A)
+  5) test_costs_are_applied_to_both_variants — çdo tregti kostos>0, pnlNet=gross-costs, komisione ≥$1/anë, risk 0.5%: shares=floor(buxheti/riskPerShare) + no-leverage cap floor(cash/entry)
+  6) test_oos_parameters_are_locked — splitWindows deterministik, CALENDAR_WF_SPECS të fikuar (5 dritare 2016–2025), pa mbivendosje, run i dytë identik
+  7) test_earnings_after_close_are_available_next_session — shembulli i userit 2025-04-10 16:05 → i dukshëm VETËM 2025-04-11; MOTOR: filing ditën e sinjalit → sinjali kalon, bllokohet nga nesër
+  Rezultat: 66 kaluan · 0 dështuan (0.29s) — universi sintetik 4-simbolsh me cikle 22-ditore pullback
+- scripts/run-task26-ab.ts (I RI — ekzekutimi me konfigurimin e userit, cache fazash në /tmp për resume):
+  univers 400, 10vjet (2016-09→2026-09, 2512 ditë), kosto+slippage IBKR, point-in-time EDGAR, IS/OOS 70/30 statik + 14 dritare RROTULLUESE 36m→6m hap 6m, risk 1.0% DHE 0.5%
+- FIX i parazgjedhur: src/app/api/ibkr-scan/route.ts kishte re-export të dyfishtë "runIBKRScan" (rreshti 6) — SWC e toleronte, esbuild/tsx jo → hequr (0 gabime tsc)
+- FIX bug i vjetër në prod: /api/validation-summary kthente 500 "evaluatedPredictions is not defined" (src/lib/validation-lab.ts e vjetër ML) → evaluatedPreds (kjo s'lidhet me Task 26 por ishte ndërprerë)
+- REZULTATET A/B (lokalisht, mbulim EDGAR 88.2% = 330/374):
+  A technical-only OOS: 700t WR 43.7% PF 1.05 exp +$9.57 DD 27.4% neto +$6,698 (15 humbje radhazi)
+  B standard OOS: 652t WR 44.2% PF 1.02 exp +$3.36 DD 35.8% neto +$2,191 (15 radhazi)
+  B-strict OOS: 586t WR 42.5% PF 0.98 exp -$5.17 DD 53.5% neto -$3,032 (13 radhazi)
+  RIPRODHIMI I SAKTË me rezultatet e sesionit para deploy (700/652/586 deri në cent) — vetëm barra e ditës së sotme ndryshon
+  Risk 0.5%: VERDIKT NJËJTË CONTEXT-ONLY (exp -2.4$, PF -0.02, DD +6.8pk)
+  Dritaret 36/6/6: B më i mirë vetëm 5/14 dritare → dështon "përsëritet në disa dritare OOS"
+  PROVA POINT-IN-TIME realë: FAST sinjal 2023-11-03→filing 10-17 (përdorshëm 10-18); GD/TT/NFLX OK; bllokuar: CI (EPS_CRASH), INTC (REVENUE_NEGATIVE), BKNG (DEBT_EXTREME), CPRT — me rezultatet e tyre në A
+- VERIFIKIMI UI (prod, agent-browser): popup NOW 13/13 — revenue +24%, EPS -21.9%, margjinat (74.8/4.1/11.3/ROE 14.2), FCF $5.1B, D/E 67.5%, P/E 88.2/Forward 28/P/S 9.8/EV-EBITDA 50.2/PEG 0.99/upside +3.4% (46 analistë), surprise +13%, estimates $4.07 (30d/60d revisions), consensus STRONG BUY, ownership 33.6%, 2 risk flags; HOOD 11/13 — FCF/FCF margin/EV-EBITDA shfaqin "N/A — data unavailable" (KURRAHSE 0); periudha + data_as_of (quoteSummary · 9/23/2026 4:16 PM) në çdo tregues; Faza 1: verdikt WATCHLIST i pandryshuar
+- VERIFIKIMI I PROD (i ndezur "Ndez Verifikimin 10v/400"): mbulim EDGAR 65.8% (cache e ftohtë) → A 702t PF 1.04 exp $8.97 DD 28.6% · B 688t PF 1.04 exp $8.29 DD 36.6% · strict 518t PF 1.00 — VERDIKT I NJËJTË: CONTEXT-ONLY; seksioni UI plotësisht i renderuar (tabela 8 metrikave × 3, 6 kriteret ✓/✗, per-viti, 7,533 sinjale të bllokuara, arsyet me barra)
+- PAPER TRADING (prod): 107 tregti të mbyllura (≥50 e kërkuar), WR 47% kundrejt OOS 43% (+4pk), expectancy 0.04R kundrejt 0.15R (-0.11R), 0/78 sinjale me earnings brenda 2 ditësh; çdo record ka signalDate/dataAvailableAt/entry/stop/target/slippageEstPct/resultR
+- Artifacts: download/task26-ab-results.json (raporti i plotë), 4 screenshots (popup risk flags, popup N/A HOOD, seksioni A/B prod × 2)
+
+Stage Summary:
+- 7 testet automatike: KALUAN (66/66) — motori s'përdor informacion të ardhshëm dhe krahasimi është i drejtë
+- VENDIMI FINAL (i jep sistemi automatikisht):
+  * Technical-only: FAIL sipas gate-ve të punës (IS -$19,229 PF 0.84; OOS PF 1.04 < 1.1; verdikt automatik REJECT — drawdown 28.6% + koncentrim 132% në top-3) — vetëm paper trading vazhdon
+  * Technical + Fundamental: FAIL (edhe më keq: expectancy -0.68$, DD +8pk, 1/4 vite me B>A, fitimi i koncentruar 201%)
+  * FUNDAMENTAL FILTER: CONTEXT-ONLY — fundamentet mbeten VETËM panel informues në popup; READY/BUY/WATCH të pandryshuara (Faza 1 konfirmohet si vendim final)
+- Konkluzioni i përsëritur në 3 mjedise të pavarur: lokal 88.2% mbulim, prod 65.8% mbulim, risk 0.5% dhe 1.0% — CONTEXT-ONLY në të gjitha
