@@ -326,6 +326,146 @@ const METRIC_DOCS: Record<string, MetricDoc> = {
     howNow: (r) => r.gates.map(g => `${g.gate.split('.')[0]}:${g.passed === true ? '✓' : g.passed === false ? '✗' : '—'}`).join(' '),
     isGood: (r) => r.gates.filter(g => g.passed === false).length === 0 ? 'good' : 'neutral',
   },
+
+  // ═══ TASK 26: popup ℹë për TË GJITHË treguesit që mbeteshin pa shpjegim ═══
+  gate1: {
+    title: 'Gate 1 — Backtest pozitiv (In-Sample)',
+    what: 'Testi i parë kundrejt vetvetes: strategjia duhet të jetë fitimprurëse në të dhënat që e formuan (IS). PF ≥ 1.3 do të thotë: për çdo $100 humbje, së paku $130 fitim bruto. Nën 1.3, pas kostos reale të ekzekutimit ngec zerove — në IS asnjë lloj optimizimi nuk e shpëton më vonë.',
+    target: 'netProfit > 0 · PF ≥ 1.3 · ≥ 20 tregti in-sample.',
+    howNow: (r) => `Aktual: ${r.gates[0]?.actual ?? '—'} — ${r.gates[0]?.passed === true ? 'KALUAR' : r.gates[0]?.passed === false ? 'DESAKT' : 'në pritje'}`,
+    isGood: (r) => r.gates[0]?.passed === true ? 'good' : r.gates[0]?.passed === false ? 'bad' : 'neutral',
+  },
+  gate2: {
+    title: 'Gate 2 — OOS pozitiv (Out-of-Sample)',
+    what: '30% e fundit e të dhënave mbahet jashtë zhvillimit — këtu shihet nëse avantazhi ekziston apo u mësuash përmemërisë (overfitting). Nëse IS fiton e OOS humb, atë që kishe ishte kurvë e rastit, jo strategji.',
+    target: 'OOS netProfit > 0 · PF ≥ 1.1.',
+    howNow: (r) => `Aktual: ${r.gates[1]?.actual ?? '—'} — ${r.gates[1]?.passed === true ? 'KALUAR' : r.gates[1]?.passed === false ? 'DESAKT' : 'në pritje'}`,
+    isGood: (r) => r.gates[1]?.passed === true ? 'good' : r.gates[1]?.passed === false ? 'bad' : 'neutral',
+  },
+  gate3: {
+    title: 'Gate 3 — Walk-forward pozitiv',
+    what: '4 dritare OOS të ankoruara rrëshqitës: secila testohet me parametrat e dhënë para saj. Kërkon së paku 10 tregti dhe win rate jo më shumë se 25 pikë nën IS — pa këtë, stabiliteti në kohë nuk ekziston.',
+    target: 'WF trades ≥ 10 · WR ≥ max(35%, IS−25pk).',
+    howNow: (r) => `Aktual: ${r.gates[2]?.actual ?? '—'} — ${r.gates[2]?.passed === true ? 'KALUAR' : r.gates[2]?.passed === false ? 'DESAKT' : 'në pritje'}`,
+    isGood: (r) => r.gates[2]?.passed === true ? 'good' : r.gates[2]?.passed === false ? 'bad' : 'neutral',
+  },
+  gate4: {
+    title: 'Gate 4 — Paper trading',
+    what: 'Sinjalet reale të skanerit ndiqen në llogari simuluar me çmime reale — 50-100 zbatime para çdo dollar të vërtetë. Këtu dalin problemet që asnjë backtest nuk i tregon: urdhra të pamjaftueshëm, tick-e që kapërcehen, psikologjia e pritjes.',
+    target: '≥ 50 paper trades të mbyllura.',
+    howNow: (r) => `Aktual: ${r.gates[3]?.actual ?? '—'} — ${r.gates[3]?.passed === true ? 'KALUAR' : r.gates[3]?.passed === false ? 'DESAKT' : 'në pritje'}`,
+    isGood: (r) => r.gates[3]?.passed === true ? 'good' : r.gates[3]?.passed === false ? 'bad' : 'neutral',
+  },
+  gate5: {
+    title: 'Gate 5 — Kontroll slippage',
+    what: 'Kosto totale e ekzekutimit (komision + spread + slippage + market impact) nën 0.35% të vlerës së pozicionit. Mbi këtë prag, avantazhi i hollë strategjik brehet nga realiteti i mbushjes së urdhrave.',
+    target: 'Kosto ekzekutimi ≤ 0.35% e pozicionit.',
+    howNow: (r) => `Aktual: ${r.gates[4]?.actual ?? '—'} — ${r.gates[4]?.passed === true ? 'KALUAR' : r.gates[4]?.passed === false ? 'DESAKT' : 'në pritje'}`,
+    isGood: (r) => r.gates[4]?.passed === true ? 'good' : r.gates[4]?.passed === false ? 'bad' : 'neutral',
+  },
+  gate6: {
+    title: 'Gate 6 — LIVE me 0.25% risk',
+    what: 'Hapi i fundit dhe i vetmi manual: kalimi në para reale me gjysmën e rrezikut (1% → 0.25% për tregti). Nëse edhe me gjysmë rreziku ekuilibri bie si në backtest, atëherë rritet gradualisht — kurrë anasjelltas.',
+    target: 'Vetëm pas gates 1-5 kaluar; aktivizohet me vendim manual.',
+    howNow: (r) => `Aktual: ${r.gates[5]?.actual ?? '—'} — ${r.gates[5]?.passed === true ? 'KALUAR' : 'në pritje (manual)'}`,
+    isGood: (r) => r.gates[5]?.passed === true ? 'good' : 'neutral',
+  },
+  wfAnchored: {
+    title: 'Walk-Forward (4 dritare OOS të ankoruara)',
+    what: 'Katër dritare test të njëpasnjëshme: secila testohet me parametrat e fiksuar PARA se të shihet rezultati. WF1 fillon më herët, WF4 më vonë — nëse fitimi vjen vetëm nga një dritare, nuk ke strategji, ke një periudhë tregu që Ra fort.',
+    target: 'Të paktën 3 nga 4 dritare pozitive ose neutral me R mesatar jo-negativ.',
+    howNow: (r) => r.walkForwardWindows.map(w => `WF${w.window}: ${w.trades}t ${sign(w.netProfit)}$ ${sign(w.avgR, 2)}R`).join(' · '),
+    isGood: (r) => r.walkForwardWindows.filter(w => w.netProfit > 0).length >= 3 ? 'good'
+      : r.walkForwardWindows.filter(w => w.netProfit > 0).length >= 2 ? 'neutral' : 'bad',
+  },
+  setupSplit: {
+    title: 'Continuation kundrejt fade',
+    what: 'Tregtimi ndahet sipas setup-it: PULLBACK (kthim brenda trendit), TREND_CONT (vazhdim pas konsolidimi) dhe BREAKOUT (thyerje e 20-d high). Nëse vetëm një setup fiton ndërsa të tjerët humbasin, strategjia mund të ngushtohet — ose të paktën të peshohet ndryshe.',
+    target: 'Të tre setup-et me expectancy jo-negative; nëse një zhvendosje e bëhet barra e fitimit, ai duhet izoluar.',
+    howNow: (r) => r.setupSplit.map(s => `${s.setupType}: ${s.trades}t ${fmt(s.winRatePct, 0)}% ${sign(s.netProfit)}$`).join(' · '),
+    isGood: (r) => r.setupSplit.filter(s => s.netProfit > 0).length >= 2 ? 'good' : 'neutral',
+  },
+  setupPULLBACK: {
+    title: 'Setup PULLBACK (hyrja B — më e besueshmja)',
+    what: 'Aksioni në trend rritës bën një rënie të kontrolluar 2-8 ditë drejt EMA10/20 me volum në rënie, pastaj jep candle rikthimi. Hyrja me limit brenda zonës — stop-i nën swing low ka kuptim, sepse shitësit e vërtetë janë deri aty.',
+    target: 'WR 40-55% me R mesatar ≥ +0.2R — kjo është bërthama e strategjisë.',
+    howNow: (r) => { const s = r.setupSplit.find(x => x.setupType.includes('PULLBACK')); return s ? `${s.trades} tregti · WR ${fmt(s.winRatePct, 1)}% · ${sign(s.avgR, 2)}R · ${sign(s.netProfit)}$` : 'Pa tregti'; },
+    isGood: (r) => { const s = r.setupSplit.find(x => x.setupType.includes('PULLBACK')); return s ? (s.avgR >= 0.1 ? 'good' : s.avgR >= 0 ? 'neutral' : 'bad') : 'neutral'; },
+  },
+  setupBREAKOUT: {
+    title: 'Setup BREAKOUT (hyrja A — kërkon volum)',
+    what: 'Çmimi thyen high 20-ditor me volum mbi mesataren. Hyrja me buy stop pak mbi nivelin — stop-i duhet të jetë i ngushtë sepse thyerjet e rreme bie menjëherë. Vërejtje: kosto më e lartë sepse ekzekutohet me stop order në lëvizje.',
+    target: 'Vetëm me RVOL të lartë; pa volum, thyerja është kurvë.',
+    howNow: (r) => { const s = r.setupSplit.find(x => x.setupType.includes('BREAKOUT')); return s ? `${s.trades} tregti · WR ${fmt(s.winRatePct, 1)}% · ${sign(s.avgR, 2)}R · ${sign(s.netProfit)}$` : 'Pa tregti'; },
+    isGood: (r) => { const s = r.setupSplit.find(x => x.setupType.includes('BREAKOUT')); return s ? (s.avgR >= 0.1 ? 'good' : s.avgR >= 0 ? 'neutral' : 'bad') : 'neutral'; },
+  },
+  setupTREND_CONT: {
+    title: 'Setup TREND_CONT (vazhdim i trendit)',
+    what: 'Konsolidim i ngushtë afat të lartë (kohë pa lëvizje të mëdha) brenda një trendi të fortë — pastaj zgjerimi. Më i vështiri për tregtimi automatik: momenti i hyrjes kërkon durim dhe konfirmim volumi.',
+    target: 'R mesatar jo-negativ; nëse humb vazhdimisht, hiq nga universi i sinjaleve.',
+    howNow: (r) => { const s = r.setupSplit.find(x => x.setupType.includes('TREND_CONT') || x.setupType.includes('TREND CONT')); return s ? `${s.trades} tregti · WR ${fmt(s.winRatePct, 1)}% · ${sign(s.avgR, 2)}R · ${sign(s.netProfit)}$` : 'Pa tregti'; },
+    isGood: (r) => { const s = r.setupSplit.find(x => x.setupType.includes('TREND_CONT') || x.setupType.includes('TREND CONT')); return s ? (s.avgR >= 0.1 ? 'good' : s.avgR >= 0 ? 'neutral' : 'bad') : 'neutral'; },
+  },
+  executionRealistic: {
+    title: 'Ekzekutimi realist',
+    what: 'Çdo sinjal kalon nëpër modelin real të ekzekutimit: sinjali në mbyllje → urdhri mbushet në qirinë PASUES, limit/stop sipas setup-it, gap-i i mëngjesit pranohet si është, dhe kur stop-i me target-in preken në të njëjtin qiri llogaritet konservativisht stop-i i pari. "Urdhra të pamjaftueshëm" janë sinjale të vlefshme që s\'u mbush dot me kushte — jo rrugëshpëtim.',
+    target: 'Refuzimet < 20% e sinjaleve; ekuilibri final brenda pritjes së IS+OOS.',
+    howNow: (r) => `${fmt(r.execution.signalsGenerated)} sinjale · ${fmt(r.execution.entryOrdersRejected)} të pamjaftuara (${fmt(r.execution.signalsGenerated > 0 ? (r.execution.entryOrdersRejected / r.execution.signalsGenerated) * 100 : 0, 1)}%) · $${fmt(r.equity.startEquity)} → $${fmt(r.equity.finalEquity)}`,
+    isGood: (r) => r.execution.signalsGenerated > 0 && (r.execution.entryOrdersRejected / r.execution.signalsGenerated) <= 0.2 ? 'good' : 'neutral',
+  },
+  topWorst: {
+    title: '5 më të mirat / 5 më të këqijat',
+    what: 'Anatomia e shpërndarjes së fitimeve: nëse 5 më të mirat mbajnë pjesën dërrmuese të fitimit neto, strategjia varet nga raste të rralla — një statistikë e dobët për të ardhmen. 5 më të këqijat tregojnë si duket dështimi normal (jo fati i keq): stop i ekzekutuar mirë duhet të jetë afër −1R.',
+    target: '5 më të mirat jo më shumë se ~50% e fitimit neto; 5 më të këqijat brenda −1 deri −1.5R.',
+    howNow: (r) => {
+      const top5 = r.topTrades.reduce((s, t) => s + t.pnlNet, 0);
+      const worst5 = r.worstTrades.reduce((s, t) => s + t.pnlNet, 0);
+      return `Top5: ${sign(top5)}$ (${r.topTrades.map(t => t.symbol).slice(0, 5).join(', ')}) · Worst5: ${sign(worst5)}$ (më i keqi ${sign(r.worstTrades[0]?.r ?? 0, 1)}R)`;
+    },
+    isGood: (r) => { const top5 = r.topTrades.reduce((s, t) => s + t.pnlNet, 0); const total = r.table.inSample.netProfit + r.table.outOfSample.netProfit; return total > 0 && top5 / total <= 0.5 ? 'good' : 'neutral'; },
+  },
+  sectorStatsDoc: {
+    title: 'Performanca sipas sektorit',
+    what: 'Ndarja e tregtive dhe fitimeve sipas sektorit ekonomik. Dy rreziqe të fshehura këtu: (1) sektori që fiton sot mund të jetë thjesht cikli i tij i mirë — jo meritë e strategjisë; (2) koncentrimi në 1-2 sektorë do të thotë korrelacion i lartë i pozicioneve (bie bashkë).',
+    target: 'Fitim i shpërndarë mbi 3+ sektorë; asnjë sektor më shumë se ~40% e fitimit neto.',
+    howNow: (r) => r.sectorStats.slice(0, 5).map(s => `${s.sector}: ${s.trades}t ${sign(s.netProfit)}$`).join(' · '),
+    isGood: (r) => { const pos = r.sectorStats.filter(s => s.netProfit > 0).length; return pos >= 3 ? 'good' : 'neutral'; },
+  },
+  exitReasonsDoc: {
+    title: 'Arsyet e daljes (exit reasons)',
+    what: 'Si mbyllen tregtitë: TARGET (fitim i planifikuar), STOP (humbje e kontrolluar), GAP_STOP (hapur nën stop — humbje PËRTEJ planit), GAP_TARGET (hapur mbi target — fitim shtesë), TIME (kohë-stop 20 ditë) ose EOD (fund i periudhës). Përqindja e GAP_STOP-it është matja e vetme e gap risk real.',
+    target: 'STOP + GAP_STOP së bashku nën 60% e daljeve; GAP_STOP vetëm nën 10%.',
+    howNow: (r) => Object.entries(r.execution.exitReasons).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(' · '),
+    isGood: (r) => { const total = Object.values(r.execution.exitReasons).reduce((a, b) => a + b, 0) || 1; const gs = (r.execution.exitReasons.GAP_STOP || 0) / total; return gs <= 0.1 ? 'good' : gs <= 0.2 ? 'neutral' : 'bad'; },
+  },
+  variantA: {
+    title: 'A — Baseline (bërthama Trend+Pullback)',
+    what: 'Vetëm bërthama mekanike: likuiditeti, trend-i me stacked MA, setup-i PULLBACK/BREAKOUT, score ≥ 45, RSI 30-75, risk ≤ 8%, ATR 1.5-6%. PA event, PA filtra sektori, PA regjim — pastron pamjen për atë që vërtetë punon.',
+    target: 'Është pika e krahasimit: çdo filtër shtesë duhet justifikuar ndaj kësaj bazë.',
+    howNow: (r) => { const v = r.variants.find(x => x.key === 'baseline'); return v ? `IS: ${v.is.trades}t ${sign(v.is.netProfit)}$ · OOS: ${v.oos.trades}t ${sign(v.oos.netProfit)}$ PF ${fmt(v.oos.profitFactor, 2)}` : '—'; },
+    isGood: () => 'neutral',
+  },
+  variantB: {
+    title: 'B — Event Filter (shmang earnings e afërta)',
+    what: 'Bërthama A + bllokimi i hyrjeve kur earnings është brenda 2 ditësh dhe ulja e pikëve për afërsinë 3-7 ditë. Shtresa e parë e menaxhimit të gap risk — kostoja e vetme: pak sinjale.',
+    target: 'Vitin e humbjeve nga eventet pa prekur expectancy-n bazë.',
+    howNow: (r) => { const v = r.variants.find(x => x.key === 'event-filter'); return v ? `IS: ${v.is.trades}t ${sign(v.is.netProfit)}$ · OOS: ${v.oos.trades}t ${sign(v.oos.netProfit)}$ PF ${fmt(v.oos.profitFactor, 2)}` : '—'; },
+    isGood: (r) => { const a = r.variants.find(x => x.key === 'baseline'); const b = r.variants.find(x => x.key === 'event-filter'); return a && b && b.oos.netProfit > a.oos.netProfit ? 'good' : 'neutral'; },
+  },
+  variantC: {
+    title: 'C — Event Score (surprise + PEAD)',
+    what: 'B + pikët e surprizës së fitimeve dhe drift-ut pas njoftimit (PEAD — post-earnings announcement drift). Njëkohësisht shton edhe 8-K materialet negative. Kjo e kthen event-in nga rrezik në avantazh të matshëm.',
+    target: 'Expectancy më e lartë se B në OOS me numër tregtish të ngjashëm.',
+    howNow: (r) => { const v = r.variants.find(x => x.key === 'event-score'); return v ? `IS: ${v.is.trades}t ${sign(v.is.netProfit)}$ · OOS: ${v.oos.trades}t ${sign(v.oos.netProfit)}$ PF ${fmt(v.oos.profitFactor, 2)}` : '—'; },
+    isGood: (r) => { const b = r.variants.find(x => x.key === 'event-filter'); const c = r.variants.find(x => x.key === 'event-score'); return b && c && c.oos.expectancy > b.oos.expectancy ? 'good' : 'neutral'; },
+  },
+  variantD: {
+    title: 'D — Full Strategy (të gjithë filtrat IBKR)',
+    what: 'C + të gjithë filtrat e skanerit live: Sector Breadth Gate (DEAD/WEAK), RS kundrejt sektorit, regjimi VIX+breadth, RSI > 70, stop multiplier sipas VIX dhe cap-i i tregut. Ky është versioni që tregtohet në paper — D kundrejt A tregon vlerën e plotë të shtresave.',
+    target: 'Versioni i vetëm me pretendim për tregtim: expectancy pozitive OOS + drawdown i ulët.',
+    howNow: (r) => { const v = r.variants.find(x => x.key === 'full'); return v ? `IS: ${v.is.trades}t ${sign(v.is.netProfit)}$ · OOS: ${v.oos.trades}t ${sign(v.oos.netProfit)}$ PF ${fmt(v.oos.profitFactor, 2)}` : '—'; },
+    isGood: (r) => { const d = r.variants.find(x => x.key === 'full'); return d && d.oos.expectancy > 0 ? 'good' : 'neutral'; },
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -549,7 +689,10 @@ export function IBKRValidationLab() {
                     : 'border-amber-500/25 bg-amber-500/5'}`}>
                     <GateIcon passed={g.passed} />
                     <div className="min-w-0">
-                      <p className="text-[12.5px] font-semibold text-foreground">{g.gate}</p>
+                      <p className="text-[12.5px] font-semibold text-foreground inline-flex items-center gap-1 flex-wrap">
+                        {g.gate}
+                        <MetricInfoPopup metricKey={`gate${i + 1}`} report={report} />
+                      </p>
                       <p className="text-[11.5px] text-muted-foreground leading-snug mt-0.5">{g.description}</p>
                       <p className="text-[11.5px] mt-1">
                         <span className="text-muted-foreground">Aktual: </span>
@@ -644,7 +787,7 @@ export function IBKRValidationLab() {
                       <th className="pb-2 text-[12px] font-semibold text-muted-foreground">Metrika</th>
                       <th className="pb-2 text-[12px] font-semibold text-blue-400">In-Sample</th>
                       <th className="pb-2 text-[12px] font-semibold text-amber-400">Out-of-Sample</th>
-                      <th className="pb-2 text-[12px] font-semibold text-violet-400">Walk-Forward</th>
+                      <th className="pb-2 text-[12px] font-semibold text-violet-400 inline-flex items-center gap-1">Walk-Forward<MetricInfoPopup metricKey="wfAnchored" report={report} /></th>
                       <th className="pb-2 text-[12px] font-semibold text-cyan-400">Paper</th>
                       <th className="pb-2 text-[12px] font-semibold text-emerald-400">Live</th>
                     </tr>
@@ -704,7 +847,10 @@ export function IBKRValidationLab() {
                       <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Metrika</th>
                       {variantCols.map(v => (
                         <th key={v.key} className="pb-2 text-[11.5px] font-semibold text-cyan-400">
-                          {v.label}
+                          <span className="inline-flex items-center gap-1">
+                            {v.label}
+                            <MetricInfoPopup metricKey={`variant${v.key === 'baseline' ? 'A' : v.key === 'event-filter' ? 'B' : v.key === 'event-score' ? 'C' : 'D'}`} report={report} />
+                          </span>
                           <span className="block text-[9.5px] font-normal text-muted-foreground/70 leading-tight mt-0.5 max-w-[170px]">{v.description}</span>
                         </th>
                       ))}
@@ -827,7 +973,7 @@ export function IBKRValidationLab() {
                       ? `Walk-Forward kalendarike (${report.wfCalendarWindows.length} dritare train 5v → test 1v)`
                       : 'Walk-Forward (4 dritare OOS)'}
                   </h3>
-                  {report.wfCalendarWindows.length > 0 && <MetricInfoPopup metricKey="wfCalendar" report={report} />}
+                  <MetricInfoPopup metricKey={report.wfCalendarWindows.length > 0 ? 'wfCalendar' : 'wfAnchored'} report={report} />
                 </div>
                 {report.wfCalendarWindows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -946,6 +1092,7 @@ export function IBKRValidationLab() {
                 <div className="flex items-center gap-2 mb-2.5">
                   <Layers className="w-4 h-4 text-violet-400" />
                   <h3 className="text-[14px] font-bold text-foreground">Sipas sektorit</h3>
+                  <MetricInfoPopup metricKey="sectorStatsDoc" report={report} />
                 </div>
                 <div className="overflow-x-auto max-h-56 overflow-y-auto">
                   <table className="w-full text-left">
@@ -978,6 +1125,7 @@ export function IBKRValidationLab() {
                 <div className="flex items-center gap-2 mb-2.5">
                   <TrendingDown className="w-4 h-4 text-violet-400" />
                   <h3 className="text-[14px] font-bold text-foreground">Continuation kundrejt fade</h3>
+                  <MetricInfoPopup metricKey="setupSplit" report={report} />
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -991,20 +1139,27 @@ export function IBKRValidationLab() {
                       </tr>
                     </thead>
                     <tbody className="text-[12px]">
-                      {report.setupSplit.map((s) => (
-                        <tr key={s.setupType} className="border-b border-border/30 last:border-0">
-                          <td className="py-1.5 text-foreground font-semibold">{s.setupType}</td>
-                          <td className="py-1.5 text-foreground">{s.trades}</td>
-                          <td className={`py-1.5 font-semibold ${s.winRatePct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(s.winRatePct, 1)}%</td>
-                          <td className={`py-1.5 font-semibold ${pnlColor(s.avgR)}`}>{sign(s.avgR, 2)}</td>
-                          <td className={`py-1.5 font-semibold ${pnlColor(s.netProfit)}`}>{sign(s.netProfit)}</td>
-                        </tr>
-                      ))}
+                      {report.setupSplit.map((s) => {
+                        const setupKey = s.setupType.includes('PULLBACK') ? 'setupPULLBACK'
+                          : s.setupType.includes('BREAKOUT') ? 'setupBREAKOUT' : 'setupTREND_CONT';
+                        return (
+                          <tr key={s.setupType} className="border-b border-border/30 last:border-0">
+                            <td className="py-1.5 text-foreground font-semibold inline-flex items-center gap-1">
+                              {s.setupType}
+                              <MetricInfoPopup metricKey={setupKey} report={report} />
+                            </td>
+                            <td className="py-1.5 text-foreground">{s.trades}</td>
+                            <td className={`py-1.5 font-semibold ${s.winRatePct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(s.winRatePct, 1)}%</td>
+                            <td className={`py-1.5 font-semibold ${pnlColor(s.avgR)}`}>{sign(s.avgR, 2)}</td>
+                            <td className={`py-1.5 font-semibold ${pnlColor(s.netProfit)}`}>{sign(s.netProfit)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
                 {/* Exit reasons */}
-                <div className="mt-3 flex flex-wrap gap-1.5">
+                <div className="mt-3 flex flex-wrap gap-1.5 items-center">
                   {Object.entries(report.execution.exitReasons).map(([r, n]) => (
                     <Badge key={r} variant="outline" className={`text-[10.5px] ${
                       r.includes('TARGET') ? 'border-emerald-500/30 text-emerald-400'
@@ -1013,6 +1168,7 @@ export function IBKRValidationLab() {
                       {r.replace('_', ' ')}: {n}
                     </Badge>
                   ))}
+                  <MetricInfoPopup metricKey="exitReasonsDoc" report={report} />
                 </div>
                 <p className="text-[11px] text-muted-foreground/70 mt-1.5">
                   GAP_STOP = hapur nën stop (humbje përtej stopit) · GAP_TARGET = hapur mbi target.
@@ -1134,6 +1290,7 @@ export function IBKRValidationLab() {
               <div className="flex items-center gap-2 mb-2">
                 <ActivityIcon />
                 <h3 className="text-[13px] font-bold text-foreground">Ekzekutimi realist</h3>
+                <MetricInfoPopup metricKey="executionRealistic" report={report} />
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[12px]">
                 <div>
@@ -1175,6 +1332,7 @@ export function IBKRValidationLab() {
                   <div className="flex items-center gap-2 mb-2">
                     <block.icon className={`w-4 h-4 ${block.color}`} />
                     <h4 className="text-[13px] font-bold text-foreground">{block.title}</h4>
+                    <MetricInfoPopup metricKey="topWorst" report={report} />
                   </div>
                   <div className="space-y-1.5">
                     {block.trades.map((tr, i) => (

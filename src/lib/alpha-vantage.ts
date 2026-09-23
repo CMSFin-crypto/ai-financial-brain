@@ -443,6 +443,17 @@ export interface YahooFundamentals {
   nextEarningsDate?: string;
   // Kapitalizimi i tregut në dollarë brutë — vetëm nga baza lokale JSON ("$4.51T")
   marketCap?: number;
+  // ── TASK 26: Fundamental Context (popup për kandidatët e IBKR scanner-it) ──
+  priceToSales?: number;              // P/S trailing 12m (summaryDetail/defaultKeyStatistics)
+  earningsSurprisePct?: number;    // % e tremujorit të fundit (earningsHistory)
+  lastEarningsPeriod?: string;    // p.sh. "Q3 2026" (earningsHistory)
+  epsRevisions?: { up30d: number; down30d: number }; // earningsTrend (0y) — analyst counts (Yahoo shpesh kthen null)
+  epsTrend30d?: { current: number; days30Ago: number; days60Ago: number }; // earningsTrend (0y) — estimi tani kundrejt 30/60 ditësh më parë (burimi i qëndrueshëm i revisions)
+  epsEstimateCurrentYear?: number;  // earningsTrend (0y) — EPS konsensus viti aktual
+  revenueEstimateCurrentYear?: number; // earningsTrend (0y) — Revenue konsensus
+  institutionalOwnershipPct?: number; // shuma e top-institucioneve (institutionOwnership)
+  institutionCount?: number;       // sa institucione në top-listë
+  sharesOutstanding?: number;      // defaultKeyStatistics — për dilution
   source: string;
   fetchedAt: string;
 }
@@ -502,7 +513,8 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null
 async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<YahooFundamentals | null> {
   const base = YAHOO_ENDPOINTS[endpointIndex] || YAHOO_ENDPOINTS[0];
   // summaryDetail shtohet për trailingPE / marketCap / previousClose (financialData nuk i ka)
-  const modules = 'financialData,defaultKeyStatistics,earningsTrend,earningsHistory,summaryDetail';
+  // institutionOwnership shtohet për TASK 26 (Fundamental Context)
+  const modules = 'financialData,defaultKeyStatistics,earningsTrend,earningsHistory,summaryDetail,institutionOwnership';
   try {
     // v10 quoteSummary REQUIRES a valid crumb — obtain cookie+crumb first
     const auth = await getYahooCrumb();
@@ -535,6 +547,51 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
     const et = body.earningsTrend || {};
     const eh = body.earningsHistory || {};
     const sd = body.summaryDetail || {};
+    const io = body.institutionOwnership || {};
+
+    // ── TASK 26: Fundamental Context ──
+    // Earnings surprise i tremujorit të fundit (EPS aktual vs konsensus)
+    const historyData = eh.history || [];
+    const lastReport = historyData[0];
+    const earningsSurprisePct = extractNum(lastReport?.surprisePercent?.raw) || undefined;
+    const lastEarningsPeriod = lastReport?.quarter?.fmt ? String(lastReport.quarter.fmt) : undefined;
+
+    // Revision-e dhe estimate-t e vitit aktual (trend "0y" = viti aktual)
+    // Shënim: Yahoo ka degraduar epsRevisions (shpesh null) — epsTrend (estimi tani vs
+    // 30/60 ditë më parë) është burimi i qëndrueshëm; epsRevisions mbetet si shtesë kur ka.
+    const trendList = Array.isArray(et.trend) ? et.trend : [];
+    const trendCY = trendList.find((t: any) => t?.period === '0y');
+    const epsRevRaw = trendCY?.epsRevisions;
+    const epsRevisions = (epsRevRaw?.upLast30Days?.raw != null || epsRevRaw?.downLast30Days?.raw != null)
+      ? { up30d: extractNum(epsRevRaw?.upLast30Days?.raw), down30d: extractNum(epsRevRaw?.downLast30Days?.raw) }
+      : undefined;
+    const epsTrendRaw = trendCY?.epsTrend;
+    const epsTrend30d = (extractNum(epsTrendRaw?.current?.raw) > 0 && extractNum(epsTrendRaw?.['30daysAgo']?.raw) > 0)
+      ? {
+          current: extractNum(epsTrendRaw?.current?.raw),
+          days30Ago: extractNum(epsTrendRaw?.['30daysAgo']?.raw),
+          days60Ago: extractNum(epsTrendRaw?.['60daysAgo']?.raw),
+        }
+      : undefined;
+    const epsEstimateCurrentYear = extractNum(trendCY?.earningsEstimate?.avg?.raw)
+      || extractNum(trendCY?.earningsEstimate?.avgForecast?.raw)
+      || extractNum(trendCY?.earningsEstimate?.['0y']?.avg?.raw)
+      || undefined;
+    const revenueEstimateCurrentYear = extractNum(trendCY?.revenueEstimate?.avg?.raw) || undefined;
+
+    // Institutional ownership — shuma e pctHeld të top-institucioneve (approx)
+    const holders = Array.isArray(io.ownershipList) ? io.ownershipList : [];
+    const institutionalOwnershipPct = holders.length > 0
+      ? Math.min(100, holders.reduce((s: number, h: any) => s + extractNum(h?.pctHeld?.raw) * 100, 0))
+      : undefined;
+    const institutionCount = holders.length > 0 ? holders.length : undefined;
+
+    // P/S — priceToSalesTrailing12Months (provohet në summaryDetail DHE defaultKeyStatistics)
+    const priceToSales = extractNum(sd.priceToSalesTrailing12Months?.raw)
+      || extractNum(dks.priceToSalesTrailing12Months?.raw)
+      || undefined;
+    const sharesOutstanding = extractNum(dks.sharesOutstanding?.raw) || undefined;
+
 
     // Extract earnings trend for forward EPS + next earnings date (period "0q" = tremujori i ardhshëm)
     const trendData = et.trend || [];
@@ -545,7 +602,7 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
     const nextEarningsDate = String(trendData[0]?.endDate || '').slice(0, 10);
 
     // Extract quarterly growth from earnings history
-    const historyData = eh.history || [];
+    // (historyData u deklarua më lart te seksioni TASK 26)
     let earningsQuarterlyGrowth = extractNum(fd.earningsQuarterlyGrowth);
     let revenueQuarterlyGrowth = extractNum(fd.revenueQuarterlyGrowth);
     if (!earningsQuarterlyGrowth && historyData.length > 0) {
@@ -599,6 +656,17 @@ async function fetchQuoteSummary(ticker: string, endpointIndex = 0): Promise<Yah
       nextEarningsDate,
       // marketCap live nga summaryDetail (në dollarë brutë); JSON-lokali e mbush si fallback
       marketCap: extractNum(sd.marketCap?.raw) || undefined,
+      // TASK 26: fushat e Fundamental Context (undefined kur mungojnë — kurrë 0 fallco)
+      priceToSales,
+      earningsSurprisePct,
+      lastEarningsPeriod,
+      epsRevisions,
+      epsTrend30d,
+      epsEstimateCurrentYear,
+      revenueEstimateCurrentYear,
+      institutionalOwnershipPct,
+      institutionCount,
+      sharesOutstanding,
       source: `yahoo_finance (${base})`,
       fetchedAt: new Date().toISOString(),
     };
@@ -813,6 +881,8 @@ function localToYahooFundamentals(sym: string, d: Record<string, any>): YahooFun
     epsForward: parseNum(d.fwdEps),
     nextEarningsDate: '',
     marketCap: parseMoneyStr(d.marketCap),
+    // TASK 26: P/S nga JSON-lokali (0 → undefined — kurrë zero fallco)
+    priceToSales: parseNum(d.ps) > 0 ? parseNum(d.ps) : undefined,
     source: 'local_json',
     fetchedAt: new Date().toISOString(),
   };

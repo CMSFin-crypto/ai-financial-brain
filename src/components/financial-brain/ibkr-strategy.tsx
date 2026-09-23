@@ -16,6 +16,9 @@ import {
 import { useState, useEffect, useCallback, useRef } from 'react';
 // Task 27: IBKR Validation Lab — backtest/OOS/walk-forward i së njëjtës strategji
 import { IBKRValidationLab } from './ibkr-validation-lab';
+// Task 26: Fundamental Context — popup për çdo kandidat (FAZA 1: vetëm informues)
+import { FundamentalPopup } from './FundamentalPopup';
+import type { FundamentalReport } from '@/lib/fundamentals/normalize';
 
 // ── Types ──
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
@@ -376,8 +379,32 @@ function NewsImpactBlock({ symbol }: { symbol: string }) {
   );
 }
 
+// ── TASK 26: Event Score për shfaqje (0-2) — derivohet nga Catalyst Gate i skanimit ──
+// Proxy informues: proximiteti i earnings + statusi i katalizatorit. NUK hyn në
+// score-in teknik — vetëm për kuadratin e verdiktit sipas spec-it të userit.
+function estimateEventScore(stock: FunnelStock): number {
+  let score = 0;
+  const dte = stock.daysToEarnings;
+  // Proximiteti: > 7 ditë ose pa earnings → 1pt; 4-7 ditë → 0.5pt; ≤ 3 ditë → 0pt
+  score += (dte === null || dte > 7) ? 1 : dte >= 4 ? 0.5 : 0;
+  // Katalizatori: CLEAR 1pt; POSITIVE 1pt; MIXED 0.5pt; EVENT_RISK/NO_TRADE 0pt
+  const cat = stock.catalystStatus;
+  if (cat === 'CLEAR' || cat === 'POSITIVE') score += 1;
+  else if (cat === 'MIXED') score += 0.5;
+  else score += 0;
+  return Math.min(2, Math.round(score * 2) / 2);
+}
+
+// ── TASK 26: Ngjyra e etiketave të seksioneve fundamentale ──
+function fundSectionCls(label: string): string {
+  if (['Positive', 'Strong', 'Cheap'].includes(label)) return 'text-emerald-400';
+  if (['Negative', 'Weak', 'Very Expensive', 'High'].includes(label)) return 'text-red-400';
+  if (['Expensive', 'Low'].includes(label)) return 'text-amber-400';
+  return 'text-muted-foreground';
+}
+
 // ── Stock Card ──
-function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?: any }) {
+function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: FunnelStock; rank: number; vp?: any; fund?: FundamentalReport | null; fundLoading?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [rankingChanges, setRankingChanges] = useState<any[] | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
@@ -860,6 +887,105 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
           </div>
         )}
 
+        {/* ═══ TASK 26: FUNDAMENTAL CONTEXT — FAZA 1: vetëm panel informues ═══ */}
+        {/* Fundamentet NUK ndryshojnë Technical Score, READY, BUY ose WATCH.
+                Pas testit rigoroz (Technical-only vs Technical + Fundamental)
+                vendosim nëse bëhen filtër real. */}
+        <div className="mt-2 rounded-lg border p-3 space-y-2" style={{
+              backgroundColor: 'rgba(14, 165, 233, 0.05)',
+              borderColor: 'rgba(14, 165, 233, 0.2)',
+        }}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-sky-400" />
+                  <p className="text-[13px] font-semibold text-sky-400">Fundamental Context</p>
+                  <MiniPopover
+                    label="Fundamental Context (informues)"
+                    desc="Fundamentet e kandidatit: rritja, rentabiliteti, cash flow, vlerësimi, earnings/estimates, pronësia institucionale dhe risk flags. FAZA 1: shfaqen VETËM si kontekst — nuk ndryshojnë Technical Score, READY, BUY ose WATCH. Pas testit rigoroz (Technical-only kundrejt Technical + Fundamental filter, me të dhëna point-in-time) vendosim nëse duhet të hyjnë në verdiktin final. Metrikat e pamjaftueshme shfaqen si 'N/A — data unavailable', kurrë si zero."
+                  >
+                    <span className="inline-flex items-center justify-center w-[16px] h-[16px] rounded-full text-muted-foreground/60 hover:text-sky-400 transition-colors cursor-help">
+                      <Info className="w-3 h-3" />
+                    </span>
+                  </MiniPopover>
+                  <span className="text-[10px] text-muted-foreground/70">— kontekst, jo sinjal (Faza 1)</span>
+                </div>
+                <FundamentalPopup
+                  symbol={stock.symbol}
+                  report={fund ?? null}
+                  loading={fundLoading}
+                  technicalScore={stock.totalScore}
+                  eventScore={estimateEventScore(stock)}
+                  verdict={stock.decision}
+                  compact
+                />
+              </div>
+
+              {/* Rreshti i verdiktit sipas spec-it të userit */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                <div className="rounded-md bg-muted/10 px-2 py-1">
+                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground/60">Technical Score</p>
+                  <p className={`font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}/100</p>
+                </div>
+                <div className="rounded-md bg-muted/10 px-2 py-1">
+                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground/60">Event Score</p>
+                  <p className="font-bold text-foreground">{estimateEventScore(stock)}/2</p>
+                </div>
+                <div className="rounded-md bg-muted/10 px-2 py-1">
+                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground/60">Fund. Context</p>
+                  {fundLoading && !fund ? (
+                    <p className="font-bold text-muted-foreground flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />…</p>
+                  ) : (
+                    <p className={`font-bold ${
+                      fund?.contextLabel === 'Positive' ? 'text-emerald-400'
+                      : fund?.contextLabel === 'Negative' ? 'text-red-400'
+                      : fund ? 'text-amber-400' : 'text-muted-foreground/50'}`}>
+                      {fund?.contextLabel ?? 'N/A'}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-md bg-muted/10 px-2 py-1">
+                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground/60">Trade Verdict</p>
+                  <p className={`font-bold ${stock.decision === 'READY' ? 'text-emerald-400' : 'text-amber-400'}`}>{stock.decision}</p>
+                </div>
+              </div>
+
+              {/* Etiketat sipas spec-it: Growth/Profitability/Cash flow/Valuation/Risk */}
+              {fund && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  {(['growth', 'profitability', 'cashFlow', 'valuation'] as const).map(k => {
+                    const s = fund.sections.find(x => x.key === k);
+                    if (!s) return null;
+                    return (
+                      <span key={k}>{s.title}: <strong className={fundSectionCls(s.label)}>{s.label}</strong></span>
+                    );
+                  })}
+                  <span>Risk: <strong className={fundSectionCls(fund.sections.find(x => x.key === 'risk')?.label ?? 'Unknown')}>{fund.sections.find(x => x.key === 'risk')?.label ?? 'Unknown'}</strong></span>
+                </div>
+              )}
+
+              {/* Risk flags — vetëm shënojnë, nuk bllokojnë (Faza 1) */}
+              {fund && fund.riskFlags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {fund.riskFlags.map(f => (
+                    <span key={f.code + f.label} title={f.detail}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-medium border cursor-help ${
+                        f.severity === 'high'
+                          ? 'bg-red-500/10 text-red-400 border-red-500/25'
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/25'}`}>
+                      <AlertTriangle className="w-2.5 h-2.5" />
+                      {f.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {fund && fund.riskFlags.length === 0 && (
+                <p className="text-[10.5px] text-emerald-400/80">✓ Asnjë risk flag aktiv me të dhënat e disponueshme</p>
+              )}
+              {!fund && !fundLoading && (
+                <p className="text-[10.5px] text-muted-foreground/60">N/A — data unavailable (burimi fundamental nuk u përgjigj për këtë simbol)</p>
+              )}
+        </div>
+
         {/* Expanded detail */}
         {expanded && (
           <div className="mt-3 border-t border-border/50 pt-3 space-y-2 text-[13px] text-muted-foreground">
@@ -989,6 +1115,7 @@ function StockCard({ stock, rank, vp }: { stock: FunnelStock; rank: number; vp?:
                 </div>
               </div>
             )}
+
 
             {stock.sectorEtf && (
               <div className="mt-2 rounded-lg border p-3 space-y-1.5" style={{
@@ -2214,6 +2341,12 @@ export function IBKRStrategy() {
   const [error, setError] = useState<string | null>(null);
   const [hasScanned, setHasScanned] = useState(false);
 
+  // TASK 26: Fundamental Context për TË GJITHË kandidatët e skanimit
+  // (kërkesa e userit: "popup tek të gjithë"). Merret pas skanimit,
+  // jo-blokuese — karta vizatohen menjëherë, fundamentet mbushen.
+  const [fundReports, setFundReports] = useState<Record<string, FundamentalReport>>({});
+  const [fundLoading, setFundLoading] = useState(false);
+
   // Learning Engine state
   const [learningSummary, setLearningSummary] = useState<any | null>(null);
   const [learningLoading, setLearningLoading] = useState(false);
@@ -2271,6 +2404,29 @@ export function IBKRStrategy() {
   }, []);
 
   useEffect(() => { runScan(); }, [runScan]);
+
+  // TASK 26: fetch i fundamentit për TË GJITHË kandidatët e shfaqur —
+  // Top 10 e IBKR funnel-it (READY + WATCHLIST + të tjerë) DHE VP READY
+  // (kërkesa e userit: "popup tek të gjithë"). Një thirrje e vetme API,
+  // me cache 15 min në server. Fundamentet janë KONTEKST (Faza 1):
+  // nuk prekin sinjalin BUY/SELL.
+  useEffect(() => {
+    const resultSyms: string[] = (data?.results || []).map(r => r.symbol);
+    const vpSyms: string[] = (data?.vpReady || []).map((v: any) => v.symbol).filter((s: string) => !resultSyms.includes(s));
+    const all = [...resultSyms, ...vpSyms].slice(0, 15);
+    if (all.length === 0) return;
+    const syms = all.join(',');
+    let cancelled = false;
+    setFundLoading(true);
+    fetch(`/api/fundamental-context?symbols=${syms}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (!cancelled && j?.results) setFundReports(j.results);
+      })
+      .catch(() => { /* fundamentet mungojnë → N/A, jo error fatal */ })
+      .finally(() => { if (!cancelled) setFundLoading(false); });
+    return () => { cancelled = true; };
+  }, [data]);
 
   const readyStocks = data?.results.filter(r => r.decision === 'READY') || [];
   const otherStocks = data?.results.filter(r => r.decision !== 'READY') || [];
@@ -2594,7 +2750,7 @@ export function IBKRStrategy() {
         {readyStocks.length > 0 && (
           <div className="space-y-3">
             <p className="text-[13px] text-emerald-400 font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> READY — Kandidate per IBKR Bracket Order ({readyStocks.length})</p>
-            {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} vp={vpMap.get(s.symbol)} />)}
+            {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} vp={vpMap.get(s.symbol)} fund={fundReports[s.symbol]} fundLoading={fundLoading} />)}
           </div>
         )}
 
@@ -2602,7 +2758,7 @@ export function IBKRStrategy() {
         {otherStocks.length > 0 && (
           <div className="space-y-3">
             <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2"><Eye className="w-4 h-4" /> WATCHLIST / EVENT RISK ({otherStocks.length})</p>
-            {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} vp={vpMap.get(s.symbol)} />)}
+            {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} vp={vpMap.get(s.symbol)} fund={fundReports[s.symbol]} fundLoading={fundLoading} />)}
           </div>
         )}
 
@@ -2632,12 +2788,29 @@ export function IBKRStrategy() {
                           Score {vp.score}
                         </span>
                       </MiniPopover>
-                    </div>
-                    <MiniPopover label={"VP Score " + vp.vpScore + "/100"} desc={"Volume Profile Score 0-100: sa i mirë është setup-i i çmimit në raport me volumin e tregtuar gjatë 20 ditëve të fundit (Daily timeframe). Llogaritet: +35 pikë nëse ka mbështetje volumi (HVN/POC) poshtë çmimit, +20 nëse çmimi është brenda ose mbi Value Area, +25 nëse ka së paku 2% hapësirë deri te rezistenca e ardhshme, +20 nëse nuk ka rezistencë të afërt sipër. Idealisht: 80-100 = Setup i shkëlqyer, 60-79 = Setup i mirë, 40-59 = Mesatar, 0-39 = Setup i dobët."} >
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
-                        VP {vp.vpScore}/100
+                  </div>
+                    <div className="flex items-center gap-1.5">
+                      {/* TASK 26: fundamentet edhe për kandidatët VP READY (të gjithë) */}
+                      <span title={`Fundamental Context: ${fundReports[vp.symbol]?.contextLabel ?? 'N/A'}`}
+                        className={`text-[9.5px] px-1.5 py-0.5 rounded-full font-bold border ${
+                          fundReports[vp.symbol]?.contextLabel === 'Positive' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                          : fundReports[vp.symbol]?.contextLabel === 'Negative' ? 'bg-red-500/10 text-red-400 border-red-500/25'
+                          : 'bg-muted/20 text-muted-foreground border-muted/30'}`}>
+                        FUND: {fundReports[vp.symbol]?.contextLabel ?? 'N/A'}
                       </span>
-                    </MiniPopover>
+                      <FundamentalPopup
+                        symbol={vp.symbol}
+                        report={fundReports[vp.symbol] ?? null}
+                        loading={fundLoading}
+                        technicalScore={vp.score}
+                        compact
+                      />
+                      <MiniPopover label={"VP Score " + vp.vpScore + "/100"} desc={"Volume Profile Score 0-100: sa i mirë është setup-i i çmimit në raport me volumin e tregtuar gjatë 20 ditëve të fundit (Daily timeframe). Llogaritet: +35 pikë nëse ka mbështetje volumi (HVN/POC) poshtë çmimit, +20 nëse çmimi është brenda ose mbi Value Area, +25 nëse ka së paku 2% hapësirë deri te rezistenca e ardhshme, +20 nëse nuk ka rezistencë të afërt sipër. Idealisht: 80-100 = Setup i shkëlqyer, 60-79 = Setup i mirë, 40-59 = Mesatar, 0-39 = Setup i dobët."} >
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                          VP {vp.vpScore}/100
+                        </span>
+                      </MiniPopover>
+                    </div>
                   </div>
                   {/* VP metrics */}
                   <div className="grid grid-cols-3 gap-2 text-[11px] mb-2">
