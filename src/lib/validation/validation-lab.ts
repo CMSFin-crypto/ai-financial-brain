@@ -148,28 +148,6 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     universeSize: symbols.length, equity: START_EQUITY,
   };
 
-  // ── TASK 26 FAZA 2 — fundamentet point-in-time (EDGAR companyfacts) ──
-  // Fetch për gjithë unionin e simboleve të përgatitura. Deadline 150s mbron
-  // run-in; simbolet e mbetura jashtë mbeten N/A (standard: kalojnë).
-  let fundTimelines: Record<string, FundamentalTimelineEntry[]> = {};
-  let fundCoverage = { symbolsWithData: 0, totalAttempted: 0, skippedForDeadline: 0, source: '' };
-  try {
-    const fundFetch = await buildFundamentalTimelines(
-      symbolsAll.map(s => s.symbol),
-      { deadlineMs: 180_000 },
-    );
-    fundTimelines = fundFetch.timelines;
-    fundCoverage = {
-      symbolsWithData: fundFetch.symbolsWithData,
-      totalAttempted: fundFetch.totalAttempted,
-      skippedForDeadline: fundFetch.skippedForDeadline,
-      source: fundFetch.source,
-    };
-    ctx.fundamentals = fundTimelines;
-  } catch {
-    fundCoverage.source = 'EDGAR companyfacts — dështoi fetch-i (testi fundamental kalohet)';
-  }
-
   // ── 3. Ndarja statike IS/OOS (70/30) + dritaret ──
   const totalDays = calendar.length;
   const split = splitWindows(totalDays, { isPct: 0.70, wfWindows: 4 });
@@ -318,7 +296,44 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   // B = 'full-fund' (standard) dhe 'full-fund-strict' — të njëjtat kushte
   // teknike, i vetmi ndryshim është filtri fundamental (point-in-time EDGAR).
   let fundComparison: FundComparison | null = null;
+
+  // Fetch-i i fundamentet bëhet TANI — pas varianteve A/B/C/D dhe WF — sepse
+  // rendi i simboleve priorizonte ato që TREGTOJNË: në prod, fetch-i EDGAR
+  // është shumë më i ngadaltë se lokalisht, dhe mbulimi duhet ta mbulojë
+  // së pari atë që vendos rezultatin (simbolet me tregti), pastaj të tjerët.
+  let fundTimelines: Record<string, FundamentalTimelineEntry[]> = {};
+  let fundCoverage = { symbolsWithData: 0, totalAttempted: 0, skippedForDeadline: 0, source: '' };
+  try {
+    const tradeCount = new Map<string, number>();
+    for (const vd of variantDefs) {
+      for (const t of [...variantRes[vd.key].isRes.trades, ...variantRes[vd.key].oosRes.trades]) {
+        tradeCount.set(t.symbol, (tradeCount.get(t.symbol) || 0) + 1);
+      }
+    }
+    const trading = symbolsAll
+      .filter(s => tradeCount.has(s.symbol))
+      .sort((a, b) => (tradeCount.get(b.symbol) || 0) - (tradeCount.get(a.symbol) || 0))
+      .map(s => s.symbol);
+    const nonTrading = symbolsAll.filter(s => !tradeCount.has(s.symbol)).map(s => s.symbol);
+    const fundFetch = await buildFundamentalTimelines(
+      [...trading, ...nonTrading],
+      { deadlineMs: 165_000 },
+    );
+    fundTimelines = fundFetch.timelines;
+    fundCoverage = {
+      symbolsWithData: fundFetch.symbolsWithData,
+      totalAttempted: fundFetch.totalAttempted,
+      skippedForDeadline: fundFetch.skippedForDeadline,
+      source: fundFetch.source,
+    };
+    ctx.fundamentals = fundTimelines;
+  } catch {
+    fundCoverage.source = 'EDGAR companyfacts — dështoi fetch-i (testi fundamental kalohet)';
+  }
+
   const primarySymbolsWithFund = symbols.filter(s => fundTimelines[s.symbol] !== undefined).length;
+  const fundCoverageLow = symbols.length > 0 && (primarySymbolsWithFund / symbols.length) < 0.6;
+
   if (Object.keys(fundTimelines).length >= 10) {
     const fundIsStd = runBacktest(ctx, { startIndex: split.static.isStart, endIndex: split.static.isEnd, variant: 'full-fund' });
     const fundOosStd = runBacktest(ctx, { startIndex: split.static.oosStart, endIndex: split.static.oosEnd, variant: 'full-fund' });
@@ -426,10 +441,18 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
         skippedForDeadline: fundCoverage.skippedForDeadline,
         source: fundCoverage.source,
       },
-      verdict: buildFundVerdict({
-        aOos: aSide.oos, bOos: bSide.oos, aIs: aSide.is, bIs: bSide.is,
-        perYear, bTop3SymbolsProfitSharePct,
-      }),
+      verdict: (() => {
+        const v = buildFundVerdict({
+          aOos: aSide.oos, bOos: bSide.oos, aIs: aSide.is, bIs: bSide.is,
+          perYear, bTop3SymbolsProfitSharePct,
+        });
+        // Paralajmërim kur mbulimi EDGAR u kufizua nga koha e serverit —
+        // verdikti matet mbi çfarë ka, por sinqeriteti kërkon shënimin.
+        if (fundCoverageLow) {
+          v.note += ` ⚠ Mbulimi EDGAR i kufizuar (${primarySymbolsWithFund}/${symbols.length} = ${symbols.length > 0 ? Math.round((primarySymbolsWithFund / symbols.length) * 1000) / 10 : 0}%) — fetch-i i companyfacts është i ngadaltë në server; simbolet pa të dhëna kalojnë si N/A (filtri standard). Ristarto verifikimin për mbulim më të plotë (cache-ja e ngrohte e zgjeron gradualisht).`;
+        }
+        return v;
+      })(),
     };
   }
 

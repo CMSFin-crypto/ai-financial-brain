@@ -197,6 +197,12 @@ export function fundamentalContextAsOf(
 
 // ─── 3. Fetch me batch për gjithë universin (EDGAR companyfacts) ───
 
+/** Cache kompakte e timeline-ve të ekstraktuara (KB për simbol — jo JSON i
+ *  papërpunuar): lambdat e ngrohta në Vercel akumulojnë mbulim nëpër run-e
+ *  pa e rifetchuar EDGAR-in për të njëjtat simbole brenda 12 orësh. */
+const timelineCache = new Map<string, { tl: FundamentalTimelineEntry[]; at: number }>();
+const TIMELINE_CACHE_TTL = 12 * 3600 * 1000;
+
 export interface FundamentalsFetchResult {
   /** symbol → timeline (vetëm simbolet me së paku një snapshot me të dhëna) */
   timelines: Record<string, FundamentalTimelineEntry[]>;
@@ -208,10 +214,13 @@ export interface FundamentalsFetchResult {
 }
 
 /**
- * Fetch EDGAR companyfacts për një listë simbolesh dhe ndërton
- * timeline-të point-in-time. Pacing: batch 8 + 120ms (EDGAR ≤10 req/s,
- * mesatarja reale ~3 req/s). Deadline-i i përgjithshëm mbron run-in nga
- * timeout-i — simbolet e mbetura jashtë mbeten N/A (standard: kalojnë, strict: dështojnë).
+ * Fetch EDGAR companyfacts për një listë simbolesh dhe ndërton timeline-të
+ * point-in-time. RENDI i listës ka rëndësi: simbolet që TREGTOJNë (kanë
+ * tregti në variantet A-D) vijnë të parat — kështu, edhe kur server-i në
+ * prod është i ngadaltë ndaj EDGAR-it, mbulimi fillimisht mbulon ato që
+ * vendosin rezultatin e testit. Pacing: batch 8 + 120ms (EDGAR ≤10 req/s,
+ * mesatarja reale ~3 req/s). Deadline-i mbron run-in nga timeout-i — simbolet
+ * e mbetura jashtë mbeten N/A (standard: kalojnë, strict: dështojnë).
  */
 export async function buildFundamentalTimelines(
   symbols: string[],
@@ -225,19 +234,23 @@ export async function buildFundamentalTimelines(
   const DELAY_MS = 120;
 
   const fetchOne = async (sym: string) => {
+    const cached = timelineCache.get(sym);
+    if (cached && Date.now() - cached.at < TIMELINE_CACHE_TTL) {
+      if (cached.tl.length > 0) { timelines[sym] = cached.tl; symbolsWithData++; }
+      return;
+    }
     const facts = await fetchPointInTimeFacts(sym, { noRawCache: true });
     const tl = buildFundamentalTimeline(facts);
-    if (tl.length > 0) {
-      // mbaj vetëm snapshot-et që mbajnë së paku një metrikë filteri
-      const meaningful = tl.filter(e => {
-        const c = e.context;
-        return c.revenueGrowth !== undefined || c.epsGrowth !== undefined
-          || c.freeCashFlow !== undefined || c.debtToEquity !== undefined;
-      });
-      if (meaningful.length > 0) {
-        timelines[sym] = meaningful;
-        symbolsWithData++;
-      }
+    // mbaj vetëm snapshot-et që mbajnë së paku një metrikë filteri
+    const meaningful = tl.filter(e => {
+      const c = e.context;
+      return c.revenueGrowth !== undefined || c.epsGrowth !== undefined
+        || c.freeCashFlow !== undefined || c.debtToEquity !== undefined;
+    });
+    timelineCache.set(sym, { tl: meaningful, at: Date.now() });
+    if (meaningful.length > 0) {
+      timelines[sym] = meaningful;
+      symbolsWithData++;
     }
   };
 
