@@ -421,3 +421,23 @@ Stage Summary:
 - Etiketat e sektorit tani janë KONSISTENTE midis Top 10 (scan) dhe analizës së stokut të vetëm (analyze) — i njëjti sektor, e njëjta ditë, e njëjta përfundim
 - Porta e sektorit (1R/2R/size) tani vendoset nga mostër ~50+ anëtarësh, jo 3-8 të rastit
 - Useri kishte të drejtë — ishte bug real me impakt në tregti, tani i rregulluar dhe verifikuar live
+
+---
+Task ID: 27
+Agent: Super Z (main)
+Task: "kur ta ofroj mousin te kompanine ne fjale te hapet si ne finviz kompanite e te njetjit sektor si liste dhe me levizjet e tyre pak a shume si finviz qe e ka" — hover popup me kompanitë e sektorit në Map e Tregut
+
+Work Log:
+- Kontekst: kërkesa u trajtua paralelisht me sesionin tjetër që ndërtoi Map e Tregut (3b82c5f, 216 kompani) + Grafik Finviz (3d56d6f); lokalisht u ndërtua një implementim alternativ i plotë (branch backup-task27-local: API spark batch 20 + cache 60s, treemap 143, periudha 1D/1W/1M/3M/6M/1Y, chart modal Finviz Elite dark, i testuar E2E) — si bazë finaless u zgjodh versioni i depluar i remote-it për të shmangur duplikimet (map + finviz chart tab ekzistonin)
+- Portimi i feature-it të kërkuar në src/components/financial-brain/market-map.tsx (tooltip-i ekzistues shfaqte vetëm 1 kompani):
+  * Koka: simboli + badge chg% + emri + stat-grid 2x2 (Çmimi, Mbyllja, Kapitalizimi, Volumi)
+  * Seksion i re "SEKTORI · N kompani" + mesatarja e ponderuar sipas market cap (sectorHeaderColor)
+  * Lista e plotë e kompanive të sektorit nga stocks state (sort by market cap): ticker | emri | chg% i ngjyrosur jeshil/kuqe; rreshti i kompanisë së hoveruar theksohet me ▸ + border blu + bg
+  * Pozicionimi: lartësia e parashikuar (132 + rreshta x 17 + 34), clamp left/top brenda viewport-it pa prerje
+- tsc: 148 = bazësja pas merge të remote (0 gabime të reja)
+- Testime E2E (agent-browser 1920x1080): hover NVDA → "TEKNOLOGJI · 35 KOMPANI +0.61%" me listë AAPL/MSFT/AVGO/MU(+5.00%)/AMD... + NVDA theksuar; hover JPM (tile pranë fundit të ekranit) → "FINANCA · 26 KOMPANI -1.92%", tooltip 300x362 i clamp-uar brenda viewport; 0 page errors; VLM konfirmoi vizualisht 5/5 elementët
+- Push 6a6bc82 (mbi c2d4948)
+
+Stage Summary:
+- Map e Tregut tani ka saktësisht sjelljen Finviz të kërkuar: hover mbi ÇFARËDO kompanie → hapet popup me të gjitha kompanitë e të njëjtit sektor si listë me lëvizjet e tyre ditore + mesataren e ponderuar të sektorit
+- Branch backup-task27-local ruan implementimin alternativ të plotë (spark batch API me periudha 1D-1Y + chart modal Elite dark) për ripërdorim të mundshëm në ardhmë (p.sh. zgjerim për lëvizje javore/mujore në map)
