@@ -32,6 +32,7 @@ interface MetricSet {
   profitFactor: number; expectancy: number; avgR: number; netProfit: number;
   grossProfit: number; totalCosts: number; maxDrawdownPct: number;
   maxDrawdownDollars: number; avgHoldDays: number; returnPct: number; costDragPct: number;
+  avgWin: number; avgLoss: number; maxConsecutiveLosses: number;
 }
 
 interface VariantRow {
@@ -106,6 +107,29 @@ interface Report {
     eventSignalsNear: number; eventSignalsWithScore: number;
     enoughSample: boolean; note: string;
   } | null;
+  // Task 26 Faza 2 — testi rigoroz Technical-only vs Technical + Fundamental
+  fundComparison: {
+    baselineLabel: string;
+    a: FundSide;
+    b: FundSide;
+    strict: FundSide;
+    perYear: { year: number; aNet: number; bNet: number; bTrades: number }[];
+    wfWindows: { label: string; testFrom: string; testTo: string; aNet: number; aTrades: number; bNet: number; bTrades: number; bPf: number }[];
+    bTop3SymbolsProfitSharePct: number | null;
+    blockedReasons: Record<string, number>;
+    filterRules: { standard: string[]; strict: string[] };
+    coverage: { symbolsWithData: number; universeSize: number; coveragePct: number; skippedForDeadline: number; source: string };
+    verdict: { keep: boolean; criteria: { key: string; label: string; required: string; actual: string; passed: boolean | null }[]; note: string };
+  } | null;
+}
+
+interface FundSide {
+  label: string;
+  description: string;
+  is: MetricSet;
+  oos: MetricSet;
+  blockedSignals: number;
+  naPassed: number;
 }
 
 interface UniverseSide {
@@ -465,6 +489,74 @@ const METRIC_DOCS: Record<string, MetricDoc> = {
     target: 'Versioni i vetëm me pretendim për tregtim: expectancy pozitive OOS + drawdown i ulët.',
     howNow: (r) => { const v = r.variants.find(x => x.key === 'full'); return v ? `IS: ${v.is.trades}t ${sign(v.is.netProfit)}$ · OOS: ${v.oos.trades}t ${sign(v.oos.netProfit)}$ PF ${fmt(v.oos.profitFactor, 2)}` : '—'; },
     isGood: (r) => { const d = r.variants.find(x => x.key === 'full'); return d && d.oos.expectancy > 0 ? 'good' : 'neutral'; },
+  },
+  // ═══ TASK 26 FAZA 2 — TESTI A/B FUNDAMENTAL ═══
+  fundAB: {
+    title: 'Testi A/B: Technical-only vs Technical + Fundamental',
+    what: 'Krahasimi rigoroz i kërkuar përpara se fundamentet të prekin sinjalin: Varianti A është strategjia teknike e plotë (D — e pandryshuar, baseline). Varianti B përdor PIKËRISHT të njëjtat kushte teknike — ndryshimi i vetëm është filtri fundamental mbi të dhëna point-in-time (EDGAR companyfacts: filing-u bëhet i përdorshëm vetëm ditën PAS datës së publikimit — pa look-ahead bias).',
+    target: 'Filtri mbahet VETËM nëse: përmirëson OOS (jo vetëm IS), expectancy rritet, PF i qëndrueshëm, drawdown pa u përkeqësuar, pa varësi nga një vit/disa aksione, mjaftueshëm tregti. Përndryshe fundamentet mbeten vetëm kontekst në popup.',
+    howNow: (r) => {
+      const c = r.fundComparison;
+      if (!c) return 'Testi fundamental nuk është aktiv në këtë raport';
+      return `A: ${c.a.oos.trades}t OOS ${sign(c.a.oos.expectancy, 2)}$/tregti → B: ${c.b.oos.trades}t ${sign(c.b.oos.expectancy, 2)}$/tregti · ${c.b.blockedSignals} sinjale të bllokuara · mbulimi EDGAR ${fmt(c.coverage.coveragePct, 0)}%`;
+    },
+    isGood: (r) => { const c = r.fundComparison; return c && c.verdict.keep ? 'good' : 'neutral'; },
+  },
+  fundA: {
+    title: 'A — Technical-only (baseline)',
+    what: 'Strategjia e plotë IBKR (varianti D): indikatorë teknikë + regjimi i tregut + forca relative e sektorit + rregullat e event-it — PA asnjë filtrim fundamental. Ky është baseline-i i krahasimit dhe NUK ndryshohet kurrë gjatë testit.',
+    target: 'Pika e referencës: çdo ndryshim i B-së matet kundrejt këtyre numrave.',
+    howNow: (r) => { const c = r.fundComparison; return c ? `IS: ${c.a.is.trades}t ${sign(c.a.is.netProfit)}$ · OOS: ${c.a.oos.trades}t ${sign(c.a.oos.netProfit)}$ PF ${fmt(c.a.oos.profitFactor, 2)}` : '—'; },
+    isGood: () => 'neutral',
+  },
+  fundB: {
+    title: 'B — Tech + Fundamental (standard)',
+    what: 'Të njëjtat kushte teknike si A + filtri standard: revenue growth ≥ 0%, EPS growth ≥ 0%, FCF TTM ≥ 0%, D/E ≤ 250% (ekstreme bllokohen). Rregulli kyç: N/A ≠ FAIL — një metrikë që mungon nuk e dënon sinjalin, numërohet veç ("kaluan pa të dhëna").',
+    target: 'Më pak tregti por më cilësore: expectancy dhe PF më të larta se A në OOS.',
+    howNow: (r) => { const c = r.fundComparison; return c ? `IS: ${c.b.is.trades}t ${sign(c.b.is.netProfit)}$ · OOS: ${c.b.oos.trades}t ${sign(c.b.oos.netProfit)}$ PF ${fmt(c.b.oos.profitFactor, 2)} · ${c.b.blockedSignals} bllokuar · ${fmt(c.b.naPassed)} kaluan pa të dhëna` : '—'; },
+    isGood: (r) => { const c = r.fundComparison; return c && c.b.oos.expectancy > c.a.oos.expectancy ? 'good' : 'neutral'; },
+  },
+  fundStrict: {
+    title: 'B-strict — filtri strikt (i matur, jo për vendim)',
+    what: 'Versioni konservator: revenue > 0%, EPS > 0%, FCF > 0%, D/E ≤ 150% — dhe të dhëna të DETYRUESHME (mungesa = dështim). Matet për të kuptuar sa kosto ka kërkesa e të dhënave të plota, POR nuk përdoret për vendimin final pa e matur paraprakisht — ashtu si specifikoi useri.',
+    target: 'Referencë: nëse strict është shumë më i dobët se standard, mungesa e të dhënave është bllokim artificial.',
+    howNow: (r) => { const c = r.fundComparison; return c ? `IS: ${c.strict.is.trades}t ${sign(c.strict.is.netProfit)}$ · OOS: ${c.strict.oos.trades}t ${sign(c.strict.oos.netProfit)}$ PF ${fmt(c.strict.oos.profitFactor, 2)} · ${c.strict.blockedSignals} bllokuar` : '—'; },
+    isGood: () => 'neutral',
+  },
+  fundVerdictDoc: {
+    title: 'Verdikti i filtrit fundamental',
+    what: 'Vendimi me 6 kritere të fixuara PARAPRISHT (pa lexuar rezultatet): (1) OOS expectancy B > A, (2) OOS PF i qëndrueshëm (B ≥ A − 0.05), (3) drawdown pa rritje ndjeshme (B ≤ A + 2pk), (4) mjaftueshëm tregti (≥ 30 dhe ≥ 20% e A-s), (5) përmirësimi në ≥ 2 vite, (6) fitimi jo i koncentruar (top-3 ≤ 80%).',
+    target: 'Të 6 kriteret kaluar → filtri kalon në vendimin e sinjalit. Përndryshe fundamentet mbeten VETËM panel informues në popup (Faza 1).',
+    howNow: (r) => {
+      const c = r.fundComparison;
+      if (!c) return '—';
+      const passed = c.verdict.criteria.filter(x => x.passed === true).length;
+      const total = c.verdict.criteria.filter(x => x.passed !== null).length;
+      return `${passed}/${total} kritere · ${c.verdict.keep ? 'KEEP-FILTER' : 'CONTEXT-ONLY'}`;
+    },
+    isGood: (r) => { const c = r.fundComparison; return c && c.verdict.keep ? 'good' : 'neutral'; },
+  },
+  fundPerYear: {
+    title: 'Performca vjetore: A kundrejt B (OOS)',
+    what: 'Neto e OOS-së ndarë sipas vitit të daljes së tregtisë. Kjo zbulon varësinë nga një vit i vetëm: një filtër që "funksionon" vetëm sepse bllokoi humbjet e një viti të vetëm nuk ka provuar asgjë për vitet e tjera.',
+    target: 'B më i mirë se A në së paku 2 vite — jo në një të vetëm.',
+    howNow: (r) => {
+      const c = r.fundComparison;
+      if (!c) return '—';
+      return c.perYear.map(y => `${y.year}: ${sign(y.aNet)} → ${sign(y.bNet)}`).join(' · ');
+    },
+    isGood: (r) => { const c = r.fundComparison; return c && c.perYear.filter(y => y.bNet > y.aNet).length >= 2 ? 'good' : 'neutral'; },
+  },
+  fundBlocked: {
+    title: 'Sinjalet e bllokuara nga filtri',
+    what: 'Çdo sinjal teknik që kaloi të GJITHA portat teknike por u bllokua VETËM nga filtri fundamental, me arsyen specifike: REVENUE_NEGATIVE (të ardhura në rënie), EPS_NEGATIVE, REVENUE_CRASH / EPS_CRASH (rënie e thellë — risk flag kritik), FCF_NEGATIVE, DEBT_EXTREME (D/E > 250%) ose MISSING_DATA (vetëm në strict).',
+    target: 'Bllokimet duhet të jenë në kompani me fundamentet vërtet të dobëta — jo në gjysmën e universit.',
+    howNow: (r) => {
+      const c = r.fundComparison;
+      if (!c) return '—';
+      return Object.entries(c.blockedReasons).map(([k, v]) => `${k.replace('FUND_', '')}: ${v}`).join(' · ') || 'asnjë bllokim';
+    },
+    isGood: () => 'neutral',
   },
 };
 
@@ -906,6 +998,237 @@ export function IBKRValidationLab() {
                 </div>
               </div>
             </div>
+
+            {/* ═══ TASK 26 FAZA 2: TESTI A/B — TECHNICAL-ONLY vs TECHNICAL + FUNDAMENTAL ═══ */}
+            {report.fundComparison && (() => {
+              const c = report.fundComparison;
+              const cols: { key: 'a' | 'b' | 'strict'; side: FundSide; docKey: string }[] = [
+                { key: 'a', side: c.a, docKey: 'fundA' },
+                { key: 'b', side: c.b, docKey: 'fundB' },
+                { key: 'strict', side: c.strict, docKey: 'fundStrict' },
+              ];
+              // 8 rreshtat e spec-it të userit: Tregti, WR, PF, Expectancy, Max DD, Return OOS, Avg trade, Humbje radhazi
+              const rows: { label: string; get: (m: MetricSet) => string; invert?: boolean; good?: (m: MetricSet) => boolean }[] = [
+                { label: 'Tregti', get: (m) => fmt(m.trades) },
+                { label: 'Win rate', get: (m) => `${fmt(m.winRatePct, 1)}%` },
+                { label: 'Profit factor', get: (m) => fmt(m.profitFactor, 2), good: (m) => m.profitFactor >= 1.1 },
+                { label: 'Expectancy / tregti', get: (m) => `${sign(m.expectancy, 2)}$`, good: (m) => m.expectancy > 0 },
+                { label: 'Max drawdown', get: (m) => `${fmt(m.maxDrawdownPct, 1)}%`, invert: true, good: (m) => m.maxDrawdownPct <= 25 },
+                { label: 'Fitimi neto', get: (m) => `${sign(m.netProfit)}$`, good: (m) => m.netProfit > 0 },
+                { label: 'Tregtia mesatare (fitim / humbje)', get: (m) => `${sign(m.avgWin)}$ / −${fmt(m.avgLoss)}$` },
+                { label: 'Humbje radhazi (max)', get: (m) => fmt(m.maxConsecutiveLosses), invert: true, good: (m) => m.maxConsecutiveLosses <= 12 },
+              ];
+              const blockedEntries = Object.entries(c.blockedReasons).sort((x, y) => y[1] - x[1]);
+              return (
+                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <Layers className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-[14px] font-bold text-foreground">Testi A/B — Technical-only kundrejt Technical + Fundamental</h3>
+                    <MetricInfoPopup metricKey="fundAB" report={report} />
+                    <span className="text-[11px] text-muted-foreground">
+                      point-in-time EDGAR companyfacts: {c.coverage.symbolsWithData}/{c.coverage.universeSize} simbole ({fmt(c.coverage.coveragePct, 0)}% mbulim)
+                      {c.coverage.skippedForDeadline > 0 ? ` · ${c.coverage.skippedForDeadline} jashtë deadline-it` : ''}
+                    </span>
+                  </div>
+                  <p className="text-[11.5px] text-muted-foreground mb-3">
+                    Varianti B përdor PIKËRISHT të njëjtat kushte teknike si A — ndryshimi i vetëm është filtri fundamental.
+                    Filing-u i datës D bëhet i përdorshëm vetëm nga D+1 (rregulli &quot;publikuar pas mbylljes → dita pasuese&quot;) — pa look-ahead bias.
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[760px]">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Metrika</th>
+                          {cols.map(col => (
+                            <th key={col.key} className={`pb-2 text-[11.5px] font-semibold ${col.key === 'b' ? 'text-emerald-400' : col.key === 'strict' ? 'text-amber-400' : 'text-sky-400'}`}>
+                              <span className="inline-flex items-center gap-1">
+                                {col.side.label}
+                                <MetricInfoPopup metricKey={col.docKey} report={report} />
+                              </span>
+                              <span className="block text-[9.5px] font-normal text-muted-foreground/70 leading-tight mt-0.5 max-w-[190px]">{col.side.description}</span>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="text-[12px]">
+                        {rows.map((row, ri) => (
+                          <tr key={ri} className="border-b border-border/30 last:border-0">
+                            <td className="py-1.5 pr-3 text-muted-foreground">{row.label}</td>
+                            {cols.map(col => {
+                              const goodB = row.good ? row.good(col.side.oos) : null;
+                              return (
+                                <td key={col.key} className="py-1.5 pr-3">
+                                  <span className="block text-foreground">{row.get(col.side.is)} <span className="text-[9.5px] text-muted-foreground/60">IS</span></span>
+                                  <span className={`block font-semibold ${goodB === null ? 'text-foreground' : goodB ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {row.get(col.side.oos)} <span className="text-[9.5px] text-muted-foreground/60 font-normal">OOS</span>
+                                  </span>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                        <tr className="border-t border-border/50">
+                          <td className="py-1.5 pr-3 text-muted-foreground">Sinjalet e bllokuara nga filtri</td>
+                          <td className="py-1.5 pr-3 text-muted-foreground">—</td>
+                          <td className="py-1.5 pr-3">
+                            <span className="font-semibold text-amber-400">{fmt(c.b.blockedSignals)}</span>
+                            <span className="block text-[10px] text-muted-foreground/70">{fmt(c.b.naPassed)} kaluan pa të dhëna (N/A ≠ FAIL)</span>
+                          </td>
+                          <td className="py-1.5 pr-3">
+                            <span className="font-semibold text-amber-400">{fmt(c.strict.blockedSignals)}</span>
+                            <span className="block text-[10px] text-muted-foreground/70">N/A = FAIL këtu</span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Verdikti i filtrit */}
+                  <div className={`mt-3 rounded-lg border p-3 flex items-start gap-2.5 ${
+                    c.verdict.keep ? 'border-emerald-500/25 bg-emerald-500/5' : 'border-amber-500/25 bg-amber-500/5'}`}>
+                    <ShieldAlert className={`w-5 h-5 mt-0.5 flex-shrink-0 ${c.verdict.keep ? 'text-emerald-400' : 'text-amber-400'}`} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-[12.5px] font-bold text-foreground">
+                          Filtri fundamental: {c.verdict.keep ? 'IA VLEN — kalon si filtër i vërtetë' : 'MBETET SI KONTEKST (popup)'}
+                        </p>
+                        <MetricInfoPopup metricKey="fundVerdictDoc" report={report} />
+                      </div>
+                      <p className="text-[11.5px] text-muted-foreground leading-relaxed mt-0.5">{c.verdict.note}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {c.verdict.criteria.map(cr => (
+                          <span key={cr.key} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                            cr.passed === null ? 'border-border/50 text-muted-foreground'
+                              : cr.passed ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                                : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                            {cr.passed === null ? '—' : cr.passed ? '✓' : '✗'} {cr.label}: {cr.actual}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Performca vjetore + bllokimet */}
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-lg border border-border/50 bg-background/40 p-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
+                        <p className="text-[12px] font-semibold text-foreground">Performca vjetore OOS — A → B</p>
+                        <MetricInfoPopup metricKey="fundPerYear" report={report} />
+                      </div>
+                      <table className="w-full text-left">
+                        <tbody className="text-[11.5px]">
+                          {c.perYear.map(y => (
+                            <tr key={y.year} className="border-b border-border/20 last:border-0">
+                              <td className="py-1 pr-2 text-muted-foreground">{y.year}</td>
+                              <td className="py-1 pr-2">{sign(y.aNet)}$ <span className="text-[9.5px] text-muted-foreground/60">A</span></td>
+                              <td className="py-1 pr-2">
+                                <span className={pnlColor(y.bNet - y.aNet)}>{sign(y.bNet)}$</span> <span className="text-[9.5px] text-muted-foreground/60">B ({fmt(y.bTrades)}t)</span>
+                              </td>
+                              <td className="py-1 text-right">
+                                <span className={`text-[10.5px] font-semibold ${pnlColor(y.bNet - y.aNet)}`}>
+                                  {y.bNet > y.aNet ? '✓ B më mirë' : y.bNet < y.aNet ? '✗ A më mirë' : '—'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="rounded-lg border border-border/50 bg-background/40 p-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-muted-foreground" />
+                        <p className="text-[12px] font-semibold text-foreground">Arsyet e bllokimit (B standard, IS+OOS)</p>
+                        <MetricInfoPopup metricKey="fundBlocked" report={report} />
+                      </div>
+                      {blockedEntries.length === 0 ? (
+                        <p className="text-[11.5px] text-muted-foreground">Asnjë sinjal teknik nuk u bllokua nga filtri — të gjitha kishin fundamente brenda kufijve ose N/A.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {blockedEntries.map(([k, v]) => {
+                            const total = blockedEntries.reduce((s, [, n]) => s + n, 0);
+                            const labels: Record<string, string> = {
+                              FUND_REVENUE_NEGATIVE: 'Revenue growth negativ',
+                              FUND_REVENUE_CRASH: 'Revenue në rënie të thellë (≤ −10%)',
+                              FUND_EPS_NEGATIVE: 'EPS growth negativ',
+                              FUND_EPS_CRASH: 'EPS në rënie të thellë (≤ −15%)',
+                              FUND_FCF_NEGATIVE: 'FCF TTM negativ',
+                              FUND_DEBT_EXTREME: 'Debt/Equity ekstreme (> 250%)',
+                              FUND_REVENUE_NOT_POSITIVE: 'Revenue jo-pozitive (strict)',
+                              FUND_EPS_NOT_POSITIVE: 'EPS jo-pozitiv (strict)',
+                              FUND_FCF_NOT_POSITIVE: 'FCF jo-pozitiv (strict)',
+                              FUND_DEBT_ABOVE_THRESHOLD: 'D/E mbi pragun (strict, > 150%)',
+                              FUND_MISSING_DATA: 'Të dhëna të pamjaftueshme (strict)',
+                            };
+                            return (
+                              <div key={k} className="flex items-center gap-2">
+                                <span className="text-[11px] text-muted-foreground flex-1">{labels[k] || k.replace('FUND_', '')}</span>
+                                <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden flex-shrink-0">
+                                  <div className="h-full bg-amber-400/70" style={{ width: `${total > 0 ? Math.max(4, (v / total) * 100) : 0}%` }} />
+                                </div>
+                                <span className="text-[11px] font-semibold text-foreground w-10 text-right">{fmt(v)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-[10.5px] text-muted-foreground/70 mt-2">
+                        Rregullat e filtrit standard: {c.filterRules.standard.slice(0, 4).join(' · ')}.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* WF kalendarike: A vs B */}
+                  {c.wfWindows.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-border/50 bg-background/40 p-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Timer className="w-3.5 h-3.5 text-muted-foreground" />
+                        <p className="text-[12px] font-semibold text-foreground">Walk-Forward kalendarike — test-i i secilës dritare: A kundrejt B</p>
+                        <MetricInfoPopup metricKey="wfAnchored" report={report} />
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left min-w-[480px]">
+                          <thead>
+                            <tr className="border-b border-border/40">
+                              <th className="pb-1.5 text-[10.5px] font-semibold text-muted-foreground">Dritare (test)</th>
+                              <th className="pb-1.5 text-[10.5px] font-semibold text-sky-400">A neto</th>
+                              <th className="pb-1.5 text-[10.5px] font-semibold text-emerald-400">B neto</th>
+                              <th className="pb-1.5 text-[10.5px] font-semibold text-muted-foreground">B tregti</th>
+                              <th className="pb-1.5 text-[10.5px] font-semibold text-muted-foreground">B PF</th>
+                              <th className="pb-1.5 text-[10.5px] font-semibold text-muted-foreground">Verdikti</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-[11.5px]">
+                            {c.wfWindows.map(w => {
+                              const better = w.bNet > w.aNet;
+                              return (
+                                <tr key={w.label} className="border-b border-border/20 last:border-0">
+                                  <td className="py-1 pr-2 text-muted-foreground">{w.label} ({w.testFrom.slice(0, 4)})</td>
+                                  <td className="py-1 pr-2">{sign(w.aNet)}$</td>
+                                  <td className="py-1 pr-2"><span className={pnlColor(w.bNet)}>{sign(w.bNet)}$</span></td>
+                                  <td className="py-1 pr-2">{fmt(w.bTrades)}</td>
+                                  <td className="py-1 pr-2">{fmt(w.bPf, 2)}</td>
+                                  <td className="py-1">
+                                    <span className={`text-[10.5px] font-semibold ${better ? 'text-emerald-400' : w.bNet < w.aNet ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                      {better ? '✓ B më mirë' : w.bNet < w.aNet ? '✗ A më mirë' : '—'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {c.bTop3SymbolsProfitSharePct !== null && (
+                        <p className="text-[10.5px] text-muted-foreground/70 mt-1.5">
+                          Koncentrimi i B: top-3 simbolet = {fmt(c.bTop3SymbolsProfitSharePct, 0)}% e fitimit neto OOS (kufiri 80%).
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ═══ TASK 29: KRAHASIMI I UNIVERSIT — 120 kundrejt 400 ═══ */}
             {report.universeComparison && (() => {

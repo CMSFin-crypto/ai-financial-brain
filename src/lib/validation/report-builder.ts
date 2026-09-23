@@ -17,6 +17,7 @@
 import { BacktestTrade, MetricSet, computeMetrics, scoreBuckets, sectorStats, setupSplit } from './metrics';
 import { SurvivorshipReport } from './universe-history';
 import { CostAssumptions } from './cost-model';
+import type { BacktestVariant } from './backtest-engine';
 
 export interface GateCheck {
   gate: string;
@@ -119,7 +120,7 @@ export interface FinalVerdict {
 
 // ── Task 28: Testi A/B/C/D i Event Score (të njëjtat të dhëna, të njëjtat rregulla) ──
 export interface VariantComparison {
-  key: 'baseline' | 'event-filter' | 'event-score' | 'full';
+  key: BacktestVariant;
   label: string;
   description: string;
   is: MetricSet;
@@ -145,6 +146,74 @@ export interface EarningsDataInfo {
   totalEvents: number;
   coveragePct: number;
   source: string;
+}
+
+// ── Task 26 Faza 2 — TESTI A/B: Technical-only kundrejt Technical + Fundamental ──
+// Varianti A = 'full' (technical-only, NUK ndryshohet). Varianti B = 'full-fund'.
+// Të njëjtat kushte teknike — ndryshimi i vetëm është filtri fundamental.
+
+/** Njëra anë e krahasimit A/B fundamental (A, B standard ose B strict) */
+export interface FundVariantSide {
+  label: string;
+  description: string;
+  is: MetricSet;
+  oos: MetricSet;
+  /** sinjale teknike të bllokuara nga filtri (IS+OOS) */
+  blockedSignals: number;
+  /** sinjale që kaluan me ≥2 kontrolle pa të dhëna (vetëm standard — N/A ≠ FAIL) */
+  naPassed: number;
+}
+
+/** Performca vjetore OOS: A kundrejt B — a mbështetet përmirësimi nga një vit i vetëm? */
+export interface FundYearPerf {
+  year: number;
+  aNet: number;
+  bNet: number;
+  bTrades: number;
+}
+
+/** Dritare WF kalendarike: A kundrejt B në test-in e secilës dritare */
+export interface FundWfWindow {
+  label: string;
+  testFrom: string;
+  testTo: string;
+  aNet: number;
+  aTrades: number;
+  bNet: number;
+  bTrades: number;
+  bPf: number;
+}
+
+export interface FundVerdict {
+  /** keep = filtri bëhet pjesë e vendimit të sinjalit; false = mbetet vetëm kontekst */
+  keep: boolean;
+  criteria: FinalVerdictCriterion[];
+  note: string;
+}
+
+export interface FundComparison {
+  baselineLabel: string;
+  /** A — Technical-only */
+  a: FundVariantSide;
+  /** B — Technical + Fundamental standard (N/A ≠ FAIL) */
+  b: FundVariantSide;
+  /** B-strict — kërkon të dhëna të plota pozitive (i matur, jo për vendim) */
+  strict: FundVariantSide;
+  perYear: FundYearPerf[];
+  wfWindows: FundWfWindow[];
+  /** top-3 simbolet si % e fitimit neto OOS të B (vetëm kur B > 0) */
+  bTop3SymbolsProfitSharePct: number | null;
+  /** arsyet e bllokimit (kodet FUND_* — IS+OOS të B standard) */
+  blockedReasons: Record<string, number>;
+  filterRules: { standard: string[]; strict: string[] };
+  coverage: {
+    symbolsWithData: number;
+    universeSize: number;
+    coveragePct: number;
+    skippedForDeadline: number;
+    source: string;
+  };
+  verdict: FundVerdict;
 }
 
 export interface ValidationReport {
@@ -219,6 +288,113 @@ export interface ValidationReport {
   paperSignals: PaperSignalRecord[];
   /** Task 29 — krahasimi paper vs OOS */
   paperVsOos: PaperVsOos | null;
+  /** Task 26 Faza 2 — testi rigoroz Technical-only vs Technical + Fundamental */
+  fundComparison: FundComparison | null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Task 26 Faza 2 — VERDIKTI I FILTRIT FUNDAMENTAL (rregullat e userit)
+//
+// Mbaje filtrin fundamental VETËM nëse:
+//   • përmirëson rezultatet në OOS (jo vetëm in-sample)
+//   • expectancy rritet
+//   • profit factor rritet ose mbetet i qëndrueshëm
+//   • drawdown nuk rritet ndjeshëm
+//   • rezultati nuk varet nga një vit ose disa aksione
+//   • ka numër të mjaftueshëm tregtish
+//
+// Nëse B jep më pak tregti por cilësi më të mirë OOS → mund të jetë
+// përmirësim. Nëse vetëm zvogëlon numrin pa rritur cilësinë →
+// fundamentet mbeten VETËM si informacion në popup (Faza 1).
+// ═══════════════════════════════════════════════════════════════
+export function buildFundVerdict(params: {
+  aOos: MetricSet;
+  bOos: MetricSet;
+  aIs: MetricSet;
+  bIs: MetricSet;
+  perYear: FundYearPerf[];
+  bTop3SymbolsProfitSharePct: number | null;
+}): FundVerdict {
+  const { aOos, bOos, aIs, bIs, perYear, bTop3SymbolsProfitSharePct } = params;
+
+  const expDelta = Math.round((bOos.expectancy - aOos.expectancy) * 100) / 100;
+  const pfDelta = Math.round((bOos.profitFactor - aOos.profitFactor) * 100) / 100;
+  const ddDelta = Math.round((bOos.maxDrawdownPct - aOos.maxDrawdownPct) * 10) / 10; // pozitiv = keq
+  const tradesDelta = bOos.trades - aOos.trades;
+  const netDelta = Math.round((bOos.netProfit - aOos.netProfit) * 100) / 100;
+  const isExpDelta = Math.round((bIs.expectancy - aIs.expectancy) * 100) / 100;
+
+  // vitet me përmirësim real (B më i mirë se A në vitin e daljes së tregtisë)
+  const yearsWithTrades = perYear.filter(y => y.aNet !== 0 || y.bNet !== 0 || y.bTrades > 0);
+  const improvementYears = yearsWithTrades.filter(y => y.bNet > y.aNet).length;
+
+  const expUp = bOos.expectancy > aOos.expectancy;
+  const pfStable = bOos.profitFactor >= aOos.profitFactor - 0.05;
+  const ddOk = bOos.maxDrawdownPct <= aOos.maxDrawdownPct + 2.0;
+  const tradesOk = bOos.trades >= 30 && bOos.trades >= 0.2 * aOos.trades;
+  const yearOk = yearsWithTrades.length >= 2 ? improvementYears >= 2 : null;
+  const concentrationOk = bTop3SymbolsProfitSharePct !== null
+    ? bTop3SymbolsProfitSharePct <= 80
+    : null; // pa vlerë kur B humb
+
+  const criteria: FinalVerdictCriterion[] = [
+    {
+      key: 'expectancy',
+      label: 'OOS expectancy rritet (B > A)',
+      required: `> 0$ ndryshim`,
+      actual: `${expDelta >= 0 ? '+' : ''}${expDelta}$/tregti (${aOos.expectancy.toFixed(2)} → ${bOos.expectancy.toFixed(2)})`,
+      passed: expUp,
+    },
+    {
+      key: 'profitFactor',
+      label: 'OOS profit factor i qëndrueshëm',
+      required: 'B ≥ A − 0.05',
+      actual: `${bOos.profitFactor.toFixed(2)} kundrejt ${aOos.profitFactor.toFixed(2)} (${pfDelta >= 0 ? '+' : ''}${pfDelta})`,
+      passed: pfStable,
+    },
+    {
+      key: 'drawdown',
+      label: 'Drawdown pa rritje të ndjeshme',
+      required: 'B ≤ A + 2.0 pk',
+      actual: `${bOos.maxDrawdownPct.toFixed(1)}% kundrejt ${aOos.maxDrawdownPct.toFixed(1)}% (${ddDelta >= 0 ? '+' : ''}${ddDelta} pk)`,
+      passed: ddOk,
+    },
+    {
+      key: 'trades',
+      label: 'Numër i mjaftueshëm tregtish OOS',
+      required: '≥ 30 dhe ≥ 20% e A-s',
+      actual: `${bOos.trades} tregti (A: ${aOos.trades})`,
+      passed: tradesOk,
+    },
+    {
+      key: 'years',
+      label: 'Përmirësimi nuk vjen nga një vit i vetëm',
+      required: '≥ 2 vite me B > A',
+      actual: yearsWithTrades.length >= 2
+        ? `${improvementYears}/${yearsWithTrades.length} vite me B > A`
+        : 'pa historian vjetor të mjaftueshëm',
+      passed: yearOk,
+    },
+    {
+      key: 'concentration',
+      label: 'Fitimi i B jo i koncentruar',
+      required: 'top-3 simbolet ≤ 80% (kur fitimi > 0)',
+      actual: bTop3SymbolsProfitSharePct !== null
+        ? `${bTop3SymbolsProfitSharePct.toFixed(0)}%`
+        : 'B nuk ka fitim neto pozitiv — kriteri nuk aplikohet',
+      passed: concentrationOk,
+    },
+  ];
+
+  const required = criteria.filter(c => c.passed !== null);
+  const keep = required.every(c => c.passed === true);
+
+  const note = keep
+    ? `FILTRI FUNDAMENTAL IA VLEN: ${tradesDelta <= 0 ? `${Math.abs(tradesDelta)} tregti më pak` : `${tradesDelta} tregti më shumë`} në OOS me expectancy ${expDelta >= 0 ? '+' : ''}${expDelta}$/tregti, PF ${pfDelta >= 0 ? '+' : ''}${pfDelta}, drawdown ${ddDelta <= 0 ? 'më i ulët' : `+${ddDelta}pk`}. Kalon si filtër i vërtetë në vendimin e sinjalit (Faza 3).`
+    : `MBETET SI KONTEKST: ${tradesDelta < 0 ? `filtri reduktoi ${Math.abs(tradesDelta)} tregti OOS` : `filtri shtoi ${tradesDelta} tregti`} pa përmbushur kriteret e përmirësimit (expectancy ${expDelta >= 0 ? '+' : ''}${expDelta}$, PF ${pfDelta >= 0 ? '+' : ''}${pfDelta}, DD ${ddDelta >= 0 ? '+' : ''}${ddDelta}pk) — fundamentet vazhdojnë VETËM si panel informues në popup (Faza 1).`
+      + (Math.abs(isExpDelta) > 0.01 ? ` IS: ${isExpDelta >= 0 ? '+' : ''}${isExpDelta}$ (përmirësimi duhet të mbahet në OOS, jo vetëm IS).` : '');
+
+  return { keep, criteria, note };
 }
 
 export function buildGateChecks(params: {

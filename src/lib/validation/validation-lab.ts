@@ -7,6 +7,11 @@
 //   • krahasimi Universe 120 vs 400 (të njëjtat rregulla, vetëm universi)
 //   • paper trading me event real (journal Top10 + event score EDGAR as-of)
 //   • verdikti automatik APPROVE / HOLD / REJECT
+// Task 26 FAZA 2 — TESTI A/B FUNDAMENTAL:
+//   • fetch EDGAR companyfacts (point-in-time) për universin
+//   • Varianti A: Technical-only ('full' — i pandryshuar, baseline)
+//   • Varianti B: 'full-fund' (standard, N/A ≠ FAIL) + 'full-fund-strict' (i matur)
+//   • krahasim 8 metrikash + per-year + WF + verdikt KEEP-FILTER / CONTEXT-ONLY
 // Mos ndrysho rregullat e strategjisë — ndrysho vetëm universin.
 // ═══════════════════════════════════════════════════════════════
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
@@ -24,8 +29,12 @@ import { filterUniverseAsOf, survivorshipReport } from './universe-history';
 import {
   ValidationReport, buildGateChecks, buildAutoPause, VariantComparison, EventScoreVerdict,
   buildFinalVerdict, WfCalendarWindow, UniverseComparison, PaperSignalRecord, PaperVsOos,
+  FundComparison, FundVariantSide, FundYearPerf, FundWfWindow, buildFundVerdict,
 } from './report-builder';
 import { fetchEarningsTimelines, EarningsTimeline, eventStateAsOf, eventScorePoints } from './earnings-history';
+import {
+  buildFundamentalTimelines, FUND_FILTER_RULES, FundamentalTimelineEntry,
+} from '@/lib/fundamentals/backtest-integration';
 
 const SECTOR_ETF_MAP: Record<string, string> = {
   Tech: 'XLK', Consumer: 'XLY', Staples: 'XLP', Healthcare: 'XLV',
@@ -119,7 +128,6 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     if (tl && tl.events.length > 0) ps.earnings = tl;
     symbolsAll.push(ps);
   }
-
   // Task 29: primari = VETËM universi i kërkuar (jo i gjithë fetch-i).
   // Të dhënat fetched një herë për unionin (max e primary/baseline), por
   // çdo raport teston vetëm listën e vet — krahasimi është i drejtë.
@@ -139,6 +147,28 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     calendar, symbols, spy, qqq, vix, sectorEtfs,
     universeSize: symbols.length, equity: START_EQUITY,
   };
+
+  // ── TASK 26 FAZA 2 — fundamentet point-in-time (EDGAR companyfacts) ──
+  // Fetch për gjithë unionin e simboleve të përgatitura. Deadline 150s mbron
+  // run-in; simbolet e mbetura jashtë mbeten N/A (standard: kalojnë).
+  let fundTimelines: Record<string, FundamentalTimelineEntry[]> = {};
+  let fundCoverage = { symbolsWithData: 0, totalAttempted: 0, skippedForDeadline: 0, source: '' };
+  try {
+    const fundFetch = await buildFundamentalTimelines(
+      symbolsAll.map(s => s.symbol),
+      { deadlineMs: 180_000 },
+    );
+    fundTimelines = fundFetch.timelines;
+    fundCoverage = {
+      symbolsWithData: fundFetch.symbolsWithData,
+      totalAttempted: fundFetch.totalAttempted,
+      skippedForDeadline: fundFetch.skippedForDeadline,
+      source: fundFetch.source,
+    };
+    ctx.fundamentals = fundTimelines;
+  } catch {
+    fundCoverage.source = 'EDGAR companyfacts — dështoi fetch-i (testi fundamental kalohet)';
+  }
 
   // ── 3. Ndarja statike IS/OOS (70/30) + dritaret ──
   const totalDays = calendar.length;
@@ -283,6 +313,126 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
       : `Event Score NUK e justifikohet në këto të dhëna: ${oosTradesDelta} tregti më pak në OOS pa përmirësim të expectancy (${oosExpDelta >= 0 ? '+' : ''}${oosExpDelta}$/tregti) ose drawdown — rishiko pragjet e pikëve.`,
   };
 
+  // ── TASK 26 FAZA 2 — TESTI A/B: Technical-only vs Technical + Fundamental ──
+  // A = varianti 'full' (i ekzekutuar më lart — i pandryshuar, baseline).
+  // B = 'full-fund' (standard) dhe 'full-fund-strict' — të njëjtat kushte
+  // teknike, i vetmi ndryshim është filtri fundamental (point-in-time EDGAR).
+  let fundComparison: FundComparison | null = null;
+  const primarySymbolsWithFund = symbols.filter(s => fundTimelines[s.symbol] !== undefined).length;
+  if (Object.keys(fundTimelines).length >= 10) {
+    const fundIsStd = runBacktest(ctx, { startIndex: split.static.isStart, endIndex: split.static.isEnd, variant: 'full-fund' });
+    const fundOosStd = runBacktest(ctx, { startIndex: split.static.oosStart, endIndex: split.static.oosEnd, variant: 'full-fund' });
+    const fundIsStr = runBacktest(ctx, { startIndex: split.static.isStart, endIndex: split.static.isEnd, variant: 'full-fund-strict' });
+    const fundOosStr = runBacktest(ctx, { startIndex: split.static.oosStart, endIndex: split.static.oosEnd, variant: 'full-fund-strict' });
+
+    const countFundBlocked = (r: ReturnType<typeof runBacktest>) =>
+      Object.entries(r.rejectReasons).filter(([k]) => k.startsWith('FUND_')).reduce((a, [, v]) => a + v, 0);
+
+    const aSide: FundVariantSide = {
+      label: 'A — Technical-only',
+      description: 'Strategjia e plotë IBKR (D) — pa filtrim fundamental (baseline)',
+      is: variantRes['full'].isM,
+      oos: variantRes['full'].oosM,
+      blockedSignals: 0,
+      naPassed: 0,
+    };
+    const bSide: FundVariantSide = {
+      label: 'B — Tech + Fundamental',
+      description: 'A + filtri fundamental standard — N/A ≠ FAIL',
+      is: computeMetrics(fundIsStd.trades, START_EQUITY),
+      oos: computeMetrics(fundOosStd.trades, START_EQUITY),
+      blockedSignals: countFundBlocked(fundIsStd) + countFundBlocked(fundOosStd),
+      naPassed: (fundIsStd.fundNaPassed ?? 0) + (fundOosStd.fundNaPassed ?? 0),
+    };
+    const strictSide: FundVariantSide = {
+      label: 'B-strict — Tech + Fundamental strikt',
+      description: 'A + filtri strikt — të dhëna pozitive të detyrueshme (i matur, jo për vendim)',
+      is: computeMetrics(fundIsStr.trades, START_EQUITY),
+      oos: computeMetrics(fundOosStr.trades, START_EQUITY),
+      blockedSignals: countFundBlocked(fundIsStr) + countFundBlocked(fundOosStr),
+      naPassed: (fundIsStr.fundNaPassed ?? 0) + (fundOosStr.fundNaPassed ?? 0),
+    };
+
+    // Performca vjetore OOS (sipas vitit të daljes së tregtisë)
+    const netByYear = (trades: BacktestTrade[]): Map<number, { net: number; n: number }> => {
+      const m = new Map<number, { net: number; n: number }>();
+      for (const t of trades) {
+        const y = Number(t.exitDate.slice(0, 4));
+        const cur = m.get(y) || { net: 0, n: 0 };
+        cur.net += t.pnlNet;
+        cur.n++;
+        m.set(y, cur);
+      }
+      return m;
+    };
+    const aYears = netByYear(variantRes['full'].oosRes.trades);
+    const bYears = netByYear(fundOosStd.trades);
+    const allYears = [...new Set([...aYears.keys(), ...bYears.keys()])].sort((x, y) => x - y);
+    const perYear: FundYearPerf[] = allYears.map(y => ({
+      year: y,
+      aNet: Math.round((aYears.get(y)?.net ?? 0) * 100) / 100,
+      bNet: Math.round((bYears.get(y)?.net ?? 0) * 100) / 100,
+      bTrades: bYears.get(y)?.n ?? 0,
+    }));
+
+    // Dritaret WF kalendarike: B standard në test-in e secilës dritare (A është aty)
+    const fundWfWindows: FundWfWindow[] = [];
+    for (let i = 0; i < wfCal.length; i++) {
+      const w = wfCal[i];
+      const r = runBacktest(ctx, { startIndex: w.testStart, endIndex: w.testEnd, variant: 'full-fund' });
+      const m = computeMetrics(r.trades, START_EQUITY);
+      const aW = wfCalendarWindows[i];
+      fundWfWindows.push({
+        label: w.label,
+        testFrom: w.testFrom, testTo: w.testTo,
+        aNet: aW ? aW.test.netProfit : 0,
+        aTrades: aW ? aW.test.trades : 0,
+        bNet: m.netProfit, bTrades: m.trades, bPf: m.profitFactor,
+      });
+    }
+
+    // Koncentrimi i fitimit të B në OOS (top-3 simbolet)
+    let bTop3SymbolsProfitSharePct: number | null = null;
+    if (bSide.oos.netProfit > 0 && fundOosStd.trades.length >= 10) {
+      const bySym = new Map<string, number>();
+      for (const t of fundOosStd.trades) bySym.set(t.symbol, (bySym.get(t.symbol) || 0) + t.pnlNet);
+      const tops = [...bySym.values()].sort((a, b) => b - a).slice(0, 3);
+      bTop3SymbolsProfitSharePct =
+        Math.round((tops.reduce((a, b) => a + b, 0) / bSide.oos.netProfit) * 1000) / 10;
+    }
+
+    // Arsyet e bllokimit (B standard, IS+OOS)
+    const blockedReasons: Record<string, number> = {};
+    for (const src of [fundIsStd.rejectReasons, fundOosStd.rejectReasons]) {
+      for (const [k, v] of Object.entries(src)) {
+        if (k.startsWith('FUND_')) blockedReasons[k] = (blockedReasons[k] || 0) + v;
+      }
+    }
+
+    fundComparison = {
+      baselineLabel: aSide.label,
+      a: aSide, b: bSide, strict: strictSide,
+      perYear,
+      wfWindows: fundWfWindows,
+      bTop3SymbolsProfitSharePct,
+      blockedReasons,
+      filterRules: { standard: FUND_FILTER_RULES.standard, strict: FUND_FILTER_RULES.strict },
+      coverage: {
+        symbolsWithData: primarySymbolsWithFund,
+        universeSize: symbols.length,
+        coveragePct: symbols.length > 0
+          ? Math.round((primarySymbolsWithFund / symbols.length) * 1000) / 10
+          : 0,
+        skippedForDeadline: fundCoverage.skippedForDeadline,
+        source: fundCoverage.source,
+      },
+      verdict: buildFundVerdict({
+        aOos: aSide.oos, bOos: bSide.oos, aIs: aSide.is, bIs: bSide.is,
+        perYear, bTop3SymbolsProfitSharePct,
+      }),
+    };
+  }
+
   // ── 4. PAPER TRADING me event real (journal Top10 + EDGAR as-of) ──
   let paperM: ValidationReport['table']['paper'] = null;
   let paperCount = 0;
@@ -318,6 +468,9 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
         avgHoldDays: 0,
         returnPct: 0,
         costDragPct: 0,
+        avgWin: 0,
+        avgLoss: 0,
+        maxConsecutiveLosses: 0,
       };
       paperNote = `Journal Top10 (90 ditë): ${rep.totals.entries} hyrje, ${closedN} të mbyllura`;
     } else {
@@ -478,6 +631,7 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     worstTrades: sortedByPnl.slice(-5).reverse(),
     variants,
     eventScoreVerdict,
+    fundComparison,
     earningsData: {
       symbolsWithTimeline: withEvents,
       totalEvents,
@@ -495,6 +649,9 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
       'Parametrat NUK ndryshohen pasi shihen rezultatet e testit — nëse ndryshojnë, duhet nisur dritare e re train/test.',
       'Learning Engine është neutral (peshat 1.0) në backtest — versioni live i mëson nga rezultatet reale.',
       'Paper trading: çmimet janë reale por ekzekutimet të simuluara — fills sipas top-of-book; urdhrat kompleks stop/target mund të sillen ndryshe në llogari reale.',
+      fundComparison
+        ? `Testi A/B fundamental: ${fundComparison.coverage.symbolsWithData}/${fundComparison.coverage.universeSize} simbole me timeline EDGAR companyfacts (${fundComparison.coverage.coveragePct}%)${fundCoverage.skippedForDeadline > 0 ? ` · ${fundCoverage.skippedForDeadline} simbole u lënë jashtë për deadline fetch-i (N/A ≠ FAIL)` : ''}. Filtri përdor VETËM filing-e me datë < datën e sinjalit (rregulli "publikuar pas mbylljes → dita pasuese"); ADR-t e huaja (BABA/TM/HMC etj.) nuk kanë fakte US-GAAP — mbeten N/A dhe kalojnë në filtrin standard.`
+        : 'Testi A/B fundamental nuk u ekzekutua — pa timeline EDGAR companyfacts (fetch dështoi ose mbulim < 10 simbole).',
     ],
   };
 

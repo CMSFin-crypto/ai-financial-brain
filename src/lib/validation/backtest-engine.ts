@@ -19,13 +19,21 @@ import { BacktestTrade } from './metrics';
 import {
   EarningsTimeline, eventStateAsOf, proximityPoints, surprisePoints,
 } from './earnings-history';
+import {
+  FundamentalTimelineEntry, fundamentalContextAsOf, evaluateFundamentalFilter,
+  FundamentalFilterMode,
+} from '@/lib/fundamentals/backtest-integration';
 
 // ── Variantet e testimit A/B/C/D (Task 28) ──
 //   baseline     = Trend + Pullback bërthama, pa event logic, pa filtrat IBKR të avancuara
 //   event-filter  = baseline + blloko/penalizo earnings e afërta (spec: -3/-1)
 //   event-score   = event-filter + surprise/PEAD (+1/+2/-2)
 //   full          = event-score + të gjithë filtrat IBKR (breadth, RS, regime, RSI>70, VIX stop)
-export type BacktestVariant = 'baseline' | 'event-filter' | 'event-score' | 'full';
+// ── Task 26 Faza 2 — variantet e testit A/B fundamental ──
+//   full-fund        = full (technical-only, E NJËJTAT kushte) + filtri fundamental STANDARD (N/A ≠ FAIL)
+//   full-fund-strict = full + filtri fundamental STRICT (të dhëna të detyrueshme)
+//   Ndryshimi I VETËM kundrejt 'full' është filtri fundamental — krahasimi i drejtë.
+export type BacktestVariant = 'baseline' | 'event-filter' | 'event-score' | 'full' | 'full-fund' | 'full-fund-strict';
 
 // ── Konstante — IDENTIKE me ibkr-scan/route.ts ──
 const SECTOR_DEAD_PCT = 20, SECTOR_WEAK_PCT = 40, SECTOR_STRONG_PCT = 55;
@@ -60,6 +68,9 @@ export interface BacktestContext {
   sectorEtfs: Record<string, PreparedSymbol>;
   universeSize: number;
   equity: number;
+  /** Task 26 Faza 2 — timeline-të fundamentale point-in-time (EDGAR companyfacts).
+ * Përdoret VETËM nga variantet full-fund / full-fund-strict. */
+  fundamentals?: Record<string, FundamentalTimelineEntry[]>;
 }
 
 /** Parapërgatit një simbol: indikatorë kauzalë (as-of i sigurt) */
@@ -152,6 +163,10 @@ export interface BacktestResult {
   regimeDays: { date: string; regimeLevel: string; vix: number; breadthPct: number }[];
   /** Task 29 — score-i (0-100) i ÇDO sinjali të gjeneruar — për 'Sinjale me score 8+' */
   signalScores: number[];
+  /** Task 26 Faza 2 — vetëm për full-fund*: sinjale teknike të vlerësuara nga filtri */
+  fundEvaluated?: number;
+  /** sinjale që kaluan filtrin standard me ≥2 kontrolle pa të dhëna (N/A ≠ FAIL) */
+  fundNaPassed?: number;
 }
 
 /**
@@ -164,9 +179,15 @@ export interface BacktestResult {
 export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): BacktestResult {
   const exec: ExecutionConfig = { ...DEFAULT_EXECUTION, ...opts.execution };
   const variant: BacktestVariant = opts.variant || 'full';
-  const useEventBlock = variant !== 'baseline';   // B, C, D
-  const useEventScore = variant === 'event-score' || variant === 'full'; // C, D
-  const useIbkrFilters = variant === 'full';       // vetëm D
+  const useEventBlock = variant !== 'baseline';   // B, C, D + fund
+  const useEventScore = variant === 'event-score' || variant === 'full'
+    || variant === 'full-fund' || variant === 'full-fund-strict';
+  const useIbkrFilters = variant === 'full' || variant === 'full-fund' || variant === 'full-fund-strict';
+  // Task 26 Faza 2 — filtri fundamental: i ZBATUAR vetëm mbi kushtet e plota teknike të 'full'
+  const fundMode: FundamentalFilterMode | null =
+    variant === 'full-fund' ? 'standard'
+      : variant === 'full-fund-strict' ? 'strict'
+        : null;
   const trades: BacktestTrade[] = [];
   const open: OpenPosition[] = [];
   const pending: PendingSignal[] = [];
@@ -174,6 +195,8 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
   let equity = ctx.equity;
   let signalsGenerated = 0;
   let entryOrdersRejected = 0;
+  let fundEvaluated = 0;
+  let fundNaPassed = 0;
   const rejectReasons: Record<string, number> = {};
   const regimeDays: BacktestResult['regimeDays'] = [];
   const symMap = new Map(ctx.symbols.map(s => [s.symbol, s]));
@@ -606,6 +629,24 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
         breakdown.trend + breakdown.pullback + breakdown.rs +
         breakdown.volume + breakdown.market + breakdown.event + breakdown.risk;
 
+      // ── TASK 26 FAZA 2 — FILTRI FUNDAMENTAL (point-in-time) ──
+      // Porta e FUNDIT: aplikohet VETËM pasi të gjitha kushtet teknike kanë
+      // kaluar — kështu çdo sinjal i bllokuar këtu është i bllokuar VETËM
+      // nga fundamentet, dhe krahasimi me 'full' është i izoluar saktësisht.
+      // Rregulli anti look-ahead: filing i datës D publikohet mundësisht PAS
+      // mbylljes — përdoret vetëm nga D+1 (usableFrom = filed + 1 ditë).
+      if (fundMode) {
+        fundEvaluated++;
+        const tl = ctx.fundamentals?.[s.symbol];
+        const fctx = fundamentalContextAsOf(tl, today);
+        const fres = evaluateFundamentalFilter(fctx, fundMode);
+        if (!fres.pass) {
+          reject(`FUND_${fres.reason}`);
+          continue;
+        }
+        if (fres.naChecks >= 2) fundNaPassed++;
+      }
+
       signalsGenerated++;
       signalScores.push(totalScore);
       pending.push({
@@ -660,7 +701,10 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
     }
   }
 
-  return { trades, signalsGenerated, entryOrdersRejected, rejectReasons, regimeDays, signalScores };
+  return {
+    trades, signalsGenerated, entryOrdersRejected, rejectReasons, regimeDays, signalScores,
+    ...(fundMode ? { fundEvaluated, fundNaPassed } : {}),
+  };
 }
 
 /** % ndryshimi mbi 'days' ditët e fundit — version me indekse (pa slice) */

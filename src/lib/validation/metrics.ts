@@ -62,6 +62,12 @@ export interface MetricSet {
   returnPct: number;
   /** rrëshqitja e ekzekutimit si % e fitimit bruto */
   costDragPct: number;
+  /** Task 26 Faza 2 — fitimi mesatar i fitimtarëve ($) */
+  avgWin: number;
+  /** humbja mesatare e humbësve ($) — pozitive si vlerë absolute */
+  avgLoss: number;
+  /** Task 26 Faza 2 — humbje radhazi: max korekutive të humbjura (tregti në rend kohor) */
+  maxConsecutiveLosses: number;
 }
 
 export function computeMetrics(trades: BacktestTrade[], startEquity: number): MetricSet {
@@ -70,6 +76,7 @@ export function computeMetrics(trades: BacktestTrade[], startEquity: number): Me
       trades: 0, wins: 0, losses: 0, winRatePct: 0, profitFactor: 0,
       expectancy: 0, avgR: 0, netProfit: 0, grossProfit: 0, totalCosts: 0,
       maxDrawdownPct: 0, maxDrawdownDollars: 0, avgHoldDays: 0, returnPct: 0, costDragPct: 0,
+      avgWin: 0, avgLoss: 0, maxConsecutiveLosses: 0,
     };
   }
 
@@ -82,13 +89,20 @@ export function computeMetrics(trades: BacktestTrade[], startEquity: number): Me
   let peak = startEquity;
   let maxDD = 0, maxDDPct = 0;
 
+  // Humbje radhazi — max korekutive (tregti në rend kohor)
+  let consecLosses = 0, maxConsecLosses = 0;
+
   for (const t of trades) {
     netProfit += t.pnlNet;
     grossProfit += t.pnlGross;
     totalCosts += t.costs;
     rSum += t.r;
-    if (t.pnlNet > 0) { wins++; grossWin += t.pnlNet; }
-    else if (t.pnlNet < 0) { losses++; grossLoss += Math.abs(t.pnlNet); }
+    if (t.pnlNet > 0) { wins++; grossWin += t.pnlNet; consecLosses = 0; }
+    else if (t.pnlNet < 0) {
+      losses++; grossLoss += Math.abs(t.pnlNet);
+      consecLosses++;
+      if (consecLosses > maxConsecLosses) maxConsecLosses = consecLosses;
+    }
 
     const days = Math.max(1, Math.round(
       (new Date(t.exitDate + 'T00:00:00Z').getTime() - new Date(t.entryDate + 'T00:00:00Z').getTime()) / 86400000,
@@ -117,6 +131,9 @@ export function computeMetrics(trades: BacktestTrade[], startEquity: number): Me
     avgHoldDays: Math.round((holdDaysSum / n) * 10) / 10,
     returnPct: startEquity > 0 ? Math.round((netProfit / startEquity) * 1000) / 10 : 0,
     costDragPct: grossProfit > 0 ? Math.round((totalCosts / Math.abs(grossProfit)) * 1000) / 10 : 0,
+    avgWin: wins > 0 ? Math.round((grossWin / wins) * 100) / 100 : 0,
+    avgLoss: losses > 0 ? Math.round((grossLoss / losses) * 100) / 100 : 0,
+    maxConsecutiveLosses: maxConsecLosses,
   };
 }
 
