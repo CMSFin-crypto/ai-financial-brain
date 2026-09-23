@@ -14,6 +14,8 @@ import {
   BookOpen, History, Brain, Sparkles,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
+// Task 27: IBKR Validation Lab — backtest/OOS/walk-forward i së njëjtës strategji
+import { IBKRValidationLab } from './ibkr-validation-lab';
 
 // ── Types ──
 type Decision = 'READY' | 'WATCHLIST' | 'NO_TRADE' | 'EVENT_RISK' | 'EXTENDED';
@@ -105,6 +107,8 @@ interface FunnelResponse {
   funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; passedEventRisk: number; passedSectorLimit: number; displayed: number; };
   results: FunnelStock[];
   sectorExposure?: Record<string, number>;
+  // Volume Profile data (in-memory nga Adaptive Scanner Engine)
+  vpReady?: any[];
 }
 
 // Task 16: anëtari i sektorit në popup-in e breadth-it — t: simboli, n: emri i kompanisë, a: mbi SMA50, chg: % ditor
@@ -2755,6 +2759,9 @@ export function IBKRStrategy() {
 
       {/* Ditar Top 10 — Trade Journal (vetëm kandidatët READY; detajet me kërkesë) */}
       <Top10JournalCard />
+
+      {/* Task 27 — IBKR Validation Lab: Backtest → OOS → Walk-Forward → Paper → Live */}
+      <IBKRValidationLab />
 
       {/* Strategy Reference (collapsed after scan) */}
       <Section title="Rregullat e Filtrit (Funnel Steps)" icon={Calculator} color="text-blue-400" defaultOpen={!hasScanned}>

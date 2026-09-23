@@ -20,6 +20,12 @@ export interface LivePrice {
 
 export interface FetchOptions {
   forceRefresh?: boolean;
+  /**
+   * Task 27 (IBKR Validation): eksplicitisht detyron intervalin e Yahoo chart API
+   * (p.sh. '1d') pavarësisht nga range. Pa këtë, range '2y'/'5y' kthejnë bare
+   * javore — backtest-i ka nevojë për bare DITORE të vërteta OHLCV.
+   */
+  interval?: string;
 }
 
 // In-memory cache to avoid hitting API limits
@@ -297,8 +303,10 @@ export async function fetchHistoricalData(
 
   // Determine interval based on range
   // Yahoo Finance valid intervals: 1m, 2m, 5m, 15m, 30m, 60m, 1h, 1d, 5d, 1wk, 1mo, 3mo
+  // Task 27: options.interval detyron intervalin (backtest 5y daily); përndryshe auto.
   let interval: string;
-  if (r === '1d') interval = '5m';        // 1 day → 5-min bars
+  if (options.interval) interval = options.interval;
+  else if (r === '1d') interval = '5m';        // 1 day → 5-min bars
   else if (r === '5d') interval = '60m';  // 5 days → hourly bars (intraday)
   else if (r === '1mo') interval = '60m'; // 1 month → hourly bars (intraday)
   else if (r === '3mo' || r === '6mo' || r === '1y' || r === 'ytd') interval = '1d';   // daily bars
@@ -306,8 +314,8 @@ export async function fetchHistoricalData(
   else if (r === '10y' || r === 'max') interval = '1mo'; // monthly bars
   else interval = '1d';
 
-  // Check cache first (include range in cache key)
-  const cacheKey = `${t}_${r}`;
+  // Check cache first (include range + interval in cache key)
+  const cacheKey = `${t}_${r}_${interval}`;
   const cached = chartCache.get(cacheKey);
   if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
     return cached.data;
