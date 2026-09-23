@@ -26,6 +26,97 @@ export interface GateCheck {
   passed: boolean | null; // null = N/A (pritet live)
 }
 
+// ── Task 29: Walk-Forward kalendarike — 5 dritare train(5v) → test(1v) ──
+export interface WfCalendarWindow {
+  window: number;
+  label: string;
+  trainFrom: string; trainTo: string;
+  testFrom: string; testTo: string;
+  train: { trades: number; winRatePct: number; profitFactor: number; netProfit: number };
+  test: { trades: number; winRatePct: number; profitFactor: number; expectancy: number; maxDrawdownPct: number; netProfit: number; avgR: number };
+}
+
+// ── Task 29: Krahasimi i universit (120 vs 400) — vetëm strategjia FULL (D) ──
+export interface UniverseComparisonSide {
+  size: number;
+  /** numri total i sinjaleve (IS+OOS statike, varianti full) */
+  signals: number;
+  /** sinjale me score ≥ 80 (8+/10) */
+  signalsScore80Plus: number;
+  oos: MetricSet;
+  /** test-i i agreguar i dritareve kalendarike */
+  wfTest: MetricSet;
+}
+
+export interface UniverseComparison {
+  primaryLabel: string;
+  baselineLabel: string;
+  primary: UniverseComparisonSide;
+  baseline: UniverseComparisonSide;
+  note: string;
+}
+
+// ── Task 29: Paper trading me event real (journal Top10 + EDGAR as-of) ──
+export interface PaperSignalRecord {
+  signalDate: string;
+  /** të dhënat e disponueshme në momentin e sinjalit (EOD Yahoo + EDGAR) */
+  dataAvailableAt: string;
+  ticker: string;
+  score: number | null;
+  /** event score real as-of ditën e sinjalit (EDGAR 8-K 2.02) */
+  eventScore: number | null;
+  daysToEarnings: number | null;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  fillStatus: string | null;
+  exitStatus: string | null;
+  resultR: number | null;
+  /** estimim i slippage sipas modelit të kostos (4bps + 1.2bps/ATR%) */
+  slippageEstPct: number | null;
+}
+
+export interface PaperVsOos {
+  paperTradesClosed: number;
+  paperWinRatePct: number | null;
+  paperExpectancyR: number | null;
+  oosWinRatePct: number;
+  oosAvgR: number;
+  winRateDeviationPct: number | null;
+  avgRDeviation: number | null;
+  /** sinjale paper me earnings brenda 2 ditësh (event score -3) */
+  eventSignalsNear: number;
+  eventSignalsWithScore: number;
+  enoughSample: boolean;
+  note: string;
+}
+
+// ── Task 29: VERDIKTI AUTOMATIK — APPROVE / HOLD / REJECT ──
+export interface FinalVerdictCriterion {
+  key: string;
+  label: string;
+  required: string;
+  actual: string;
+  passed: boolean | null; // null = mostër e pamjaftueshme
+}
+
+export interface FinalVerdict {
+  decision: 'APPROVE' | 'HOLD' | 'REJECT';
+  criteria: FinalVerdictCriterion[];
+  stableWindows: number;
+  totalWindows: number;
+  top3SymbolsProfitSharePct: number | null;
+  paperDeviationPct: number | null;
+  thresholds: {
+    oosProfitFactor: number;
+    maxDrawdownPct: number;
+    minStableWindows: number;
+    paperMaxDeviationPct: number;
+    concentrationMaxPct: number;
+  };
+  note: string;
+}
+
 // ── Task 28: Testi A/B/C/D i Event Score (të njëjtat të dhëna, të njëjtat rregulla) ──
 export interface VariantComparison {
   key: 'baseline' | 'event-filter' | 'event-score' | 'full';
@@ -118,6 +209,16 @@ export interface ValidationReport {
   eventScoreVerdict: EventScoreVerdict;
   /** kalendarit real EDGAR — mbulimi */
   earningsData: EarningsDataInfo;
+  /** Task 29 — dritaret kalendarike 5v train → 1v test (vetëm në run-et 10v) */
+  wfCalendarWindows: WfCalendarWindow[];
+  /** Task 29 — krahasimi i universit (120 vs 400), strategjia full */
+  universeComparison: UniverseComparison | null;
+  /** Task 29 — verdikti automatik APPROVE/HOLD/REJECT */
+  finalVerdict: FinalVerdict;
+  /** Task 29 — sinjalet e fundit paper me event score real */
+  paperSignals: PaperSignalRecord[];
+  /** Task 29 — krahasimi paper vs OOS */
+  paperVsOos: PaperVsOos | null;
 }
 
 export function buildGateChecks(params: {
@@ -206,6 +307,164 @@ export function buildAutoPause(params: {
     avgRDeviation: rDev,
     thresholdWinRateDevPct: -20,
     recommendation,
+    note,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Task 29 — VERDIKTI AUTOMATIK (rregulla pune, jo garanci fitimi)
+//
+//   APPROVE  OOS PF ≥ 1.20 · expectancy pozitive · DD brenda kufirit ·
+//            i qëndrueshëm në disa dritare · paper nuk devijon shumë
+//   HOLD     rezultate pozitive por mostër e vogël, ose dallim i madh
+//            mes OOS dhe paper
+//   REJECT   expectancy negative · PF < 1 · DD shumë i lartë · fitimi
+//            vjen nga një periudhë ose disa aksione
+// ═══════════════════════════════════════════════════════════════
+export function buildFinalVerdict(params: {
+  oos: MetricSet;
+  wfCalendarWindows: WfCalendarWindow[];
+  trades: BacktestTrade[];
+  paper: PaperVsOos | null;
+  oosTradesCount: number;
+}): FinalVerdict {
+  const { oos, wfCalendarWindows, trades, paper } = params;
+  const thresholds = {
+    oosProfitFactor: 1.20,
+    maxDrawdownPct: 25,
+    minStableWindows: 3,
+    paperMaxDeviationPct: 15,
+    concentrationMaxPct: 80,
+  };
+
+  // ── 1. Qëndrueshmëria nëpër dritare (test-i vjetor pozitiv) ──
+  const validWindows = wfCalendarWindows.filter(w => w.test.trades >= 5);
+  const stableWindows = validWindows.filter(w => w.test.netProfit > 0 && w.test.profitFactor >= 1.0).length;
+  const totalWindows = wfCalendarWindows.length;
+
+  // ── 2. Koncentrimi i fitimit në disa aksione ──
+  let top3SymbolsProfitSharePct: number | null = null;
+  if (oos.netProfit > 0 && trades.length >= 10) {
+    const bySym = new Map<string, number>();
+    for (const t of trades) bySym.set(t.symbol, (bySym.get(t.symbol) || 0) + t.pnlNet);
+    const tops = [...bySym.values()].sort((a, b) => b - a).slice(0, 3);
+    top3SymbolsProfitSharePct =
+      Math.round((tops.reduce((a, b) => a + b, 0) / oos.netProfit) * 1000) / 10;
+  }
+
+  // ── 3. Devijimi paper kundrejt OOS ──
+  const paperDeviationPct = paper && paper.winRateDeviationPct !== null ? paper.winRateDeviationPct : null;
+
+  // ── Kriteret (çdo rresht i tabelës së verdiktit) ──
+  const criteria: FinalVerdictCriterion[] = [
+    {
+      key: 'oosPF',
+      label: 'OOS profit factor',
+      required: `≥ ${thresholds.oosProfitFactor.toFixed(2)}`,
+      actual: oos.profitFactor.toFixed(2),
+      passed: oos.profitFactor >= thresholds.oosProfitFactor,
+    },
+    {
+      key: 'expectancy',
+      label: 'OOS expectancy / tregti',
+      required: '> 0$',
+      actual: `${oos.expectancy >= 0 ? '+' : ''}${oos.expectancy.toFixed(2)}$`,
+      passed: oos.expectancy > 0,
+    },
+    {
+      key: 'drawdown',
+      label: 'OOS max drawdown',
+      required: `≤ ${thresholds.maxDrawdownPct}%`,
+      actual: `${oos.maxDrawdownPct.toFixed(1)}%`,
+      passed: oos.maxDrawdownPct <= thresholds.maxDrawdownPct,
+    },
+    {
+      key: 'stability',
+      label: 'I qëndrueshëm në dritare',
+      required: `≥ ${thresholds.minStableWindows}/${totalWindows || 5} dritare test pozitive`,
+      actual: totalWindows > 0 ? `${stableWindows}/${totalWindows} (me ≥ 5 tregti)` : 'pa dritare kalendarike',
+      passed: totalWindows > 0 ? stableWindows >= thresholds.minStableWindows : null,
+    },
+    {
+      key: 'paper',
+      label: 'Paper nuk devijon shumë',
+      required: `|WR paper − WR OOS| ≤ ${thresholds.paperMaxDeviationPct} pk (me ≥ 20 të mbyllura)`,
+      actual: paper && paper.winRateDeviationPct !== null
+        ? `dev ${paper.winRateDeviationPct >= 0 ? '+' : ''}${paper.winRateDeviationPct.toFixed(1)} pk (${paper.paperTradesClosed} të mbyllura)`
+        : `mostër e pamjaftueshme (${paper ? paper.paperTradesClosed : 0} të mbyllura)`,
+      passed: paper && paper.paperTradesClosed >= 20
+        ? Math.abs(paper.winRateDeviationPct ?? 0) <= thresholds.paperMaxDeviationPct
+        : null,
+    },
+    {
+      key: 'concentration',
+      label: 'Fitimi jo i koncentruar',
+      required: `top-3 simbolet ≤ ${thresholds.concentrationMaxPct}% e fitimit OOS`,
+      actual: top3SymbolsProfitSharePct !== null ? `${top3SymbolsProfitSharePct.toFixed(1)}%` : 'vetëm kur fitimi OOS > 0',
+      passed: top3SymbolsProfitSharePct !== null ? top3SymbolsProfitSharePct <= thresholds.concentrationMaxPct : null,
+    },
+  ];
+
+  // ── Vendimi: REJECT → APPROVE → HOLD ──
+  const hardReject =
+    oos.expectancy <= 0 ||
+    oos.profitFactor < 1.0 ||
+    oos.maxDrawdownPct > thresholds.maxDrawdownPct ||
+    (top3SymbolsProfitSharePct !== null && top3SymbolsProfitSharePct > thresholds.concentrationMaxPct) ||
+    (totalWindows > 0 && stableWindows <= 1);
+
+  const paperFails = paper && paper.paperTradesClosed >= 20 && Math.abs(paper.winRateDeviationPct ?? 0) > thresholds.paperMaxDeviationPct;
+
+  const approve =
+    oos.profitFactor >= thresholds.oosProfitFactor &&
+    oos.expectancy > 0 &&
+    oos.maxDrawdownPct <= thresholds.maxDrawdownPct &&
+    totalWindows > 0 &&
+    stableWindows >= thresholds.minStableWindows &&
+    !paperFails &&
+    (top3SymbolsProfitSharePct === null || top3SymbolsProfitSharePct <= thresholds.concentrationMaxPct);
+
+  const smallSample = params.oosTradesCount < 100;
+
+  let decision: FinalVerdict['decision'];
+  let note: string;
+  if (hardReject) {
+    decision = 'REJECT';
+    const why: string[] = [];
+    if (oos.expectancy <= 0) why.push(`expectancy negative (${oos.expectancy.toFixed(2)}$/tregti)`);
+    if (oos.profitFactor < 1.0) why.push(`PF ${oos.profitFactor.toFixed(2)} < 1`);
+    if (oos.maxDrawdownPct > thresholds.maxDrawdownPct) why.push(`drawdown ${oos.maxDrawdownPct.toFixed(1)}%`);
+    if (top3SymbolsProfitSharePct !== null && top3SymbolsProfitSharePct > thresholds.concentrationMaxPct)
+      why.push(`fitimi i koncentruar në 3 simbolet kryesore (${top3SymbolsProfitSharePct.toFixed(0)}%)`);
+    if (totalWindows > 0 && stableWindows <= 1) why.push(`vetëm ${stableWindows}/${totalWindows} dritare test pozitive`);
+    note = `REJECT: ${why.join(' · ')}. Strategjia nuk kalon kufijtë e punës — jo për tregti reale në këtë formë.`;
+  } else if (approve) {
+    decision = 'APPROVE';
+    note = `APPROVE: OOS PF ${oos.profitFactor.toFixed(2)} ≥ 1.20, expectancy +${oos.expectancy.toFixed(2)}$/tregti, DD ${oos.maxDrawdownPct.toFixed(1)}%, ${stableWindows}/${totalWindows} dritare pozitive` +
+      (paperFails === false && paper && paper.paperTradesClosed >= 20 ? `, paper brenda devijimit` : '') +
+      `. Kalon te paper trading i vazhdueshëm para LIVE me 0.25% risk.`;
+  } else {
+    decision = 'HOLD';
+    const why: string[] = [];
+    if (oos.profitFactor < thresholds.oosProfitFactor && oos.profitFactor >= 1.0)
+      why.push(`PF ${oos.profitFactor.toFixed(2)} nën 1.20 por mbi 1.0`);
+    if (smallSample) why.push(`mostër OOS e vogël (${params.oosTradesCount} tregti)`);
+    if (totalWindows > 0 && stableWindows > 1 && stableWindows < thresholds.minStableWindows)
+      why.push(`qëndrueshmëria kufitare (${stableWindows}/${totalWindows} dritare)`);
+    if (paperFails) why.push(`dallim i madh OOS ↔ paper (${paperDeviationPct?.toFixed(1)} pk)`);
+    if (paper && paper.paperTradesClosed > 0 && paper.paperTradesClosed < 20)
+      why.push(`paper ka vetëm ${paper.paperTradesClosed} rezultate të mbyllura`);
+    note = `HOLD: ${why.length ? why.join(' · ') : 'kritere të pamezuara'}. Vazhdo paper trading dhe monitorim — jo ende për LIVE.`;
+  }
+
+  return {
+    decision,
+    criteria,
+    stableWindows,
+    totalWindows,
+    top3SymbolsProfitSharePct,
+    paperDeviationPct,
+    thresholds,
     note,
   };
 }

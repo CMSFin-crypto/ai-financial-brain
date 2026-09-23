@@ -706,6 +706,25 @@ export async function buildStockReport(
 
 // ── Raporti javor (i shkurtër automatikisht) ──
 
+/**
+ * Task 29 — Hyrjet e journal-it për Validation Lab (paper trading me event real).
+ * Kthen rreshtat e papërpunuar (kujdes: fushat evalBecause/exitStatus plotësohen nga cron).
+ */
+export async function getRecentJournalEntries(days = 90, take = 300) {
+  if (!isDbAvailable()) return null;
+  try {
+    const from = getEtDateStr(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+    const entries = await prisma.top10JournalEntry.findMany({
+      where: { scanDate: { gte: from }, strategy: STRATEGY },
+      orderBy: { scanDate: "desc" },
+      take,
+    });
+    return entries as any[];
+  } catch {
+    return null;
+  }
+}
+
 export interface WeeklyReport {
   dbActive: boolean;
   window: { days: number; from: string; to: string };

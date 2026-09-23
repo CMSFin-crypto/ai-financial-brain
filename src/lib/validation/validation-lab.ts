@@ -1,8 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // Task 27 — IBKR VALIDATION / validation-lab.ts (orkestruesi)
-// Fetch OHLCV 5vjeçar ditor (Yahoo) për universin + benchmark-et,
-// ekzekuton backtest In-Sample / Out-of-Sample / Walk-Forward dhe
-// ndërton raportin final me gates + auto-pause.
+// Task 28 — Universe 300 default + kalendar earnings EDGAR + A/B/C/D
+// Task 29 — VERIFIKIMI ME UNIVERSIN 400:
+//   • të dhëna 10-vjeçare (2016–2025)
+//   • Walk-Forward KALENDARIKE: 2016–2020→2021 … 2020–2024→2025
+//   • krahasimi Universe 120 vs 400 (të njëjtat rregulla, vetëm universi)
+//   • paper trading me event real (journal Top10 + event score EDGAR as-of)
+//   • verdikti automatik APPROVE / HOLD / REJECT
+// Mos ndrysho rregullat e strategjisë — ndrysho vetëm universin.
 // ═══════════════════════════════════════════════════════════════
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { getScanUniverse } from '@/lib/scanner/universe-400';
@@ -10,7 +15,7 @@ import { SECTOR_MAP } from '@/app/api/ibkr-scan/route';
 import {
   BacktestContext, PreparedSymbol, runBacktest, prepareSymbol, BacktestVariant,
 } from './backtest-engine';
-import { splitWindows } from './walk-forward';
+import { splitWindows, calendarWalkForward } from './walk-forward';
 import {
   BacktestTrade, computeMetrics, scoreBuckets, sectorStats, setupSplit, MetricSet,
 } from './metrics';
@@ -18,8 +23,9 @@ import { DEFAULT_COSTS, CostAssumptions } from './cost-model';
 import { filterUniverseAsOf, survivorshipReport } from './universe-history';
 import {
   ValidationReport, buildGateChecks, buildAutoPause, VariantComparison, EventScoreVerdict,
+  buildFinalVerdict, WfCalendarWindow, UniverseComparison, PaperSignalRecord, PaperVsOos,
 } from './report-builder';
-import { fetchEarningsTimelines, EarningsTimeline } from './earnings-history';
+import { fetchEarningsTimelines, EarningsTimeline, eventStateAsOf, eventScorePoints } from './earnings-history';
 
 const SECTOR_ETF_MAP: Record<string, string> = {
   Tech: 'XLK', Consumer: 'XLY', Staples: 'XLP', Healthcare: 'XLV',
@@ -35,23 +41,28 @@ const cacheMap = new Map<string, { at: number; report: ValidationReport }>();
 
 export interface LabParams {
   universeSize?: number;
-  years?: number; // 3 ose 5
+  years?: number; // 3, 5 ose 10
   force?: boolean;
 }
 
 export async function runValidationLab(params: LabParams = {}): Promise<ValidationReport> {
-  const universeSize = Math.min(Math.max(params.universeSize ?? 300, 20), 400);
-  const years = params.years === 3 ? 3 : 5;
+  const universeSize = Math.min(Math.max(params.universeSize ?? 400, 20), 400);
+  const yearsReq = params.years ?? 10;
+  const years = yearsReq === 3 || yearsReq === 5 || yearsReq === 10 ? yearsReq : 10;
   const cacheKey = `u${universeSize}_y${years}`;
   const cached = cacheMap.get(cacheKey);
   if (!params.force && cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return cached.report;
   }
 
-  const range = years === 3 ? '3y' : '5y';
+  const range = years === 3 ? '3y' : years === 5 ? '5y' : '10y';
 
-  // ── 1. Universe + benchmark-et ──
-  const rawUniverse = [...new Set(getScanUniverse(universeSize))];
+  // ── Universi kryesor + krahasuesi (Task 29: 400 kundrejt 120) ──
+  // Të njëjtat të dhëna fetched NJË herë — vetëm lista e simboleve ndryshon.
+  const compareSize = universeSize === 400 ? 120 : universeSize === 120 ? 400 : 0;
+  const fetchSize = Math.max(universeSize, compareSize);
+
+  const rawUniverse = [...new Set(getScanUniverse(fetchSize))];
   const etfs = [...new Set(Object.values(SECTOR_ETF_MAP))];
 
   const fetchList: { symbol: string; kind: 'stock' }[] =
@@ -95,19 +106,25 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   const { kept, removedDelisted, removedNoHistory } =
     filterUniverseAsOf(rawUniverse, asOfStart, asOfEnd, firstBarDate);
 
-  // ── KALENDARI HISTORIK I EARNINGS (EDGAR 8-K Item 2.02) — Task 28 ──
+  // ── KALENDARI HISTORIK I EARNINGS (EDGAR 8-K Item 2.02) ──
   const { timelines, withEvents } = await fetchEarningsTimelines(kept, hist);
   const totalEvents = Object.values(timelines).reduce((a, t) => a + t.events.length, 0);
 
-  const symbols: PreparedSymbol[] = [];
+  const symbolsAll: PreparedSymbol[] = [];
   for (const sym of kept) {
     const d = hist[sym];
     if (!d || d.length < 210) continue;
     const ps = prepareSymbol(sym, SECTOR_MAP[sym] || 'Other', d);
     const tl: EarningsTimeline | undefined = timelines[sym];
     if (tl && tl.events.length > 0) ps.earnings = tl;
-    symbols.push(ps);
+    symbolsAll.push(ps);
   }
+
+  // Task 29: primari = VETËM universi i kërkuar (jo i gjithë fetch-i).
+  // Të dhënat fetched një herë për unionin (max e primary/baseline), por
+  // çdo raport teston vetëm listën e vet — krahasimi është i drejtë.
+  const primarySet = new Set(getScanUniverse(universeSize));
+  const symbols = symbolsAll.filter(s => primarySet.has(s.symbol));
 
   const spy = prepareSymbol('SPY', 'Index', hist['SPY']!);
   const qqq = prepareSymbol('QQQ', 'Index', hist['QQQ']!);
@@ -123,12 +140,12 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     universeSize: symbols.length, equity: START_EQUITY,
   };
 
-  // ── 3. Ndarja IS / OOS / Walk-Forward ──
+  // ── 3. Ndarja statike IS/OOS (70/30) + dritaret ──
   const totalDays = calendar.length;
   const split = splitWindows(totalDays, { isPct: 0.70, wfWindows: 4 });
+  const wfCal = years === 10 ? calendarWalkForward(calendar) : [];
 
-  // ── Testi A/B/C/D (Task 28): të njëjtat të dhëna, të njëjtat rregulla ──
-  //   A baseline → B +event filter → C +event score → D +gjithë filtrat IBKR
+  // ── Testi A/B/C/D: të njëjtat të dhëna, të njëjtat rregulla ──
   const variantDefs: { key: BacktestVariant; label: string; description: string }[] = [
     { key: 'baseline', label: 'A — Baseline', description: 'Trend + pullback pa Event Score (bërthama teknike)' },
     { key: 'event-filter', label: 'B — Event Filter', description: 'Shmang earnings e afërta: -3 pikë (≤2 ditë), -1 (3-7 ditë), bllokim ditën e hyrjes' },
@@ -156,24 +173,99 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   const isRes = variantRes['full'].isRes;
   const oosRes = variantRes['full'].oosRes;
 
-  // Walk-Forward vetëm për FULL (4 dritare OOS — parametrat fiks)
+  // ── WALK-FORWARD: kalendarike (10v) ose anchored 4 dritare (3v/5v) ──
   const wfTrades: BacktestTrade[] = [];
   const wfWindows: ValidationReport['walkForwardWindows'] = [];
-  for (const w of split.walkForward) {
-    const res = runBacktest(ctx, { startIndex: w.oosStart, endIndex: w.oosEnd, variant: 'full' });
-    wfTrades.push(...res.trades);
-    const m = computeMetrics(res.trades, START_EQUITY);
-    wfWindows.push({
-      window: w.window,
-      from: calendar[w.oosStart], to: calendar[w.oosEnd],
-      trades: m.trades, winRatePct: m.winRatePct, avgR: m.avgR, netProfit: m.netProfit,
-    });
+  const wfCalendarWindows: WfCalendarWindow[] = [];
+
+  if (wfCal.length > 0) {
+    // Task 29: 2016–2020→2021 … 2020–2024→2025 (train 5v → test 1v)
+    for (const w of wfCal) {
+      const trainRes = runBacktest(ctx, { startIndex: w.trainStart, endIndex: w.trainEnd, variant: 'full' });
+      const testRes = runBacktest(ctx, { startIndex: w.testStart, endIndex: w.testEnd, variant: 'full' });
+      wfTrades.push(...testRes.trades);
+      const trainM = computeMetrics(trainRes.trades, START_EQUITY);
+      const testM = computeMetrics(testRes.trades, START_EQUITY);
+      wfCalendarWindows.push({
+        window: w.window, label: w.label,
+        trainFrom: w.trainFrom, trainTo: w.trainTo,
+        testFrom: w.testFrom, testTo: w.testTo,
+        train: {
+          trades: trainM.trades, winRatePct: trainM.winRatePct,
+          profitFactor: trainM.profitFactor, netProfit: trainM.netProfit,
+        },
+        test: {
+          trades: testM.trades, winRatePct: testM.winRatePct,
+          profitFactor: testM.profitFactor, expectancy: testM.expectancy,
+          maxDrawdownPct: testM.maxDrawdownPct, netProfit: testM.netProfit, avgR: testM.avgR,
+        },
+      });
+      wfWindows.push({
+        window: w.window,
+        from: w.testFrom, to: w.testTo,
+        trades: testM.trades, winRatePct: testM.winRatePct, avgR: testM.avgR, netProfit: testM.netProfit,
+      });
+    }
+  } else {
+    for (const w of split.walkForward) {
+      const res = runBacktest(ctx, { startIndex: w.oosStart, endIndex: w.oosEnd, variant: 'full' });
+      wfTrades.push(...res.trades);
+      const m = computeMetrics(res.trades, START_EQUITY);
+      wfWindows.push({
+        window: w.window,
+        from: calendar[w.oosStart], to: calendar[w.oosEnd],
+        trades: m.trades, winRatePct: m.winRatePct, avgR: m.avgR, netProfit: m.netProfit,
+      });
+    }
   }
 
   const allTrades = [...isRes.trades, ...oosRes.trades];
   const isM = computeMetrics(isRes.trades, START_EQUITY);
   const oosM = computeMetrics(oosRes.trades, START_EQUITY);
   const wfM = computeMetrics(wfTrades, START_EQUITY);
+
+  // ── KRAHASIMI I UNIVERSIT (Task 29): 400 kundrejt 120 ──
+  // Vetëm strategjia FULL (D). Të njëjtat të dhëna, të njëjtat rregulla,
+  // të njëjtat dritere — ndryshon VETËM lista e simboleve të skanimit.
+  let universeComparison: UniverseComparison | null = null;
+  if (compareSize > 0) {
+    const compareSet = new Set(getScanUniverse(compareSize));
+    const subSymbols = symbolsAll.filter(s => compareSet.has(s.symbol));
+    if (subSymbols.length >= 20 && subSymbols.length !== symbols.length) {
+      const ctxC: BacktestContext = {
+        ...ctx, symbols: subSymbols, universeSize: subSymbols.length,
+      };
+      const cIs = runBacktest(ctxC, { startIndex: split.static.isStart, endIndex: split.static.isEnd, variant: 'full' });
+      const cOos = runBacktest(ctxC, { startIndex: split.static.oosStart, endIndex: split.static.oosEnd, variant: 'full' });
+      const cWfTrades: BacktestTrade[] = [];
+      for (const w of wfCal.length > 0 ? wfCal : []) {
+        const r = runBacktest(ctxC, { startIndex: w.testStart, endIndex: w.testEnd, variant: 'full' });
+        cWfTrades.push(...r.trades);
+      }
+      const cWfM = cWfTrades.length > 0
+        ? computeMetrics(cWfTrades, START_EQUITY)
+        : computeMetrics([], START_EQUITY);
+      universeComparison = {
+        primaryLabel: `Universi ${symbols.length}`,
+        baselineLabel: `Universi ${subSymbols.length}`,
+        primary: {
+          size: symbols.length,
+          signals: isRes.signalsGenerated + oosRes.signalsGenerated,
+          signalsScore80Plus: [...isRes.signalScores, ...oosRes.signalScores].filter(s => s >= 80).length,
+          oos: oosM,
+          wfTest: wfM,
+        },
+        baseline: {
+          size: subSymbols.length,
+          signals: cIs.signalsGenerated + cOos.signalsGenerated,
+          signalsScore80Plus: [...cIs.signalScores, ...cOos.signalScores].filter(s => s >= 80).length,
+          oos: computeMetrics(cOos.trades, START_EQUITY),
+          wfTest: cWfM,
+        },
+        note: 'Të njëjtat indikatorë, score, Event Score, PEAD, regjim, sector cap, korrelacion, stop/target, risk/tregti, komisione/slippage dhe dritaret train/test — ndryshon VETËM universi i skanimit. Universi i gjerë shton statistikë pa shtuar pozicione (funnel: 400 skanohen → 3-5 tregtohen).',
+      };
+    }
+  }
 
   // ── Verdikti i Event Score: C kundrejt A (OOS) ──
   const aOos = variantRes['baseline'].oosM;
@@ -191,17 +283,25 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
       : `Event Score NUK e justifikohet në këto të dhëna: ${oosTradesDelta} tregti më pak në OOS pa përmirësim të expectancy (${oosExpDelta >= 0 ? '+' : ''}${oosExpDelta}$/tregti) ose drawdown — rishiko pragjet e pikëve.`,
   };
 
-  // ── 4. Kolona PAPER: journal-i real i scanner-it (Top10) ──
+  // ── 4. PAPER TRADING me event real (journal Top10 + EDGAR as-of) ──
   let paperM: ValidationReport['table']['paper'] = null;
   let paperCount = 0;
   let paperNote = '';
+  let paperSignals: PaperSignalRecord[] = [];
+  let paperVsOos: PaperVsOos | null = null;
+  let paperClosedCount = 0;
+  let paperWR: number | null = null;
+  let paperExpR: number | null = null;
   try {
-    const { buildWeeklyReport } = await import('@/lib/top10-journal');
+    const { buildWeeklyReport, getRecentJournalEntries } = await import('@/lib/top10-journal');
     const rep = await buildWeeklyReport(90);
     if (rep.dbActive && rep.totals.closed + rep.totals.expired > 0) {
       const closedN = rep.totals.closed + rep.totals.expired;
       paperCount = closedN;
-      const wr = rep.directionAccuracy ?? rep.hitRate ?? 0;
+      paperClosedCount = closedN;
+      paperWR = rep.directionAccuracy ?? rep.hitRate ?? 0;
+      paperExpR = rep.expectancyR ?? null;
+      const wr = paperWR;
       paperM = {
         trades: closedN,
         wins: Math.round((wr / 100) * closedN),
@@ -222,6 +322,60 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
       paperNote = `Journal Top10 (90 ditë): ${rep.totals.entries} hyrje, ${closedN} të mbyllura`;
     } else {
       paperNote = 'Journal-i Top10 nuk është aktiv në këtë ambient (DB) — kolona Paper mbushet kur ka 50+ rezultate reale të gjurmuara.';
+    }
+
+    // Task 29: rreshtat individualë me event score REAL (EDGAR as-of ditën e sinjalit)
+    const entries = await getRecentJournalEntries(90, 300);
+    if (entries && entries.length > 0) {
+      let eventSignalsNear = 0;
+      let eventSignalsWithScore = 0;
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        const tl = timelines[e.ticker];
+        const st = eventStateAsOf(tl, e.scanDate, calendar);
+        const evScore = st.hasData ? eventScorePoints(st) : null;
+        if (evScore !== null) eventSignalsWithScore++;
+        if (st.earningsWithin2d) eventSignalsNear++;
+        if (i < 14) {
+          const atrPct = e.atrPct ?? null;
+          paperSignals.push({
+            signalDate: e.scanDate,
+            dataAvailableAt: `${e.scanDate} (EOD — Yahoo + EDGAR 8-K)`,
+            ticker: e.ticker,
+            score: e.score ?? null,
+            eventScore: evScore,
+            daysToEarnings: st.daysUntilNext,
+            entry: e.entry ?? null,
+            stop: e.stop ?? null,
+            target: e.target ?? null,
+            fillStatus: e.entryHit
+              ? 'FILL'
+              : e.exitStatus === 'NO_FILL' ? 'NO_FILL' : e.exitStatus ? 'PENDING' : 'OPEN',
+            exitStatus: e.exitStatus ?? null,
+            resultR: e.resultR ?? null,
+            slippageEstPct: atrPct != null
+              ? Math.round((0.04 + 0.012 * atrPct) * 10000) / 10000
+              : null,
+          });
+        }
+      }
+      const wrDev = paperWR != null ? Math.round((paperWR - oosM.winRatePct) * 10) / 10 : null;
+      const rDev = paperExpR != null ? Math.round((paperExpR - oosM.avgR) * 100) / 100 : null;
+      paperVsOos = {
+        paperTradesClosed: paperClosedCount,
+        paperWinRatePct: paperWR,
+        paperExpectancyR: paperExpR,
+        oosWinRatePct: oosM.winRatePct,
+        oosAvgR: oosM.avgR,
+        winRateDeviationPct: wrDev,
+        avgRDeviation: rDev,
+        eventSignalsNear,
+        eventSignalsWithScore,
+        enoughSample: paperClosedCount >= 50,
+        note: paperClosedCount >= 20
+          ? `Paper (${paperWR}% WR, ${paperExpR}R expectancy) kundrejt OOS (${oosM.winRatePct}%, ${oosM.avgR}R) — devijim ${wrDev} pk. Çmimet janë reale, ekzekutimet të simuluara (fills sipas top-of-book); ${eventSignalsNear}/${entries.length} sinjale kishin earnings brenda 2 ditësh.`
+          : `Paper ka ${paperClosedCount} rezultate të mbyllura — duhen ≥ 20 për krahasim statistikor (50+ për gate). ${eventSignalsNear}/${entries.length} sinjale kishin earnings brenda 2 ditësh (event score real EDGAR).`,
+      };
     }
   } catch {
     paperNote = 'Journal-i Top10 nuk u lexua.';
@@ -259,7 +413,7 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     }
   }
 
-  // ── 6. Gates + auto-pause ──
+  // ── 6. Gates + auto-pause + VERDIKTI (Task 29) ──
   const gates = buildGateChecks({
     is: isM, oos: oosM, wf: wfM,
     paperTradesCount: paperCount,
@@ -267,6 +421,14 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     oosWinRate: oosM.winRatePct, isWinRate: isM.winRatePct,
   });
   const autoPause = buildAutoPause({ is: isM, oos: oosM });
+
+  const finalVerdict = buildFinalVerdict({
+    oos: oosM,
+    wfCalendarWindows,
+    trades: oosRes.trades, // koncentrimi matet në OOS (jo në IS)
+    paper: paperVsOos,
+    oosTradesCount: oosM.trades,
+  });
 
   const finalEquity = START_EQUITY + isM.netProfit + oosM.netProfit;
 
@@ -290,6 +452,11 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     equity: { startEquity: START_EQUITY, finalEquity: Math.round(finalEquity * 100) / 100 },
     table: { inSample: isM, outOfSample: oosM, walkForward: wfM, paper: paperM, live: null },
     walkForwardWindows: wfWindows,
+    wfCalendarWindows,
+    universeComparison,
+    finalVerdict,
+    paperSignals,
+    paperVsOos,
     scoreBuckets: scoreBuckets(allTrades),
     sectorStats: sectorStats(allTrades),
     setupSplit: setupSplit(allTrades),
@@ -322,8 +489,12 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
       `Kalendar historik earnings: ${withEvents}/${symbols.length} simbole me timeline EDGAR (${totalEvents} events 8-K Item 2.02). Simbolet pa timeline mbeten event-neutral (kryesisht ADR-t e huaja BABA/TM/HMC etj. qe publikojne 6-K, jo 8-K 2.02). Surprise/PEAD është proxy nga reagimi i çmimit (±2%, 2-ditor) + drift 5-ditor — jo estimate reale (ato kërkojnë burim me pagesë).`,
       `Survivorship: universi vjen nga lista e sotme; ${removedDelisted.length} emra të delistuar përjashtohen sipas datës. Haircut i rekomanduar: ${survivorshipReport(symbols.length, removedDelisted.length).recommendedHaircutPct}% mbi fitimin.`,
       `Të dhënat: Yahoo Finance ditor ${years}-vjeçar; ${removedNoHistory.length} emra të përjashtuar për historik të pamjaftueshëm (IPO të vona).`,
-      'Parametrat NUK janë optimizuar në IS — kështu IS/OOS testojnë stabilitetin në kohë, jo kurvën e optimizimit.',
+      years === 10
+        ? 'Dritarja e parë WF (2016–2020) fillon sinjalet nga ~gusht 2016 — motori kërkon 210 ditë ngrohjeje nga fillimi i të dhënave (shtator 2015). Testi 2025 mbulon janar–shtator 2025 (viti në vazhdim).'
+        : 'Parametrat NUK janë optimizuar në IS — kështu IS/OOS testojnë stabilitetin në kohë, jo kurvën e optimizimit.',
+      'Parametrat NUK ndryshohen pasi shihen rezultatet e testit — nëse ndryshojnë, duhet nisur dritare e re train/test.',
       'Learning Engine është neutral (peshat 1.0) në backtest — versioni live i mëson nga rezultatet reale.',
+      'Paper trading: çmimet janë reale por ekzekutimet të simuluara — fills sipas top-of-book; urdhrat kompleks stop/target mund të sillen ndryshe në llogari reale.',
     ],
   };
 

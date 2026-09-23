@@ -71,6 +71,46 @@ interface Report {
     oosDrawdownDelta: number; keep: boolean; note: string;
   };
   earningsData: { symbolsWithTimeline: number; totalEvents: number; coveragePct: number; source: string };
+  // Task 29 — verifikimi me universin 400
+  wfCalendarWindows: {
+    window: number; label: string;
+    trainFrom: string; trainTo: string; testFrom: string; testTo: string;
+    train: { trades: number; winRatePct: number; profitFactor: number; netProfit: number };
+    test: { trades: number; winRatePct: number; profitFactor: number; expectancy: number; maxDrawdownPct: number; netProfit: number; avgR: number };
+  }[];
+  universeComparison: {
+    primaryLabel: string; baselineLabel: string;
+    primary: UniverseSide;
+    baseline: UniverseSide;
+    note: string;
+  } | null;
+  finalVerdict: {
+    decision: 'APPROVE' | 'HOLD' | 'REJECT';
+    criteria: { key: string; label: string; required: string; actual: string; passed: boolean | null }[];
+    stableWindows: number; totalWindows: number;
+    top3SymbolsProfitSharePct: number | null;
+    paperDeviationPct: number | null;
+    note: string;
+  };
+  paperSignals: {
+    signalDate: string; dataAvailableAt: string; ticker: string;
+    score: number | null; eventScore: number | null; daysToEarnings: number | null;
+    entry: number | null; stop: number | null; target: number | null;
+    fillStatus: string | null; exitStatus: string | null; resultR: number | null;
+    slippageEstPct: number | null;
+  }[];
+  paperVsOos: {
+    paperTradesClosed: number; paperWinRatePct: number | null; paperExpectancyR: number | null;
+    oosWinRatePct: number; oosAvgR: number;
+    winRateDeviationPct: number | null; avgRDeviation: number | null;
+    eventSignalsNear: number; eventSignalsWithScore: number;
+    enoughSample: boolean; note: string;
+  } | null;
+}
+
+interface UniverseSide {
+  size: number; signals: number; signalsScore80Plus: number;
+  oos: MetricSet; wfTest: MetricSet;
 }
 
 interface TradeRow {
@@ -224,10 +264,46 @@ const METRIC_DOCS: Record<string, MetricDoc> = {
   },
   universeInfo: {
     title: 'Universi & funnel-i',
-    what: `300-400 emra skanohen → likuiditeti i lë ~250 → trend-i i lë ~80 → setup-i ~70 → gates e lënë top 5-10 në ditë → ekzekutohen vetëm 3-5 pozicione njëkohësisht (max 2 për sektor). Zgjerimi i universit shton statistikë pa shtuar rrezik — pozicionet mbeten të njëjta.`,
-    target: '300 emra për balancë statistikë/shpejtësi (400 është max praktik i listës).',
+    what: `400 emra skanohen → likuiditeti i lë ~350 → trend-i i lë ~100 → setup-i ~80 → gates e lënë top 5-10 në ditë → ekzekutohen vetëm 3-5 pozicione njëkohësisht (max 2 për sektor). Zgjerimi i universit shton statistikë pa shtuar rrezik — pozicionet mbeten të njëjta.`,
+    target: '400 emra për verifikimin final (120 si bazë krahasimi).',
     howNow: (r) => `Aktual: ${r.universe.size} emra · mbijetuesit ${fmt(r.universe.survivorship.survivorPct, 1)}% · ${r.universe.survivorship.knownDelistedExcluded} delistuar përjashtohen`,
     isGood: () => 'neutral',
+  },
+  finalVerdict: {
+    title: 'Verdikti automatik (APPROVE / HOLD / REJECT)',
+    what: 'Vendimi final i laboratorit mbi bazën e pragjeve të punës: APPROVE kërkon OOS profit factor ≥ 1.20, expectancy pozitive, drawdown brenda kufirit, qëndrueshmëri në disa dritere walk-forward dhe paper trading pa devijim të madh. REJECT del kur expectancy është negative, PF nën 1, drawdown-i shumë i lartë ose fitimi vjen nga një periudhë / disa aksione. Çdo gjëje mes tyre është HOLD — vazhdo paper, jo LIVE. Këto pragje janë rregulla pune, jo garanci fitimi.',
+    target: 'APPROVE para çdo urdhri real — dhe edhe atëherë LIVE niset me gjysmën e rrezikut (0.25%).',
+    howNow: (r) => `Vendimi: ${r.finalVerdict.decision} · ${r.finalVerdict.stableWindows}/${r.finalVerdict.totalWindows} dritere pozitive · top-3 simbolet ${r.finalVerdict.top3SymbolsProfitSharePct !== null ? fmt(r.finalVerdict.top3SymbolsProfitSharePct, 0) + '%' : '—'}`,
+    isGood: (r) => r.finalVerdict.decision === 'APPROVE' ? 'good' : r.finalVerdict.decision === 'HOLD' ? 'neutral' : 'bad',
+  },
+  wfCalendar: {
+    title: 'Walk-Forward kalendarike (5 dritere 5v→1v)',
+    what: 'Pesë dritere të përsëritura në kohë reale: 2016–2020 train → 2021 test · 2017–2021 → 2022 · 2018–2022 → 2023 · 2019–2023 → 2024 · 2020–2024 → 2025. Parametrat fiks — nuk ripërshtaten asnjëherë pasi shihet testi. Nëse fitimi vjen vetëm nga një periudhë, nuk është strategji, është cikël tregu.',
+    target: 'Së paku 3 nga 5 driterat test me fitim pozitiv (me ≥ 5 tregti) — pa këtë, rezultati IS nuk i besohet dot.',
+    howNow: (r) => r.wfCalendarWindows.map(w => `${w.label.split(' ')[2]}: ${w.test.trades}t ${fmt(w.test.profitFactor, 2)}PF`).join(' · ') || 'Vetëm në run-et 10-vjeçare',
+    isGood: (r) => r.finalVerdict.stableWindows >= 3 ? 'good' : r.finalVerdict.stableWindows >= 2 ? 'neutral' : 'bad',
+  },
+  universeComparison: {
+    title: 'Krahasimi Universe 120 vs 400',
+    what: 'I njëjti motor, të njëjtat rregulla, të njëjtat dritere — ndryshon VETËM numri i emrave të skanimit. Universi i gjerë shton sinjale (statistikë) por mund të sjellë emra më pak cilësorë: pritet më shumë tregti, por PF dhe expectancy duhen mbajtur. Nëse rrit vetëm numrin e tregtive dhe jo cilësinë — zgjerimi nuk ia vlen.',
+    target: 'Më shumë sinjale me score 8+, OOS PF të mbajtur dhe drawdown pa u përkeqësuar ndjeshëm.',
+    howNow: (r) => {
+      const c = r.universeComparison;
+      if (!c) return 'Aktive vetëm për universin 400 ose 120';
+      return `${c.baselineLabel}: ${c.baseline.signals} sinjale / ${c.baseline.oos.trades}t OOS → ${c.primaryLabel}: ${c.primary.signals} sinjale / ${c.primary.oos.trades}t OOS`;
+    },
+    isGood: (r) => {
+      const c = r.universeComparison;
+      if (!c) return 'neutral';
+      return c.primary.oos.expectancy > 0 && c.primary.oos.expectancy >= c.baseline.oos.expectancy ? 'good' : 'neutral';
+    },
+  },
+  paperEvents: {
+    title: 'Paper trading me event real',
+    what: 'Sinjalet e ditarit Top10 (tregtim simuluar me çmime reale) të pasura me event score real: kalendarit historik EDGAR 8-K 2.02 as-of ditën e sinjalit. Për çdo sinjal ruhet: data, çmimi i disponueshëm në atë moment (EOD), score, event score, ditët deri në earnings, entry/stop/target, fill-i i simuluar, slippage-i i estimuar dhe rezultati final në R.',
+    target: '≥ 20 të mbyllura për krahasim (50+ për gate-in 4) dhe devijim win rate brenda 15 pikëve nga OOS. Kujdes: fills janë të simuluara sipas top-of-book — stop/urdhrat kompleksë sillen ndryshe në llogari reale.',
+    howNow: (r) => r.paperVsOos ? `${r.paperVsOos.paperTradesClosed} të mbyllura · WR ${r.paperVsOos.paperWinRatePct !== null ? fmt(r.paperVsOos.paperWinRatePct, 0) + '%' : '—'} vs OOS ${fmt(r.paperVsOos.oosWinRatePct, 0)}% · ${r.paperVsOos.eventSignalsNear} me earnings ≤2 ditë` : 'Journal-i nuk u lexua',
+    isGood: (r) => r.paperVsOos && r.paperVsOos.paperTradesClosed >= 20 && Math.abs(r.paperVsOos.winRateDeviationPct ?? 0) <= 15 ? 'good' : 'neutral',
   },
   autoPauseDoc: {
     title: 'AUTO-PAUSE (kontrolli i devijimit)',
@@ -323,14 +399,15 @@ export function IBKRValidationLab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [universe, setUniverse] = useState(300);
+  const [universe, setUniverse] = useState(400);
+  const [years, setYears] = useState(10);
 
-  const runBacktest = useCallback(async (force = false, uni = 300) => {
+  const runBacktest = useCallback(async (force = false, uni = 400, yrs = 10) => {
     setLoading(true); setError(null); setElapsed(0);
     const t0 = Date.now();
     const timer = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     try {
-      const res = await fetch(`/api/ibkr-backtest?universe=${uni}&years=5${force ? '&force=1' : ''}`, { cache: 'no-store' });
+      const res = await fetch(`/api/ibkr-backtest?universe=${uni}&years=${yrs}${force ? '&force=1' : ''}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Gabim në backtest');
       setReport(json);
@@ -363,14 +440,14 @@ export function IBKRValidationLab() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Selektori i universit (Task 28): 300 skanohen → 3-5 tregtohen */}
+            {/* Selektori i universit: 400 skanohen → 3-5 tregtohen (Task 29) */}
             <div className="flex items-center rounded-md border border-border/60 overflow-hidden">
               {[120, 300, 400].map(u => (
                 <button
                   key={u}
                   onClick={() => {
                     setUniverse(u);
-                    if (report) runBacktest(false, u);
+                    if (report) runBacktest(false, u, years);
                   }}
                   disabled={loading}
                   className={`px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors disabled:opacity-50 ${
@@ -382,13 +459,32 @@ export function IBKRValidationLab() {
                 </button>
               ))}
             </div>
+            {/* Periudha: 5v e shpejtë · 10v = verifikimi me dritere kalendarike */}
+            <div className="flex items-center rounded-md border border-border/60 overflow-hidden">
+              {[5, 10].map(y => (
+                <button
+                  key={y}
+                  onClick={() => {
+                    setYears(y);
+                    if (report) runBacktest(false, universe, y);
+                  }}
+                  disabled={loading}
+                  className={`px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors disabled:opacity-50 ${
+                    years === y
+                      ? 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'}`}
+                >
+                  {y}v{y === 10 ? ' ⭐' : ''}
+                </button>
+              ))}
+            </div>
             <button
-              onClick={() => report ? runBacktest(true, universe) : runBacktest(false, universe)}
+              onClick={() => report ? runBacktest(true, universe, years) : runBacktest(false, universe, years)}
               disabled={loading}
               className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-colors disabled:opacity-50"
             >
               {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-              {loading ? `Duke ekzekutuar... ${elapsed}s` : report ? 'Rifresko (rindiz)' : `Ndez Backtest-in (5v, ${universe} emra)`}
+              {loading ? `Duke ekzekutuar... ${elapsed}s` : report ? 'Rifresko (rindiz)' : `Ndez Verifikimin (${years}v, ${universe} emra)`}
             </button>
           </div>
         </div>
@@ -398,8 +494,10 @@ export function IBKRValidationLab() {
             <div className="flex items-center justify-center gap-2 text-[13px] text-violet-300 mb-3">
               <Timer className="w-4 h-4 animate-pulse" />
               <span>
-                {universe} emra × 5 vjet (Yahoo) + kalendar earnings (EDGAR 8-K) + 4 variante IS/OOS + Walk-Forward
-                — hera e parë ~2-4 min, më pas 6 orë cache
+                {universe} emra × {years} vjet (Yahoo) + kalendar earnings (EDGAR 8-K) + 4 variante IS/OOS
+                {years === 10 ? ' + Walk-Forward kalendarike 5 dritere (2016→2025)' : ''}
+                {universe === 400 || universe === 120 ? ' + krahasimi 120 vs 400' : ''}
+                — hera e parë ~2-5 min, më pas 6 orë cache
               </span>
             </div>
             <Skeleton className="h-8 w-full" />
@@ -482,6 +580,51 @@ export function IBKRValidationLab() {
                   <MetricInfoPopup metricKey="autoPauseDoc" report={report} />
                 </div>
                 <p className="text-[12px] text-muted-foreground leading-relaxed mt-1">{report.autoPause.note}</p>
+              </div>
+            </div>
+
+            {/* ═══ TASK 29: VERDIKTI AUTOMATIK — APPROVE / HOLD / REJECT ═══ */}
+            <div className={`rounded-lg border p-4 flex items-start gap-3 ${
+              report.finalVerdict.decision === 'APPROVE' ? 'border-emerald-500/40 bg-emerald-500/10'
+              : report.finalVerdict.decision === 'REJECT' ? 'border-red-500/40 bg-red-500/10'
+              : 'border-amber-500/40 bg-amber-500/10'}`}>
+              {report.finalVerdict.decision === 'APPROVE'
+                ? <CheckCircle2 className="w-7 h-7 text-emerald-400 mt-0.5 flex-shrink-0" />
+                : report.finalVerdict.decision === 'REJECT'
+                  ? <XCircle className="w-7 h-7 text-red-400 mt-0.5 flex-shrink-0" />
+                  : <MinusCircle className="w-7 h-7 text-amber-400 mt-0.5 flex-shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className={`text-[15px] font-extrabold tracking-wide ${
+                    report.finalVerdict.decision === 'APPROVE' ? 'text-emerald-400'
+                    : report.finalVerdict.decision === 'REJECT' ? 'text-red-400' : 'text-amber-400'}`}>
+                    VERDIKTI: {report.finalVerdict.decision}
+                  </p>
+                  <span className="text-[11px] text-muted-foreground">
+                    {report.finalVerdict.decision === 'APPROVE' ? 'kalon kufijtë e punës — kalo te paper i vazhdueshëm para LIVE (0.25% risk)'
+                    : report.finalVerdict.decision === 'REJECT' ? 'nuk kalon kufijtë e punës — jo për tregti reale në këtë formë'
+                    : 'rezultate të pamezuara — vazhdo paper trading dhe monitorim'}
+                  </span>
+                  <MetricInfoPopup metricKey="finalVerdict" report={report} />
+                </div>
+                <p className="text-[12px] text-muted-foreground leading-relaxed mt-1">{report.finalVerdict.note}</p>
+                {/* Kriteret si chips */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5 mt-2.5">
+                  {report.finalVerdict.criteria.map((c) => (
+                    <div key={c.key} className={`rounded-md border px-2.5 py-1.5 flex items-start gap-1.5 ${
+                      c.passed === true ? 'border-emerald-500/25 bg-emerald-500/5'
+                      : c.passed === false ? 'border-red-500/25 bg-red-500/5'
+                      : 'border-amber-500/25 bg-amber-500/5'}`}>
+                      <GateIcon passed={c.passed} />
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-foreground leading-tight">{c.label}</p>
+                        <p className="text-[10.5px] text-muted-foreground leading-snug">
+                          {c.actual} <span className="text-muted-foreground/60">(duhet: {c.required})</span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -618,42 +761,146 @@ export function IBKRValidationLab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* ── Walk-Forward windows ── */}
-              <div>
-                <div className="flex items-center gap-2 mb-2.5">
-                  <Gauge className="w-4 h-4 text-violet-400" />
-                  <h3 className="text-[14px] font-bold text-foreground">Walk-Forward (4 dritare OOS)</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-border/50">
-                        <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Dritarja</th>
-                        <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Periudha</th>
-                        <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Tregti</th>
-                        <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">WR%</th>
-                        <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">R</th>
-                        <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Neto $</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-[12px]">
-                      {report.walkForwardWindows.map((w) => (
-                        <tr key={w.window} className="border-b border-border/30 last:border-0">
-                          <td className="py-1.5 text-violet-400 font-semibold">WF{w.window}</td>
-                          <td className="py-1.5 text-muted-foreground">{w.from.slice(0, 7)} → {w.to.slice(0, 7)}</td>
-                          <td className="py-1.5 text-foreground">{w.trades}</td>
-                          <td className={`py-1.5 font-semibold ${w.winRatePct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(w.winRatePct, 1)}%</td>
-                          <td className={`py-1.5 font-semibold ${pnlColor(w.avgR)}`}>{sign(w.avgR, 2)}</td>
-                          <td className={`py-1.5 font-semibold ${pnlColor(w.netProfit)}`}>{sign(w.netProfit)}</td>
+            {/* ═══ TASK 29: KRAHASIMI I UNIVERSIT — 120 kundrejt 400 ═══ */}
+            {report.universeComparison && (() => {
+              const c = report.universeComparison;
+              const rows: { label: string; get: (s: UniverseSide) => string; good?: (s: UniverseSide) => boolean | null }[] = [
+                { label: 'Numri i sinjaleve', get: (s) => fmt(s.signals) },
+                { label: 'Sinjale me score 8+ (/10)', get: (s) => `${fmt(s.signalsScore80Plus)} (${fmt(s.signals > 0 ? (s.signalsScore80Plus / s.signals) * 100 : 0, 0)}%)` },
+                { label: 'Tregti OOS', get: (s) => fmt(s.oos.trades) },
+                { label: 'Win rate OOS', get: (s) => `${fmt(s.oos.winRatePct, 1)}%` },
+                { label: 'Profit factor OOS', get: (s) => fmt(s.oos.profitFactor, 2), good: (s) => s.oos.profitFactor >= 1.1 },
+                { label: 'Expectancy OOS ($/tregti)', get: (s) => `${sign(s.oos.expectancy, 2)}$`, good: (s) => s.oos.expectancy > 0 },
+                { label: 'Max drawdown OOS', get: (s) => `${fmt(s.oos.maxDrawdownPct, 1)}%`, good: (s) => s.oos.maxDrawdownPct <= 25 },
+                { label: 'Return neto OOS', get: (s) => `${sign(s.oos.netProfit)}$`, good: (s) => s.oos.netProfit > 0 },
+                { label: 'Tregti WF-test (5 dritare)', get: (s) => s.wfTest.trades > 0 ? fmt(s.wfTest.trades) : '—' },
+                { label: 'PF WF-test', get: (s) => s.wfTest.trades > 0 ? fmt(s.wfTest.profitFactor, 2) : '—', good: (s) => s.wfTest.trades > 0 ? s.wfTest.profitFactor >= 1.0 : null },
+              ];
+              return (
+                <div className="rounded-lg border border-blue-500/25 bg-blue-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <GitCompare className="w-4 h-4 text-blue-400" />
+                    <h3 className="text-[14px] font-bold text-foreground">Krahasimi: {c.baselineLabel} kundrejt {c.primaryLabel}</h3>
+                    <MetricInfoPopup metricKey="universeComparison" report={report} />
+                    <span className="text-[11px] text-muted-foreground">strategjia FULL (D) · të njëjtat rregulla, të njëjtat dritare</span>
+                  </div>
+                  <p className="text-[11.5px] text-muted-foreground mb-3">{c.note}</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[520px]">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Metrika</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-blue-400">{c.baselineLabel} (bazë)</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-blue-300">{c.primaryLabel} (verifikimi)</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="text-[12px]">
+                        {rows.map((row, ri) => {
+                          const good = row.good ? row.good(c.primary) : null;
+                          return (
+                            <tr key={ri} className="border-b border-border/30 last:border-0">
+                              <td className="py-1.5 pr-3 text-muted-foreground">{row.label}</td>
+                              <td className="py-1.5 pr-3 text-foreground">{row.get(c.baseline)}</td>
+                              <td className={`py-1.5 font-semibold ${good === null || good === undefined ? 'text-foreground' : good ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {row.get(c.primary)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/70 mt-2">
+                    Nëse universi i gjerë rrit numrin e tregtive por ul profit factor ose rrit drawdown-in, nuk është domosdoshmërisht përmirësim — cilësia mbi sasinë.
+                  </p>
                 </div>
-                <p className="text-[11px] text-muted-foreground/70 mt-1.5">
-                  Parametrat nuk ndryshohen gjatë OOS — çdo dritare teston stabilitetin në kohë.
-                </p>
+              );
+            })()}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* ── Walk-Forward: kalendarike (10v) ose anchored (3v/5v) ── */}
+              <div className={report.wfCalendarWindows.length > 0 ? 'lg:col-span-2' : ''}>
+                <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+                  <Gauge className="w-4 h-4 text-violet-400" />
+                  <h3 className="text-[14px] font-bold text-foreground">
+                    {report.wfCalendarWindows.length > 0
+                      ? `Walk-Forward kalendarike (${report.wfCalendarWindows.length} dritare train 5v → test 1v)`
+                      : 'Walk-Forward (4 dritare OOS)'}
+                  </h3>
+                  {report.wfCalendarWindows.length > 0 && <MetricInfoPopup metricKey="wfCalendar" report={report} />}
+                </div>
+                {report.wfCalendarWindows.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[880px]">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Dritarja</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Train</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Tregti</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Train PF</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Test</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Tregti</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">WR%</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">PF</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Exp $</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">DD%</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Neto $</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-[12px]">
+                        {report.wfCalendarWindows.map((w) => (
+                          <tr key={w.window} className="border-b border-border/30 last:border-0">
+                            <td className="py-1.5 text-violet-400 font-semibold">WF{w.window}</td>
+                            <td className="py-1.5 text-muted-foreground text-[11px]">{w.trainFrom.slice(0, 7)} → {w.trainTo.slice(0, 7)}</td>
+                            <td className="py-1.5 text-foreground/80">{w.train.trades} <span className="text-[9.5px] text-muted-foreground/60">({sign(w.train.netProfit)}$)</span></td>
+                            <td className={`py-1.5 font-semibold ${w.train.profitFactor >= 1.1 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(w.train.profitFactor, 2)}</td>
+                            <td className="py-1.5 text-foreground text-[11px] font-medium">{w.testFrom.slice(0, 7)} → {w.testTo.slice(0, 7)}</td>
+                            <td className="py-1.5 text-foreground">{w.test.trades}</td>
+                            <td className={`py-1.5 font-semibold ${w.test.winRatePct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(w.test.winRatePct, 1)}%</td>
+                            <td className={`py-1.5 font-semibold ${w.test.profitFactor >= 1 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(w.test.profitFactor, 2)}</td>
+                            <td className={`py-1.5 font-semibold ${pnlColor(w.test.expectancy)}`}>{sign(w.test.expectancy, 2)}</td>
+                            <td className="py-1.5 text-red-400/90">{fmt(w.test.maxDrawdownPct, 1)}%</td>
+                            <td className={`py-1.5 font-semibold ${pnlColor(w.test.netProfit)}`}>{sign(w.test.netProfit)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+                      Të njëjtat dritare siç janë specifikuar: 2016–2020→2021 · 2017–2021→2022 · 2018–2022→2023 · 2019–2023→2024 · 2020–2024→2025.
+                      Parametrat nuk ndryshohen pasi shihet testi — nëse ndryshojnë, duhet nisur dritare e re train/test.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Dritarja</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Periudha</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Tregti</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">WR%</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">R</th>
+                          <th className="pb-2 text-[11.5px] font-semibold text-muted-foreground">Neto $</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-[12px]">
+                        {report.walkForwardWindows.map((w) => (
+                          <tr key={w.window} className="border-b border-border/30 last:border-0">
+                            <td className="py-1.5 text-violet-400 font-semibold">WF{w.window}</td>
+                            <td className="py-1.5 text-muted-foreground">{w.from.slice(0, 7)} → {w.to.slice(0, 7)}</td>
+                            <td className="py-1.5 text-foreground">{w.trades}</td>
+                            <td className={`py-1.5 font-semibold ${w.winRatePct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(w.winRatePct, 1)}%</td>
+                            <td className={`py-1.5 font-semibold ${pnlColor(w.avgR)}`}>{sign(w.avgR, 2)}</td>
+                            <td className={`py-1.5 font-semibold ${pnlColor(w.netProfit)}`}>{sign(w.netProfit)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+                      Dritare OOS të ankoruara — parametrat nuk ndryshohen gjatë OOS. Për dritaret kalendarike 2016→2025 zgjidh 10v.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* ── Rezultatet sipas score-it ── */}
@@ -772,6 +1019,88 @@ export function IBKRValidationLab() {
                   Nëse stop dhe target preken në të njëjtin qiri → supozimi KONSERVATIV (stop i pari).
                 </p>
               </div>
+            </div>
+
+            {/* ═══ TASK 29: PAPER TRADING ME EVENT REAL ═══ */}
+            <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-4">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <CalendarClock className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-[14px] font-bold text-foreground">Paper trading me event real (journal Top10)</h3>
+                <MetricInfoPopup metricKey="paperEvents" report={report} />
+                <span className="text-[11px] text-muted-foreground">çmime reale · ekzekutim i simuluar · event score EDGAR as-of ditën e sinjalit</span>
+              </div>
+              {report.paperSignals.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground">
+                  Journal-i Top10 nuk ka hyrje në 90 ditët e fundit (kërkon DB aktiv dhe skanime të rregullta live).
+                </p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[880px]">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Data e sinjalit</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Ticker</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Score</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Event</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">DTE</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Entry</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Stop</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Target</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Fill</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Slip. est.</th>
+                          <th className="pb-2 text-[11px] font-semibold text-muted-foreground">Rezultati</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-[11.5px]">
+                        {report.paperSignals.map((p, i) => (
+                          <tr key={`${p.ticker}-${p.signalDate}-${i}`} className="border-b border-border/30 last:border-0">
+                            <td className="py-1.5 text-muted-foreground">{p.signalDate}</td>
+                            <td className="py-1.5 font-bold text-foreground">{p.ticker}</td>
+                            <td className="py-1.5 text-foreground/80">{p.score != null ? fmt(p.score, 0) : '—'}</td>
+                            <td className={`py-1.5 font-bold ${p.eventScore == null ? 'text-muted-foreground/50' : p.eventScore > 0 ? 'text-emerald-400' : p.eventScore < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                              {p.eventScore != null ? sign(p.eventScore, 0) : '—'}
+                            </td>
+                            <td className="py-1.5 text-muted-foreground">{p.daysToEarnings != null ? fmt(p.daysToEarnings) : '—'}</td>
+                            <td className="py-1.5 text-foreground/80">{p.entry != null ? fmt(p.entry, 2) : '—'}</td>
+                            <td className="py-1.5 text-red-400/80">{p.stop != null ? fmt(p.stop, 2) : '—'}</td>
+                            <td className="py-1.5 text-emerald-400/80">{p.target != null ? fmt(p.target, 2) : '—'}</td>
+                            <td className="py-1.5">
+                              <span className={`text-[10.5px] px-1.5 py-0.5 rounded border ${
+                                p.fillStatus === 'FILL' ? 'border-emerald-500/30 text-emerald-400'
+                                : p.fillStatus === 'NO_FILL' ? 'border-muted text-muted-foreground/60'
+                                : 'border-amber-500/30 text-amber-400'}`}>
+                                {p.fillStatus || '—'}
+                              </span>
+                            </td>
+                            <td className="py-1.5 text-muted-foreground/80">{p.slippageEstPct != null ? `${fmt(p.slippageEstPct * 100, 2)}%` : '—'}</td>
+                            <td className="py-1.5">
+                              {p.resultR != null ? (
+                                <span className={`font-semibold ${pnlColor(p.resultR)}`}>{sign(p.resultR, 2)}R</span>
+                              ) : (
+                                <span className="text-[10.5px] text-muted-foreground/70">{(p.exitStatus || 'OPEN').replace('_', ' ')}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {report.paperVsOos && (
+                    <div className="mt-3 rounded-lg border border-border/50 bg-muted/10 p-3">
+                      <div className="flex flex-wrap gap-4 text-[11.5px] mb-1.5">
+                        <span className="text-muted-foreground">Të mbyllura: <strong className="text-foreground">{report.paperVsOos.paperTradesClosed}</strong> {report.paperVsOos.enoughSample ? '(≥ 50 — gate 4 plotësohet)' : '(duhen 50+ për gate-in 4)'}</span>
+                        <span className="text-muted-foreground">WR paper: <strong className={report.paperVsOos.paperWinRatePct != null && report.paperVsOos.paperWinRatePct >= 50 ? 'text-emerald-400' : 'text-amber-400'}>{report.paperVsOos.paperWinRatePct != null ? `${fmt(report.paperVsOos.paperWinRatePct, 0)}%` : '—'}</strong></span>
+                        <span className="text-muted-foreground">WR OOS: <strong className="text-foreground">{fmt(report.paperVsOos.oosWinRatePct, 1)}%</strong></span>
+                        <span className="text-muted-foreground">Devijim: <strong className={report.paperVsOos.winRateDeviationPct != null && Math.abs(report.paperVsOos.winRateDeviationPct) <= 15 ? 'text-emerald-400' : 'text-amber-400'}>{report.paperVsOos.winRateDeviationPct != null ? `${sign(report.paperVsOos.winRateDeviationPct, 1)} pk` : '—'}</strong></span>
+                        <span className="text-muted-foreground">Expectancy paper: <strong className="text-foreground">{report.paperVsOos.paperExpectancyR != null ? `${sign(report.paperVsOos.paperExpectancyR, 2)}R` : '—'}</strong> vs OOS <strong className="text-foreground">{sign(report.paperVsOos.oosAvgR, 2)}R</strong></span>
+                        <span className="text-muted-foreground">Sinjale me earnings ≤ 2 ditë: <strong className="text-cyan-400">{report.paperVsOos.eventSignalsNear}</strong> / {report.paperVsOos.eventSignalsWithScore} me event score</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/80 leading-relaxed">{report.paperVsOos.note}</p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* ── Kostot — me popup për çdo komponent ── */}

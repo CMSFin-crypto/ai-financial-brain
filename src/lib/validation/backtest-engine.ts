@@ -150,6 +150,8 @@ export interface BacktestResult {
   rejectReasons: Record<string, number>;
   /** breadth + regime të regjistruara ditë pas dite (për audit) */
   regimeDays: { date: string; regimeLevel: string; vix: number; breadthPct: number }[];
+  /** Task 29 — score-i (0-100) i ÇDO sinjali të gjeneruar — për 'Sinjale me score 8+' */
+  signalScores: number[];
 }
 
 /**
@@ -168,6 +170,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
   const trades: BacktestTrade[] = [];
   const open: OpenPosition[] = [];
   const pending: PendingSignal[] = [];
+  const signalScores: number[] = [];
   let equity = ctx.equity;
   let signalsGenerated = 0;
   let entryOrdersRejected = 0;
@@ -604,6 +607,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
         breakdown.volume + breakdown.market + breakdown.event + breakdown.risk;
 
       signalsGenerated++;
+      signalScores.push(totalScore);
       pending.push({
         symbol: s.symbol, sector: sec,
         orderPrice: entry,
@@ -656,7 +660,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
     }
   }
 
-  return { trades, signalsGenerated, entryOrdersRejected, rejectReasons, regimeDays };
+  return { trades, signalsGenerated, entryOrdersRejected, rejectReasons, regimeDays, signalScores };
 }
 
 /** % ndryshimi mbi 'days' ditët e fundit — version me indekse (pa slice) */
