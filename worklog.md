@@ -482,3 +482,24 @@ Stage Summary:
   * Technical + Fundamental: FAIL (edhe më keq: expectancy -0.68$, DD +8pk, 1/4 vite me B>A, fitimi i koncentruar 201%)
   * FUNDAMENTAL FILTER: CONTEXT-ONLY — fundamentet mbeten VETËM panel informues në popup; READY/BUY/WATCH të pandryshuara (Faza 1 konfirmohet si vendim final)
 - Konkluzioni i përsëritur në 3 mjedise të pavarur: lokal 88.2% mbulim, prod 65.8% mbulim, risk 0.5% dhe 1.0% — CONTEXT-ONLY në të gjitha
+
+---
+Task ID: 26-CLOSE
+Agent: Super Z (main)
+Task: "ok vazhdo" — rikonfirmimi final i Task 26 në sesionin e ri + mbyllja e plotë e ciklit (artifaktet ishin humbur me rifreshim e mjedisit)
+
+Work Log:
+- Sinkronizim: lokali ishte pas (Task 16, 21 diff-e mode-only të vjetra) → pull në origin/main 3c4ec8f (Task 26 verifikimi final)
+- Rikonfirmim i 7 testeve automatike: 66/66 KALUAN (0.26s) — pa look-ahead, krahasim i drejtë, kosto, parametra të fikuar
+- Rigjenerim i artiferaktit të humbur: run-task26-ab.ts u ekzekutua sërish nga zero (131s, mbulim EDGAR 330/374 = 88.2%) → download/task26-ab-results.json; numrat identikë me sesionin para-deploy: A 700t PF 1.05 exp +$9.57 DD 27.4% · B 652t PF 1.02 exp +$3.36 DD 35.8% · strict 586t PF 0.98 exp -$5.17 DD 53.5% · risk 0.5% verdict njëjtë · WF 36/6/6: B më i mirë vetëm 3/14 dritare · top-3 koncentrimi i B 398%
+- Verifikim prod (API): /api/fundamental-context?symbols=NVDA,HOOD → NVDA 22/24 metika reale + EXTREME_VALUATION flag; HOOD 3 metika "N/A — data unavailable" (FCF/FCF margin/EV-EBITDA — kurrë zero fallco)
+- Verifikim prod (UI, agent-browser): popup NOW 7 tab-at e plota (Growth/Profitability/Cash Flow/Valuation/Earnings & Estimates/Ownership/Risk Flags 2) + Technical Score 86/100 + Trade Verdict WATCHLIST (i pandryshuar nga fundamentet) · Validation Lab 400×10v: seksi A/B plotësisht i renderuar — tabela 3-variantëshe, 6 kriteret (3✓/3✗), WF kalendarike 5 dritare (B më mirë 2/5), koncentrimi 398%, bllokime me arsye, verdikti "Filtri fundamental: MBETET SI KONTEKST (popup)"
+- Përditësim i vogël i mbylljes (333c05e): disclaimer-i i popup-it thoshte "derisa testi rigoroz të vendosë ndryshe" — tani pasqyron vendimin final: "testi rigoroz A/B (10v × 400 emra, walk-forward, 66/66 teste point-in-time) doli CONTEXT-ONLY" (FundamentalPopup.tsx + normalize.ts) · tsc 145 = bazësja (0 të reja, stash-test e vërtetoi) · next build OK · push 333c05e · verifikuar live në prod pas deploy-it
+- Artifaktet: download/task26-ab-results.json · task26-popup-now-final.png · task26-ab-verdict-prod.png · task26-popup-disclaimer-final.png
+
+Stage Summary:
+- Task 26 është ZYRTARISHT I MBYLLTË: 7/7 hapa të verifikimit të përfunduar, vendimi CONTEXT-ONLY i konfirmuar në 3 mjedise të pavarura + rikonfirmuar sot, UI pasqyron vendimin final
+- Technical-only: FAIL sipas gate-ve (IS PF 0.83; OOS PF 1.05 < 1.1) — vetëm paper trading vazhdon
+- Technical + Fundamental: FAIL (expectancy -6.21$, DD +8.4pk, koncentrim 398%)
+- FUNDAMENTAL FILTER: CONTEXT-ONLY — popup informues, verdiktet READY/BUY/WATCH të paprekura
+- ⚠️ SIGURIA: token-i GitHub i userit (ghp_2vYs...) ka qarkulluar në chat — duhet revokuar dhe zëvendësuar (i përdora për push-in e fundit 333c05e)
