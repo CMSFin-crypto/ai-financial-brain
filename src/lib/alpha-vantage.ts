@@ -34,7 +34,10 @@ const CACHE_TTL_MS = 30 * 1000; // 30 sec
 
 // Historical chart data cache
 const chartCache = new Map<string, { data: HistoricalDataPoint[]; fetchedAt: number }>();
-const CHART_CACHE_TTL_MS = 60 * 1000; // 1 min
+// Baret ditore ndryshojnë vetëm në mbyllje — 6h cache për 1d (Task 28: universi 300);
+// intraday mbetet 60s.
+const CHART_CACHE_TTL_MS = 60 * 1000;
+const CHART_CACHE_DAILY_TTL_MS = 6 * 3600 * 1000;
 
 export interface HistoricalDataPoint {
   date: string;
@@ -316,8 +319,9 @@ export async function fetchHistoricalData(
 
   // Check cache first (include range + interval in cache key)
   const cacheKey = `${t}_${r}_${interval}`;
+  const ttl = interval === '1d' ? CHART_CACHE_DAILY_TTL_MS : CHART_CACHE_TTL_MS;
   const cached = chartCache.get(cacheKey);
-  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL_MS) {
+  if (!options.forceRefresh && cached && Date.now() - cached.fetchedAt < ttl) {
     return cached.data;
   }
 

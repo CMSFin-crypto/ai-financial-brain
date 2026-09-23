@@ -16,7 +16,16 @@ import {
   checkEntryFill, checkPositionBar, calcShares,
 } from './execution-model';
 import { BacktestTrade } from './metrics';
-import { eventRiskAsOf } from './point-in-time';
+import {
+  EarningsTimeline, eventStateAsOf, proximityPoints, surprisePoints,
+} from './earnings-history';
+
+// ── Variantet e testimit A/B/C/D (Task 28) ──
+//   baseline     = Trend + Pullback bërthama, pa event logic, pa filtrat IBKR të avancuara
+//   event-filter  = baseline + blloko/penalizo earnings e afërta (spec: -3/-1)
+//   event-score   = event-filter + surprise/PEAD (+1/+2/-2)
+//   full          = event-score + të gjithë filtrat IBKR (breadth, RS, regime, RSI>70, VIX stop)
+export type BacktestVariant = 'baseline' | 'event-filter' | 'event-score' | 'full';
 
 // ── Konstante — IDENTIKE me ibkr-scan/route.ts ──
 const SECTOR_DEAD_PCT = 20, SECTOR_WEAK_PCT = 40, SECTOR_STRONG_PCT = 55;
@@ -36,6 +45,8 @@ export interface PreparedSymbol {
   adx: number[];
   /** date → index për kërkim as-of */
   dateIdx: Map<string, number>;
+  /** kalendar historik earnings (EDGAR 8-K Item 2.02) — point-in-time */
+  earnings?: EarningsTimeline;
 }
 
 export interface BacktestContext {
@@ -128,7 +139,8 @@ export interface BacktestOptions {
   startIndex: number;
   endIndex: number;
   execution?: Partial<ExecutionConfig>;
-  /** true = zbus sinjalet event-risk (në backtest janë neutral) */
+  /** Varianti i testimit — default 'full' (komportimi i plotë IBKR) */
+  variant?: BacktestVariant;
 }
 
 export interface BacktestResult {
@@ -149,6 +161,10 @@ export interface BacktestResult {
  */
 export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): BacktestResult {
   const exec: ExecutionConfig = { ...DEFAULT_EXECUTION, ...opts.execution };
+  const variant: BacktestVariant = opts.variant || 'full';
+  const useEventBlock = variant !== 'baseline';   // B, C, D
+  const useEventScore = variant === 'event-score' || variant === 'full'; // C, D
+  const useIbkrFilters = variant === 'full';       // vetëm D
   const trades: BacktestTrade[] = [];
   const open: OpenPosition[] = [];
   const pending: PendingSignal[] = [];
@@ -325,10 +341,9 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
     const weakDead = sectors.filter(sec => sectorLabels[sec] === 'WEAK' || sectorLabels[sec] === 'DEAD').length;
     const capTargetsMarketWide = sectors.length >= 8 && weakDead >= 8;
 
-    // RS benchmark-e as-of
-    const spyClosesAsOf = ctx.spy.bars.slice(0, spyIdx + 1).map(b => b.close);
-    const spyRS60 = pctWindow(spyClosesAsOf, 60);
-    const spyRS22 = pctWindow(spyClosesAsOf, 22);
+    // RS benchmark-e as-of (index math — pa slices)
+    const spyRS60 = spyIdx >= 60 ? pctAtIdx(ctx.spy.bars, spyIdx, 60) : 0;
+    const spyRS22 = spyIdx >= 22 ? pctAtIdx(ctx.spy.bars, spyIdx, 22) : 0;
 
     // ── Për çdo simbol: filtra → setup → score → vendim ──
     for (const s of ctx.symbols) {
@@ -337,18 +352,16 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       const bars = s.bars;
       const bar = bars[idx];
       const price = bar.close;
-      const closes = bars.slice(Math.max(0, idx - 260), idx + 1).map(b => b.close);
-      const highs = bars.slice(Math.max(0, idx - 260), idx + 1).map(b => b.high);
-      const lows = bars.slice(Math.max(0, idx - 260), idx + 1).map(b => b.low);
-      const vols = bars.slice(Math.max(0, idx - 260), idx + 1).map(b => b.volume);
-
       const sec = s.sector;
 
-      // FILTRA MEKANIKË — si scanner-i
-      const avgVol20 = vols.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, vols.length);
-      const n20 = Math.min(20, closes.length, vols.length);
-      let dolVolSum = 0;
-      for (let i = closes.length - n20; i < closes.length; i++) dolVolSum += closes[i] * vols[i];
+      // FILTRA MEKANIKË — si scanner-i (index math, pa alokim arrays)
+      const n20 = Math.min(20, idx + 1);
+      let volSum20 = 0, dolVolSum = 0;
+      for (let i = idx - n20 + 1; i <= idx; i++) {
+        volSum20 += bars[i].volume;
+        dolVolSum += bars[i].close * bars[i].volume;
+      }
+      const avgVol20 = volSum20 / n20;
       const avgDolVol = dolVolSum / n20;
       const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
       if (!passedLiq) continue;
@@ -357,7 +370,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       const sma200V = s.sma200[idx] || 0;
       const above50 = price > sma50V;
       const golden = sma50V > sma200V;
-      const rs60 = pctWindow(closes, 60);
+      const rs60 = pctAtIdx(bars, idx, 60);
       if (!(above50 && golden && rs60 > spyRS60)) continue;
 
       const ema20V = s.ema20[idx] || 0;
@@ -366,38 +379,55 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       const adxV = s.adx[idx] || 0;
       if (!stackedMA || adxV <= 25) continue;
 
-      // SEKTOR BREADTH GATE as-of
+      // SEKTOR BREADTH GATE as-of — vetëm me filtrat IBKR (D)
       const sbLabel = sectorLabels[sec];
-      if (sbLabel === 'DEAD') continue;
+      if (useIbkrFilters && sbLabel === 'DEAD') continue;
 
-      // ── SETUP (identik me scanner-in) ──
+      // ── EVENT STATE as-of (kalendar real EDGAR 8-K 2.02) ──
+      const evState = eventStateAsOf(s.earnings, today, ctx.calendar);
+      // Nesër është dita e hyrjes — earnings atë ditë = kumar i drejtpërdrejtë.
+      if (useEventBlock && evState.earningsTomorrow) { reject('EVENT_EARNINGS'); continue; }
+      // Full strategy: blloko edhe brenda 2 ditëve (si Catalyst Gate i scanner-it live)
+      if (useIbkrFilters && evState.earningsWithin2d) { reject('EVENT_EARNINGS'); continue; }
+      // Pikët: B+ vetëm afërsia (-3/-1); C+ edhe surprise/PEAD (+1/+2/-2)
+      const evPts = useEventScore
+        ? proximityPoints(evState) + surprisePoints(evState)
+        : useEventBlock ? proximityPoints(evState)
+        : 0;
+
+      // ── SETUP (identik me scanner-in — index math) ──
       const rsiV = s.rsi[idx] || 50;
-      const atr = calcATR(bars.slice(0, idx + 1), 14);
+      const atr = atrAtIndex(bars, idx, 14);
       const atrPct = price > 0 ? (atr / price) * 100 : 0;
 
-      const lastLocal = closes.length - 1;
-      let highIdx = lastLocal;
-      for (let i = lastLocal; i >= Math.max(0, lastLocal - 10); i--) if (closes[i] >= closes[highIdx]) highIdx = i;
-      const peakPrice = closes[highIdx];
+      // kulmi i fundit 11-ditor i mbylljeve
+      let highIdx = idx;
+      for (let i = idx; i >= Math.max(0, idx - 10); i--) {
+        if (bars[i].close >= bars[highIdx].close) highIdx = i;
+      }
+      const peakPrice = bars[highIdx].close;
       const pbPct = peakPrice > 0 ? ((price - peakPrice) / peakPrice) * 100 : 0;
-      const swLow = Math.min(...lows.slice(highIdx, lastLocal + 1));
+      let swLow = Infinity;
+      for (let i = highIdx; i <= idx; i++) swLow = Math.min(swLow, bars[i].low);
       let pbDays = 0;
-      for (let i = highIdx + 1; i <= lastLocal; i++) if (closes[i] < closes[i - 1]) pbDays++;
+      for (let i = highIdx + 1; i <= idx; i++) if (bars[i].close < bars[i - 1].close) pbDays++;
 
       const dist10 = ema10V > 0 ? ((price - ema10V) / ema10V) * 100 : 99;
       const dist20 = ema20V > 0 ? ((price - ema20V) / ema20V) * 100 : 99;
 
-      const vol20 = vols.slice(-20);
-      const avgVol20L = vol20.length > 0 ? vol20.reduce((a, b) => a + b, 0) / vol20.length : 0;
-      const recent3 = vols.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, vols.length);
-      const pbVol = vols.slice(-5, -1);
-      const priorVol = vols.slice(-10, -5);
-      const avgPb = pbVol.length > 0 ? pbVol.reduce((a, b) => a + b, 0) / pbVol.length : 0;
-      const avgPrior = priorVol.length > 0 ? priorVol.reduce((a, b) => a + b, 0) / priorVol.length : 0;
+      // volumet e pullback-it (4 ditë) kundrejt atyre paraardhëse (5 ditë)
+      let pbVolSum = 0, priorVolSum = 0;
+      for (let i = idx - 4; i <= idx - 1; i++) pbVolSum += bars[i].volume;
+      for (let i = idx - 9; i <= idx - 5; i++) priorVolSum += bars[i].volume;
+      const avgPb = pbVolSum / 4;
+      const avgPrior = priorVolSum / 5;
       const volDeclining = avgPb < avgPrior * 0.95;
-      const lastDaySpike = vols[lastLocal] > avgVol20L * 1.1;
-      const volRatio = avgVol20L > 0 ? recent3 / avgVol20L : 1;
-      const rvol = avgVol20L > 0 ? vols[lastLocal] / avgVol20L : 1;
+      const lastDaySpike = bars[idx].volume > avgVol20 * 1.1;
+      let recent3Sum = 0;
+      for (let i = Math.max(0, idx - 2); i <= idx; i++) recent3Sum += bars[i].volume;
+      const recent3 = recent3Sum / Math.min(3, idx + 1);
+      const volRatio = avgVol20 > 0 ? recent3 / avgVol20 : 1;
+      const rvol = avgVol20 > 0 ? bars[idx].volume / avgVol20 : 1;
 
       let setup: 'PULLBACK' | 'BREAKOUT' | 'TREND_CONT' | 'NONE' = 'NONE';
       let setupScore = 0;
@@ -410,7 +440,9 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
         if (lastDaySpike) setupScore += 15;
         if (rsiV >= 40 && rsiV <= 65) setupScore += 10;
       }
-      const high20 = Math.max(...highs.slice(-20));
+      // high20 i fundit
+      let high20 = 0;
+      for (let i = Math.max(0, idx - 19); i <= idx; i++) high20 = Math.max(high20, bars[i].high);
       if (setup === 'NONE' && price >= high20 * 0.98 && lastDaySpike && rsiV >= 45 && rsiV <= 70) {
         setup = 'BREAKOUT'; setupScore = 55;
         if (rsiV >= 45 && rsiV <= 65) setupScore += 15;
@@ -430,14 +462,15 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       if (price > sma200V) tScore += 20;
       if (golden) tScore += 15;
       if (stackedMA) tScore += 15;
-      const h20a = Math.max(...highs.slice(-40, -20));
-      const h20b = Math.max(...highs.slice(-20));
+      let h20a = 0, h20b = 0;
+      for (let i = Math.max(0, idx - 39); i <= idx - 20; i++) h20a = Math.max(h20a, bars[i].high);
+      for (let i = Math.max(0, idx - 19); i <= idx; i++) h20b = Math.max(h20b, bars[i].high);
       if (h20b > h20a) tScore += 15;
       if (adxV > 25) tScore += 15;
       tScore = Math.min(100, tScore);
 
       // RS (0-100)
-      const rsSpy22 = pctWindow(closes, 22) - spyRS22;
+      const rsSpy22 = pctAtIdx(bars, idx, 22) - spyRS22;
       const rsSpy60 = rs60 - spyRS60;
       let rsScore = 50;
       if (rsSpy22 > 0) rsScore += Math.min(25, rsSpy22 * 3);
@@ -452,9 +485,8 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       if (sectorEtfPs) {
         const etfIdx = asOfIndex(sectorEtfPs, today);
         if (etfIdx >= 21) {
-          const stockRet20 = pctWindow(closes, 20);
-          const etfCloses = sectorEtfPs.bars.slice(0, etfIdx + 1).map(b => b.close);
-          const etfRet20 = pctWindow(etfCloses, 20);
+          const stockRet20 = pctAtIdx(bars, idx, 20);
+          const etfRet20 = pctAtIdx(sectorEtfPs.bars, etfIdx, 20);
           const rsVsSector = stockRet20 - etfRet20;
           sectorAboveSma50 = sectorEtfPs.bars[etfIdx].close > (sectorEtfPs.sma50[etfIdx] || 0);
           if (rsVsSector >= 3) sectorRsStatus = 'LEADING';
@@ -466,14 +498,14 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       rsScore = Math.round(Math.max(0, Math.min(100, rsScore)));
 
       // Momentum (0-100)
-      const mom5 = pctWindow(closes, 5), mom10 = pctWindow(closes, 10), mom22 = pctWindow(closes, 22);
+      const mom5 = pctAtIdx(bars, idx, 5), mom10 = pctAtIdx(bars, idx, 10), mom22 = pctAtIdx(bars, idx, 22);
       let mScore = 50;
       if (mom5 > -2) mScore += 10; else mScore -= 10;
       if (mom10 > 0) mScore += 15; else mScore -= 10;
       if (mom22 > 0) mScore += 15; else mScore -= 10;
       if (mom5 < 8) mScore += 10; else mScore -= 15;
-      const highs252 = highs.slice(-252);
-      const high52w = highs252.length > 0 ? Math.max(...highs252) : price;
+      let high52w = 0;
+      for (let i = Math.max(0, idx - 251); i <= idx; i++) high52w = Math.max(high52w, bars[i].high);
       const distFrom52wHighPct = high52w > 0 ? ((high52w - price) / high52w) * 100 : 100;
       if (distFrom52wHighPct <= 15) mScore += 10;
       mScore = Math.round(Math.max(0, Math.min(100, mScore)));
@@ -483,15 +515,16 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       if (volDeclining) vScore += 20;
       if (lastDaySpike) vScore += 15;
       if (volRatio > 0.8 && volRatio < 1.5) vScore += 10;
-      if (avgVol20L > 5_000_000) vScore += 5;
+      if (avgVol20 > 5_000_000) vScore += 5;
       if (rvol >= 1.5) vScore += 10;
       vScore = Math.round(Math.max(0, Math.min(100, vScore)));
 
       // ── ENTRY / STOP / TARGET — si scanner-i ──
       const isBreakout = setup === 'BREAKOUT';
       const entry = isBreakout ? Math.round(high20 * 1.002 * 100) / 100 : Math.round(price * 100) / 100;
-      const stopAtr = entry - atr * 1.5 * stopVolMultiplier;
-      const stopSwing = swLow - atr * 0.2 * stopVolMultiplier;
+      const stopVol = useIbkrFilters ? stopVolMultiplier : 1.0;
+      const stopAtr = entry - atr * 1.5 * stopVol;
+      const stopSwing = swLow - atr * 0.2 * stopVol;
       const stop = Math.round(Math.max(stopAtr, stopSwing) * 100) / 100;
       const riskPerShare = entry - stop;
       if (riskPerShare <= 0) continue;
@@ -507,52 +540,62 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       else if (atrPct > 4) rScore -= 10;
       rScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
-      // ATR% tradability gate (1.5-6%)
+      // ATR% tradability gate (1.5-6%) — bërthama e tradability
       if (atrPct > 6 || atrPct < 1.5) continue;
 
-      const totalScore = Math.round(
+      const totalScoreRaw = Math.round(
         tScore * 0.25 + rsScore * 0.20 + mScore * 0.15 + vScore * 0.15 +
         setupScore * 0.10 + 50 * 0.10 + rScore * 0.05,
       );
+      // EVENT SCORE: pikët e specifikimit (-3/-1/+1/+2/-2) mbi score-in bazë
+      const totalScore = Math.max(0, Math.min(100, totalScoreRaw + evPts));
 
-      // ── VENDIMI — gates identike me scanner-in ──
-      const rsiOk = rsiV >= 30 && rsiV <= 75;
-      const riskOk = riskPct <= 8;
-      const scoreOk = totalScore >= 45;
+      // ── VENDIMI — gates sipas variantit ──
+      const rsiOk = rsiV >= 30 && rsiV <= 75;   // bërthama e setup-it (të gjithë variantet)
+      const riskOk = riskPct <= 8;               // menaxhimi bazë i rrezikut
+      const scoreOk = totalScore >= 45;          // me pikët e event-it
       const sectorRsOk = !(sectorRsStatus === 'LAGGING' && !sectorAboveSma50);
-      const eventState = eventRiskAsOf(today); // neutral në backtest
 
       if (!(rsiOk && riskOk && scoreOk)) continue;
-      if (regimeLevel === 'RISK') continue;
-      if (!sectorRsOk) continue;
-      if (rsiV > 70 && totalScore >= 55) continue; // EVENT_RISK: RSI i lartë
+      if (useIbkrFilters) {
+        if (regimeLevel === 'RISK') continue;
+        if (!sectorRsOk) continue;
+        if (rsiV > 70 && totalScoreRaw >= 55) continue; // EVENT_RISK: RSI i lartë
+      }
 
-      // Sector Breadth Gate (Task 15) as-of
+      // Sector Breadth Gate (Task 15) as-of — vetëm me filtra IBKR
       let targetR: number;
       let sizeMult = 1.0;
-      if (sbLabel === 'WEAK') {
-        if (totalScore < 80) continue; // READY vetëm me score ≥ 80
-        targetR = 1;
-        sizeMult = 0.5;
+      if (useIbkrFilters) {
+        if (sbLabel === 'WEAK') {
+          if (totalScoreRaw < 80) continue; // READY vetëm me score ≥ 80 (si scanner-i live)
+          targetR = 1;
+          sizeMult = 0.5;
+        } else {
+          targetR = sbLabel === 'STRONG' ? 2 : 1.5;
+        }
+        if (capTargetsMarketWide && targetR > 1) targetR = 1;
       } else {
-        targetR = sbLabel === 'STRONG' ? 2 : 1.5;
+        targetR = 1.5; // target standard pa gate-in e breadth
       }
-      if (capTargetsMarketWide && targetR > 1) targetR = 1;
 
-      const riskPctFinal = Math.min(exec.riskPctPerTrade, 1.0) * regimeMultiplier * sizeMult;
+      const regimeMult = useIbkrFilters ? regimeMultiplier : 1.0;
+      const riskPctFinal = Math.min(exec.riskPctPerTrade, 1.0) * regimeMult * sizeMult;
 
       // Spread estimim si scanner-i
       const advM = avgDolVol / 1_000_000;
       const spreadPct = advM > 0 ? Math.min(0.5, 1.5 / Math.sqrt(advM)) : 0.5;
 
-      // Confidence score breakdown (0-10)
+      // Confidence score breakdown (0-10) — event me kalendar real
+      const lastReactPct = evState.lastReactionKnown?.reaction2dPct ?? null;
+      const eventRisky = evState.earningsWithin2d || (lastReactPct !== null && lastReactPct <= -2);
       const breakdown = {
         trend: (stackedMA ? 1 : 0) + (adxV > 25 ? 1 : 0), // /2
         pullback: setup === 'PULLBACK' ? 2 : setup === 'BREAKOUT' ? 1 : 1, // /2
         rs: rsSpy60 > 0 ? 1 : 0, // /1
         volume: vScore >= 60 ? 1 : 0, // /1
         market: regimeLevel === 'OK' ? 1 : 0, // /1
-        event: eventState.eventScore > 0 ? 1 : 0, // /1 (neutral → 0)
+        event: evState.hasData && !eventRisky ? 1 : 0, // /1 (real me kalendar EDGAR)
         risk: riskPct <= 5 ? 1 : 0, // /1
         final: 0, max: 10,
       };
@@ -616,11 +659,27 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
   return { trades, signalsGenerated, entryOrdersRejected, rejectReasons, regimeDays };
 }
 
-/** % ndryshimi mbi 'days' ditët e fundit të serisë */
-function pctWindow(data: number[], days: number): number {
-  if (data.length < days + 1) return 0;
-  const now = data[data.length - 1];
-  const then = data[data.length - 1 - days];
-  if (!then || then === 0) return 0;
+/** % ndryshimi mbi 'days' ditët e fundit — version me indekse (pa slice) */
+function pctAtIdx(bars: HistoricalDataPoint[], idx: number, days: number): number {
+  const startIdx = idx - days;
+  if (startIdx < 0) return 0;
+  const now = bars[idx]?.close;
+  const then = bars[startIdx]?.close;
+  if (!then || then === 0 || now === undefined) return 0;
   return ((now - then) / then) * 100;
+}
+
+/** ATR në indeksin idx — IDENTIK me calcATR(bars.slice(0, idx+1), 14): mesatarja e TR mbi 14 ditët e fundit */
+function atrAtIndex(bars: HistoricalDataPoint[], idx: number, period = 14): number {
+  if (idx < period) return 0;
+  let atr = 0;
+  for (let i = idx - period + 1; i <= idx; i++) {
+    const tr = Math.max(
+      bars[i].high - bars[i].low,
+      Math.abs(bars[i].high - bars[i - 1].close),
+      Math.abs(bars[i].low - bars[i - 1].close),
+    );
+    atr += tr;
+  }
+  return atr / period;
 }

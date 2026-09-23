@@ -26,6 +26,36 @@ export interface GateCheck {
   passed: boolean | null; // null = N/A (pritet live)
 }
 
+// ── Task 28: Testi A/B/C/D i Event Score (të njëjtat të dhëna, të njëjtat rregulla) ──
+export interface VariantComparison {
+  key: 'baseline' | 'event-filter' | 'event-score' | 'full';
+  label: string;
+  description: string;
+  is: MetricSet;
+  oos: MetricSet;
+}
+
+export interface EventScoreVerdict {
+  /** ndryshimi i numrit të tregtive OOS: C kundrejt A (negative = më pak tregti) */
+  oosTradesDelta: number;
+  /** ndryshimi i expectancy OOS ($/tregti): C kundrejt A */
+  oosExpectancyDelta: number;
+  /** ndryshimi i win rate OOS (pikë përqindje): C kundrejt A */
+  oosWinRateDelta: number;
+  /** ndryshimi i max drawdown OOS (pikë përqindje): C kundrejt A (pozitiv = më mirë) */
+  oosDrawdownDelta: number;
+  /** rekomandimi: a ia vlen Event Score? */
+  keep: boolean;
+  note: string;
+}
+
+export interface EarningsDataInfo {
+  symbolsWithTimeline: number;
+  totalEvents: number;
+  coveragePct: number;
+  source: string;
+}
+
 export interface ValidationReport {
   generatedAt: string;
   period: { from: string; to: string; days: number; isDays: number; oosDays: number };
@@ -82,6 +112,12 @@ export interface ValidationReport {
   topTrades: BacktestTrade[];
   worstTrades: BacktestTrade[];
   limitations: string[];
+  /** Task 28 — testi A/B/C/D: baseline / event-filter / event-score / full */
+  variants: VariantComparison[];
+  /** verdikti i Event Score (C kundrejt A) */
+  eventScoreVerdict: EventScoreVerdict;
+  /** kalendarit real EDGAR — mbulimi */
+  earningsData: EarningsDataInfo;
 }
 
 export function buildGateChecks(params: {

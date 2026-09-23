@@ -8,17 +8,18 @@ import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { getScanUniverse } from '@/lib/scanner/universe-400';
 import { SECTOR_MAP } from '@/app/api/ibkr-scan/route';
 import {
-  BacktestContext, PreparedSymbol, runBacktest, prepareSymbol,
+  BacktestContext, PreparedSymbol, runBacktest, prepareSymbol, BacktestVariant,
 } from './backtest-engine';
 import { splitWindows } from './walk-forward';
 import {
-  BacktestTrade, computeMetrics, scoreBuckets, sectorStats, setupSplit,
+  BacktestTrade, computeMetrics, scoreBuckets, sectorStats, setupSplit, MetricSet,
 } from './metrics';
 import { DEFAULT_COSTS, CostAssumptions } from './cost-model';
 import { filterUniverseAsOf, survivorshipReport } from './universe-history';
 import {
-  ValidationReport, buildGateChecks, buildAutoPause,
+  ValidationReport, buildGateChecks, buildAutoPause, VariantComparison, EventScoreVerdict,
 } from './report-builder';
+import { fetchEarningsTimelines, EarningsTimeline } from './earnings-history';
 
 const SECTOR_ETF_MAP: Record<string, string> = {
   Tech: 'XLK', Consumer: 'XLY', Staples: 'XLP', Healthcare: 'XLV',
@@ -29,7 +30,8 @@ const SECTOR_ETF_MAP: Record<string, string> = {
 const START_EQUITY = 25000;
 const CACHE_TTL_MS = 6 * 3600 * 1000; // 6 orë
 
-let cache: { at: number; report: ValidationReport } | null = null;
+// Cache me key univers/vit — lista e fundit përmban deri 6 raporte
+const cacheMap = new Map<string, { at: number; report: ValidationReport }>();
 
 export interface LabParams {
   universeSize?: number;
@@ -38,12 +40,14 @@ export interface LabParams {
 }
 
 export async function runValidationLab(params: LabParams = {}): Promise<ValidationReport> {
-  if (!params.force && cache && Date.now() - cache.at < CACHE_TTL_MS) {
-    return cache.report;
+  const universeSize = Math.min(Math.max(params.universeSize ?? 300, 20), 400);
+  const years = params.years === 3 ? 3 : 5;
+  const cacheKey = `u${universeSize}_y${years}`;
+  const cached = cacheMap.get(cacheKey);
+  if (!params.force && cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return cached.report;
   }
 
-  const universeSize = Math.min(Math.max(params.universeSize ?? 60, 20), 120);
-  const years = params.years === 3 ? 3 : 5;
   const range = years === 3 ? '3y' : '5y';
 
   // ── 1. Universe + benchmark-et ──
@@ -53,7 +57,7 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   const fetchList: { symbol: string; kind: 'stock' }[] =
     rawUniverse.map(s => ({ symbol: s, kind: 'stock' as const }));
 
-  const BATCH = 8;
+  const BATCH = 10;
   const hist: Record<string, HistoricalDataPoint[] | null> = {};
 
   const fetchOne = async (sym: string) => {
@@ -74,7 +78,7 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   for (let i = 0; i < fetchList.length; i += BATCH) {
     const batch = fetchList.slice(i, i + BATCH);
     await Promise.allSettled(batch.map(f => fetchOne(f.symbol)));
-    if (i + BATCH < fetchList.length) await new Promise(r => setTimeout(r, 150));
+    if (i + BATCH < fetchList.length) await new Promise(r => setTimeout(r, 120));
   }
 
   // ── 2. Kalendari i unifikuar (ditët e tregtimit të SPY) ──
@@ -91,11 +95,18 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   const { kept, removedDelisted, removedNoHistory } =
     filterUniverseAsOf(rawUniverse, asOfStart, asOfEnd, firstBarDate);
 
+  // ── KALENDARI HISTORIK I EARNINGS (EDGAR 8-K Item 2.02) — Task 28 ──
+  const { timelines, withEvents } = await fetchEarningsTimelines(kept, hist);
+  const totalEvents = Object.values(timelines).reduce((a, t) => a + t.events.length, 0);
+
   const symbols: PreparedSymbol[] = [];
   for (const sym of kept) {
     const d = hist[sym];
     if (!d || d.length < 210) continue;
-    symbols.push(prepareSymbol(sym, SECTOR_MAP[sym] || 'Other', d));
+    const ps = prepareSymbol(sym, SECTOR_MAP[sym] || 'Other', d);
+    const tl: EarningsTimeline | undefined = timelines[sym];
+    if (tl && tl.events.length > 0) ps.earnings = tl;
+    symbols.push(ps);
   }
 
   const spy = prepareSymbol('SPY', 'Index', hist['SPY']!);
@@ -116,13 +127,40 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   const totalDays = calendar.length;
   const split = splitWindows(totalDays, { isPct: 0.70, wfWindows: 4 });
 
-  const isRes = runBacktest(ctx, { startIndex: split.static.isStart, endIndex: split.static.isEnd });
-  const oosRes = runBacktest(ctx, { startIndex: split.static.oosStart, endIndex: split.static.oosEnd });
+  // ── Testi A/B/C/D (Task 28): të njëjtat të dhëna, të njëjtat rregulla ──
+  //   A baseline → B +event filter → C +event score → D +gjithë filtrat IBKR
+  const variantDefs: { key: BacktestVariant; label: string; description: string }[] = [
+    { key: 'baseline', label: 'A — Baseline', description: 'Trend + pullback pa Event Score (bërthama teknike)' },
+    { key: 'event-filter', label: 'B — Event Filter', description: 'Shmang earnings e afërta: -3 pikë (≤2 ditë), -1 (3-7 ditë), bllokim ditën e hyrjes' },
+    { key: 'event-score', label: 'C — Event Score', description: 'B + surprise/PEAD: +2 (surprise pozitiv + drift), +1 (pa drift), -2 (surprise negativ)' },
+    { key: 'full', label: 'D — Full Strategy', description: 'C + gjithë filtrat IBKR: breadth, RS sektori, regjimi, RSI>70, VIX stop, targetR sipas breadth' },
+  ];
+  const variants: VariantComparison[] = [];
+  const variantRes: Record<string, { isM: MetricSet; oosM: MetricSet; isRes: ReturnType<typeof runBacktest>; oosRes: ReturnType<typeof runBacktest> }> = {};
+  for (const vd of variantDefs) {
+    const isResV = runBacktest(ctx, {
+      startIndex: split.static.isStart, endIndex: split.static.isEnd, variant: vd.key,
+    });
+    const oosResV = runBacktest(ctx, {
+      startIndex: split.static.oosStart, endIndex: split.static.oosEnd, variant: vd.key,
+    });
+    variantRes[vd.key] = {
+      isM: computeMetrics(isResV.trades, START_EQUITY),
+      oosM: computeMetrics(oosResV.trades, START_EQUITY),
+      isRes: isResV, oosRes: oosResV,
+    };
+    variants.push({ key: vd.key, label: vd.label, description: vd.description, is: variantRes[vd.key].isM, oos: variantRes[vd.key].oosM });
+  }
 
+  // Kolonat kryesore = strategjia FULL (D)
+  const isRes = variantRes['full'].isRes;
+  const oosRes = variantRes['full'].oosRes;
+
+  // Walk-Forward vetëm për FULL (4 dritare OOS — parametrat fiks)
   const wfTrades: BacktestTrade[] = [];
   const wfWindows: ValidationReport['walkForwardWindows'] = [];
   for (const w of split.walkForward) {
-    const res = runBacktest(ctx, { startIndex: w.oosStart, endIndex: w.oosEnd });
+    const res = runBacktest(ctx, { startIndex: w.oosStart, endIndex: w.oosEnd, variant: 'full' });
     wfTrades.push(...res.trades);
     const m = computeMetrics(res.trades, START_EQUITY);
     wfWindows.push({
@@ -136,6 +174,22 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
   const isM = computeMetrics(isRes.trades, START_EQUITY);
   const oosM = computeMetrics(oosRes.trades, START_EQUITY);
   const wfM = computeMetrics(wfTrades, START_EQUITY);
+
+  // ── Verdikti i Event Score: C kundrejt A (OOS) ──
+  const aOos = variantRes['baseline'].oosM;
+  const cOos = variantRes['event-score'].oosM;
+  const oosTradesDelta = cOos.trades - aOos.trades;
+  const oosExpDelta = Math.round((cOos.expectancy - aOos.expectancy) * 100) / 100;
+  const oosWrDelta = Math.round((cOos.winRatePct - aOos.winRatePct) * 10) / 10;
+  const oosDdDelta = Math.round((aOos.maxDrawdownPct - cOos.maxDrawdownPct) * 10) / 10; // pozitiv = më mirë
+  const keep = cOos.trades >= 20 && (oosExpDelta > 0 || oosDdDelta > 0);
+  const eventScoreVerdict: EventScoreVerdict = {
+    oosTradesDelta, oosExpectancyDelta: oosExpDelta, oosWinRateDelta: oosWrDelta,
+    oosDrawdownDelta: oosDdDelta, keep,
+    note: keep
+      ? `Event Score IA VLEN: ${oosTradesDelta === 0 ? 'të njëjtin numër' : `${oosTradesDelta} tregti më pak/pak`}, expectancy ${oosExpDelta >= 0 ? '+' : ''}${oosExpDelta}$/tregti, drawdown ${oosDdDelta >= 0 ? '-' : '+'}${Math.abs(oosDdDelta)}pk në OOS — cilësia mbi sasinë.`
+      : `Event Score NUK e justifikohet në këto të dhëna: ${oosTradesDelta} tregti më pak në OOS pa përmirësim të expectancy (${oosExpDelta >= 0 ? '+' : ''}${oosExpDelta}$/tregti) ose drawdown — rishiko pragjet e pikëve.`,
+  };
 
   // ── 4. Kolona PAPER: journal-i real i scanner-it (Top10) ──
   let paperM: ValidationReport['table']['paper'] = null;
@@ -255,9 +309,17 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     autoPause,
     topTrades: sortedByPnl.slice(0, 5),
     worstTrades: sortedByPnl.slice(-5).reverse(),
+    variants,
+    eventScoreVerdict,
+    earningsData: {
+      symbolsWithTimeline: withEvents,
+      totalEvents,
+      coveragePct: symbols.length > 0 ? Math.round((withEvents / symbols.length) * 1000) / 10 : 0,
+      source: 'SEC EDGAR — 8-K Item 2.02 (data e publikimit, 100% point-in-time)',
+    },
     limitations: [
       paperNote || 'Kolona Paper mbushet nga journal-i Top10 i scanner-it (kërkon DB aktiv).',
-      'Event risk (earnings/8K) është NEUTRAL në backtest — pa kalendar historik. Në live, Catalyst Gate bllokon hyrjet pranë earnings.',
+      `Kalendar historik earnings: ${withEvents}/${symbols.length} simbole me timeline EDGAR (${totalEvents} events 8-K Item 2.02). Simbolet pa timeline mbeten event-neutral (kryesisht ADR-t e huaja BABA/TM/HMC etj. qe publikojne 6-K, jo 8-K 2.02). Surprise/PEAD është proxy nga reagimi i çmimit (±2%, 2-ditor) + drift 5-ditor — jo estimate reale (ato kërkojnë burim me pagesë).`,
       `Survivorship: universi vjen nga lista e sotme; ${removedDelisted.length} emra të delistuar përjashtohen sipas datës. Haircut i rekomanduar: ${survivorshipReport(symbols.length, removedDelisted.length).recommendedHaircutPct}% mbi fitimin.`,
       `Të dhënat: Yahoo Finance ditor ${years}-vjeçar; ${removedNoHistory.length} emra të përjashtuar për historik të pamjaftueshëm (IPO të vona).`,
       'Parametrat NUK janë optimizuar në IS — kështu IS/OOS testojnë stabilitetin në kohë, jo kurvën e optimizimit.',
@@ -265,6 +327,7 @@ export async function runValidationLab(params: LabParams = {}): Promise<Validati
     ],
   };
 
-  cache = { at: Date.now(), report };
+  if (cacheMap.size > 5) cacheMap.clear();
+  cacheMap.set(cacheKey, { at: Date.now(), report });
   return report;
 }
