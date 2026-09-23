@@ -19,9 +19,9 @@
 // burimi · timestamp-i · statusi (strong/neutral/weak).
 // Metrikë që mungon → "N/A — data unavailable" (kurrë zero fallco).
 //
-// ⚠️ RREGULLI I FAZËS 1: fundamentet NUK ndryshojnë Technical Score,
-// READY, BUY ose WATCH — shfaqen si kontekst derisa testi rigoroz
-// (Technical-only vs Technical + Fundamental) të vendosë ndryshe.
+// ⚠️ RREGULLI (VENDIM FINAL I VERIFIKUAR): fundamentet NUK ndryshojnë Technical
+// Score, READY, BUY ose WATCH — testi rigoroz A/B (10v × 400, walk-forward,
+// 66/66 teste point-in-time) doli CONTEXT-ONLY: vetëm panel informues.
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
@@ -155,7 +155,7 @@ export function FundamentalPopup({
           </DialogTitle>
           <span className="sr-only">
             Raport fundamental me 7 seksione: rritja, rentabiliteti, cash flow, vlerësimi, fitimet dhe estimatet,
-            pronësia dhe flamujt e rrezikut — kontekst informues në Fazën 1, jo sinjal tregtimi.
+            pronësia dhe flamujt e rrezikut — kontekst informues (vendim i verifikuar A/B: CONTEXT-ONLY), jo sinjal tregtimi.
           </span>
         </DialogHeader>
 
@@ -166,9 +166,9 @@ export function FundamentalPopup({
               <div className="flex items-start gap-2">
                 <Info className="w-3.5 h-3.5 text-sky-400 mt-0.5 flex-shrink-0" />
                 <p className="text-muted-foreground leading-snug">
-                  Fundamentet shfaqen si <strong className="text-foreground">kontekst informues</strong> në Fazën 1.
-                  Ato <strong className="text-foreground">nuk ndryshojnë</strong> Technical Score, READY, BUY ose WATCH —
-                  derisa testi rigoroz (Technical-only kundrejt Technical + Fundamental) të vendosë ndryshe.
+                  Fundamentet shfaqen si <strong className="text-foreground">kontekst informues</strong> — vendim i verifikuar.
+                  Ato <strong className="text-foreground">nuk ndryshojnë</strong> Technical Score, READY, BUY ose WATCH:
+                  testi rigoroz A/B (10v × 400 emra, walk-forward, 66/66 teste point-in-time) doli CONTEXT-ONLY.
                 </p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">

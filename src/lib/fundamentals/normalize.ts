@@ -16,10 +16,10 @@
 //   Zero do të interpretohej si vlerë reale (p.sh. "rritje 0%" kur në
 //   fakt s'ka asnjë të dhënë). Në UI shfaqet "N/A — data unavailable".
 //
-// RREGULLI I DYTË:
+// RREGULLI I DYTË (vendim final i verifikuar):
 //   Fundamental Context NUK ndryshon Technical Score, READY, BUY ose
-//   WATCH. Është kontekst informues derisa testi rigoroz
-//   (Technical-only vs Technical + Fundamental) të vendosë ndryshe.
+//   WATCH. Testi rigoroz A/B (10v × 400, walk-forward, 66/66 teste
+//   point-in-time) doli CONTEXT-ONLY — vetëm panel informues.
 // ============================================================
 
 import type { YahooFundamentals } from '@/lib/alpha-vantage';
