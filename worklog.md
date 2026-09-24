@@ -503,3 +503,26 @@ Stage Summary:
 - Technical + Fundamental: FAIL (expectancy -6.21$, DD +8.4pk, koncentrim 398%)
 - FUNDAMENTAL FILTER: CONTEXT-ONLY — popup informues, verdiktet READY/BUY/WATCH të paprekura
 - ⚠️ SIGURIA: token-i GitHub i userit (ghp_2vYs...) ka qarkulluar në chat — duhet revokuar dhe zëvendësuar (i përdora për push-in e fundit 333c05e)
+
+---
+Task ID: 30
+Agent: Super Z (main)
+Task: "mundesh me e pa ne raportin javor te ditarit Top 10 nese secila kompani e ka arritur targetin" — ruajtja e targetit te planifikuar kundrejt rezultatit real te tregtise (spec i plote i userit)
+
+Work Log:
+- KERKESA: jo vetem P/L — per cdo kompani: entry/target/stop/actual_exit, target_touched vs target_executed, target_hit_at, exit_reason, max_favorable/adverse, statuset e plota (TARGET_HIT/STOP_HIT/PARTIAL_TARGET/TRAILING_EXIT/TIME_EXIT/OPEN/EXPIRED/TARGET_NOT_HIT), raporti javor me tabelen per kompani + dy listat Hit/Missed me arsye + analiza e parashikimit + metrikat (expectancy, avgR, PF, realized P/L, touched/executed rate)
+- SCHEMA: Top10JournalEntry +11 kolona te reja (targetTouched, targetExecuted, targetHitAt, stopTouched, exitReason, maxFavorablePrice, maxAdversePrice, actualExitPrice, tradeStatus, realizedPnlPct, companyName) + DDL idempotente ADD COLUMN IF NOT EXISTS (fusha "status" u quajt tradeStatus sepse modeli kishte status=READY)
+- computeBarOutcome i rishkruar: TOUCHED (high>=target) ndahet nga EXECUTED (dalja reale); kur te dyja ne te njejtin bar → konservativ stop-i i pari; actual_exit (target/stop/close i fundit) + realizedPnlPct (2 decimale, si -3.75% ne spec); EXPIRED me fitim → PARTIAL_TARGET, pa fitim → TIME_EXIT; NO_FILL → TARGET_NOT_HIT/order_not_filled
+- price-watch live: ne tranzicion target → targetHitAt=now, actualExitPrice=target, targetExecuted=true; stop → STOP_HIT me actualExitPrice=stop; MFE/MAE live ($) per pozicionet e hapura
+- buildWeeklyReport i rishkruar: signals[] me rreshtin e plote per kompani (ticker+companyName nga TICKER_NAMES, nivele, statusi, touched/executed, P/L, R), targetHitList/targetMissedList me arsyet ne shqip (Stop-loss u godit / Targeti s'u arrit brenda periudhes / Urdhri nuk u plotesuar / Pozicioni ende i hapur...), prediction{correct/incorrect/stillOpen/accuracy}, performance{expectancy, avgR, PF, realizedPnlSum, touchedRate, executedRate}
+- BACKFILL: deriveTradeFields() derivon fushat e reja nga mfeR/maeR/resultR ekzistues pa fetch (maxFavorable=entry+mfeR*risk; targetTouched=mfeR arriti nivelin); backfillTradeFields() 200 hyrje/thirrje — 167+30 u plotesuan ne prod
+- UI: tradeStatusBadge (8 statuset me ngjyra), tabelja KOMPANIA|ENTRY|TARGET|STOP|STATUS|TARGET HIT(Po/Jo ende + "preku" kur touched por jo executed)|P/L|R, pergjedhja ne krye ne formatin e specit, dy listat, analiza + metrikat; 3 thirrjet e badge-ve preferojne tradeStatus
+- PROBLEMI I AMBIENTIT: snapshot-i ishte MIXED — HEAD eaed998 (Task 16) por working tree me permbajtje te perziera; komitimi i pare (146f593) u be pa dashje mbi bazen e vjetër dhe do fshinte Task 19/26/27 (WeeklyReviewNote, context Jsonb, FundamentalPopup ne ibkr-strategy, Validation Lab) → zbuluar me diff kunder origin/main, ribazeuar: git reset --hard origin/main + riaplikim i ndryshimeve mbi versionet e sakta (schema: ruaj context Json?+WeeklyReviewNote; db-setup: ruaj bllokun Task 19; ibkr-strategy: ruaj Task 26/27; top10-journal: port getRecentJournalEntries qe mungonte)
+- VERIFIKIMI: 31/31 teste (scripts/test-journal-target-tracking.ts — rastet e spec-it: NVDA +5%/+2R TARGET_HIT, AMD STOP_HIT, touched-por-jo-executed, PARTIAL vs TIME_EXIT, NO_FILL, OPEN, nivele qe mungojne); tsc 0 gabime ne fajllat e mi; build OK
+- PROD (d3333b6): db-setup executed 19, 0 errors → 11 ALTER-at e reja; cron evaluate → backfill 167+30 hyrje; API weekly: 138 sinjale, statuset OPEN 69/STOP_HIT 16/TIME_EXIT 16/PARTIAL_TARGET 16/TARGET_NOT_HIT 20/TARGET_HIT 1; UI verifikuar live: tabela me emrat e kompanive (Fortinet, Atlassian...), lista TARGET HIT (EL +2.3R), TARGET MISSED (137) me arsye, analiza (saktësia 1%, expectancy -0.17R, PF 0.55, touched 1%, executed 1%)
+- PERIUDHA E VESHTIRE: regjimi RISK/NO_TRADE prej jave → numrat e ulet te targetit jane realitet i tregut te momentit, jo bug
+
+Stage Summary:
+- Raporti Javor tani tregon saktesisht CILAT kompani e arriten targetin, cilat e preken pa u ekzekutuar, cilat dolen ne stop dhe cilat jane ende open — me arsyen per secilen
+- Dallimi kyq TOUCHED vs EXECUTED ruhet dhe shfaqet (kolona "preku" kur çmimi e preku targetin por dalja s'u be aty)
+- Periodiciteti: cron ditor 05:00 UTC (evaluate-predictions) ploteson fushat me bar-e ditore; price-watch intraday i ndjek live (15 min nga UI + cron i jashtem)
