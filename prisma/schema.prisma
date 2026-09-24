@@ -1034,6 +1034,20 @@ model Top10JournalEntry {
   evalNote   String? // diagnoza + mësimi (shqip)
   tags       String[] // CONTINUATION, FADE, NO_RVOL, REGIME, GAVE_BACK, NO_FILL
 
+  // ── Targeti i planifikuar kundrejt rezultatit real (spec: "a e arriti targetin?") ──
+  // Dallimi kryesor: TOUCHED (çmimi e preku nivelin) ≠ EXECUTED (dalja reale aty)
+  targetTouched     Boolean?  // high ≥ target pas hyrjes (çmimi e preku)
+  targetExecuted    Boolean?  // dalja reale në/o target (exit ≥ target)
+  targetHitAt       DateTime? // kur u prek targeti (ose null)
+  stopTouched       Boolean?  // low ≤ stop pas hyrjes
+  exitReason        String?   // profit_target | stop_loss | time_exit | order_not_filled | still_open
+  maxFavorablePrice Float?    // high-i maksimal pas hyrjes ($)
+  maxAdversePrice   Float?    // low-i minimal pas hyrjes ($)
+  actualExitPrice   Float?    // çmimi real i daljes (target/stop/close i fundit)
+  tradeStatus       String?   // TARGET_HIT | STOP_HIT | PARTIAL_TARGET | TRAILING_EXIT | TIME_EXIT | OPEN | EXPIRED | TARGET_NOT_HIT
+  realizedPnlPct    Float?    // P/L i realizuar në % mbi hyrjen
+  companyName       String?   // emri i kompanisë (statike nga TICKER_NAMES)
+
   // Task 19: Konteksti i plotë i strategjisë në momentin e sinjalit (CAMS:
   // sub-score-t, setup-i, gap-u, nivelet, evidenca e katalizatorit) —
   // përdoret nga Ditari Javor për analizën "çfarë ndikoi".

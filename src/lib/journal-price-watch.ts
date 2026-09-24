@@ -171,21 +171,56 @@ export async function watchTop10Prices(): Promise<WatchResult> {
           msgs.push(entryAlertMsg(e, price));
           base.events.push({ ticker: e.ticker, kind: "ENTRY", price, level: e.entry, scanDate: e.scanDate, rank: e.rank, alertSent: false });
         }
+        // Nisi gjurmimi live i MFE/MAE ($) — përfundon cron-i ditor me bar-e
+        data.maxFavorablePrice = Math.max(price, e.maxFavorablePrice ?? -Infinity);
+        data.maxAdversePrice = Math.min(price, e.maxAdversePrice ?? Infinity);
+        data.tradeStatus = "OPEN";
+        data.exitReason = "still_open";
+        if (e.target != null && price >= (e.target as number)) data.targetTouched = true;
       }
 
       // Target/stop kanë kuptim vetëm PASi hyrja është kapur
       if (entryHitNow) {
+        // Përditëso MFE/MAE live për pozicionet e hapura
+        if (!e.targetHit && !e.stopHit) {
+          const mfp = Math.max(price, e.maxFavorablePrice ?? -Infinity);
+          const mae = Math.min(price, e.maxAdversePrice ?? Infinity);
+          if (mfp !== (e.maxFavorablePrice ?? -Infinity)) data.maxFavorablePrice = mfp;
+          if (mae !== (e.maxAdversePrice ?? Infinity)) data.maxAdversePrice = mae;
+        }
+
         // Konservativisht: nëse të dyja në të njëjtin moment → stop-i i parë
         if (!e.stopHit && !e.targetHit && stopHitNow) {
           data.stopHit = true;
           data.exitStatus = "HIT_STOP";
+          // Fushat e reja: dalja reale në stop
+          data.stopTouched = true;
+          data.tradeStatus = "STOP_HIT";
+          data.exitReason = "stop_loss";
+          data.actualExitPrice = e.stop;
+          data.realizedPnlPct = e.entry
+            ? Math.round((((e.stop as number) - (e.entry as number)) / (e.entry as number)) * 10000) / 100
+            : null;
           msgs.push(stopAlertMsg(e, price));
           base.events.push({ ticker: e.ticker, kind: "STOP", price, level: e.stop, scanDate: e.scanDate, rank: e.rank, alertSent: false });
         } else if (!e.targetHit && !e.stopHit && targetHitNow && !stopHitNow) {
           data.targetHit = true;
           data.exitStatus = "HIT_TARGET";
+          // Fushat e reja: prekja + ekzekutimi (dalja në target) + kur
+          data.targetTouched = true;
+          data.targetExecuted = true;
+          data.targetHitAt = new Date();
+          data.tradeStatus = "TARGET_HIT";
+          data.exitReason = "profit_target";
+          data.actualExitPrice = e.target;
+          data.realizedPnlPct = e.entry
+            ? Math.round((((e.target as number) - (e.entry as number)) / (e.entry as number)) * 10000) / 100
+            : null;
           msgs.push(targetAlertMsg(e, price));
           base.events.push({ ticker: e.ticker, kind: "TARGET", price, level: e.target, scanDate: e.scanDate, rank: e.rank, alertSent: false });
+        } else if (!e.targetHit && !e.stopHit && targetHitNow && stopHitNow) {
+          // Të dyja njëkohësisht në tick — konservativ: stop-i, por shëno prekjen
+          data.targetTouched = true;
         }
       }
 

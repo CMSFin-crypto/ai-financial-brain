@@ -1913,6 +1913,21 @@ function journalStatusBadge(s: string | null | undefined, active: boolean) {
   return { cls: 'bg-muted/40 text-muted-foreground/70', label: 'DOLI' };
 }
 
+// Badge i statusit real të tregtisë (spec: TARGET_HIT / STOP_HIT / PARTIAL_TARGET / ...)
+function tradeStatusBadge(s: string | null | undefined) {
+  switch (s) {
+    case 'TARGET_HIT': return { cls: 'bg-emerald-500/15 text-emerald-400', label: 'TARGET_HIT' };
+    case 'STOP_HIT': return { cls: 'bg-red-500/15 text-red-400', label: 'STOP_HIT' };
+    case 'PARTIAL_TARGET': return { cls: 'bg-lime-500/15 text-lime-400', label: 'PARTIAL' };
+    case 'TRAILING_EXIT': return { cls: 'bg-teal-500/15 text-teal-400', label: 'TRAILING' };
+    case 'TIME_EXIT': return { cls: 'bg-orange-500/15 text-orange-400', label: 'TIME_EXIT' };
+    case 'OPEN': return { cls: 'bg-amber-500/15 text-amber-400', label: 'OPEN' };
+    case 'EXPIRED': return { cls: 'bg-muted/50 text-muted-foreground', label: 'EXPIRED' };
+    case 'TARGET_NOT_HIT': return { cls: 'bg-blue-500/10 text-blue-400/80', label: 'NOT_HIT' };
+    default: return { cls: 'bg-muted/40 text-muted-foreground/70', label: s || '—' };
+  }
+}
+
 function tagChip(tag: string) {
   const map: Record<string, string> = {
     CONTINUATION: 'bg-emerald-500/10 text-emerald-400/90',
@@ -2142,7 +2157,7 @@ export function Top10JournalCard() {
         {!loading && entries.length > 0 && (
           <div className="mt-3 space-y-1.5">
             {entries.map((e: any) => {
-              const sb = journalStatusBadge(e.exitStatus, e.active);
+              const sb = e.tradeStatus ? tradeStatusBadge(e.tradeStatus) : journalStatusBadge(e.exitStatus, e.active);
               return (
                 <div key={e.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 border ${e.active ? 'border-cyan-500/15 bg-cyan-500/[0.03]' : 'border-border/30 bg-muted/5 opacity-70'}`}>
                   <span className="text-[10px] font-mono text-muted-foreground/60 w-5">#{e.rank}</span>
@@ -2199,7 +2214,7 @@ export function Top10JournalCard() {
                   <div className="flex flex-col gap-1">
                     <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Historia (30 ditë)</p>
                     {detail.entries.map((en: any) => {
-                      const sb = journalStatusBadge(en.exitStatus, en.active);
+                      const sb = en.tradeStatus ? tradeStatusBadge(en.tradeStatus) : journalStatusBadge(en.exitStatus, en.active);
                       return (
                         <div key={en.id} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
                           <span className="w-[70px]">{en.scanDate}</span>
@@ -2225,7 +2240,7 @@ export function Top10JournalCard() {
           <div className="mt-3 rounded-lg border border-cyan-500/20 bg-muted/5 p-3">
             <div className="flex items-center gap-2 mb-2">
               <History className="w-3.5 h-3.5 text-cyan-400" />
-              <p className="text-[12px] font-bold text-foreground">Raporti Javor</p>
+              <p className="text-[12px] font-bold text-foreground">Raporti Javor — Target Hit</p>
               <span className="text-[10px] text-muted-foreground/60">{weekly?.window?.from} → {weekly?.window?.to}</span>
             </div>
             {weeklyLoading && (
@@ -2238,7 +2253,136 @@ export function Top10JournalCard() {
               <p className="text-[12px] text-muted-foreground py-2">Databaza nuk është aktive.</p>
             )}
             {!weeklyLoading && weekly?.dbActive && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
+                {/* Përmbledhja në krye (formati i spec-it) */}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground bg-muted/10 rounded-md px-2.5 py-2">
+                  <span>Top 10 candidates: <strong className="text-foreground">{weekly.totals?.entries ?? 0}</strong></span>
+                  <span>Target hit: <strong className="text-emerald-400">{weekly.totals?.targetHits ?? 0}</strong></span>
+                  <span>Stop hit: <strong className="text-red-400">{weekly.totals?.stopHits ?? 0}</strong></span>
+                  <span>Open: <strong className="text-amber-400">{weekly.totals?.open ?? 0}</strong></span>
+                  <span>Expired: <strong className="text-foreground">{weekly.totals?.expired ?? 0}</strong></span>
+                  <span>Target hit rate: <strong className="text-cyan-400">{weekly.hitRate != null ? weekly.hitRate + '%' : '—'}</strong></span>
+                </div>
+
+                {/* Tabela: Kompania | Entry | Target | Stop | Status | Target hit | P/L | R */}
+                {(weekly.signals?.length ?? 0) > 0 && (
+                  <div className="overflow-x-auto -mx-1 px-1">
+                    <table className="w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr className="text-[9.5px] uppercase tracking-wide text-muted-foreground/70 border-b border-border/40">
+                          <th className="text-left py-1.5 pr-2 font-medium">Kompania</th>
+                          <th className="text-right py-1.5 px-1.5 font-medium">Entry</th>
+                          <th className="text-right py-1.5 px-1.5 font-medium">Target</th>
+                          <th className="text-right py-1.5 px-1.5 font-medium">Stop</th>
+                          <th className="text-center py-1.5 px-1.5 font-medium">Status</th>
+                          <th className="text-center py-1.5 px-1.5 font-medium">Target hit</th>
+                          <th className="text-right py-1.5 px-1.5 font-medium">P/L</th>
+                          <th className="text-right py-1.5 pl-1.5 font-medium">R</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {weekly.signals.map((s: any, i: number) => {
+                          const tb = tradeStatusBadge(s.status);
+                          return (
+                            <tr key={`${s.ticker}-${s.signalDate}-${i}`} className="border-b border-border/20 hover:bg-muted/20">
+                              <td className="py-1.5 pr-2">
+                                <div className="flex flex-col leading-tight">
+                                  <span className="font-bold text-foreground">{s.ticker}</span>
+                                  <span className="text-[9.5px] text-muted-foreground/60 truncate max-w-[110px]">{s.companyName || '—'}</span>
+                                </div>
+                              </td>
+                              <td className="text-right py-1.5 px-1.5 font-mono text-foreground/90">{s.entry != null ? s.entry.toFixed(2) : '—'}</td>
+                              <td className="text-right py-1.5 px-1.5 font-mono text-emerald-400/90">{s.target != null ? s.target.toFixed(2) : '—'}</td>
+                              <td className="text-right py-1.5 px-1.5 font-mono text-red-400/80">{s.stop != null ? s.stop.toFixed(2) : '—'}</td>
+                              <td className="text-center py-1.5 px-1.5">
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${tb.cls}`}>{tb.label}</span>
+                              </td>
+                              <td className="text-center py-1.5 px-1.5">
+                                {s.status === 'TARGET_HIT' ? (
+                                  <span className="text-emerald-400 font-bold text-[11px]">Po</span>
+                                ) : s.status === 'OPEN' ? (
+                                  <span className="text-amber-400/80 text-[10px]">Jo ende</span>
+                                ) : (
+                                  <span className="text-muted-foreground/70 text-[11px]">Jo</span>
+                                )}
+                                {s.targetTouched && s.status !== 'TARGET_HIT' && (
+                                  <span className="ml-1 text-[9px] text-lime-400" title="Çmimi e preku targetin por nuk u ekzekutua aty">preku</span>
+                                )}
+                              </td>
+                              <td className={`text-right py-1.5 px-1.5 font-mono ${(s.realizedPnlPct ?? 0) > 0 ? 'text-emerald-400' : (s.realizedPnlPct ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                {s.realizedPnlPct != null ? `${s.realizedPnlPct > 0 ? '+' : ''}${s.realizedPnlPct}%` : '—'}
+                              </td>
+                              <td className={`text-right py-1.5 pl-1.5 font-mono ${(s.rMultiple ?? 0) > 0 ? 'text-emerald-400' : (s.rMultiple ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                {s.rMultiple != null ? `${s.rMultiple > 0 ? '+' : ''}${s.rMultiple}R` : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Dy listat: Target Hit / Target Missed me arsye */}
+                <div className="grid sm:grid-cols-2 gap-2.5">
+                  <div className="rounded-md border border-emerald-500/15 bg-emerald-500/[0.03] p-2">
+                    <p className="text-[10px] uppercase tracking-wide text-emerald-400/80 mb-1.5 font-bold">Target Hit ({weekly.targetHitList?.length ?? 0})</p>
+                    {(weekly.targetHitList?.length ?? 0) === 0 ? (
+                      <p className="text-[11px] text-muted-foreground/60">Asnjë këtë javë.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {weekly.targetHitList.map((s: any, i: number) => (
+                          <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                            <span className="font-bold text-foreground">{s.ticker}</span>
+                            <span className="text-emerald-400/90">{s.status === 'PARTIAL_TARGET' ? 'partial target' : 'target hit'}</span>
+                            {s.targetHitAt && <span className="text-[9.5px] text-muted-foreground/50">{new Date(s.targetHitAt).toLocaleDateString('sq-AL')}</span>}
+                            {s.rMultiple != null && (
+                              <span className={`font-mono ${s.rMultiple > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.rMultiple > 0 ? '+' : ''}{s.rMultiple}R</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rounded-md border border-red-500/15 bg-red-500/[0.03] p-2">
+                    <p className="text-[10px] uppercase tracking-wide text-red-400/80 mb-1.5 font-bold">Target Missed ({weekly.targetMissedList?.length ?? 0})</p>
+                    {(weekly.targetMissedList?.length ?? 0) === 0 ? (
+                      <p className="text-[11px] text-muted-foreground/60">Asnjë — të gjitha të arritura.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {weekly.targetMissedList.map((s: any, i: number) => (
+                          <div key={i} className="flex flex-col gap-0.5 text-[11px]">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-foreground">{s.ticker}</span>
+                              <span className="text-muted-foreground/80">{s.missReason || '—'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Analiza e parashikimit + metrikat */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70 font-bold">Analiza e parashikimit</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                    <span>Top 10 signals: <strong className="text-foreground">{weekly.prediction?.signals ?? 0}</strong></span>
+                    <span>Predikime të sakta: <strong className="text-emerald-400">{weekly.prediction?.correctTarget ?? 0}</strong></span>
+                    <span>Të pasakta: <strong className="text-red-400">{weekly.prediction?.incorrect ?? 0}</strong></span>
+                    <span>Ende hapur: <strong className="text-amber-400">{weekly.prediction?.stillOpen ?? 0}</strong></span>
+                    <span>Saktësia: <strong className="text-cyan-400">{weekly.prediction?.accuracyPct != null ? weekly.prediction.accuracyPct + '%' : '—'}</strong></span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                    <span>Expectancy: <strong className={(weekly.performance?.expectancyR ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>{weekly.performance?.expectancyR != null ? (weekly.performance.expectancyR > 0 ? '+' : '') + weekly.performance.expectancyR + 'R' : '—'}</strong></span>
+                    <span>R mesatar: <strong className="text-foreground">{weekly.performance?.avgR != null ? (weekly.performance.avgR > 0 ? '+' : '') + weekly.performance.avgR + 'R' : '—'}</strong></span>
+                    <span>Profit factor: <strong className="text-foreground">{weekly.performance?.profitFactor ?? '—'}</strong></span>
+                    <span>P/L i realizuar: <strong className={(weekly.performance?.realizedPnlPctSum ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>{weekly.performance?.realizedPnlPctSum != null ? (weekly.performance.realizedPnlPctSum > 0 ? '+' : '') + weekly.performance.realizedPnlPctSum + '%' : '—'}</strong></span>
+                    <span>Target touched: <strong className="text-foreground">{weekly.performance?.targetTouchedRate != null ? weekly.performance.targetTouchedRate + '%' : '—'}</strong></span>
+                    <span>Target executed: <strong className="text-foreground">{weekly.performance?.targetExecutedRate != null ? weekly.performance.targetExecutedRate + '%' : '—'}</strong></span>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="rounded-md bg-emerald-500/5 border border-emerald-500/15 p-2 text-center">
                     <p className="text-[10px] text-muted-foreground">Target Hit</p>
@@ -2314,7 +2458,7 @@ export function Top10JournalCard() {
             <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1.5">Përfundimet e fundit</p>
             <div className="flex gap-1.5 flex-wrap">
               {recent.map((r: any) => {
-                const sb = journalStatusBadge(r.exitStatus, false);
+                const sb = r.tradeStatus ? tradeStatusBadge(r.tradeStatus) : journalStatusBadge(r.exitStatus, false);
                 return (
                   <button key={r.id} onClick={() => openDetail(r.ticker)} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/10 border border-border/30 hover:border-cyan-500/30 transition-colors">
                     <span className="text-[11px] font-bold text-foreground">{r.ticker}</span>
