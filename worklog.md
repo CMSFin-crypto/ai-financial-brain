@@ -526,3 +526,27 @@ Stage Summary:
 - Raporti Javor tani tregon saktesisht CILAT kompani e arriten targetin, cilat e preken pa u ekzekutuar, cilat dolen ne stop dhe cilat jane ende open — me arsyen per secilen
 - Dallimi kyq TOUCHED vs EXECUTED ruhet dhe shfaqet (kolona "preku" kur çmimi e preku targetin por dalja s'u be aty)
 - Periodiciteti: cron ditor 05:00 UTC (evaluate-predictions) ploteson fushat me bar-e ditore; price-watch intraday i ndjek live (15 min nga UI + cron i jashtem)
+
+---
+Task ID: 31
+Agent: Super Z (main)
+Task: "cka jane keta tregues... + dropdown list ne Target Hit" — shpjegimi i treguesve te raportit javor + drill-down per cdo tregti (kur ka hyre/date/ora, parametrat e momentit te hapjes, score, renditja, kur e ka mbylle, a ka qene sipas strategjise, statusi)
+
+Work Log:
+- KERKESA (2 pjesë): (1) shpjegimi i treguesve candidates/target hit/stop hit/open/expired/hit rate — cfare tregojne, cfare parametrash marrin parasysh dhe si ndodh ngjarja; (2) dropdown ne raportin javor Target Hit (dhe te gjitha tregtite) me detajet e plota per hyrjen, parametrat, score-in, renditjen, mbylljen, perputhshmerine me strategjine dhe statusin
+- SCHEMA: +1 kolone exitAt DateTime? (kur u mbyll tregtia) — DDL idempotente ADD COLUMN IF NOT EXISTS ne db-setup-sql.ts + postgres-init.sql + prisma/schema.prisma
+- computeBarOutcome: exitAt = data e bar-it te daljes (targetIdx per HIT_TARGET, stopIdx per HIT_STOP, bar-i i fundit per EXPIRED); ruhet nga evaluateTop10Journal (cron 05:00 UTC)
+- journal-price-watch live: exitAt = now() reale intraday ne tranzicionet TARGET/STOP (orë e saktë ET)
+- buildWeeklyReport: WeeklySignalRow i zgjeruar me entryHitAt, exitAt (fallback targetHitAt per TARGET_HIT te vjetra), mfeR/maeR, maxFavorable/AdversePrice, evalNote, strategy{compliant,notes[]}, context{i plote i momentit te sinjalit: price, rvol+status, atrPct+status, dist52w, regimeLevel, vix+breadth, sektori, tags, enterReason}
+- strategyCompliance() i eksportuar: shkeljet ne shqip — RVOL < 1.5x, regjimi jo-OK, ATR TOO_VOLATILE/TOO_SLOW; pa dublime nga etiketat NO_RVOL/REGIME; compliant=true vetem kur te gjithe parametrat brenda rregullave
+- UI (ibkr-strategy.tsx): TradeDrilldown — karteles 5-seksionshme (Kur ka hyre · Parametrat e marra parasysh kur u hap tregtia · Kur e ka mbylle · A ka qene sipas strategjise · Si ka qene statusi + diagnoza/mësimi); tabela e raportit javor me kolone chevron ▸ per cdo rresht (Fragment key); listat Target Hit/Missed te zgjerueshme; Missed me kufi 10 + "trego te gjitha (N)"; fmtEtDateTime — ora reale ET kur ka, "orë e panjohur (vlerësim me bar-e ditore)" per vlerësimet e cron-it
+- LEGJENDA "Çfarë tregojnë numrat?" — buton i ri ne header-in e raportit javor: shpjegon çdo tregues + si ndodh ngjarja (high>=Entry → hyrja e kapur; high>=Target → TARGET_HIT; low<=Stop → STOP_HIT; te dyja ne diten e njejte → konservativ stop-i; asnjere ne 10 dite → skadim) + hit rate = target/(target+stop) vetem te vendosurat
+- TESTE: 42/42 (31 te vjetra + 11 te reja: compliance OK/RVOL/regjim+ATR/TOO_SLOW/etiketa-vetem, pa dublime); tsc 145 = baza, 0 te reja
+- PROD: push 450342f + d7d49e9 (typo fix); db-setup executed 20 (exitAt u shtua); API weekly verifikuar live: dbActive=true, 142 sinjale, OKTA TARGET_HIT me entryHitAt 2026-09-23 + exitAt 2026-09-24T14:46Z (orë reale nga vëzhguesi live!), R +2.58, P/L +8.3%; RVTY STOP_HIT me strategy notes (RVOL 1.00x nën 1.5x + regjimi CAUTION) + evalNote te plote
+- SHPJEGIMI (ne chat): cdo tregues sqaruar me detaje — cf. pergjigja finale
+
+Stage Summary:
+- Raporti Javor tani ka drill-down te plote per CDO tregti: kliko ▸ → kur ka hyre (date + ora kur ka), cfare parametrash u moren parasysh ne momentin e hapjes, score, renditja #N ne Top 10, kur u mbyll, a ka qene sipas strategjise (me listën e shkeljeve) dhe statusi final me diagnozen + mesimin
+- exitAt regjistrohet me oren reale intraday nga vëzhguesi live (çdo 15 min) dhe me daten e bar-it nga cron-i ditor — hyrjet e vjetra (para gjurmimit) shfaqin "data e paregjistruar"
+- Legjenda e brendshme ne UI sqaron treguesit pa pasur nevoje per dokumentacion te jashtem
+- ⚠️ SIGURIA (pronë e vjetër e pashqyruar): token-i GitHub ghp_2vYs... ka qarkulluar perseri ne chat — duhet revokuar PAS ketij push-i dhe zëvendësuar me nje te ri
