@@ -2038,7 +2038,7 @@ export function TradeDrilldown({ s }: { s: any }) {
       <DDSection label="Kur e ka mbyllë" color="text-orange-400/80">
         <DDRow
           k="Mbyllur më"
-          v={closed ? (exitedAt || (s.status === 'TARGET_NOT_HIT' ? 'pa dalje (s\u2019u mbush kurrë)' : 'data e padëshiruar')) : 'ende e hapur'}
+          v={closed ? (exitedAt || (s.status === 'TARGET_NOT_HIT' ? 'pa dalje (s\u2019u mbush kurrë)' : 'data e paregjistruar (para gjurmimit të orës)')) : 'ende e hapur'}
           vCls={closed ? 'text-orange-400' : 'text-amber-400'}
         />
         <DDRow k="Çmimi i daljes" v={s.actualExitPrice != null ? `$${s.actualExitPrice.toFixed(2)}` : '—'} />
