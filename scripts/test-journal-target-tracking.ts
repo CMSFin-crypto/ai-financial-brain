@@ -91,5 +91,44 @@ console.log('── 7. Backup-plan: nivelet që mungojnë ──');
 const noLevels = deriveTradeFields({ ticker: 'QQQ', entry: null, stop: null, target: null, exitStatus: 'OPEN' });
 check('s\u00eb thyhet — kthen vetëm companyName', noLevels.companyName === 'QQQ');
 
+// ═══════════════════════════════════════════════════════════════
+// Task 31 — Drill-down: strategyCompliance (përputhshmëria me strategjinë)
+// ═══════════════════════════════════════════════════════════════
+import { strategyCompliance } from '../src/lib/top10-journal';
+
+console.log('── 8. Përputhshmëria: hyrje ideale (të gjithë parametrat OK) ──');
+const ok = strategyCompliance({
+  rvol: 1.92, regimeLevel: 'OK', atrStatus: 'OK', atrPct: 2.4, tags: [],
+});
+check('compliant = true (pa shkelje)', ok.compliant === true);
+check('notes bosh', ok.notes.length === 0);
+
+console.log('── 9. Përputhshmëria: RVOL nën 1.5x ──');
+const noRvol = strategyCompliance({
+  rvol: 1.12, regimeLevel: 'OK', atrStatus: 'OK', atrPct: 2.0, tags: ['NO_RVOL'],
+});
+check('compliant = false', noRvol.compliant === false);
+check('shënim RVOL përmban pragun 1.5x', noRvol.notes.some((n) => n.includes('1.5x')), JSON.stringify(noRvol.notes));
+check('vetëm NJË shënim RVOL (pa dublim nga etiketa)', noRvol.notes.filter((n) => n.startsWith('RVOL')).length === 1, JSON.stringify(noRvol.notes));
+
+console.log('── 10. Përputhshmëria: regjim jo-OK + ATR TOO_VOLATILE ──');
+const bad = strategyCompliance({
+  rvol: 2.0, regimeLevel: 'CAUTION', atrStatus: 'TOO_VOLATILE', atrPct: 6.1, tags: ['REGIME'],
+});
+check('compliant = false', bad.compliant === false);
+check('shënim regjimi CAUTION', bad.notes.some((n) => n.includes('CAUTION')), JSON.stringify(bad.notes));
+check('shënim ATR i paqëndrueshëm', bad.notes.some((n) => n.includes('shumë i paqëndrueshëm')), JSON.stringify(bad.notes));
+check('pa dublim të shënimit të regjimit', bad.notes.filter((n) => n.startsWith('Regjimi')).length === 1, JSON.stringify(bad.notes));
+
+console.log('── 11. Përputhshmëria: ATR TOO_SLOW ──');
+const slow = strategyCompliance({
+  rvol: 1.8, regimeLevel: 'OK', atrStatus: 'TOO_SLOW', atrPct: 1.1, tags: [],
+});
+check('compliant = false (lëvizje e ngadaltë)', slow.compliant === false && slow.notes.some((n) => n.includes('e ngadaltë')), JSON.stringify(slow.notes));
+
+console.log('── 12. Përputhshmëria: etiketa pa vlera skalare (backfill i vjetër) ──');
+const tagOnly = strategyCompliance({ rvol: null, regimeLevel: null, atrStatus: null, tags: ['NO_RVOL'] });
+check('compliant = false nga etiketa NO_RVOL', tagOnly.compliant === false && tagOnly.notes.some((n) => n.startsWith('RVOL')), JSON.stringify(tagOnly.notes));
+
 console.log(`\n═══ REZULTATI: ${pass} kaluan · ${fail} dështuan ═══`);
 process.exit(fail > 0 ? 1 : 0);

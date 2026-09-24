@@ -197,6 +197,7 @@ export async function watchTop10Prices(): Promise<WatchResult> {
           data.stopTouched = true;
           data.tradeStatus = "STOP_HIT";
           data.exitReason = "stop_loss";
+          data.exitAt = new Date(); // ora reale intraday e daljes
           data.actualExitPrice = e.stop;
           data.realizedPnlPct = e.entry
             ? Math.round((((e.stop as number) - (e.entry as number)) / (e.entry as number)) * 10000) / 100
@@ -210,6 +211,7 @@ export async function watchTop10Prices(): Promise<WatchResult> {
           data.targetTouched = true;
           data.targetExecuted = true;
           data.targetHitAt = new Date();
+          data.exitAt = new Date(); // ora reale intraday e daljes
           data.tradeStatus = "TARGET_HIT";
           data.exitReason = "profit_target";
           data.actualExitPrice = e.target;

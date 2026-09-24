@@ -303,6 +303,7 @@ interface BarOutcome {
   realizedPnlPct: number | null;    // P/L realizuar në %
   tradeStatus: string;             // TARGET_HIT | STOP_HIT | PARTIAL_TARGET | TRAILING_EXIT | TIME_EXIT | OPEN | EXPIRED | TARGET_NOT_HIT
   exitReason: string | null;        // profit_target | stop_loss | time_exit | order_not_filled | still_open
+  exitAt: Date | null;              // kur u mbyll tregtia (data e bar-it të daljes)
 }
 
 function computeBarOutcome(
@@ -333,6 +334,7 @@ function computeBarOutcome(
     realizedPnlPct: null,
     tradeStatus: "OPEN",
     exitReason: null,
+    exitAt: null,
   };
 
   // Ku u aktivizua hyrja (high >= entry)
@@ -432,6 +434,16 @@ function computeBarOutcome(
     res.tradeStatus = "OPEN";
     res.exitReason = "still_open";
   }
+
+  // ── Kur u mbyll tregtia (data e bar-it ku ndodhi dalja) ──
+  if (res.exitStatus === "HIT_TARGET" && res.targetIdx !== null) {
+    res.exitAt = new Date(after[res.targetIdx].date);
+  } else if (res.exitStatus === "HIT_STOP" && res.stopIdx !== null) {
+    res.exitAt = new Date(after[res.stopIdx].date);
+  } else if (res.exitStatus === "EXPIRED") {
+    res.exitAt = new Date(after[after.length - 1].date);
+  }
+
   if (res.actualExitPrice != null && res.exitStatus !== "OPEN") {
     res.realizedPnlPct = Math.round(((res.actualExitPrice - entry) / entry) * 10000) / 100;
   }
@@ -745,6 +757,7 @@ export async function evaluateTop10Journal(
             tradeStatus: calc.tradeStatus,
             realizedPnlPct: calc.realizedPnlPct,
             companyName: companyName(e.ticker),
+            exitAt: calc.exitAt,
           },
         });
         out.updated++;
@@ -911,6 +924,32 @@ export async function getRecentJournalEntries(days = 90, take = 300) {
 
 // ── Raporti javor (i shkurtër automatikisht) ──
 
+// ── Përputhshmëria me strategjinë (a qe sipas rregullave hyrja?) ──
+// Bazë: çdo hyrje në ditar është READY brenda Top 10. Shkeljet janë
+// parametrat që strategjia i kërkon por që s'plotësoheshin në momentin e sinjalit.
+export function strategyCompliance(e: any): { compliant: boolean; notes: string[] } {
+  const notes: string[] = [];
+  const tags: string[] = e.tags || [];
+  if ((e.rvol ?? null) != null && (e.rvol as number) < 1.5) {
+    notes.push(`RVOL ${(e.rvol as number).toFixed(2)}x — nën pragun 1.5x që kërkon strategjia`);
+  }
+  if (e.regimeLevel && e.regimeLevel !== "OK") {
+    notes.push(`Regjimi i tregut ishte ${e.regimeLevel} (strategjia kërkon OK)`);
+  }
+  if (e.atrStatus === "TOO_VOLATILE") {
+    notes.push(`ATR ${(e.atrPct ?? 0).toFixed(1)}% — shumë i paqëndrueshëm për swing`);
+  } else if (e.atrStatus === "TOO_SLOW") {
+    notes.push(`ATR ${(e.atrPct ?? 0).toFixed(1)}% — lëvizje shumë e ngadaltë për swing`);
+  }
+  if (tags.includes("NO_RVOL") && !notes.some((n) => n.startsWith("RVOL"))) {
+    notes.push("RVOL nën 1.5x (etiketa NO_RVOL)");
+  }
+  if (tags.includes("REGIME") && !notes.some((n) => n.startsWith("Regjimi"))) {
+    notes.push("Regjimi jo-OK (etiketa REGIME)");
+  }
+  return { compliant: notes.length === 0, notes };
+}
+
 export interface WeeklySignalRow {
   ticker: string;
   companyName: string | null;
@@ -930,6 +969,31 @@ export interface WeeklySignalRow {
   rank: number | null;
   // Për listat Hit/Missed — arsyeja në shqip
   missReason: string | null;
+  // ── Drill-down (spec: "kur hyri, në cilën orë, çfarë parametrash, score, renditje, kur u mbyll, strategjia, statusi") ──
+  entryHitAt: string | null;   // kur u kap niveli i hyrjes (live = orë reale; cron = data e bar-it)
+  exitAt: string | null;       // kur u mbyll tregtia (target/stop/skadim)
+  mfeR: number | null;
+  maeR: number | null;
+  maxFavorablePrice: number | null;
+  maxAdversePrice: number | null;
+  evalNote: string | null;    // diagnoza + mësimi (shqip)
+  strategy: { compliant: boolean; notes: string[] };
+  context: {
+    price: number | null;          // çmimi në momentin e skanimit
+    rvol: number | null;
+    rvolStatus: string | null;
+    atrPct: number | null;
+    atrStatus: string | null;
+    dist52wHighPct: number | null;
+    regimeLevel: string | null;
+    vixLevel: number | null;
+    vixStatus: string | null;
+    breadthPct: number | null;
+    breadthStatus: string | null;
+    sector: string | null;
+    tags: string[];
+    enterReason: string | null;   // pse hyri në Top 10 (setup + arsyet)
+  };
 }
 
 export interface WeeklyReport {
@@ -1100,6 +1164,35 @@ export async function buildWeeklyReport(days = 7): Promise<WeeklyReport> {
         score: e.score ?? null,
         rank: e.rank ?? null,
         missReason: null,
+        // ── Drill-down ──
+        entryHitAt: e.entryHitAt ? new Date(e.entryHitAt).toISOString() : null,
+        exitAt: e.exitAt
+          ? new Date(e.exitAt).toISOString()
+          : e.targetHitAt && (e.tradeStatus ?? "") === "TARGET_HIT"
+            ? new Date(e.targetHitAt).toISOString()
+            : null,
+        mfeR: e.mfeR ?? null,
+        maeR: e.maeR ?? null,
+        maxFavorablePrice: e.maxFavorablePrice ?? null,
+        maxAdversePrice: e.maxAdversePrice ?? null,
+        evalNote: e.evalNote ?? null,
+        strategy: strategyCompliance(e),
+        context: {
+          price: e.price ?? null,
+          rvol: e.rvol ?? null,
+          rvolStatus: e.rvolStatus ?? null,
+          atrPct: e.atrPct ?? null,
+          atrStatus: e.atrStatus ?? null,
+          dist52wHighPct: e.dist52wHighPct ?? null,
+          regimeLevel: e.regimeLevel ?? null,
+          vixLevel: e.vixLevel ?? null,
+          vixStatus: e.vixStatus ?? null,
+          breadthPct: e.breadthPct ?? null,
+          breadthStatus: e.breadthStatus ?? null,
+          sector: e.sector ?? null,
+          tags: e.tags || [],
+          enterReason: e.enterReason ?? null,
+        },
       };
       row.missReason = missReasonShqip(row);
       return row;

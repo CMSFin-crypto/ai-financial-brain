@@ -866,6 +866,7 @@ CREATE TABLE "Top10JournalEntry" (
     "targetExecuted" BOOLEAN,
     "targetHitAt" TIMESTAMP(3),
     "stopTouched" BOOLEAN,
+    "exitAt" TIMESTAMP(3),
     "exitReason" TEXT,
     "maxFavorablePrice" DOUBLE PRECISION,
     "maxAdversePrice" DOUBLE PRECISION,
@@ -1209,6 +1210,7 @@ ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "targetTouched" BOOLEAN
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "targetExecuted" BOOLEAN;
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "targetHitAt" TIMESTAMP(3);
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "stopTouched" BOOLEAN;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "exitAt" TIMESTAMP(3);
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "exitReason" TEXT;
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "maxFavorablePrice" DOUBLE PRECISION;
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "maxAdversePrice" DOUBLE PRECISION;

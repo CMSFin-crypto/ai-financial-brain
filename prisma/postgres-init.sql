@@ -858,11 +858,42 @@ CREATE TABLE "Top10JournalEntry" (
     "exitStatus" TEXT,
     "evalNote" TEXT,
     "tags" TEXT[],
+    "targetTouched" BOOLEAN,
+    "targetExecuted" BOOLEAN,
+    "targetHitAt" TIMESTAMP(3),
+    "stopTouched" BOOLEAN,
+    "exitAt" TIMESTAMP(3),
+    "exitReason" TEXT,
+    "maxFavorablePrice" DOUBLE PRECISION,
+    "maxAdversePrice" DOUBLE PRECISION,
+    "actualExitPrice" DOUBLE PRECISION,
+    "tradeStatus" TEXT,
+    "realizedPnlPct" DOUBLE PRECISION,
+    "companyName" TEXT,
+    "context" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Top10JournalEntry_pkey" PRIMARY KEY ("id")
 );
+
+-- ============================================================
+-- Ditar Top 10 — kolonat e targetit kundrejt rezultatit real
+-- (idempotente: shtojne kolonat ne tabelen ekzistuese ne prod)
+-- ============================================================
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "targetTouched" BOOLEAN;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "targetExecuted" BOOLEAN;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "targetHitAt" TIMESTAMP(3);
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "stopTouched" BOOLEAN;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "exitAt" TIMESTAMP(3);
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "exitReason" TEXT;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "maxFavorablePrice" DOUBLE PRECISION;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "maxAdversePrice" DOUBLE PRECISION;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "actualExitPrice" DOUBLE PRECISION;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "tradeStatus" TEXT;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "realizedPnlPct" DOUBLE PRECISION;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "companyName" TEXT;
+ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "context" JSONB;
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");

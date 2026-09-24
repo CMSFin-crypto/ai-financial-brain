@@ -13,7 +13,7 @@ import {
   GitCompareArrows, TrendingDown, ArrowUpRight, ArrowDownRight, LogIn, LogOut,
   BookOpen, History, Brain, Sparkles,
 } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 // Task 27: IBKR Validation Lab — backtest/OOS/walk-forward i së njëjtës strategji
 import { IBKRValidationLab } from './ibkr-validation-lab';
 // Task 26: Fundamental Context — popup për çdo kandidat (FAZA 1: vetëm informues)
@@ -1944,6 +1944,167 @@ function tagChip(tag: string) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Drill-down: detajet e plota të një tregtie të raportit javor
+// Spec: kur ka hyrë (date + orë) · çfarë parametrash u morën parasysh
+// në momentin e hapjes · çfarë score ka pasë · renditja në Top 10 ·
+// kur e ka mbyllë · a ka qenë sipas strategjisë · si ka qenë statusi.
+// ═══════════════════════════════════════════════════════════════
+
+// Data (+ orë kur ka) në ET. Bar-et ditore s'kanë orë — vetëm data.
+function fmtEtDateTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const midnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+  const dateStr = d.toLocaleDateString('sq-AL', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  if (midnight) return `${dateStr} · orë e panjohur (vlerësim me bar-e ditore)`;
+  const timeStr = d.toLocaleTimeString('sq-AL', { hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
+  return `${dateStr} · ${timeStr} ET`;
+}
+
+function exitReasonShqip(r: string | null | undefined): string {
+  switch (r) {
+    case 'profit_target': return 'Dalje në target (fitimi i planifikuar)';
+    case 'stop_loss': return 'Stop-loss i goditur';
+    case 'time_exit': return 'Skadoi dritarja e mbajtjes (10 ditë tregtimi)';
+    case 'order_not_filled': return 'Urdhri s\u2019u plotësua kurrë — çmimi s\u2019e kapi nivelin e hyrjes';
+    case 'still_open': return 'Ende e hapur';
+    default: return r || '—';
+  }
+}
+
+function DDRow({ k, v, vCls }: { k: string; v: string; vCls?: string }) {
+  return (
+    <span className="flex items-baseline gap-1 min-w-0">
+      <span className="text-muted-foreground/70 shrink-0">{k}:</span>
+      <span className={`font-medium truncate ${vCls || 'text-foreground/90'}`}>{v}</span>
+    </span>
+  );
+}
+
+function DDSection({ label, color, children }: { label: string; color: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className={`text-[9px] uppercase tracking-wide font-bold mb-1 ${color}`}>{label}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">{children}</div>
+    </div>
+  );
+}
+
+export function TradeDrilldown({ s }: { s: any }) {
+  const ctx = s.context || {};
+  const enteredAt = fmtEtDateTime(s.entryHitAt);
+  const exitedAt = fmtEtDateTime(s.exitAt);
+  const tb = tradeStatusBadge(s.status);
+  const risk = s.entry != null && s.stop != null ? s.entry - s.stop : null;
+  const plannedR = risk && risk > 0 && s.target != null ? Math.round(((s.target - s.entry) / risk) * 100) / 100 : null;
+  const closed = s.status !== 'OPEN';
+  return (
+    <div className="rounded-md border border-border/40 bg-muted/[0.04] px-2.5 py-2.5 space-y-2.5 my-1">
+      {/* 1. KUR KA HYRË */}
+      <DDSection label="Kur ka hyrë" color="text-cyan-400/80">
+        <DDRow k="Data e sinjalit" v={s.signalDate || '—'} />
+        <DDRow
+          k="Hyrja u kap"
+          v={enteredAt || 's\u2019u kap ende'}
+          vCls={enteredAt ? 'text-cyan-400' : 'text-amber-400/80'}
+        />
+        <DDRow k="Renditja në Top 10" v={s.rank != null ? `#${s.rank}` : '—'} />
+        <DDRow k="Score në momentin e sinjalit" v={s.score != null ? String(Math.round(s.score)) : '—'} vCls="text-amber-400" />
+      </DDSection>
+
+      {/* 2. PARAMETRAT NË MOMENTIN E HAPJES SË TREGTISË */}
+      <DDSection label="Parametrat e marra parasysh kur u hap tregtia" color="text-violet-400/80">
+        <DDRow k="Entry / Target / Stop" v={s.entry != null ? `${s.entry.toFixed(2)} / ${s.target?.toFixed(2) ?? '—'} / ${s.stop?.toFixed(2) ?? '—'}` : '—'} />
+        <DDRow k="R e planifikuar" v={plannedR != null ? `+${plannedR}R` : '—'} />
+        <DDRow k="Çmimi në momentin e skanimit" v={ctx.price != null ? `$${ctx.price.toFixed(2)}` : '—'} />
+        <DDRow k="RVOL (volumi relativ)" v={ctx.rvol != null ? `${ctx.rvol.toFixed(2)}x${ctx.rvolStatus ? ` (${ctx.rvolStatus})` : ''}` : '—'} vCls={ctx.rvol != null && ctx.rvol < 1.5 ? 'text-amber-400' : 'text-emerald-400/90'} />
+        <DDRow k="ATR% (volatiliteti)" v={ctx.atrPct != null ? `${ctx.atrPct.toFixed(1)}%${ctx.atrStatus ? ` (${ctx.atrStatus})` : ''}` : '—'} />
+        <DDRow k="Distanca nga 52w High" v={ctx.dist52wHighPct != null ? `${ctx.dist52wHighPct.toFixed(1)}%` : '—'} />
+        <DDRow k="Regjimi i tregut" v={ctx.regimeLevel || '—'} vCls={ctx.regimeLevel && ctx.regimeLevel !== 'OK' ? 'text-amber-400' : 'text-emerald-400/90'} />
+        <DDRow k="VIX / Breadth" v={`${ctx.vixLevel != null ? ctx.vixLevel.toFixed(1) : '—'}${ctx.vixStatus ? ` (${ctx.vixStatus})` : ''} / ${ctx.breadthPct != null ? ctx.breadthPct.toFixed(0) + '%' : '—'}${ctx.breadthStatus ? ` (${ctx.breadthStatus})` : ''}`} />
+        <DDRow k="Sektori" v={ctx.sector || '—'} />
+        <DDRow k="Arsyeja e hyrjes në Top 10" v={ctx.enterReason || '—'} />
+        {(ctx.tags || []).length > 0 && (
+          <span className="flex items-center gap-1 flex-wrap pt-0.5">
+            <span className="text-muted-foreground/70">Etiketat:</span>
+            {(ctx.tags || []).slice(0, 6).map(tagChip)}
+          </span>
+        )}
+      </DDSection>
+
+      {/* 3. KUR E KA MBYLLË */}
+      <DDSection label="Kur e ka mbyllë" color="text-orange-400/80">
+        <DDRow
+          k="Mbyllur më"
+          v={closed ? (exitedAt || (s.status === 'TARGET_NOT_HIT' ? 'pa dalje (s\u2019u mbush kurrë)' : 'data e padëshiruar')) : 'ende e hapur'}
+          vCls={closed ? 'text-orange-400' : 'text-amber-400'}
+        />
+        <DDRow k="Çmimi i daljes" v={s.actualExitPrice != null ? `$${s.actualExitPrice.toFixed(2)}` : '—'} />
+        <DDRow k="Arsyeja e daljes" v={exitReasonShqip(s.exitReason)} />
+        <DDRow
+          k="P/L i realizuar"
+          v={s.realizedPnlPct != null ? `${s.realizedPnlPct > 0 ? '+' : ''}${s.realizedPnlPct}%` : '—'}
+          vCls={(s.realizedPnlPct ?? 0) > 0 ? 'text-emerald-400' : (s.realizedPnlPct ?? 0) < 0 ? 'text-red-400' : undefined}
+        />
+        <DDRow
+          k="Rezultati"
+          v={s.rMultiple != null ? `${s.rMultiple > 0 ? '+' : ''}${s.rMultiple}R` : '—'}
+          vCls={(s.rMultiple ?? 0) > 0 ? 'text-emerald-400' : (s.rMultiple ?? 0) < 0 ? 'text-red-400' : undefined}
+        />
+        <DDRow k="Maksimumi favorabël (MFE)" v={s.mfeR != null ? `+${s.mfeR}R${s.maxFavorablePrice != null ? ` ($${s.maxFavorablePrice.toFixed(2)})` : ''}` : '—'} />
+        <DDRow k="Maksimumi i pafavorshëm (MAE)" v={s.maeR != null ? `-${Math.abs(s.maeR)}R${s.maxAdversePrice != null ? ` ($${s.maxAdversePrice.toFixed(2)})` : ''}` : '—'} />
+        {s.targetTouched && s.status !== 'TARGET_HIT' && (
+          <span className="text-[10px] text-lime-400/90">⚠ Çmimi e preku targetin por nuk u mbyll aty (prekje ≠ ekzekutim)</span>
+        )}
+      </DDSection>
+
+      {/* 4. A KA QENË SIPAS STRATEGJISË */}
+      <div>
+        <p className="text-[9px] uppercase tracking-wide font-bold mb-1 text-blue-400/80">A ka qenë sipas strategjisë</p>
+        {s.strategy?.compliant ? (
+          <div className="flex items-start gap-1.5 text-[11px]">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+            <span className="text-emerald-400/90">
+              Po — kandidat READY në Top 10 {s.rank != null ? `(#${s.rank})` : ''} me të gjithë parametrat brenda rregullave (RVOL ≥ 1.5x, regjim OK, ATR brenda kufijve).
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5 text-[11px]">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="text-amber-400/90">Hyrje me shkelje të strategjisë (marrë parasysh si kandidate, por me sinjalizim):</span>
+              <ul className="mt-0.5 space-y-0.5">
+                {(s.strategy?.notes || []).map((n: string, i: number) => (
+                  <li key={i} className="text-muted-foreground/90">• {n}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. SI KA QENË STATUSI */}
+      <div>
+        <p className="text-[9px] uppercase tracking-wide font-bold mb-1 text-muted-foreground/70">Si ka qenë statusi</p>
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-bold ${tb.cls}`}>{tb.label}</span>
+          {s.missReason && <span className="text-[10.5px] text-muted-foreground/90">{s.missReason}</span>}
+        </div>
+        {s.evalNote && (
+          <details className="text-[11px]">
+            <summary className="cursor-pointer text-muted-foreground/70 hover:text-foreground select-none">Diagnoza + mësimi (kliko)</summary>
+            <pre className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-sans bg-muted/10 rounded-md p-2 border border-border/30">
+              {s.evalNote}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Top10JournalCard() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1958,6 +2119,19 @@ export function Top10JournalCard() {
   const [weekly, setWeekly] = useState<any>(null);
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [showWeekly, setShowWeekly] = useState(false);
+
+  // Drill-down i raportit javor: çfarë tregtie është e hapur (chevron)
+  const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set());
+  const [showLegend, setShowLegend] = useState(false);
+  const [showAllMissed, setShowAllMissed] = useState(false);
+
+  const toggleTrade = useCallback((key: string) => {
+    setExpandedTrades((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
 
   // Setup-i i tabelave (1 klik) kur mungojnë
   const [setupBusy, setSetupBusy] = useState(false);
@@ -2238,11 +2412,32 @@ export function Top10JournalCard() {
         {/* Raporti javor — i shkurtër, automatik */}
         {showWeekly && (
           <div className="mt-3 rounded-lg border border-cyan-500/20 bg-muted/5 p-3">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <History className="w-3.5 h-3.5 text-cyan-400" />
               <p className="text-[12px] font-bold text-foreground">Raporti Javor — Target Hit</p>
               <span className="text-[10px] text-muted-foreground/60">{weekly?.window?.from} → {weekly?.window?.to}</span>
+              <button
+                onClick={() => setShowLegend((v) => !v)}
+                className="ml-auto flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-400/90 hover:bg-cyan-500/20 transition-colors"
+              >
+                <Info className="w-3 h-3" />
+                Çfarë tregojnë numrat?
+                {showLegend ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
             </div>
+            {/* Legjenda — çfarë është çdo tregues dhe si ndodh ngjarja */}
+            {showLegend && (
+              <div className="mb-2.5 rounded-md border border-cyan-500/15 bg-cyan-500/[0.03] p-2.5 space-y-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                <p><strong className="text-foreground">Top 10 candidates</strong> — sa sinjale READY u regjistruan në ditar brenda dritares (deri 10 në ditë). Çdo ditë skaneri zgjedh kandidatët me score më të lartë; për çdo kandidat ruhen nivelet Entry/Target/Stop dhe parametrat e momentit (RVOL, ATR%, regjimi, VIX, breadth).</p>
+                <p><strong className="text-foreground">Si ndodh ngjarja</strong> — pas sinjalit, çmimi ndiqet live (vëzhguesi çdo 15 min) dhe me bar-e ditore nga cron-i në 05:00 ET-ora: kur <span className="font-mono">high ≥ Entry</span> hyrja konsiderohet e kapur; pastaj nëse <span className="font-mono">high ≥ Target</span> → TARGET_HIT, nëse <span className="font-mono">low ≤ Stop</span> → STOP_HIT (nëse të dyja në të njëjtën ditë → konservativisht stop-i); nëse asnjë brenda 10 ditësh tregtimi → skadim.</p>
+                <p><strong className="text-emerald-400">Target hit</strong> — tregtitë që e arritën/ekzekutuan targetin e planifikuar.</p>
+                <p><strong className="text-red-400">Stop hit</strong> — tregtitë që goditën stop-loss (−1R çdo e tregtisë e tillë).</p>
+                <p><strong className="text-amber-400">Open</strong> — ende aktive: hyrja u kap por as target as stop s’janë goditur ende.</p>
+                <p><strong className="text-foreground">Expired</strong> — skaduan brenda dritares 10-ditore pa asnjë nivel, ose hyrja nuk u kap kurrë (NO_FILL).</p>
+                <p><strong className="text-cyan-400">Target hit rate</strong> — Target hit / (Target hit + Stop hit) — vetëm tregtitë e vendosura; Open/Expired s’hyjnë në pjesëtim.</p>
+                <p className="text-[10px] text-muted-foreground/70">Kliko <ChevronDown className="w-3 h-3 inline" /> në çdo rresht të tabelës ose në listat Target Hit / Target Missed për detajet e plota: kur ka hyrë, parametrat e hapjes, score, renditja, kur u mbyll, përputhshmëria me strategjinë dhe statusi.</p>
+              </div>
+            )}
             {weeklyLoading && (
               <div className="flex items-center gap-2 py-3 justify-center">
                 <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
@@ -2264,12 +2459,13 @@ export function Top10JournalCard() {
                   <span>Target hit rate: <strong className="text-cyan-400">{weekly.hitRate != null ? weekly.hitRate + '%' : '—'}</strong></span>
                 </div>
 
-                {/* Tabela: Kompania | Entry | Target | Stop | Status | Target hit | P/L | R */}
+                {/* Tabela: Kompania | Entry | Target | Stop | Status | Target hit | P/L | R — me drill-down */}
                 {(weekly.signals?.length ?? 0) > 0 && (
                   <div className="overflow-x-auto -mx-1 px-1">
                     <table className="w-full text-[11px] border-collapse">
                       <thead>
                         <tr className="text-[9.5px] uppercase tracking-wide text-muted-foreground/70 border-b border-border/40">
+                          <th className="w-6 py-1.5"></th>
                           <th className="text-left py-1.5 pr-2 font-medium">Kompania</th>
                           <th className="text-right py-1.5 px-1.5 font-medium">Entry</th>
                           <th className="text-right py-1.5 px-1.5 font-medium">Target</th>
@@ -2283,39 +2479,59 @@ export function Top10JournalCard() {
                       <tbody>
                         {weekly.signals.map((s: any, i: number) => {
                           const tb = tradeStatusBadge(s.status);
+                          const dk = `${s.ticker}|${s.signalDate}|${i}`;
+                          const isOpen = expandedTrades.has(dk);
                           return (
-                            <tr key={`${s.ticker}-${s.signalDate}-${i}`} className="border-b border-border/20 hover:bg-muted/20">
-                              <td className="py-1.5 pr-2">
-                                <div className="flex flex-col leading-tight">
-                                  <span className="font-bold text-foreground">{s.ticker}</span>
-                                  <span className="text-[9.5px] text-muted-foreground/60 truncate max-w-[110px]">{s.companyName || '—'}</span>
-                                </div>
-                              </td>
-                              <td className="text-right py-1.5 px-1.5 font-mono text-foreground/90">{s.entry != null ? s.entry.toFixed(2) : '—'}</td>
-                              <td className="text-right py-1.5 px-1.5 font-mono text-emerald-400/90">{s.target != null ? s.target.toFixed(2) : '—'}</td>
-                              <td className="text-right py-1.5 px-1.5 font-mono text-red-400/80">{s.stop != null ? s.stop.toFixed(2) : '—'}</td>
-                              <td className="text-center py-1.5 px-1.5">
-                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${tb.cls}`}>{tb.label}</span>
-                              </td>
-                              <td className="text-center py-1.5 px-1.5">
-                                {s.status === 'TARGET_HIT' ? (
-                                  <span className="text-emerald-400 font-bold text-[11px]">Po</span>
-                                ) : s.status === 'OPEN' ? (
-                                  <span className="text-amber-400/80 text-[10px]">Jo ende</span>
-                                ) : (
-                                  <span className="text-muted-foreground/70 text-[11px]">Jo</span>
-                                )}
-                                {s.targetTouched && s.status !== 'TARGET_HIT' && (
-                                  <span className="ml-1 text-[9px] text-lime-400" title="Çmimi e preku targetin por nuk u ekzekutua aty">preku</span>
-                                )}
-                              </td>
-                              <td className={`text-right py-1.5 px-1.5 font-mono ${(s.realizedPnlPct ?? 0) > 0 ? 'text-emerald-400' : (s.realizedPnlPct ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
-                                {s.realizedPnlPct != null ? `${s.realizedPnlPct > 0 ? '+' : ''}${s.realizedPnlPct}%` : '—'}
-                              </td>
-                              <td className={`text-right py-1.5 pl-1.5 font-mono ${(s.rMultiple ?? 0) > 0 ? 'text-emerald-400' : (s.rMultiple ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
-                                {s.rMultiple != null ? `${s.rMultiple > 0 ? '+' : ''}${s.rMultiple}R` : '—'}
-                              </td>
-                            </tr>
+                            <Fragment key={dk}>
+                              <tr key={dk} className={`border-b border-border/20 ${isOpen ? 'bg-cyan-500/[0.06]' : 'hover:bg-muted/20'}`}>
+                                <td className="py-1.5">
+                                  <button
+                                    onClick={() => toggleTrade(dk)}
+                                    title="Detajet e tregtisë — kur ka hyrë, parametrat, score, renditja, kur u mbyll, strategjia, statusi"
+                                    className="flex items-center justify-center w-5 h-5 rounded hover:bg-cyan-500/15 text-cyan-400/80 hover:text-cyan-400 transition-colors"
+                                  >
+                                    {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  </button>
+                                </td>
+                                <td className="py-1.5 pr-2">
+                                  <div className="flex flex-col leading-tight">
+                                    <span className="font-bold text-foreground">{s.ticker}</span>
+                                    <span className="text-[9.5px] text-muted-foreground/60 truncate max-w-[110px]">{s.companyName || '—'}</span>
+                                  </div>
+                                </td>
+                                <td className="text-right py-1.5 px-1.5 font-mono text-foreground/90">{s.entry != null ? s.entry.toFixed(2) : '—'}</td>
+                                <td className="text-right py-1.5 px-1.5 font-mono text-emerald-400/90">{s.target != null ? s.target.toFixed(2) : '—'}</td>
+                                <td className="text-right py-1.5 px-1.5 font-mono text-red-400/80">{s.stop != null ? s.stop.toFixed(2) : '—'}</td>
+                                <td className="text-center py-1.5 px-1.5">
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${tb.cls}`}>{tb.label}</span>
+                                </td>
+                                <td className="text-center py-1.5 px-1.5">
+                                  {s.status === 'TARGET_HIT' ? (
+                                    <span className="text-emerald-400 font-bold text-[11px]">Po</span>
+                                  ) : s.status === 'OPEN' ? (
+                                    <span className="text-amber-400/80 text-[10px]">Jo ende</span>
+                                  ) : (
+                                    <span className="text-muted-foreground/70 text-[11px]">Jo</span>
+                                  )}
+                                  {s.targetTouched && s.status !== 'TARGET_HIT' && (
+                                    <span className="ml-1 text-[9px] text-lime-400" title="Çmimi e preku targetin por nuk u ekzekutua aty">preku</span>
+                                  )}
+                                </td>
+                                <td className={`text-right py-1.5 px-1.5 font-mono ${(s.realizedPnlPct ?? 0) > 0 ? 'text-emerald-400' : (s.realizedPnlPct ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                  {s.realizedPnlPct != null ? `${s.realizedPnlPct > 0 ? '+' : ''}${s.realizedPnlPct}%` : '—'}
+                                </td>
+                                <td className={`text-right py-1.5 pl-1.5 font-mono ${(s.rMultiple ?? 0) > 0 ? 'text-emerald-400' : (s.rMultiple ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                  {s.rMultiple != null ? `${s.rMultiple > 0 ? '+' : ''}${s.rMultiple}R` : '—'}
+                                </td>
+                              </tr>
+                              {isOpen && (
+                                <tr className="border-b border-border/20">
+                                  <td colSpan={9} className="p-0">
+                                    <TradeDrilldown s={s} />
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           );
                         })}
                       </tbody>
@@ -2323,7 +2539,7 @@ export function Top10JournalCard() {
                   </div>
                 )}
 
-                {/* Dy listat: Target Hit / Target Missed me arsye */}
+                {/* Dy listat: Target Hit / Target Missed — me drill-down */}
                 <div className="grid sm:grid-cols-2 gap-2.5">
                   <div className="rounded-md border border-emerald-500/15 bg-emerald-500/[0.03] p-2">
                     <p className="text-[10px] uppercase tracking-wide text-emerald-400/80 mb-1.5 font-bold">Target Hit ({weekly.targetHitList?.length ?? 0})</p>
@@ -2331,16 +2547,30 @@ export function Top10JournalCard() {
                       <p className="text-[11px] text-muted-foreground/60">Asnjë këtë javë.</p>
                     ) : (
                       <div className="space-y-1">
-                        {weekly.targetHitList.map((s: any, i: number) => (
-                          <div key={i} className="flex items-center gap-1.5 text-[11px]">
-                            <span className="font-bold text-foreground">{s.ticker}</span>
-                            <span className="text-emerald-400/90">{s.status === 'PARTIAL_TARGET' ? 'partial target' : 'target hit'}</span>
-                            {s.targetHitAt && <span className="text-[9.5px] text-muted-foreground/50">{new Date(s.targetHitAt).toLocaleDateString('sq-AL')}</span>}
-                            {s.rMultiple != null && (
-                              <span className={`font-mono ${s.rMultiple > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.rMultiple > 0 ? '+' : ''}{s.rMultiple}R</span>
-                            )}
-                          </div>
-                        ))}
+                        {weekly.targetHitList.map((s: any, i: number) => {
+                          const dk = `hit|${s.ticker}|${s.signalDate}|${i}`;
+                          const open = expandedTrades.has(dk);
+                          return (
+                            <div key={dk}>
+                              <div className="flex items-center gap-1.5 text-[11px]">
+                                <button
+                                  onClick={() => toggleTrade(dk)}
+                                  title="Kur hyri · parametrat · score · renditja · kur u mbyll · strategjia · statusi"
+                                  className="flex items-center justify-center w-4.5 h-4.5 rounded hover:bg-emerald-500/15 text-emerald-400/80 hover:text-emerald-400 transition-colors"
+                                >
+                                  {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                </button>
+                                <span className="font-bold text-foreground">{s.ticker}</span>
+                                <span className="text-emerald-400/90">{s.status === 'PARTIAL_TARGET' ? 'partial target' : 'target hit'}</span>
+                                {s.targetHitAt && <span className="text-[9.5px] text-muted-foreground/50">{new Date(s.targetHitAt).toLocaleDateString('sq-AL')}</span>}
+                                {s.rMultiple != null && (
+                                  <span className={`font-mono ${s.rMultiple > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.rMultiple > 0 ? '+' : ''}{s.rMultiple}R</span>
+                                )}
+                              </div>
+                              {open && <TradeDrilldown s={s} />}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2350,14 +2580,34 @@ export function Top10JournalCard() {
                       <p className="text-[11px] text-muted-foreground/60">Asnjë — të gjitha të arritura.</p>
                     ) : (
                       <div className="space-y-1">
-                        {weekly.targetMissedList.map((s: any, i: number) => (
-                          <div key={i} className="flex flex-col gap-0.5 text-[11px]">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-foreground">{s.ticker}</span>
-                              <span className="text-muted-foreground/80">{s.missReason || '—'}</span>
+                        {(showAllMissed ? weekly.targetMissedList : weekly.targetMissedList.slice(0, 10)).map((s: any, i: number) => {
+                          const dk = `miss|${s.ticker}|${s.signalDate}|${i}`;
+                          const open = expandedTrades.has(dk);
+                          return (
+                            <div key={dk}>
+                              <div className="flex items-center gap-1.5 text-[11px]">
+                                <button
+                                  onClick={() => toggleTrade(dk)}
+                                  title="Kur hyri · parametrat · score · renditja · kur u mbyll · strategjia · statusi"
+                                  className="flex items-center justify-center w-4.5 h-4.5 rounded hover:bg-red-500/15 text-red-400/70 hover:text-red-400 transition-colors"
+                                >
+                                  {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                </button>
+                                <span className="font-bold text-foreground">{s.ticker}</span>
+                                <span className="text-muted-foreground/80">{s.missReason || '—'}</span>
+                              </div>
+                              {open && <TradeDrilldown s={s} />}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
+                        {weekly.targetMissedList.length > 10 && (
+                          <button
+                            onClick={() => setShowAllMissed((v) => !v)}
+                            className="text-[10px] text-cyan-400/80 hover:text-cyan-400 underline underline-offset-2"
+                          >
+                            {showAllMissed ? 'shfaq vetëm 10 të parat' : `trego të gjitha (${weekly.targetMissedList.length})`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

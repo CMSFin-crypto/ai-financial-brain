@@ -1040,6 +1040,7 @@ model Top10JournalEntry {
   targetExecuted    Boolean?  // dalja reale në/o target (exit ≥ target)
   targetHitAt       DateTime? // kur u prek targeti (ose null)
   stopTouched       Boolean?  // low ≤ stop pas hyrjes
+  exitAt            DateTime? // kur u mbyll tregtia (target/stop/skadim — data+ora reale kur ka)
   exitReason        String?   // profit_target | stop_loss | time_exit | order_not_filled | still_open
   maxFavorablePrice Float?    // high-i maksimal pas hyrjes ($)
   maxAdversePrice   Float?    // low-i minimal pas hyrjes ($)
