@@ -550,3 +550,20 @@ Stage Summary:
 - exitAt regjistrohet me oren reale intraday nga vëzhguesi live (çdo 15 min) dhe me daten e bar-it nga cron-i ditor — hyrjet e vjetra (para gjurmimit) shfaqin "data e paregjistruar"
 - Legjenda e brendshme ne UI sqaron treguesit pa pasur nevoje per dokumentacion te jashtem
 - ⚠️ SIGURIA (pronë e vjetër e pashqyruar): token-i GitHub ghp_2vYs... ka qarkulluar perseri ne chat — duhet revokuar PAS ketij push-i dhe zëvendësuar me nje te ri
+
+---
+Task ID: 32
+Agent: Super Z (main)
+Task: Vazhdimi i sesionit — sinkronizimi i ambientit + verifikimi i prod pas Task 31 + dorëzimi i shpjegimit të treguesve (përgjigja finale që s'arriti të dërgohej)
+
+Work Log:
+- Ambienti lokal ishte restauruar prapa (HEAD eaed998/Task 16, vetëm mode-changes 644→755 pa përmbajtje) → git fetch + reset --hard c39931b (remote HEAD) → lokal == remote
+- Remote kishte gjithë punën e mbetur: Task 30 (target tracking 16 fusha/8 statuse, d3333b6) + Task 31 (dropdown drill-down + legjenda, 450342f + d7d49e9 + c39931b) — të dyja të push-uara
+- Verifikimi live i prod (25 Shtator): dbActive=true, dritarja 2026-09-17→09-24, 144 sinjale, TARGET_HIT 2, STOP_HIT 16, OPEN 74, EXPIRED 52, hit rate 11% (nga 6% — OKTA +2.58R u mbyll me sukses)
+- Verifikimi i drill-down në API: signals[] me të 28 fushat — OKTA entryHitAt 2026-09-23, exitAt 2026-09-24T14:46:36Z (orë reale nga vëzhguesi live), actualExit 207.58, P/L +8.3%, R +2.58, score 82, rank #3, strategy.compliant=false (RVOL 0.82x<1.5x, regjimi CAUTION) + context i plotë (rvol/atr/regjim/vix/breadth/sektor/tags/enterReason)
+- ⚠️ SIGURIA: token-i ghp_2vYs…pnSh u paste PËRSËRI (3 herë gjithsej në chat) dhe aktron ende aktiv (fetch/ls-remote punuan) — i njëjti token i vjetër, s'ka qenë revokuar. Urdhëresa përfundimtare: revokim + zëvendësim (Vercel s'varet nga PAT)
+
+Stage Summary:
+- Repo sinkron në c39931b; prod i verifikuar me numra të freskët (hit rate 6%→11% pas OKTA +2.58R)
+- Shpjegimi i plotë i 6 treguesve + udhëzimi i dropdown-it i dorëzuar userit në këtë sesion
+- Hapi i mbetur kritik është vetëm revokimi i token-it nga ana e userit
