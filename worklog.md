@@ -589,3 +589,30 @@ Stage Summary:
 - Çdo numër i raportit javor dhe çdo status stoki tani shpjegohet brenda UI me 1 klik — rregulli i përgjithshëm + të dhënat specifike të asaj tregtie
 - 4 pyetjet semantike u përgjigjen me kod + të dhëna live (jo supozime); daljet NO_FILL tani janë të qarta se s'janë dështime tregtie
 - Commit: e70013b (push)
+
+---
+Task ID: 34
+Agent: Super Z (main)
+Task: "Çfarë do të vendosja në raport" — ndarja në dy pamje (kohorta e sinjaleve ≠ tregtitë e mbyllura), 3 metrikat kryesore me emër të qartë, PROFITABLE_TIME_EXIT, krahasimi sipas regjimit/sektorit/score-it
+
+Work Log:
+- KONFIRMIMI I LOGJIKËS SË 65 SKADIMEVE (me të dhëna reale prod): 126 = 61 mbyllur + 14 open-me-pozicion + 29 në pritje + 22 NO_FILL (shuma e saktë); 65 = 25 PROFITABLE + 18 TIME_EXIT + 22 NO_FILL
+- BACKEND (top10-journal.ts):
+  * Query u zgjerua: scanDate në dritare OR exitAt në dritare (mbylljet tërhiqen edhe nga sinjale të javës së kaluar); list = KOHORTA (scanDate në dritare), fetched = gjithçka
+  * weeklyRowFromEntry() e nxjerrë si funksion i përbashkët ( mapperi identik për të dyja pamjet); outcomeLabelShqip() — PARTIAL_TARGET → PROFITABLE_TIME_EXIT
+  * base.cohort: {created, filledClosed, filledOpen, waiting, noFill} — fallback entryHit=true për rreshtat e vjetër pa orë
+  * base.closedView: {total, netR, legacyNoExitDate, byOutcome[me R neto për secilën], trades[me drill-down]} — fallback: exitAt → targetHitAt → sinjal në dritare (mbylljet e trashëguara pa orë, 38 këtë javë, të etiketuara)
+  * base.headMetrics: targetVsStop (3/18=17%), profitableClosed (27/61=44%), netExpectancyR (−0.08R) + netR (−5.07R)
+  * base.comparison: byRegime/bySector/byScore (bucket <75, 75–79, 80–84, 85+) — count, wins, netR, avgR për grup
+- UI (ibkr-strategy.tsx):
+  * Toggle dy pamjesh: 'Kohorta e Sinjaleve (126)' | 'Tregtitë e Mbyllura (61)' + shpjegimi i ndryshimit
+  * 3 metrikat kryesore në krye (të dyja pamjet) me popup-shpjegim + formulën; u hoq grid-i i vjetër 4-kartësh (i dublikuar)
+  * Pamja e mbylljeve: 4 kartela daljesh me numër + R neto + legjenda e niomit PROFITABLE_TIME_EXIT + tabela e mbylljeve (Sinjali, Mbyllur më, Dalja, Statusi me popup, P/L, R + drill-down) + 3 tabelat e krahasimit me interpretim (tregu/hyrja/targeti/raportimi)
+  * Badge-et: PARTIAL → PROFIT_TIME_EXIT; statusWhy + hit list të përditësuara
+- VERIFIKIMI: tsc 145 = baza 0 të reja; build OK; 42/42 teste; live prod — API kthen cohort/headMetrics/closedView/comparison të plota; UI verifikuar me agent-browser (të dyja pamjet, kartelat, tabelat e krahasimit); screenshot-et në download/raporti-*.png
+- ZBULIMI I ANALIZËS SË PARË LIVE: CAUTION humb −4.39R nga 22 tregti ndërsa OK vetëm −0.68R nga 39 → regjimi është fajtor kryesor; score 80–84 DËSHTON keq (−3.27R nga 13) ndërsa <75 është pothuaj neutral (+0.13R) → score i lartë s'garanton tregti më të mirë në këtë regjim; Healthcare −3.63R është sektori më i dobët
+
+Stage Summary:
+- Dy pamjet e ndara plotësisht funksionale: sinjalet e krijuara (gjendja e kohortëss) ≠ tregtitë e mbyllura (rezultatet me R neto) — konfirmohet logjika e skadimeve dhe expectancy neto
+- Krahasimi jep përgjigjen e parë reale: problemi kryesor është REGJIMI (CAUTION), jo targeti 2R (25 tregti mbyllen në fitim me kohë) dhe jo hyrja (NO_FILL vetëm 22 pa dëmtim)
+- Commit: 681b8bd (push, deploy automatik verifikuar)
