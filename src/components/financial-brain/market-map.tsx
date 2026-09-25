@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
+import type { WhyNewsItem } from '@/lib/market-map-news';
 import {
   LayoutGrid,
   RefreshCw,
@@ -10,12 +11,15 @@ import {
   TrendingDown,
   MousePointerClick,
   Minus,
+  Newspaper,
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════
 // MAP E TREGUT — heatmap stil Finviz
 // Madhësia e pllakave = kapitalizimi i tregut (market cap)
 // Ngjyra = ndryshimi ditor % (e gjelbër = majtje, e kuqe = rënie)
+// Hover mbi pllakë → popup Finviz-style: "Pse lëviz" (lajmet më të fundit)
+// Hover mbi sektor (në popup ose në kokën e bllokut) → rrethohet me të verdhë
 // Kliko një kompani → hap Analizën Teknike për të
 // ═══════════════════════════════════════════════════════════════
 
@@ -183,6 +187,30 @@ function fmtTime(ts: number): string {
   return d.toLocaleTimeString('sq-AL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// "5 min më parë" / "3 orë më parë" / "dje" — për lajmet e popup-it
+function timeAgo(iso: string): string {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return '';
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1) return 'tani';
+  if (min < 60) return `${min} min më parë`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} orë më parë`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'dje' : `${d} ditë më parë`;
+}
+
+// ─── Gjendja e lajmeve "pse lëviz" për popup-in ───
+
+type WhyState =
+  | { status: 'idle' }
+  | { status: 'loading'; symbol: string }
+  | { status: 'ok'; symbol: string; items: WhyNewsItem[] }
+  | { status: 'empty'; symbol: string }
+  | { status: 'error'; symbol: string };
+
+const WHY_CLIENT_TTL_MS = 5 * 60 * 1000;
+
 // ─── Strukturat e layout-it ───
 
 interface CompanyTile {
@@ -212,6 +240,12 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [hovered, setHovered] = useState<{ stock: MarketMapStock; x: number; y: number } | null>(null);
+  // Sektori i theksuar me të verdhë (hover në popup ose në kokën e bllokut në hartë)
+  const [hoverSectorKey, setHoverSectorKey] = useState<string | null>(null);
+  // Lajmet "pse lëviz" për ticker-in nën mouse
+  const [whyState, setWhyState] = useState<WhyState>({ status: 'idle' });
+  const whyCacheRef = useRef<Map<string, { items: WhyNewsItem[]; ts: number }>>(new Map());
+  const hideTimerRef = useRef<number | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -371,11 +405,72 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
     return Array.from(map.entries()).map(([key, label]) => ({ key, label }));
   }, [stocks]);
 
+  // ─── Lajmet "pse lëviz" — debounce 300ms + cache klienti 5 min ───
+  // Fetch vetëm kur pushimi qëndron mbi pllakë (jo gjatë një kalimi të shpejtë).
+  const hoveredSymbol = hovered?.stock.symbol ?? null;
+  useEffect(() => {
+    if (!hoveredSymbol) {
+      setWhyState({ status: 'idle' });
+      return;
+    }
+    const cached = whyCacheRef.current.get(hoveredSymbol);
+    if (cached && Date.now() - cached.ts < WHY_CLIENT_TTL_MS) {
+      setWhyState(
+        cached.items.length > 0
+          ? { status: 'ok', symbol: hoveredSymbol, items: cached.items }
+          : { status: 'empty', symbol: hoveredSymbol },
+      );
+      return;
+    }
+    setWhyState({ status: 'loading', symbol: hoveredSymbol });
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/market-map/why?symbol=${encodeURIComponent(hoveredSymbol)}`, {
+          cache: 'no-store',
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        const items: WhyNewsItem[] = Array.isArray(data?.items) ? data.items : [];
+        whyCacheRef.current.set(hoveredSymbol, { items, ts: Date.now() });
+        setWhyState(
+          items.length > 0
+            ? { status: 'ok', symbol: hoveredSymbol, items }
+            : { status: 'empty', symbol: hoveredSymbol },
+        );
+      } catch {
+        if (!cancelled) setWhyState({ status: 'error', symbol: hoveredSymbol });
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [hoveredSymbol]);
+
   // ─── Render ───
 
-  const handleMouseMove = (e: React.MouseEvent, stock: MarketMapStock) => {
-    setHovered({ stock, x: e.clientX, y: e.clientY });
-  };
+  // Popup-i është interaktiv (sektori brenda tij) — fshehja bëhet me vonesë
+  // që të ketë kohë miu të hyjë në të, si te Finviz.
+  const cancelHide = useCallback(() => {
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleHide = useCallback(
+    (delay = 380) => {
+      if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = window.setTimeout(() => {
+        setHovered(null);
+        setHoverSectorKey(null);
+      }, delay);
+    },
+    [],
+  );
+
+  useEffect(() => cancelHide, [cancelHide]); // pa timer të mbetur në unmount
 
   const tooltip = useMemo(() => {
     if (!hovered) return null;
@@ -391,18 +486,20 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
       wSum > 0
         ? withChg.reduce((sum, m) => sum + (m.marketCap || 0) * m.changePercent, 0) / wSum
         : null;
-    // Lartësia e parashikuar për pozicionim pa prerje
+    // Lartësia e parashikuar për pozicionim pa prerje (kokë + "pse lëviz" + listë + fund)
     const listRows = Math.min(members.length, 20);
-    const estH = 132 + listRows * 17 + 34;
+    const estH = 132 + 118 + listRows * 17 + 34;
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
     return (
       <div
-        className="fixed z-50 pointer-events-none overflow-hidden rounded-lg border border-slate-600 bg-slate-900/95 shadow-2xl w-[300px]"
+        className="fixed z-50 overflow-hidden rounded-lg border border-slate-600 bg-slate-900/95 shadow-2xl w-[300px]"
         style={{
           left: Math.max(8, Math.min(hovered.x + 14, vw - 310)),
           top: Math.max(8, Math.min(hovered.y + 14, vh - estH - 10)),
         }}
+        onMouseEnter={cancelHide}
+        onMouseLeave={() => scheduleHide(180)}
       >
         {/* Kokë — kompania mbi të cilën është miu */}
         <div className="px-3 py-2">
@@ -433,10 +530,73 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
           </div>
         </div>
 
-        {/* Kreu i listës së sektorit */}
-        <div className="flex items-center justify-between border-t border-slate-700/70 bg-slate-800/70 px-3 py-1">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-300">
+        {/* PSE LËVIZ — lajmet më të fundit si te Finviz: çfarë e shtyn çmimin */}
+        <div className="border-t border-slate-700/70 px-3 py-1.5">
+          <div className="mb-1 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Newspaper className="h-3 w-3 text-amber-400" />
+              <span className="text-[9.5px] font-bold uppercase tracking-wide text-amber-400/90">Pse lëviz</span>
+            </div>
+            {whyState.status === 'loading' && (
+              <span className="animate-pulse text-[9px] text-slate-500">po kërkon lajmet…</span>
+            )}
+          </div>
+          {whyState.status === 'loading' && (
+            <div className="space-y-1.5">
+              <div className="h-2.5 w-full animate-pulse rounded bg-slate-700/70" />
+              <div className="h-2.5 w-3/4 animate-pulse rounded bg-slate-700/50" />
+            </div>
+          )}
+          {whyState.status === 'ok' && whyState.symbol === stock.symbol && (
+            <div className="space-y-1.5">
+              {whyState.items.map((item, i) => (
+                <a
+                  key={`${item.url}-${i}`}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group block rounded px-1 py-0.5 -mx-1 hover:bg-slate-700/40"
+                  title={item.headline}
+                >
+                  <div className="line-clamp-2 text-[10.5px] leading-snug text-sky-300/90 group-hover:text-sky-200">
+                    {item.headline}
+                  </div>
+                  <div className="text-[9px] text-slate-500">
+                    {item.source} · {timeAgo(item.publishedAt)}
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+          {whyState.status === 'empty' && whyState.symbol === stock.symbol && (
+            <div className="text-[10px] italic text-slate-500">Pa lajme të fundit për {stock.symbol}</div>
+          )}
+          {whyState.status === 'error' && whyState.symbol === stock.symbol && (
+            <div className="text-[10px] italic text-slate-500">Lajmet s'u ngarkuan — provo përsëri</div>
+          )}
+          {((whyState.status === 'loading' && whyState.symbol !== stock.symbol) ||
+            whyState.status === 'ok' ||
+            whyState.status === 'empty' ||
+            whyState.status === 'error') &&
+            whyState.symbol !== stock.symbol && <div className="h-2.5" />}
+        </div>
+
+        {/* Kreu i listës së sektorit — hover → sektori rrethohet me të verdhë në hartë */}
+        <div
+          className="group/sector flex cursor-pointer items-center justify-between border-t border-slate-700/70 bg-slate-800/70 px-3 py-1 transition-colors hover:border-amber-400/50 hover:bg-amber-400/15"
+          onMouseEnter={() => {
+            cancelHide();
+            setHoverSectorKey(stock.sectorKey);
+          }}
+          onMouseLeave={() => {
+            setHoverSectorKey(null);
+            scheduleHide(180);
+          }}
+          title="Kalo mbi sektor për ta theksuar me të verdhë në hartë"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-300 group-hover/sector:text-amber-200">
             {stock.sector} · {members.length} kompani
+            <span className="ml-1 text-amber-400/60 opacity-0 transition-opacity group-hover/sector:opacity-100">◑</span>
           </span>
           {sectorAvg != null && Number.isFinite(sectorAvg) && (
             <span className={`text-[10px] font-bold ${sectorHeaderColor(sectorAvg)}`}>
@@ -480,7 +640,7 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
         )}
       </div>
     );
-  }, [hovered, stocks, onSelectStock]);
+  }, [hovered, stocks, onSelectStock, whyState, hoverSectorKey, cancelHide, scheduleHide]);
 
   return (
     <motion.div
@@ -500,7 +660,7 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Map e Tregut (stil Finviz)</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Kompanitë më të mëdha sipas sektorëve · madhësia = kapitalizimi · ngjyra = ndryshimi ditor
+                  Kompanitë më të mëdha sipas sektorëve · madhësia = kapitalizimi · ngjyra = ndryshimi ditor · hover mbi pllakë shfaq "Pse lëviz" (lajmet e fundit)
                 </p>
               </div>
             </div>
@@ -606,10 +766,12 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
               </div>
             ) : (
               width > 0 &&
-              sectorBlocks.map(block => (
+              sectorBlocks.map(block => {
+                const sectorHi = hoverSectorKey === block.key;
+                return (
                 <div
                   key={block.key}
-                  className="absolute"
+                  className="absolute transition-[box-shadow,outline-color] duration-150"
                   style={{
                     left: block.rect.x,
                     top: block.rect.y,
@@ -619,12 +781,25 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
                     border: '1px solid rgba(148, 163, 184, 0.25)',
                     borderRadius: 4,
                     overflow: 'hidden',
+                    // Rrethimi i verdhë i sektorit (stil Finviz) kur i kryhet hover
+                    outline: sectorHi ? '2.5px solid #facc15' : '2.5px solid transparent',
+                    outlineOffset: -2,
+                    boxShadow: sectorHi ? 'inset 0 0 24px rgba(250, 204, 21, 0.14)' : 'none',
+                    zIndex: sectorHi ? 30 : undefined,
                   }}
                 >
-                  {/* Kokëfaqa e sektorit */}
+                  {/* Kokëfaqa e sektorit — hover këtu e rrethon bllokun me të verdhë */}
                   {block.rect.h >= 64 && block.rect.w >= 90 && !selectedSector && (
-                    <div className="flex items-center justify-between gap-1 px-1.5" style={{ height: HEADER_H }}>
-                      <span className="text-[10px] font-semibold text-slate-200 truncate">{block.label}</span>
+                    <div
+                      className="flex cursor-pointer items-center justify-between gap-1 px-1.5 hover:bg-amber-400/10"
+                      style={{ height: HEADER_H }}
+                      onMouseEnter={() => setHoverSectorKey(block.key)}
+                      onMouseLeave={() => setHoverSectorKey(null)}
+                      title="Sektori: kalo mbi emër për ta theksuar"
+                    >
+                      <span className={`text-[10px] font-semibold truncate ${sectorHi ? 'text-amber-200' : 'text-slate-200'}`}>
+                        {block.label}
+                      </span>
                       <span className={`text-[10px] font-semibold whitespace-nowrap ${sectorHeaderColor(block.avgChange)}`}>
                         {fmtPct(block.avgChange)}
                       </span>
@@ -658,8 +833,12 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
                           lineHeight: 1.15,
                           padding: '0 2px',
                         }}
-                        onMouseMove={e => handleMouseMove(e, tile.stock)}
-                        onMouseLeave={() => setHovered(null)}
+                        onMouseEnter={e => {
+                          cancelHide();
+                          setHovered({ stock: tile.stock, x: e.clientX, y: e.clientY });
+                        }}
+                        onMouseMove={cancelHide}
+                        onMouseLeave={() => scheduleHide()}
                         onClick={() => onSelectStock?.(tile.stock.symbol)}
                         title={showBoth ? undefined : `${tile.stock.symbol} ${fmtPct(tile.stock.changePercent)}`}
                       >
@@ -678,7 +857,8 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
                     );
                   })}
                 </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -692,7 +872,7 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
               <span className="text-[10px] text-muted-foreground">+5%</span>
             </div>
             <span className="text-[10px] text-muted-foreground">
-              Burimi: Yahoo Finance (vonesa deri 15 min) · {stocks.length} kompani · kliko pllakën për analizë
+              Burimi: Yahoo Finance (vonesa deri 15 min) · {stocks.length} kompani · hover = pse lëviz · hover mbi sektor = theksim i verdhë · kliko pllakën për analizë
             </span>
           </div>
         </CardContent>
