@@ -678,3 +678,20 @@ Work Log:
 Stage Summary:
 - Task 35 + Task 36 janë tani në GitHub — dorëzimi i plotë
 - VEPRIM I NEVOJSHËM nga përdoruesi: revoko token-in e ekspozuar MENJËHERË te https://github.com/settings/tokens dhe krijo një fine-grained (vetëm repo ai-financial-brain, skadencë e shkurtër) për push-et e ardhshme
+
+---
+Task ID: 37
+Agent: Super Z (main)
+Task: "a mundeshs me regullu qe aty ne faqe te social arb me dale stoqet qe jane kandidate jo ashtu sic e ke bere tani" — stoqet kandidate të shfaqen SI STOQE në faqen Social Arb, jo siç ishte më parë (tabelë "trend / ticker" + detajet në seksionin 3)
+
+Work Log:
+- Ridizajnimi i seksionit 2: në vend të tabelës trend-first, tani karta stokesh (grid 1-col mobile / 2-col md+): ticker i madh kryesor + kompania + badge statusi me ngjyrë + score X/100 me shirit progresi të ngjyrosur sipas statusit + produkti/trend-i + burime në rritje + Aksion−Indeks + kthimi (aksioni vs indeks) + seksioni "Pse?" me arsyet brenda çdo karte
+- Një kartë për STOK: grupet trend×ticker×rajon bashkohen sipas ticker|rajon — kryesore trend-i me score më të lartë; trendet e tjera shfaqen si shënim "+N trend-e të tjera për TICKER (score, status)"
+- SHTESE: butoni "Ngarko shembull demo (4 stoqe)" në gjendjen bosh — ngarkon NVDA/AMD/GME/TSLA me 33 snapshot-e për 35 ditët e fundit (datat relative ndaj sotit, kalojnë nëpër readCSV/validimin e njëjtë si CSV reale); vetëm me buton, kurrë automatikisht; mesazh që kujton t'i fshishësh para të dhënave reale
+- Hequr seksioni 3 ("Pse {ticker}?") — detajet tani brenda kartave; shënimet e score-it/pragjeve u zhvendosën në fund të seksionit 2; hequr state-i `selected`/`current`
+- Logjika e score-it (scoreGroup), validimi CSV, anti-lookahead-i, localStorage dhe importi: 100% të paprekura
+- VERIFIKIMI: tsc 145 = baza 0 të reja; eslint pastër; build OK (/social-arb statik); browser: empty state me buton demo → klikim → 4 karta me pikërisht scoret e llogaritura me dorë (NVDA 92 RESEARCH, AMD 59 WATCH, GME 51 REJECT me 4 arsye, TSLA 15 REJECT me 3 arsye) + rreshti përmbledhës "4 stoqe kandidate · 1 RESEARCH · 1 WATCH · 2 REJECT"; anti-lookahead: data 2026-09-16 → NVDA 92→28, të 4 REJECT; datë sërish sot → rikthim 92; reload → 4 karta + 33 rreshta në localStorage; VLM konfirmoi vizualisht 4/4 (karta stokesh, badge/shirit, "Pse?", pa mbivendosje); server.log pa gabime
+
+Stage Summary:
+- Social Arb tani i shfaq stoqet kandidate si karta stokesh të plota (ticker, kompani, score, status, arsye) — dhe me një klik "shembull demo" i sheh menjëherë pa përgatitur CSV
+- Shtyrë në GitHub bashkë me këtë worklog; Vercel deploy automatik

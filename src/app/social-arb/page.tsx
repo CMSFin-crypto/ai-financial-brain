@@ -35,6 +35,7 @@ type Result = {
   key: string;
   trend: string;
   ticker: string;
+  region: string;
   company: string;
   product: string;
   score: number;
@@ -171,9 +172,66 @@ function scoreGroup(rows: Row[], asOf: string): Result {
     score >= 75 && growingSources >= 2 && validSources >= 2 && priceVsIndex !== null ? 'RESEARCH' :
     score >= 50 || growingSources > 0 ? 'WATCH' : 'REJECT';
   if (!reasons.length) reasons.push('Kandidat për verifikim manual; nuk është rekomandim tregtimi.');
-  return { key: `${last.trend.toLowerCase()}|${last.ticker}|${last.region}`, trend: last.trend, ticker: last.ticker,
+  return { key: `${last.trend.toLowerCase()}|${last.ticker}|${last.region}`, trend: last.trend, ticker: last.ticker, region: last.region,
     product: last.product, company: last.company, score, status, reasons, growingSources, validSources,
     priceVsIndex, stockReturn, indexReturn, observations: rows.length, latest: last.observed_at };
+}
+
+// Shembull demo (ngarkohet VETËM me buton, kurrë automatikisht): 4 stoqe që
+// mbulojnë të tri statuset. Kalon nëpër të njëjtin skema/validim si CSV reale.
+type DemoPoint = [offsetDays: number, interest: number, stockPrice?: number, indexPrice?: number];
+type DemoStock = {
+  ticker: string; company: string; product: string; trend: string; region: string;
+  materiality: number; promoRisk: number; eventRisk: number;
+  sources: { source: string; points: DemoPoint[] }[];
+};
+const DEMO: DemoStock[] = [
+  {
+    ticker: 'NVDA', company: 'Nvidia Corp', product: 'Blackwell GPU', trend: 'nvda ai demand', region: 'US',
+    materiality: 0.8, promoRisk: 0.2, eventRisk: 0.2,
+    sources: [
+      { source: 'google_trends', points: [[-28, 8, 100, 4000], [-24, 8], [-20, 10], [-5, 16], [-3, 20], [-1, 24, 103, 4010]] },
+      { source: 'tiktok', points: [[-27, 6], [-23, 7], [-19, 5], [-6, 10], [-4, 12], [-2, 11]] },
+    ],
+  },
+  {
+    ticker: 'AMD', company: 'Advanced Micro Devices', product: 'MI300X', trend: 'amd mi300x demand', region: 'US',
+    materiality: 0.7, promoRisk: 0.3, eventRisk: 0.3,
+    sources: [
+      { source: 'google_trends', points: [[-30, 10, 120, 4000], [-26, 11], [-21, 9], [-5, 12], [-2, 14, 122, 4015]] },
+      { source: 'reddit', points: [[-29, 5], [-25, 5], [-22, 6], [-4, 5], [-1, 6]] },
+    ],
+  },
+  {
+    ticker: 'GME', company: 'GameStop Corp', product: 'Meme Stock', trend: 'gme short squeeze', region: 'US',
+    materiality: 0.5, promoRisk: 0.9, eventRisk: 0.3,
+    sources: [
+      { source: 'reddit', points: [[-28, 40, 25, 4000], [-24, 45], [-20, 50], [-6, 80], [-3, 90], [-1, 100, 28, 4020]] },
+    ],
+  },
+  {
+    ticker: 'TSLA', company: 'Tesla Inc', product: 'Robotaxi', trend: 'tsla robotaxi hype', region: 'US',
+    materiality: 0.4, promoRisk: 0.5, eventRisk: 0.6,
+    sources: [
+      { source: 'x_twitter', points: [[-30, 30], [-27, 32], [-24, 31], [-5, 28], [-2, 30]] },
+    ],
+  },
+];
+function demoRows(): Row[] {
+  const d = (offset: number) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  const lines: string[] = [];
+  for (const stock of DEMO) {
+    for (const src of stock.sources) {
+      for (const [offset, interest, stockPrice, indexPrice] of src.points) {
+        lines.push([
+          d(offset), d(offset), stock.trend, src.source, stock.region, interest,
+          stock.ticker, stock.product, stock.company, stock.materiality, stock.promoRisk, stock.eventRisk,
+          stockPrice ?? '', indexPrice ?? '',
+        ].join(','));
+      }
+    }
+  }
+  return readCSV(`${HEADER}\n${lines.join('\n')}\n`);
 }
 
 export default function SocialArbPage() {
@@ -182,7 +240,6 @@ export default function SocialArbPage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [asOf, setAsOf] = useState(todayUTC);
-  const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -206,9 +263,22 @@ export default function SocialArbPage() {
       groups.set(key, [...(groups.get(key) ?? []), r]);
     }
     return [...groups.values()].map(group => scoreGroup(group, asOf))
-      .sort((a, b) => b.score - a.score || a.ticker.localeCompare(b.ticker)).slice(0, 10);
+      .sort((a, b) => b.score - a.score || a.ticker.localeCompare(b.ticker));
   }, [visible, asOf]);
-  const current = results.find(r => r.key === selected) ?? results[0];
+  // Një kartë për STOK: grupet trend × ticker × rajon bashkohen sipas ticker|rajoni —
+  // kryesore është trend-i me score më të lartë, të tjerët shfaqen si shënim në kartë.
+  const stocks = useMemo(() => {
+    const byStock = new Map<string, Result[]>();
+    for (const r of results) {
+      const stockKey = `${r.ticker}|${r.region}`;
+      byStock.set(stockKey, [...(byStock.get(stockKey) ?? []), r]);
+    }
+    return [...byStock.values()]
+      .map(group => [...group].sort((a, b) => b.score - a.score))
+      .sort((a, b) => b[0].score - a[0].score)
+      .slice(0, 10)
+      .map(group => ({ lead: group[0], others: group.slice(1) }));
+  }, [results]);
 
   async function importFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -230,9 +300,19 @@ export default function SocialArbPage() {
     const a = document.createElement('a'); a.href = url; a.download = 'social-arb-template.csv'; a.click();
     URL.revokeObjectURL(url);
   }
+  function loadDemo() {
+    setError(''); setInfo('');
+    try {
+      const demo = demoRows();
+      const merged = new Map(rows.map(r => [uniqueKey(r), r]));
+      for (const r of demo) merged.set(uniqueKey(r), r);
+      setRows([...merged.values()]);
+      setInfo(`U ngarkuan ${demo.length} snapshot-e demo (4 stoqe: NVDA, AMD, GME, TSLA) për 35 ditët e fundit. Vetëm për provë të logjikës — fshiji para të dhënash reale.`);
+    } catch (err) { setError((err as Error).message); }
+  }
   function clear() {
     if (!window.confirm('Të fshihen të gjitha snapshot-et Social Arb të ruajtura në këtë shfletues?')) return;
-    setRows([]); setSelected(null); setInfo('Snapshot-et lokale u fshinë. CSV-të origjinale nuk preken.');
+    setRows([]); setInfo('Snapshot-et lokale u fshinë. CSV-të origjinale nuk preken.');
   }
 
   const statusTone: Record<Result['status'], string> = {
@@ -254,7 +334,7 @@ export default function SocialArbPage() {
             <div>
               <h1 className="text-lg font-semibold text-foreground">Social Arb Lab</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Modul i pavarur hulumtimi për AI Financial Brain. Nuk ndryshon sinjalet ekzistuese dhe nuk dërgon urdhra IBKR.
+                Modul i pavarur hulumtimi për AI Financial Brain: stoqet kandidate me score, status dhe arsye. Nuk ndryshon sinjalet ekzistuese dhe nuk dërgon urdhra IBKR.
               </p>
             </div>
           </div>
@@ -276,27 +356,68 @@ export default function SocialArbPage() {
           {info && <p role="status" style={{ color: '#86efac' }}>{info}</p>}
         </section>
         <section style={box}>
-          <h2>2. Kandidatët (deri në 10)</h2>
+          <h2>2. Stoqet kandidate (deri në 10)</h2>
           <label>Data e simulimit (UTC): <input type="date" value={asOf} max={todayUTC()} onChange={e => { if (dateOK(e.target.value)) setAsOf(e.target.value); }} style={input} /></label>
           <p><small>Vetëm rreshtat me observed_at dhe available_at deri në këtë datë hyjnë në llogaritje. Një import i bërë sot nuk provon se një snapshot historik ishte i disponueshëm atëherë: verifiko available_at nga burimi origjinal.</small></p>
-          {!results.length ? <p>Nuk ka ende kandidatë. Importo një CSV me snapshot-e reale.</p> : (
-            <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead><tr><th style={cell}>Trend / ticker</th><th style={cell}>Score</th><th style={cell}>Status</th><th style={cell}>Burime në rritje</th><th style={cell}>Aksion − indeks</th><th style={cell}>Snapshot-e</th></tr></thead>
-              <tbody>{results.map(r => <tr key={r.key} onClick={() => setSelected(r.key)} style={{ cursor: 'pointer', background: current?.key === r.key ? '#1e293b' : undefined }}>
-                <td style={cell}>{r.trend} / {r.ticker}</td><td style={cell}>{r.score}/100</td>
-                <td style={cell}><span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusTone[r.status]}`}>{r.status}</span></td>
-                <td style={cell}>{r.growingSources}/{r.validSources}</td><td style={cell}>{percent(r.priceVsIndex)}</td><td style={cell}>{r.observations}</td>
-              </tr>)}</tbody>
-            </table></div>
+          {!stocks.length ? (
+            <div className="mt-3 rounded-xl border border-dashed border-slate-600 p-6 text-center">
+              <p className="text-sm font-medium text-foreground">Nuk ka ende stoqe kandidate.</p>
+              {rows.length === 0 ? (
+                <>
+                  <p className="mt-1 text-xs text-muted-foreground">Importo snapshot-e reale nga CSV më sipër, ose provo së pari logjikën me një shembull.</p>
+                  <button onClick={loadDemo} className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500">
+                    <FlaskConical className="w-3.5 h-3.5" /> Ngarko shembull demo (4 stoqe)
+                  </button>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">Për datën e simulimit {asOf} s'ka snapshot-e të mjaftueshme. Zgjidh një datë më të afërt ose importo më shumë snapshot-e.</p>
+              )}
+            </div>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-muted-foreground">
+                {stocks.length} {stocks.length === 1 ? 'stok' : 'stoqe'} kandidate · {stocks.filter(s => s.lead.status === 'RESEARCH').length} RESEARCH · {stocks.filter(s => s.lead.status === 'WATCH').length} WATCH · {stocks.filter(s => s.lead.status === 'REJECT').length} REJECT
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {stocks.map(({ lead, others }) => (
+                  <article key={lead.key} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-bold leading-tight text-foreground">{lead.ticker}</h3>
+                        <p className="truncate text-xs text-muted-foreground">{lead.company}{lead.region !== 'US' ? ` · ${lead.region}` : ''}</p>
+                      </div>
+                      <span className={`inline-flex flex-shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusTone[lead.status]}`}>{lead.status}</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/70">
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, lead.score))}%`, background: barColor[lead.status] }} />
+                      </div>
+                      <span className="flex-shrink-0 text-sm font-semibold tabular-nums text-foreground">{lead.score}/100</span>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">{lead.product} · trend: <span className="text-foreground/80">{lead.trend}</span> · {lead.observations} snapshot-e · fundit {lead.latest}</p>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>Burime në rritje: <b className="text-foreground">{lead.growingSources}/{lead.validSources}</b></span>
+                      <span>Aksion − indeks: <b className="text-foreground">{percent(lead.priceVsIndex)}</b></span>
+                      <span>Kthimi: <b className="text-foreground">{percent(lead.stockReturn)}</b> (indeksi {percent(lead.indexReturn)})</span>
+                    </div>
+                    <div className="mt-2 border-t border-slate-700/60 pt-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Pse?</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-foreground/90">
+                        {lead.reasons.map(reason => <li key={reason}>{reason}</li>)}
+                      </ul>
+                    </div>
+                    {others.length > 0 && (
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        +{others.length} trend{others.length > 1 ? '-e' : ''} të tjera për {lead.ticker}: {others.map(o => `${o.trend} (${o.score}/100, ${o.status})`).join(' · ')}
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+              <small style={{ display: 'block', marginTop: 12 }}>Kthimet e çmimeve janë lëvizje retrospektive, jo fitim i strategjisë. Score: rritja 25, konfirmimi 20, rëndësia ekonomike 20, reagimi relativ i çmimit 15, cilësia/rreziku i promocionit 10, risku i eventit 10. Pragje eksperimentale: RESEARCH ≥75 me dy burime në rritje dhe çmime; WATCH ≥50 ose një burim në rritje; përndryshe REJECT. Promo risk ≥0.7 ose event risk ≥0.8 e bllokon kandidatin.</small>
+            </>
           )}
         </section>
-        {current && <section style={box}>
-          <h2>3. Pse {current.ticker}?</h2>
-          <p>{current.company} · {current.product} · trend: {current.trend} · snapshot-i i fundit: {current.latest}</p>
-          <p>Kthimi i aksionit në dritaren e çmimeve: {percent(current.stockReturn)}; indeksi: {percent(current.indexReturn)}. Këto janë lëvizje retrospektive, jo fitim i strategjisë.</p>
-          <ul>{current.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
-          <small>Score: rritja 25, konfirmimi 20, rëndësia ekonomike 20, reagimi relativ i çmimit 15, cilësia/rreziku i promocionit 10, risku i eventit 10. Pragje eksperimentale: RESEARCH ≥75 me dy burime në rritje dhe çmime; WATCH ≥50 ose një burim në rritje; përndryshe REJECT. Promo risk ≥0.7 ose event risk ≥0.8 e bllokon kandidatin.</small>
-        </section>}
         <p><small><ExternalLink className="inline w-3 h-3" /> V1 ruhet vetëm në localStorage të shfletuesit. Ruaj CSV-të origjinale për backtest serioz; kjo faqe nuk përmban feed live, autentikim, sinkronizim mes pajisjeve ose ekzekutim tregtie.</small></p>
       </main>
     </div>
@@ -306,4 +427,4 @@ export default function SocialArbPage() {
 const box: React.CSSProperties = { background: '#111c2e', border: '1px solid #334155', borderRadius: 12, padding: 20, margin: '20px 0' };
 const button: React.CSSProperties = { background: '#2563eb', color: 'white', border: 0, borderRadius: 6, padding: '8px 12px', cursor: 'pointer' };
 const input: React.CSSProperties = { background: '#1e293b', color: 'white', border: '1px solid #64748b', padding: 6, marginLeft: 8 };
-const cell: React.CSSProperties = { borderBottom: '1px solid #334155', padding: 10 };
+const barColor: Record<Result['status'], string> = { RESEARCH: '#10b981', WATCH: '#f59e0b', REJECT: '#ef4444' };
