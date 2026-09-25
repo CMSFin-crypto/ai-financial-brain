@@ -1047,7 +1047,44 @@ export interface WeeklyReport {
     ret5dPct: number | null;
     verdict: string;
   }[];
+  // ── Dy pamjet e ndara (spec: sinjalet ≠ rezultatet) ──
+  // Kohorta = sinjale të KRIJUARA në javë · ClosedView = tregti të MBYLLURA në javë (edhe nga sinjale më të vjetra)
+  cohort: {
+    created: number;        // sinjale të krijuara gjatë javës
+    filledClosed: number;   // hyrja u mbush DHE tregtia u mbyll
+    filledOpen: number;     // hyrja u mbush, pozicioni ende aktiv
+    waiting: number;        // urdhri pret — hyrja s'Është kapur ende
+    noFill: number;         // dritarja 10-ditore skadoi pa u mbush urdhri
+  };
+  closedView: {
+    total: number;
+    netR: number | null;            // R neto e të gjitha mbylljeve
+    legacyNoExitDate: number;       // mbyllje pa orë/datë (para gjurmimit) — brenda javës sipas sinjalit
+    byOutcome: { outcome: string; label: string; count: number; netR: number }[];
+    trades: WeeklySignalRow[];      // të gjitha mbylljet në dritare, me drill-down
+  };
+  // Tri metrikat kryesore me emër të qartë (spec)
+  headMetrics: {
+    targetVsStop: { hits: number; decided: number; pct: number | null };   // 3/18 = 17%
+    profitableClosed: { count: number; total: number; pct: number | null }; // 27/61 = 44%
+    netExpectancyR: number | null;  // mesatarja R për tregti të mbyllur
+    netR: number | null;            // shuma R
+  };
+  // Krahasimi i tregtive të mbyllura — a është problemi tregu, targeti, hyrja apo raportimi?
+  comparison: {
+    byRegime: ComparisonRow[];
+    bySector: ComparisonRow[];
+    byScore: ComparisonRow[];
+  };
   error?: string;
+}
+
+export interface ComparisonRow {
+  key: string;
+  count: number;
+  wins: number;   // resultR > 0
+  netR: number;
+  avgR: number | null;
 }
 
 // Arsyeja në shqip pse targeti s'u arrit (spec i userit)
@@ -1070,9 +1107,79 @@ function missReasonShqip(s: WeeklySignalRow): string | null {
   }
 }
 
+// Hartimi i një hyrjeje DB → rresht javor (përdoret nga të dyja pamjet)
+function weeklyRowFromEntry(e: any): WeeklySignalRow {
+  const row: WeeklySignalRow = {
+    ticker: e.ticker,
+    companyName: e.companyName ?? (e.ticker ? companyName(e.ticker) : null),
+    signalDate: e.scanDate,
+    entry: e.entry ?? null,
+    target: e.target ?? null,
+    stop: e.stop ?? null,
+    status: e.tradeStatus ?? mapExitToTradeStatus(e.exitStatus),
+    targetTouched: e.targetTouched ?? (e.exitStatus === "HIT_TARGET" ? true : null),
+    targetExecuted: e.targetExecuted ?? (e.exitStatus === "HIT_TARGET" ? true : null),
+    targetHitAt: e.targetHitAt ? new Date(e.targetHitAt).toISOString() : null,
+    actualExitPrice: e.actualExitPrice ?? null,
+    exitReason: e.exitReason ?? null,
+    realizedPnlPct: e.realizedPnlPct ?? null,
+    rMultiple: e.resultR ?? null,
+    score: e.score ?? null,
+    rank: e.rank ?? null,
+    missReason: null,
+    // ── Drill-down ──
+    entryHitAt: e.entryHitAt ? new Date(e.entryHitAt).toISOString() : null,
+    exitAt: e.exitAt
+      ? new Date(e.exitAt).toISOString()
+      : e.targetHitAt && (e.tradeStatus ?? "") === "TARGET_HIT"
+        ? new Date(e.targetHitAt).toISOString()
+        : null,
+    mfeR: e.mfeR ?? null,
+    maeR: e.maeR ?? null,
+    maxFavorablePrice: e.maxFavorablePrice ?? null,
+    maxAdversePrice: e.maxAdversePrice ?? null,
+    evalNote: e.evalNote ?? null,
+    strategy: strategyCompliance(e),
+    context: {
+      price: e.price ?? null,
+      rvol: e.rvol ?? null,
+      rvolStatus: e.rvolStatus ?? null,
+      atrPct: e.atrPct ?? null,
+      atrStatus: e.atrStatus ?? null,
+      dist52wHighPct: e.dist52wHighPct ?? null,
+      regimeLevel: e.regimeLevel ?? null,
+      vixLevel: e.vixLevel ?? null,
+      vixStatus: e.vixStatus ?? null,
+      breadthPct: e.breadthPct ?? null,
+      breadthStatus: e.breadthStatus ?? null,
+      sector: e.sector ?? null,
+      tags: e.tags || [],
+      enterReason: e.enterReason ?? null,
+    },
+  };
+  row.missReason = missReasonShqip(row);
+  return row;
+}
+
+// Emri i qartë i daljes (spec: PARTIAL_TARGET mund të ngatërrohet me marrje
+// fitimi të pjesshme — PROFITABLE_TIME_EXIT thotë saktësisht çfarë ndodhi)
+function outcomeLabelShqip(st: string): string {
+  switch (st) {
+    case "PARTIAL_TARGET": return "PROFITABLE_TIME_EXIT";
+    case "TARGET_HIT": return "TARGET_HIT";
+    case "STOP_HIT": return "STOP_HIT";
+    case "TIME_EXIT": return "TIME_EXIT";
+    case "TRAILING_EXIT": return "TRAILING_EXIT";
+    case "EXPIRED": return "EXPIRED";
+    default: return st;
+  }
+}
+
 export async function buildWeeklyReport(days = 7): Promise<WeeklyReport> {
   const to = getEtDateStr();
   const from = getEtDateStr(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+  const fromDT = new Date(`${from}T00:00:00.000Z`);
+  const toDT = new Date(`${to}T23:59:59.999Z`);
 
   const base: WeeklyReport = {
     dbActive: false,
@@ -1093,17 +1200,34 @@ export async function buildWeeklyReport(days = 7): Promise<WeeklyReport> {
     prediction: { signals: 0, correctTarget: 0, incorrect: 0, stillOpen: 0, accuracyPct: null },
     performance: { expectancyR: null, avgR: null, profitFactor: null, realizedPnlPctSum: null, targetTouchedRate: null, targetExecutedRate: null },
     missedWinners: [],
+    cohort: { created: 0, filledClosed: 0, filledOpen: 0, waiting: 0, noFill: 0 },
+    closedView: { total: 0, netR: null, legacyNoExitDate: 0, byOutcome: [], trades: [] },
+    headMetrics: {
+      targetVsStop: { hits: 0, decided: 0, pct: null },
+      profitableClosed: { count: 0, total: 0, pct: null },
+      netExpectancyR: null,
+      netR: null,
+    },
+    comparison: { byRegime: [], bySector: [], byScore: [] },
   };
   if (!isDbAvailable()) return base;
 
   try {
+    // Dy pamje: sinjalet e krijuara në javë + mbylljet në javë (edhe nga sinjale të javës së kaluar)
     const entries = await prisma.top10JournalEntry.findMany({
-      where: { scanDate: { gte: from, lte: to } },
+      where: {
+        OR: [
+          { scanDate: { gte: from, lte: to } },
+          { exitAt: { gte: fromDT, lte: toDT } },
+        ],
+      },
       orderBy: [{ scanDate: "desc" }, { rank: "asc" }],
     });
     base.dbActive = true;
 
-    const list = entries as any[];
+    const fetched = entries as any[];
+    // KOHORTA: vetëm sinjalet e krijuara brenda dritares (pamja e parë)
+    const list = fetched.filter((e) => e.scanDate >= from && e.scanDate <= to);
     const closed = list.filter(
       (e) => e.exitStatus === "HIT_TARGET" || e.exitStatus === "HIT_STOP"
     );
@@ -1145,58 +1269,115 @@ export async function buildWeeklyReport(days = 7): Promise<WeeklyReport> {
       : null;
 
     // ── Tabela për kompani: signal date, nivele, status, target hit, P/L, R ──
-    base.signals = list.map((e) => {
-      const row: WeeklySignalRow = {
-        ticker: e.ticker,
-        companyName: e.companyName ?? (e.ticker ? companyName(e.ticker) : null),
-        signalDate: e.scanDate,
-        entry: e.entry ?? null,
-        target: e.target ?? null,
-        stop: e.stop ?? null,
-        status: e.tradeStatus ?? mapExitToTradeStatus(e.exitStatus),
-        targetTouched: e.targetTouched ?? (e.exitStatus === "HIT_TARGET" ? true : null),
-        targetExecuted: e.targetExecuted ?? (e.exitStatus === "HIT_TARGET" ? true : null),
-        targetHitAt: e.targetHitAt ? new Date(e.targetHitAt).toISOString() : null,
-        actualExitPrice: e.actualExitPrice ?? null,
-        exitReason: e.exitReason ?? null,
-        realizedPnlPct: e.realizedPnlPct ?? null,
-        rMultiple: e.resultR ?? null,
-        score: e.score ?? null,
-        rank: e.rank ?? null,
-        missReason: null,
-        // ── Drill-down ──
-        entryHitAt: e.entryHitAt ? new Date(e.entryHitAt).toISOString() : null,
-        exitAt: e.exitAt
-          ? new Date(e.exitAt).toISOString()
-          : e.targetHitAt && (e.tradeStatus ?? "") === "TARGET_HIT"
-            ? new Date(e.targetHitAt).toISOString()
-            : null,
-        mfeR: e.mfeR ?? null,
-        maeR: e.maeR ?? null,
-        maxFavorablePrice: e.maxFavorablePrice ?? null,
-        maxAdversePrice: e.maxAdversePrice ?? null,
-        evalNote: e.evalNote ?? null,
-        strategy: strategyCompliance(e),
-        context: {
-          price: e.price ?? null,
-          rvol: e.rvol ?? null,
-          rvolStatus: e.rvolStatus ?? null,
-          atrPct: e.atrPct ?? null,
-          atrStatus: e.atrStatus ?? null,
-          dist52wHighPct: e.dist52wHighPct ?? null,
-          regimeLevel: e.regimeLevel ?? null,
-          vixLevel: e.vixLevel ?? null,
-          vixStatus: e.vixStatus ?? null,
-          breadthPct: e.breadthPct ?? null,
-          breadthStatus: e.breadthStatus ?? null,
-          sector: e.sector ?? null,
-          tags: e.tags || [],
-          enterReason: e.enterReason ?? null,
-        },
-      };
-      row.missReason = missReasonShqip(row);
-      return row;
+    base.signals = list.map(weeklyRowFromEntry);
+
+    // ═══════════════════════════════════════════════════════════════
+    // DY PAMJET E NDAra (spec i userit):
+    // 1) KOHORTA — sinjalet e krijuara gjatë javës: sa u mbushën, sa presin, sa NO_FILL
+    // 2) TREGTITË E MBYLLURA — mbylljet gjatë javës (edhe nga sinjale të javës së kaluar)
+    // ═══════════════════════════════════════════════════════════════
+    const effStatus = (e: any) => e.tradeStatus ?? mapExitToTradeStatus(e.exitStatus);
+    const CLOSED_STATUSES = ["TARGET_HIT", "STOP_HIT", "PARTIAL_TARGET", "TRAILING_EXIT", "TIME_EXIT", "EXPIRED"];
+    base.cohort = {
+      created: list.length,
+      filledClosed: list.filter((e) => CLOSED_STATUSES.includes(effStatus(e))).length,
+      filledOpen: list.filter((e) => effStatus(e) === "OPEN" && (e.entryHitAt != null || e.entryHit === true)).length,
+      waiting: list.filter((e) => effStatus(e) === "OPEN" && e.entryHitAt == null && e.entryHit !== true).length,
+      noFill: list.filter((e) => effStatus(e) === "TARGET_NOT_HIT").length,
+    };
+
+    // Mbylljet në dritare: exitAt brenda javës; për hyrjet e vjetra pa gjurmim orësh
+    // (para Task 31) fallback: targetHitAt, ose sinjal brenda javës (mbyllja ndodhi brenda saj)
+    const inWin = (dt: any) => {
+      if (!dt) return false;
+      const t = new Date(dt).getTime();
+      return t >= fromDT.getTime() && t <= toDT.getTime();
+    };
+    const closedEntries = fetched.filter((e) => {
+      if (!CLOSED_STATUSES.includes(effStatus(e))) return false;
+      return (
+        inWin(e.exitAt) ||
+        inWin(e.targetHitAt) ||
+        ((e.exitAt == null && e.targetHitAt == null) && e.scanDate >= from && e.scanDate <= to)
+      );
     });
+    const closedRows = closedEntries.map(weeklyRowFromEntry);
+
+    const outcomeAgg = new Map<string, { count: number; netR: number }>();
+    for (const r of closedRows) {
+      const cur = outcomeAgg.get(r.status) || { count: 0, netR: 0 };
+      cur.count += 1;
+      cur.netR += r.rMultiple ?? 0;
+      outcomeAgg.set(r.status, cur);
+    }
+    const netRsum = closedRows.reduce((s, r) => s + (r.rMultiple ?? 0), 0);
+    base.closedView = {
+      total: closedRows.length,
+      netR: closedRows.length ? Math.round(netRsum * 100) / 100 : null,
+      legacyNoExitDate: closedEntries.filter((e) => e.exitAt == null && e.targetHitAt == null).length,
+      byOutcome: [...outcomeAgg.entries()]
+        .map(([outcome, v]) => ({
+          outcome,
+          label: outcomeLabelShqip(outcome),
+          count: v.count,
+          netR: Math.round(v.netR * 100) / 100,
+        }))
+        .sort((a, b) => b.count - a.count),
+      trades: closedRows.sort((a, b) => (b.rMultiple ?? 0) - (a.rMultiple ?? 0)),
+    };
+
+    // ── Tri metrikat kryesore me emër të qartë ──
+    const th = closedRows.filter((r) => r.status === "TARGET_HIT").length;
+    const sh = closedRows.filter((r) => r.status === "STOP_HIT").length;
+    const profitableCount = closedRows.filter((r) => (r.rMultiple ?? 0) > 0).length;
+    base.headMetrics = {
+      targetVsStop: {
+        hits: th,
+        decided: th + sh,
+        pct: th + sh > 0 ? Math.round((th / (th + sh)) * 100) : null,
+      },
+      profitableClosed: {
+        count: profitableCount,
+        total: closedRows.length,
+        pct: closedRows.length ? Math.round((profitableCount / closedRows.length) * 100) : null,
+      },
+      netExpectancyR: closedRows.length ? Math.round((netRsum / closedRows.length) * 100) / 100 : null,
+      netR: closedRows.length ? Math.round(netRsum * 100) / 100 : null,
+    };
+
+    // ── Krahasimi: a është problemi tregu (regjimi), sektori, apo score-i? ──
+    const grp = (rows: WeeklySignalRow[], keyOf: (r: WeeklySignalRow) => string | null): ComparisonRow[] => {
+      const m = new Map<string, { count: number; wins: number; netR: number }>();
+      for (const r of rows) {
+        const k = keyOf(r) || "N/A";
+        const cur = m.get(k) || { count: 0, wins: 0, netR: 0 };
+        cur.count += 1;
+        if ((r.rMultiple ?? 0) > 0) cur.wins += 1;
+        cur.netR += r.rMultiple ?? 0;
+        m.set(k, cur);
+      }
+      return [...m.entries()]
+        .map(([key, v]) => ({
+          key,
+          count: v.count,
+          wins: v.wins,
+          netR: Math.round(v.netR * 100) / 100,
+          avgR: v.count ? Math.round((v.netR / v.count) * 100) / 100 : null,
+        }))
+        .sort((a, b) => b.count - a.count);
+    };
+    base.comparison = {
+      byRegime: grp(closedRows, (r) => r.context?.regimeLevel ?? null),
+      bySector: grp(closedRows, (r) => r.context?.sector ?? null),
+      byScore: grp(closedRows, (r) => {
+        const sc = r.score;
+        if (sc == null) return null;
+        if (sc >= 85) return "85+";
+        if (sc >= 80) return "80–84";
+        if (sc >= 75) return "75–79";
+        return "<75";
+      }),
+    };
 
     // Dy listat: Target Hit / Target Missed (me arsye)
     base.targetHitList = base.signals.filter(

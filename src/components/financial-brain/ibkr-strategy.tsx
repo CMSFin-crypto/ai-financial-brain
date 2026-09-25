@@ -1918,7 +1918,7 @@ function tradeStatusBadge(s: string | null | undefined) {
   switch (s) {
     case 'TARGET_HIT': return { cls: 'bg-emerald-500/15 text-emerald-400', label: 'TARGET_HIT' };
     case 'STOP_HIT': return { cls: 'bg-red-500/15 text-red-400', label: 'STOP_HIT' };
-    case 'PARTIAL_TARGET': return { cls: 'bg-lime-500/15 text-lime-400', label: 'PARTIAL' };
+    case 'PARTIAL_TARGET': return { cls: 'bg-lime-500/15 text-lime-400', label: 'PROFIT_TIME_EXIT' };
     case 'TRAILING_EXIT': return { cls: 'bg-teal-500/15 text-teal-400', label: 'TRAILING' };
     case 'TIME_EXIT': return { cls: 'bg-orange-500/15 text-orange-400', label: 'TIME_EXIT' };
     case 'OPEN': return { cls: 'bg-amber-500/15 text-amber-400', label: 'OPEN' };
@@ -1989,8 +1989,8 @@ function statusWhy(s: any): { title: string; rule: string; rows: { k: string; v:
       };
     case 'PARTIAL_TARGET':
       return {
-        title: 'PARTIAL_TARGET — pse',
-        rule: 'Hyrja u mbush dhe pozicioni ishte në fitim, por targeti s\u2019u arrit brenda 10 ditëve tregtimi → u mbyll me kohën në çmimin e fundit, me fitim të pjesshëm.',
+        title: 'PROFITABLE_TIME_EXIT — pse',
+        rule: 'Hyrja u mbush dhe pozicioni u mbyll në FITIM pas skadimit të 10 ditëve tregtimi — pa i kapur targetin. S\u2019është marrje fitimi e pjesshme: thjesht doli në plus me kohën, në çmimin e fundit.',
         rows: [
           { k: 'Hyrja u kap', v: ent || '—', vCls: 'text-cyan-400' },
           { k: 'Skadoi / u mbyll', v: ext || '—', vCls: 'text-orange-400' },
@@ -2360,6 +2360,7 @@ export function Top10JournalCard() {
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set());
   const [showLegend, setShowLegend] = useState(false);
   const [showAllMissed, setShowAllMissed] = useState(false);
+  const [weeklyView, setWeeklyView] = useState<'cohort' | 'closed'>('cohort');
 
   const toggleTrade = useCallback((key: string) => {
     setExpandedTrades((prev) => {
@@ -2658,7 +2659,7 @@ export function Top10JournalCard() {
           <div className="mt-3 rounded-lg border border-cyan-500/20 bg-muted/5 p-3">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <History className="w-3.5 h-3.5 text-cyan-400" />
-              <p className="text-[12px] font-bold text-foreground">Raporti Javor — Target Hit</p>
+              <p className="text-[12px] font-bold text-foreground">Raporti Javor</p>
               <span className="text-[10px] text-muted-foreground/60">{weekly?.window?.from} → {weekly?.window?.to}</span>
               <button
                 onClick={() => setShowLegend((v) => !v)}
@@ -2693,7 +2694,60 @@ export function Top10JournalCard() {
             )}
             {!weeklyLoading && weekly?.dbActive && (
               <div className="space-y-3">
-                {/* Përmbledhja në krye (formati i spec-it) — çdo tregues me popup */}
+                {/* Dy pamjet e ndara — sinjalet ≠ rezultatet (spec) */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => setWeeklyView('cohort')}
+                    className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${weeklyView === 'cohort' ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 font-bold' : 'bg-muted/10 border-border/40 text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Kohorta e Sinjaleve ({weekly.cohort?.created ?? 0})
+                  </button>
+                  <button
+                    onClick={() => setWeeklyView('closed')}
+                    className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${weeklyView === 'closed' ? 'bg-violet-500/15 border-violet-500/40 text-violet-300 font-bold' : 'bg-muted/10 border-border/40 text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Tregtitë e Mbyllura ({weekly.closedView?.total ?? 0})
+                  </button>
+                  <span className="text-[9.5px] text-muted-foreground/50 hidden sm:inline">{weeklyView === 'cohort' ? 'sinjalet e KRIJUARA këtë javë' : 'mbylljet që ndodhën këtë javë — edhe nga sinjale më të vjetra'}</span>
+                </div>
+
+                {/* ── Tri metrikat kryesore me emër të qartë (spec) ── */}
+                <div className="grid grid-cols-3 gap-2">
+                  <MetricPopover
+                    title="Target-vs-Stop Hit Rate"
+                    what={<>Tregtitë e vendosura që e kapën targetin kundrejt atyre që goditën stop-in. Open/NO_FILL s’hyjnë — vetëm ato që mbyllen me nivel.</>}
+                    how={<span className="font-mono">{weekly.headMetrics?.targetVsStop?.hits ?? 0} / ({weekly.headMetrics?.targetVsStop?.hits ?? 0} + {weekly.headMetrics?.targetVsStop ? (weekly.headMetrics.targetVsStop.decided - weekly.headMetrics.targetVsStop.hits) : 0})</span>}
+                  >
+                    <div className="rounded-md bg-cyan-500/5 border border-cyan-500/15 p-2 text-center w-full">
+                      <p className="text-[9.5px] text-muted-foreground leading-tight">Target-vs-Stop Hit Rate</p>
+                      <p className="text-[15px] font-bold text-cyan-400">{weekly.headMetrics?.targetVsStop?.pct != null ? weekly.headMetrics.targetVsStop.pct + '%' : '—'}<span className="text-[9px] font-normal text-muted-foreground/60"> ({weekly.headMetrics?.targetVsStop?.hits ?? 0}/{weekly.headMetrics?.targetVsStop?.decided ?? 0})</span></p>
+                    </div>
+                  </MetricPopover>
+                  <MetricPopover
+                    title="Profitable Closed Trades"
+                    what={<>Të gjitha tregtitë e mbyllura që dolën në plus (R &gt; 0) — përfshin TARGET_HIT dhe PROFITABLE_TIME_EXIT, jo vetëm targetet e plota.</>}
+                    how={<span className="font-mono">{weekly.headMetrics?.profitableClosed?.count ?? 0} / {weekly.headMetrics?.profitableClosed?.total ?? 0}</span>}
+                  >
+                    <div className="rounded-md bg-emerald-500/5 border border-emerald-500/15 p-2 text-center w-full">
+                      <p className="text-[9.5px] text-muted-foreground leading-tight">Profitable Closed Trades</p>
+                      <p className="text-[15px] font-bold text-emerald-400">{weekly.headMetrics?.profitableClosed?.pct != null ? weekly.headMetrics.profitableClosed.pct + '%' : '—'}<span className="text-[9px] font-normal text-muted-foreground/60"> ({weekly.headMetrics?.profitableClosed?.count ?? 0}/{weekly.headMetrics?.profitableClosed?.total ?? 0})</span></p>
+                    </div>
+                  </MetricPopover>
+                  <MetricPopover
+                    title="Net Expectancy (R)"
+                    what={<>Mesatarja R për tregti të mbyllur — sa pret çdo tregti në R. Shuma totale: {(weekly.headMetrics?.netR ?? 0) > 0 ? '+' : ''}{weekly.headMetrics?.netR ?? '—'}R nga {weekly.headMetrics?.profitableClosed?.total ?? 0} tregti.</>}
+                    how={<>Fitimet − humbjet, pjesëtuar me numrin e mbylljeve.</>}
+                  >
+                    <div className="rounded-md bg-violet-500/5 border border-violet-500/15 p-2 text-center w-full">
+                      <p className="text-[9.5px] text-muted-foreground leading-tight">Net Expectancy</p>
+                      <p className={`text-[15px] font-bold ${(weekly.headMetrics?.netExpectancyR ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{weekly.headMetrics?.netExpectancyR != null ? ((weekly.headMetrics.netExpectancyR > 0 ? '+' : '') + weekly.headMetrics.netExpectancyR + 'R') : '—'}</p>
+                    </div>
+                  </MetricPopover>
+                </div>
+
+                {/* ══════ PAMJA 1: KOHORTA E SINJALEVE ══════ */}
+                {weeklyView === 'cohort' && (<>
+                {/* Përmbledhja e kohortës (çdo tregues me popup) */}
                 <WeeklySummary weekly={weekly} />
 
                 {/* Tabela: Kompania | Entry | Target | Stop | Status | Target hit | P/L | R — me drill-down */}
@@ -2797,7 +2851,7 @@ export function Top10JournalCard() {
                                   {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                 </button>
                                 <span className="font-bold text-foreground">{s.ticker}</span>
-                                <span className="text-emerald-400/90">{s.status === 'PARTIAL_TARGET' ? 'partial target' : 'target hit'}</span>
+                                <span className="text-emerald-400/90">{s.status === 'PARTIAL_TARGET' ? 'profitable time exit' : 'target hit'}</span>
                                 {s.targetHitAt && <span className="text-[9.5px] text-muted-foreground/50">{new Date(s.targetHitAt).toLocaleDateString('sq-AL')}</span>}
                                 {s.rMultiple != null && (
                                   <span className={`font-mono ${s.rMultiple > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.rMultiple > 0 ? '+' : ''}{s.rMultiple}R</span>
@@ -2869,26 +2923,6 @@ export function Top10JournalCard() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="rounded-md bg-emerald-500/5 border border-emerald-500/15 p-2 text-center">
-                    <p className="text-[10px] text-muted-foreground">Target Hit</p>
-                    <p className="text-[15px] font-bold text-emerald-400">{weekly.totals?.targetHits ?? 0}</p>
-                  </div>
-                  <div className="rounded-md bg-red-500/5 border border-red-500/15 p-2 text-center">
-                    <p className="text-[10px] text-muted-foreground">Stop Hit</p>
-                    <p className="text-[15px] font-bold text-red-400">{weekly.totals?.stopHits ?? 0}</p>
-                  </div>
-                  <div className="rounded-md bg-cyan-500/5 border border-cyan-500/15 p-2 text-center">
-                    <p className="text-[10px] text-muted-foreground">Hit-Rate</p>
-                    <p className="text-[15px] font-bold text-cyan-400">{weekly.hitRate != null ? weekly.hitRate + '%' : '—'}</p>
-                  </div>
-                  <div className="rounded-md bg-violet-500/5 border border-violet-500/15 p-2 text-center">
-                    <p className="text-[10px] text-muted-foreground">Expectancy</p>
-                    <p className={`text-[15px] font-bold ${(weekly.expectancyR ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {weekly.expectancyR != null ? (weekly.expectancyR > 0 ? '+' : '') + weekly.expectancyR + 'R' : '—'}
-                    </p>
-                  </div>
-                </div>
                 <div className="flex gap-3 text-[11px] text-muted-foreground flex-wrap">
                   <span>Drejtimi i saktë: <strong className="text-foreground">{weekly.directionAccuracy != null ? weekly.directionAccuracy + '%' : '—'}</strong></span>
                   <span>MFE mes.: <strong className="text-foreground">{weekly.avgMfeR != null ? '+' + weekly.avgMfeR + 'R' : '—'}</strong></span>
@@ -2932,6 +2966,153 @@ export function Top10JournalCard() {
                 )}
                 {(weekly.totals?.entries ?? 0) === 0 && (
                   <p className="text-[12px] text-muted-foreground/70">Pa hyrje në ditar brenda dritares — ditarit mbushet pas skanimeve të ardhshme me kandidate READY.</p>
+                )}
+                </>)}
+
+                {/* ══════ PAMJA 2: TREGTITË E MBYLLURA GJATË JAVËS ══════ */}
+                {weeklyView === 'closed' && (
+                  <>
+                    {/* Përmbledhja sipas daljes — me R neto për secilën */}
+                    <div className="rounded-md border border-violet-500/20 bg-violet-500/[0.03] p-2.5">
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        <p className="text-[11px] font-bold text-foreground">Mbylljet sipas daljes</p>
+                        <span className="text-[10.5px] text-muted-foreground">
+                          Neto javë: <strong className={(weekly.closedView?.netR ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>{weekly.closedView?.netR != null ? ((weekly.closedView.netR > 0 ? '+' : '') + weekly.closedView.netR + 'R') : '—'}</strong>
+                          {' '}nga <strong className="text-foreground">{weekly.closedView?.total ?? 0}</strong> tregti
+                        </span>
+                        {(weekly.closedView?.legacyNoExitDate ?? 0) > 0 && (
+                          <span className="text-[9.5px] text-amber-400/70" title="Vlerësime para gjurmimit të orës së daljes — përfshihen sepse mbyllja ndodhi brenda javës sipas sinjalit">{weekly.closedView.legacyNoExitDate} pa orë të regjistruar</span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {(weekly.closedView?.byOutcome ?? []).map((o: any) => {
+                          const oc: Record<string, string> = {
+                            TARGET_HIT: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+                            STOP_HIT: 'bg-red-500/10 border-red-500/20 text-red-400',
+                            PROFITABLE_TIME_EXIT: 'bg-lime-500/10 border-lime-500/20 text-lime-400',
+                            TIME_EXIT: 'bg-orange-500/10 border-orange-500/20 text-orange-400',
+                          };
+                          return (
+                            <div key={o.outcome} className={`rounded-md border p-2 text-center ${oc[o.label] || 'bg-muted/20 border-border/40 text-muted-foreground'}`}>
+                              <p className="text-[9.5px] opacity-80 leading-tight">{o.label}</p>
+                              <p className="text-[15px] font-bold">{o.count}</p>
+                              <p className="text-[10px] font-mono">{o.netR > 0 ? '+' : ''}{o.netR}R</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[9.5px] text-muted-foreground/60 mt-1.5">
+                        Përfshihen mbylljet që ndodhën brenda javës — edhe tregti nga sinjale të javës së kaluar. PROFITABLE_TIME_EXIT = u mbyll në fitim pas 10 ditësh pa i kapur targetin (jo marrje fitimi e pjesshme).
+                      </p>
+                    </div>
+
+                    {/* Tabela e mbylljeve me drill-down */}
+                    {(weekly.closedView?.trades?.length ?? 0) > 0 && (
+                      <div className="overflow-x-auto -mx-1 px-1">
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="text-[9.5px] uppercase tracking-wide text-muted-foreground/70 border-b border-border/40">
+                              <th className="w-6 py-1.5"></th>
+                              <th className="text-left py-1.5 pr-2 font-medium">Kompania</th>
+                              <th className="text-left py-1.5 px-1.5 font-medium">Sinjali</th>
+                              <th className="text-left py-1.5 px-1.5 font-medium">Mbyllur më</th>
+                              <th className="text-center py-1.5 px-1.5 font-medium">Statusi</th>
+                              <th className="text-right py-1.5 px-1.5 font-medium">P/L</th>
+                              <th className="text-right py-1.5 pl-1.5 font-medium">R</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {weekly.closedView.trades.map((s: any, i: number) => {
+                              const dk = `cv|${s.ticker}|${s.signalDate}|${i}`;
+                              const isOpen = expandedTrades.has(dk);
+                              const closedAt = fmtEtDateTime(s.exitAt) || (s.targetHitAt ? fmtEtDateTime(s.targetHitAt) : null);
+                              return (
+                                <Fragment key={dk}>
+                                  <tr className={`border-b border-border/20 ${isOpen ? 'bg-violet-500/[0.06]' : 'hover:bg-muted/20'}`}>
+                                    <td className="py-1.5">
+                                      <button
+                                        onClick={() => toggleTrade(dk)}
+                                        title="Detajet e tregtisë — kur ka hyrë, parametrat, score, renditja, kur u mbyll, strategjia, statusi"
+                                        className="flex items-center justify-center w-5 h-5 rounded hover:bg-violet-500/15 text-violet-400/80 hover:text-violet-400 transition-colors"
+                                      >
+                                        {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </td>
+                                    <td className="py-1.5 pr-2">
+                                      <div className="flex flex-col leading-tight">
+                                        <span className="font-bold text-foreground">{s.ticker}</span>
+                                        <span className="text-[9.5px] text-muted-foreground/60 truncate max-w-[110px]">{s.companyName || '—'}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-1.5 px-1.5 font-mono text-muted-foreground/80">{s.signalDate}</td>
+                                    <td className="py-1.5 px-1.5 text-[10px] text-muted-foreground/80">
+                                      {closedAt || <span className="text-amber-400/60">datë e paregjistruar</span>}
+                                    </td>
+                                    <td className="text-center py-1.5 px-1.5"><StatusPopover s={s} /></td>
+                                    <td className={`text-right py-1.5 px-1.5 font-mono ${(s.realizedPnlPct ?? 0) > 0 ? 'text-emerald-400' : (s.realizedPnlPct ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                      {s.realizedPnlPct != null ? `${s.realizedPnlPct > 0 ? '+' : ''}${s.realizedPnlPct}%` : '—'}
+                                    </td>
+                                    <td className={`text-right py-1.5 pl-1.5 font-mono ${(s.rMultiple ?? 0) > 0 ? 'text-emerald-400' : (s.rMultiple ?? 0) < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                                      {s.rMultiple != null ? `${s.rMultiple > 0 ? '+' : ''}${s.rMultiple}R` : '—'}
+                                    </td>
+                                  </tr>
+                                  {isOpen && (
+                                    <tr className="border-b border-border/20">
+                                      <td colSpan={7} className="p-0">
+                                        <TradeDrilldown s={s} />
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* ── Analiza: problemi ku qëndron — tregu, sektori apo score-i? ── */}
+                    <div className="rounded-md border border-border/40 bg-muted/[0.03] p-2.5 space-y-2.5">
+                      <p className="text-[11px] font-bold text-foreground">Krahasimi i {weekly.headMetrics?.profitableClosed?.total ?? 0} tregtiveve të mbyllura — problemi ku qëndron?</p>
+                      {([
+                        { title: 'Sipas regjimit të tregut', rows: weekly.comparison?.byRegime, hint: 'Regjimi në momentin e sinjalit — nëse të gjitha humbin në CAUTION/RISK, problemi është tregu' },
+                        { title: 'Sipas sektorit', rows: weekly.comparison?.bySector, hint: 'Sektori i aksionit — nëse një sektor tërheq poshtë, problemi është selektimi sektorial' },
+                        { title: 'Sipas score-it', rows: weekly.comparison?.byScore, hint: 'Score-i në momentin e sinjalit — nëse score të larta = R negative, problemi është kalibrimi i score-it' },
+                      ] as const).map((sec) => (
+                        <div key={sec.title}>
+                          <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground/70 font-bold mb-1">{sec.title}</p>
+                          <div className="overflow-x-auto -mx-0.5 px-0.5">
+                            <table className="w-full text-[10.5px] border-collapse">
+                              <thead>
+                                <tr className="text-[9px] uppercase tracking-wide text-muted-foreground/60 border-b border-border/30">
+                                  <th className="text-left py-1 pr-2 font-medium">Grupi</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Tregti</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Fitim</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Net R</th>
+                                  <th className="text-right py-1 pl-1.5 font-medium">R mes.</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(sec.rows ?? []).map((r: any) => (
+                                  <tr key={r.key} className="border-b border-border/15">
+                                    <td className="py-1 pr-2 font-bold text-foreground/90">{r.key}</td>
+                                    <td className="text-right py-1 px-1.5 font-mono text-muted-foreground">{r.count}</td>
+                                    <td className={`text-right py-1 px-1.5 font-mono ${r.wins > r.count - r.wins ? 'text-emerald-400' : 'text-muted-foreground'}`}>{r.wins}/{r.count}</td>
+                                    <td className={`text-right py-1 px-1.5 font-mono font-bold ${r.netR > 0 ? 'text-emerald-400' : r.netR < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>{r.netR > 0 ? '+' : ''}{r.netR}R</td>
+                                    <td className={`text-right py-1 pl-1.5 font-mono ${(r.avgR ?? 0) > 0 ? 'text-emerald-400/80' : (r.avgR ?? 0) < 0 ? 'text-red-400/80' : 'text-muted-foreground'}`}>{r.avgR != null ? ((r.avgR > 0 ? '+' : '') + r.avgR) : '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="text-[9px] text-muted-foreground/50 mt-0.5">{sec.hint}</p>
+                        </div>
+                      ))}
+                      <p className="text-[9.5px] text-muted-foreground/60 border-t border-border/30 pt-1.5">
+                        Leximi: 2R targeti kërkon tregti me kohë — nëse STOP_HIT dominojnë në një regjim, hyrja hyn shumë herët; nëse PROFITABLE_TIME_EXIT dominojnë, targeti mund të jetë shumë i lartë për volatilitetin aktual; nëse R përfundimtar mbetet pozitiv nëpër grupe, sistemi funksionon dhe problemi ishte vetëm raportimi.
+                      </p>
+                    </div>
+                  </>
                 )}
               </div>
             )}
