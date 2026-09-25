@@ -616,3 +616,28 @@ Stage Summary:
 - Dy pamjet e ndara plotësisht funksionale: sinjalet e krijuara (gjendja e kohortëss) ≠ tregtitë e mbyllura (rezultatet me R neto) — konfirmohet logjika e skadimeve dhe expectancy neto
 - Krahasimi jep përgjigjen e parë reale: problemi kryesor është REGJIMI (CAUTION), jo targeti 2R (25 tregti mbyllen në fitim me kohë) dhe jo hyrja (NO_FILL vetëm 22 pa dëmtim)
 - Commit: 681b8bd (push, deploy automatik verifikuar)
+
+---
+Task ID: 35
+Agent: Super Z (main)
+Task: "tek map e tregu ku te behet popup ne fillim bone sikur te finviz dhe te dale arsyeja se why is moving data. Edhe kur ta offroj mousin tek sektori qe te rethohet me te verdhe sektori si te finviz" — popup Finviz-style në Map e Tregut me lajmet "pse lëviz" në fillim + rrethimi i verdhë i sektorit në hover
+
+Work Log:
+- Rregulli i ambjentit (reset përsëri): fetch + reset --hard në 35034fb (Task 34); bun install --frozen-lockfile
+- Test i burimeve lajmeve nga sandbox: Yahoo RSS feeds.finance.yahoo.com/rss/2.0/headline?s=SYM (punoi) + Google News RSS (fallback)
+- SKEDAR I RI src/lib/market-map-news.ts: getWhyMoving(symbol) — Yahoo RSS primar, Google News fallback, parse regex pa varësi, dedupe titujsh, cache 5 min në memorie, pa shkrime në DB (vetëm lexim)
+- API E RE /api/market-map/why?symbol=X: validim simboli (A-Z + vizë për BRK-B), max 3 lajme, {ok, symbol, items[{headline, source, url, publishedAt}]}
+- UI market-map.tsx — POPUP SI TE FINVIZ:
+  * Seksioni "PSE LËVIZ" në fillim të popup-it (poshtë kokës me çmimin, mbi listën e sektorit): 3 lajmet e fundit si linjë klikuese (target=_blank) me burimin + "X min më parë" (shqip)
+  * Fetch me debounce 300ms (vetëm kur pushimi qëndron mbi pllakë) + cache klienti 5 min; gjendjet: loading skeleton / bosh "Pa lajme" / error
+  * Popup bëhet interaktiv (pointer-events auto): fshehja me vonesë 380ms që miu të hyjë në të; anchor në pikën e hyrjes së pllakës (ndjek si Finviz, s'vallëzon)
+- UI — RRETHIMI I VERDHË I SEKTORIT (#facc15, stil Finviz), dy rrugë:
+  * Hover mbi rreshtin e sektorit në popup (Teknologji · 35 kompani) → blloku në hartë rrethohet: outline 2.5px + glow i brendshëm + z-index 30 + etiketa jeshile→e verdhë me ◑
+  * Hover mbi kokën e sektorit direkt në hartë → i njëjti theksim; state resetohet në mouseleave
+- Tekste të përditësuara: titulli i kartës (hover = pse lëviz), legjenda (hover mbi sektor = theksim i verdhë)
+- VERIFIKIMI: tsc 145 = baza 0 të reja; build OK; agent-browser — AAPL popup me 3 lajme reale + href-e funksionale, hover rreshti i sektorit në popup → Teknologji e rrethuar me të verdhë (VLM konfirmoi vizualisht), hover koka e sektorit në hartë → theksim, popup fshihet ~180ms pas largimit, ri-hover instant nga cache; NVDA testuar gjithashtu; 0 gabime konsole
+- Commit: 430c77e — PUSH DËSHTOI: ambjenti i resetuar s'ka credenciale GitHub (as .git-credentials, as gh CLI, as env) — nevojitet token i ri nga përdoruesi
+
+Stage Summary:
+- Map e Tregut tani ka popup Finviz-style të plotë: arsyeja "pse lëviz" (lajmet e fundit me burim e kohë) në fillim të popup-it + sektorët e rrethuar me të verdhë nga popup-u ose nga koka e bllokut
+- Kërkohet veprim i përdoruesit: token i ri GitHub për push (i vjetri u ekspozua 3 herë dhe duhej revokuar); pas push-it Vercel deploy automatikisht
