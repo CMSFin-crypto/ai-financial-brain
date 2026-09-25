@@ -641,3 +641,25 @@ Work Log:
 Stage Summary:
 - Map e Tregut tani ka popup Finviz-style të plotë: arsyeja "pse lëviz" (lajmet e fundit me burim e kohë) në fillim të popup-it + sektorët e rrethuar me të verdhë nga popup-u ose nga koka e bllokut
 - Kërkohet veprim i përdoruesit: token i ri GitHub për push (i vjetri u ekspozua 3 herë dhe duhej revokuar); pas push-it Vercel deploy automatikisht
+
+---
+Task ID: 36
+Agent: Super Z (main)
+Task: "krijoje nje tab te vecante dhe mos e peziej me tabet tjera: versioni e pare funksional te strategjise Social Arb" — moduli Social Arb si tab i veçuar me kodin e skedarit të dhënë
+
+Work Log:
+- FAQJA E RE src/app/social-arb/page.tsx (route i pavarur /social-arb): kodi i skedarit të dhënë 100% i paprekur në logjikë (tipet, parseCSV me quoted commas/CRLF/thonjëza, readCSV me validim, scoreGroup me 6 komponentë, uniqueKey dedupe, localStorage 'ai-financial-brain:social-arb:v1', template CSV, clear me confirm)
+- Shtesat e integrimin: Header i aplikacionit lart + link "Paneli Kryesor" (/) mbrapa; badge statusi me ngjyra (RESEARCH jeshile/WATCH qelibër/REJECT e kuqe); typo "datё"→"datë"
+- src/app/page.tsx: kategori e re "Lab" (desktop pas Kontrol + mobile) me trigger "Social Arb" (ikonë FlaskConical, temë rose) — onValueChange intercepton 'social-arb' → router.push('/social-arb') pa ndryshuar activeTab; zero ndryshime në tab-et/strategjitë ekzistuese
+- VERIFIKIMI: tsc 145 = baza 0 të reja; build OK (/social-arb route statik); testuar me agent-browser:
+  * Klikimi real me mouse në tab → navigon në /social-arb (NB: .click() sintetik s'aktivizon Radix Tabs — vetëm gjë testimi, jo bug)
+  * Import CSV testuese 16 rreshta (scripts/social-arb-test.csv): NVDA 92/100 RESEARCH (2/2 burime, +2.8% vs indeks, 10 snapshot-e të dukshme — rreshti i 11-të me available_at=2026-09-27 PËRJASHTOHET siç duhet) + GME 41/100 REJECT (promo_risk 0.9 bllokon)
+  * Mbrojtja anti-lookahead: asOf 2026-09-26 → 2026-09-15 → NVDA bie 92→28/100 REJECT me 0/0 burime (dritarja 7-ditore s'ka 2 pika) dhe vetëm 6 snapshot-e të dukshme
+  * localStorage i qëndrueshëm pas reload (16 rreshta → 2 kandidatë); VLM konfirmoi vizualisht 5/5 elementë
+- Kufijtë e V1 (siç është projektuar): vetëm localStorage, pa DB/burime live/urdhra IBKR; CSV origjinale = arkivi
+- Commit: c6e9b84 — PUSH DËSHTOI përsëri (ambjenti s'ka credenciale GitHub; nevojitet token i ri nga përdoruesi — i vjetri u ekspozua 3 herë dhe duhet revokuar)
+
+Stage Summary:
+- Social Arb Lab V1 funksional si modul plotësisht i veçuar: tab "Lab" në panel → faqja /social-arb — nuk prek asnjë strategji ekzistuese
+- Score, statuset RESEARCH/WATCH/REJECT, arsyet dhe data e simulimit me anti-lookahead të testuara me të dhëna reale në browser
+- Në pritje: token i ri GitHub për push (3 commit-e lokale: 430c77e, 6c1db1b, c6e9b84); pas push-it Vercel deployon automatikisht
