@@ -1945,6 +1945,242 @@ function tagChip(tag: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PSE ky status — popup mbi badge-in e secilit stok (Spec: "me tregu
+// tek secili stok se pse eshte OPEN, TARGET_HIT, NOT_HIT, TIME_EXIT,
+// STOP_HIT, PARTIAL") + popup për çdo tregues të përmbledhjes javore.
+// ═══════════════════════════════════════════════════════════════
+
+function statusWhy(s: any): { title: string; rule: string; rows: { k: string; v: string; vCls?: string }[]; event: string } {
+  const st = s.tradeStatus || s.status;
+  const ent = fmtEtDateTime(s.entryHitAt);
+  const ext = fmtEtDateTime(s.exitAt) || (st === 'TARGET_HIT' && s.targetHitAt ? fmtEtDateTime(s.targetHitAt) : null);
+  const r = s.rMultiple ?? s.resultR;
+  const pl = s.realizedPnlPct;
+  const mfe = s.mfeR;
+  const mae = s.maeR;
+  const mfp = s.maxFavorablePrice;
+  const mAv = s.maxAdversePrice;
+  const rr = (v: number | null | undefined) => (v != null ? `${v > 0 ? '+' : ''}${v}R` : '—');
+
+  switch (st) {
+    case 'TARGET_HIT':
+      return {
+        title: 'TARGET_HIT — pse',
+        rule: 'Hyrja u mbush (high ≥ Entry) dhe më pas çmimi e kapi targetin e planifikuar → dalja u ekzekutua në nivelin e targetit. S\u2019mjafton vetëm prekja e çmimit — llogaritet kur ka dalje reale në atë nivel (paper fill).',
+        rows: [
+          { k: 'Hyrja u kap', v: ent || 'data e paregjistruar', vCls: 'text-cyan-400' },
+          { k: 'U mbyll', v: ext || 'data e paregjistruar', vCls: 'text-emerald-400' },
+          { k: 'Çmimi i daljes', v: s.actualExitPrice != null ? `$${s.actualExitPrice.toFixed(2)} (target ${s.target != null ? `$${s.target.toFixed(2)}` : '—'})` : '—' },
+          { k: 'Rezultati', v: r != null ? `${rr(r)}${pl != null ? ` · ${pl > 0 ? '+' : ''}${pl}%` : ''}` : '—', vCls: 'text-emerald-400' },
+        ],
+        event: 'Ngjarja: pas ditës së hyrjes, high i ditës tregtimi ≥ Target → ekzekutim. Rregull konservativ: targeti dhe stop-i të njëjtën ditë → stop-i i pari.',
+      };
+    case 'STOP_HIT':
+      return {
+        title: 'STOP_HIT — pse',
+        rule: 'Hyrja u mbush, por çmimi ra në nivelin e stop-it → dalje me humbjen e planifikuar −1R. Kur targeti dhe stop-i goditen të njëjtën ditë, merret konservativisht stop-i i pari.',
+        rows: [
+          { k: 'Hyrja u kap', v: ent || 'data e paregjistruar', vCls: 'text-cyan-400' },
+          { k: 'Stop-i u godit', v: ext || 'data e paregjistruar', vCls: 'text-red-400' },
+          { k: 'Çmimi i daljes', v: s.actualExitPrice != null ? `$${s.actualExitPrice.toFixed(2)} (stop ${s.stop != null ? `$${s.stop.toFixed(2)}` : '—'})` : '—' },
+          { k: 'Rezultati', v: r != null ? rr(r) : '−1R', vCls: 'text-red-400' },
+        ],
+        event: 'Ngjarja: pas ditës së hyrjes, low i ditës ≤ Stop → dalje në stop.',
+      };
+    case 'PARTIAL_TARGET':
+      return {
+        title: 'PARTIAL_TARGET — pse',
+        rule: 'Hyrja u mbush dhe pozicioni ishte në fitim, por targeti s\u2019u arrit brenda 10 ditëve tregtimi → u mbyll me kohën në çmimin e fundit, me fitim të pjesshëm.',
+        rows: [
+          { k: 'Hyrja u kap', v: ent || '—', vCls: 'text-cyan-400' },
+          { k: 'Skadoi / u mbyll', v: ext || '—', vCls: 'text-orange-400' },
+          { k: 'Çmimi i daljes', v: s.actualExitPrice != null ? `$${s.actualExitPrice.toFixed(2)}` : '—' },
+          { k: 'Maksimumi i arritur (MFE)', v: mfe != null ? `${rr(mfe)}${mfp != null ? ` · $${mfp.toFixed(2)}` : ''}` : '—', vCls: 'text-emerald-400/80' },
+          { k: 'Rezultati final', v: r != null ? rr(r) : '—', vCls: (r ?? 0) > 0 ? 'text-emerald-400' : 'text-muted-foreground' },
+        ],
+        event: 'Skadimi: as targeti as stop-i brenda 10 ditësh → dalje me kohën; fitim > 0.05R → PARTIAL_TARGET, ndryshe TIME_EXIT.',
+      };
+    case 'TIME_EXIT':
+      return {
+        title: 'TIME_EXIT — pse',
+        rule: 'Hyrja u mbush, por as targeti as stop-i nuk u goditën brenda 10 ditëve tregtimi → doli me kohën, në çmimin e fundit (flat ose humbje e vogël).',
+        rows: [
+          { k: 'Hyrja u kap', v: ent || '—', vCls: 'text-cyan-400' },
+          { k: 'Skadoi / u mbyll', v: ext || '—', vCls: 'text-orange-400' },
+          { k: 'Çmimi i daljes', v: s.actualExitPrice != null ? `$${s.actualExitPrice.toFixed(2)}` : '—' },
+          { k: 'Maksimumi favorshëm / advers', v: `${rr(mfe)} / ${mae != null ? `−${mae}R` : '—'}` },
+          { k: 'Rezultati final', v: r != null ? rr(r) : '—', vCls: (r ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400/80' },
+        ],
+        event: 'Skadimi: 10 ditë tregtimi pa asnjë nivel → dalje në close-in e fundit.',
+      };
+    case 'TARGET_NOT_HIT':
+      return {
+        title: 'TARGET_NOT_HIT (NO_FILL) — pse',
+        rule: 'Urdhri i hyrjes s\u2019u mbush kurrë: brenda 10 ditëve tregtimi, çmimi (high) s\u2019e kapi nivelin e hyrjes. Asnjë pozicion s\u2019u hap — kjo NUK është dështim tregtie, thjesht setup-i s\u2019u aktivizua.',
+        rows: [
+          { k: 'Niveli i hyrjes që priste', v: s.entry != null ? `$${s.entry.toFixed(2)}` : '—' },
+          { k: 'Data e sinjalit', v: s.signalDate || s.scanDate || '—' },
+          { k: 'Dritarja', v: '10 ditë tregtimi pa high ≥ Entry' },
+        ],
+        event: 'Ngjarja: kaluan 10 bar-e ditore pa qenë high ≥ Entry → mbyllet si order_not_filled.',
+      };
+    case 'OPEN': {
+      if (s.entryHitAt) {
+        return {
+          title: 'OPEN — pozicion aktiv',
+          rule: 'Hyrja u mbush dhe pozicioni është ende aktiv: as targeti as stop-i nuk janë goditur. Brenda dritares swing të 10 ditëve tregtimi — s\u2019numërohet as si fitore as si dështim derisa të mbyllet.',
+          rows: [
+            { k: 'Hyrja u kap', v: ent || '—', vCls: 'text-cyan-400' },
+            { k: 'Maksimumi favorshëm (MFE)', v: mfe != null ? `${rr(mfe)}${mfp != null ? ` · $${mfp.toFixed(2)}` : ''}` : '—', vCls: 'text-emerald-400/80' },
+            { k: 'Maksimumi advers (MAE)', v: mae != null ? `−${mae}R${mAv != null ? ` · $${mAv.toFixed(2)}` : ''}` : '—', vCls: 'text-red-400/70' },
+            { k: 'Pozicioni tani (parealizuar)', v: r != null ? rr(r) : '—', vCls: (r ?? 0) >= 0 ? 'text-emerald-400/90' : 'text-red-400/80' },
+          ],
+          event: 'Mbyllet kur: high ≥ Target → TARGET_HIT · low ≤ Stop → STOP_HIT · 10 ditë pa asnjërin → PARTIAL_TARGET / TIME_EXIT.',
+        };
+      }
+      return {
+        title: 'OPEN — urdhri pret hyrjen',
+        rule: 'Çmimi ende s\u2019e ka kapur nivelin e hyrjes — urdhri limit pret. Nuk ka pozicion të hapur; nëse s\u2019kapet brenda 10 ditëve tregtimi, shënohet NO_FILL (jo dështim tregtie).',
+        rows: [
+          { k: 'Niveli i hyrjes', v: s.entry != null ? `$${s.entry.toFixed(2)}` : '—' },
+          { k: 'Data e sinjalit', v: s.signalDate || s.scanDate || '—' },
+        ],
+        event: 'Hyrja konsiderohet e kapur kur high ≥ Entry; prej asaj dite ndiqen targeti dhe stop-i.',
+      };
+    }
+    default:
+      return {
+        title: st || 'Status',
+        rule: 'Status i trashëguar nga vlerësimet e vjetra (para gjurmimit të plotë të fushave).',
+        rows: [{ k: 'Arsyeja e daljes', v: exitReasonShqip(s.exitReason) }],
+        event: 'Detajet e plota: kliko shigjetën ▸ në rreshtin e tabelës.',
+      };
+  }
+}
+
+// Badge-i i statusit + popup: PSE ky stok ka këtë status (rregulli + kjo tregti)
+function StatusPopover({ s }: { s: any }) {
+  const st = s.tradeStatus || s.status;
+  const tb = tradeStatusBadge(st);
+  const why = statusWhy(s);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          title="Pse ky status? — rregulli + kjo tregti"
+          className={`text-[9px] px-1.5 py-0.5 rounded font-bold underline decoration-dotted decoration-1 underline-offset-2 hover:brightness-125 transition-all cursor-help ${tb.cls}`}
+        >
+          {tb.label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="center" className="w-80 p-0">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-3.5 pt-2.5 pb-1.5">
+          <h3 className="text-[13px] font-bold text-foreground">{why.title}</h3>
+        </div>
+        <div className="px-3.5 pb-3 space-y-2">
+          <p className="text-[11.5px] leading-relaxed text-foreground/85">{why.rule}</p>
+          {why.rows.length > 0 && (
+            <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 text-[11px] rounded-md bg-muted/10 border border-border/40 p-2">
+              {why.rows.map((rw, i) => (
+                <span key={i} className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-muted-foreground/70 shrink-0">{rw.k}:</span>
+                  <span className={`font-medium truncate ${rw.vCls || 'text-foreground/90'}`}>{rw.v}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] leading-relaxed text-muted-foreground/70 border-t border-border/40 pt-1.5">{why.event}</p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Popup për treguesit e përmbledhjes javore: çfarë tregon + si ndodh ngjarja
+function MetricPopover({ title, what, how, children }: { title: string; what: React.ReactNode; how: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="hover:brightness-125 transition-all cursor-help text-left">{children}</button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-80 p-0">
+        <div className="bg-gradient-to-b from-primary/10 to-transparent px-3.5 pt-2.5 pb-1.5">
+          <h3 className="text-[13px] font-bold text-foreground">{title}</h3>
+        </div>
+        <div className="px-3.5 pb-3 space-y-2">
+          <div>
+            <p className="text-[9px] uppercase tracking-wide font-bold text-muted-foreground/70 mb-0.5">Çfarë tregon</p>
+            <p className="text-[11.5px] leading-relaxed text-foreground/85">{what}</p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide font-bold text-muted-foreground/70 mb-0.5">Si ndodh ngjarja</p>
+            <p className="text-[11.5px] leading-relaxed text-foreground/85">{how}</p>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Përmbledhja javore — çdo tregues me popup-in e vet (Spec: "cka jane keta
+// tregues, cka tregojne, cfare parametra ka marre parasysh dhe si ka ndodhe
+// ngjarja — vendos popup")
+function WeeklySummary({ weekly }: { weekly: any }) {
+  const t = weekly?.totals || {};
+  const sigs: any[] = weekly?.signals || [];
+  const uniqueTickers = new Set(sigs.map((x: any) => x.ticker)).size;
+  const openSigs = sigs.filter((x: any) => x.status === 'OPEN');
+  const openFilled = openSigs.filter((x: any) => x.entryHitAt).length;
+  const oldestOpen = openSigs.map((x: any) => x.signalDate).sort()[0] || null;
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground bg-muted/10 rounded-md px-2.5 py-2">
+      <MetricPopover
+        title="Top 10 candidates"
+        what={<>Sinjale të regjistruara në ditar brenda dritares — çdo rresht është kombinim unik <strong>(ditë + ticker)</strong>: skanimet e përsëritura të njëjtës ditë përditësojnë të njëjtin rresht, s&apos;dubllojnë. Këtë javë: <strong>{sigs.length}</strong> sinjale nga <strong>{uniqueTickers}</strong> kompani unike — i njëjti aksion mund të hyjë në ditë të ndryshme si sinjale të veçanta, secili me nivelet e veta Entry/Target/Stop.</>}
+        how={<>Çdo ditë tregtimi, kandidatët READY me score më të lartë hyjnë në Top 10; për secilin ruhen nivelet dhe parametrat e momentit (RVOL, ATR%, regjimi, VIX, breadth, sektor).</>}
+      >
+        <span>Top 10 candidates: <strong className="text-foreground">{t.entries ?? 0}</strong>{uniqueTickers > 0 && <span className="text-muted-foreground/60"> ({uniqueTickers} unike)</span>}</span>
+      </MetricPopover>
+      <MetricPopover
+        title="Target hit"
+        what={<>Tregtitë ku hyrja u mbush DHE çmimi e kapi targetin e planifikuar — dalja u ekzekutua në target (paper fill), jo thjesht prekja e çmimit.</>}
+        how={<>Pas ditës së hyrjes: <span className="font-mono">high ≥ Target</span> → TARGET_HIT. Rregull konservativ: targeti dhe stop-i të njëjtën ditë → merret stop-i i pari.</>}
+      >
+        <span>Target hit: <strong className="text-emerald-400">{t.targetHits ?? 0}</strong></span>
+      </MetricPopover>
+      <MetricPopover
+        title="Stop hit"
+        what={<>Tregtitë ku hyrja u mbush por çmimi ra në stop — çdo e tillë mbyllet me humbjen e planifikuar −1R.</>}
+        how={<>Pas ditës së hyrjes: <span className="font-mono">low ≤ Stop</span> → STOP_HIT.</>}
+      >
+        <span>Stop hit: <strong className="text-red-400">{t.stopHits ?? 0}</strong></span>
+      </MetricPopover>
+      <MetricPopover
+        title="Open"
+        what={<>Pozicione ende aktive ose urdhra që presin hyrjen — këtë javë: <strong>{openFilled}</strong> me pozicion të hapur, <strong>{openSigs.length - openFilled}</strong> që presin t&apos;i kapi çmimi i hyrjes{oldestOpen ? ` (më e vjetra: ${oldestOpen})` : ''}. Të gjitha brenda afatit swing 10-ditësh tregtimi — <strong>s&apos;numërohen si dështime</strong> dhe s&apos;hyjnë në hit rate.</>}
+        how={<>Mbyllen vetëm kur: <span className="font-mono">high ≥ Target</span> ose <span className="font-mono">low ≤ Stop</span> ose skadon dritarja 10-ditore.</>}
+      >
+        <span>Open: <strong className="text-amber-400">{t.open ?? 0}</strong></span>
+      </MetricPopover>
+      <MetricPopover
+        title="Expired — tre rezultate të ndryshme"
+        what={<>Përmbledhje e tre rezultateve të skadimit: <strong className="text-lime-400">{t.partialTarget ?? 0}</strong> PARTIAL_TARGET (hyrja u mbush, skadoi në fitim) · <strong className="text-orange-400">{t.timeExit ?? 0}</strong> TIME_EXIT (hyrja u mbush, skadoi flat/humbje) · <strong className="text-blue-400">{t.noFill ?? 0}</strong> NO_FILL (hyrja s&apos;u prek kurrë — s&apos;u hap pozicion, <strong>s&apos;është dështim tregtie</strong>).</>}
+        how={<>Skadimi ndodh kur brenda 10 ditëve tregtimi s&apos;goditet as targeti as stop-i: mbyllje në close-in e fundit (fitim &gt; 0.05R → PARTIAL, ndryshe TIME_EXIT). Nëse as hyrja s&apos;u prek → NO_FILL.</>}
+      >
+        <span>Expired: <strong className="text-foreground">{t.expired ?? 0}</strong></span>
+      </MetricPopover>
+      <MetricPopover
+        title="Target hit rate"
+        what={<>Formula: <span className="font-mono">Target hit ÷ (Target hit + Stop hit)</span> — vetëm tregtitë e <strong>vendosura</strong>. Open s&apos;hyjnë (ende nuk dihet si mbyllen); Expired/NO_FILL s&apos;hyjnë (s&apos;kanë goditur asnjë nivel). Saktësia e drejtimit ({weekly?.directionAccuracy ?? '—'}%) përfshin edhe R-në e parealizuar të Open-ve (mark-to-market).</>}
+        how={<>P.sh. {t.targetHits ?? 0} target / ({t.targetHits ?? 0} + {t.stopHits ?? 0} stop) = {t.targetHits && (t.targetHits + t.stopHits) ? Math.round(((t.targetHits) / (t.targetHits + t.stopHits)) * 100) : 0}%.</>}
+      >
+        <span>Target hit rate: <strong className="text-cyan-400">{weekly?.hitRate != null ? weekly.hitRate + '%' : '—'}</strong></span>
+      </MetricPopover>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Drill-down: detajet e plota të një tregtie të raportit javor
 // Spec: kur ka hyrë (date + orë) · çfarë parametrash u morën parasysh
 // në momentin e hapjes · çfarë score ka pasë · renditja në Top 10 ·
@@ -2349,7 +2585,11 @@ export function Top10JournalCard() {
                       </span>
                     )}
                     {(e.tags || []).slice(0, 3).map(tagChip)}
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${sb.cls}`}>{sb.label}</span>
+                    {e.tradeStatus ? (
+                      <StatusPopover s={e} />
+                    ) : (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${sb.cls}`}>{sb.label}</span>
+                    )}
                   </div>
                 </div>
               );
@@ -2392,7 +2632,11 @@ export function Top10JournalCard() {
                       return (
                         <div key={en.id} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
                           <span className="w-[70px]">{en.scanDate}</span>
-                          <span className={sb.cls + ' px-1.5 py-0.5 rounded text-[9px] font-bold'}>{sb.label}</span>
+                          {en.tradeStatus ? (
+                            <StatusPopover s={en} />
+                          ) : (
+                            <span className={sb.cls + ' px-1.5 py-0.5 rounded text-[9px] font-bold'}>{sb.label}</span>
+                          )}
                           {en.resultR != null && (
                             <span className={en.resultR > 0 ? 'text-emerald-400' : 'text-red-400'}>
                               {en.resultR > 0 ? '+' : ''}{en.resultR.toFixed(2)}R
@@ -2428,8 +2672,8 @@ export function Top10JournalCard() {
             {/* Legjenda — çfarë është çdo tregues dhe si ndodh ngjarja */}
             {showLegend && (
               <div className="mb-2.5 rounded-md border border-cyan-500/15 bg-cyan-500/[0.03] p-2.5 space-y-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                <p><strong className="text-foreground">Top 10 candidates</strong> — sa sinjale READY u regjistruan në ditar brenda dritares (deri 10 në ditë). Çdo ditë skaneri zgjedh kandidatët me score më të lartë; për çdo kandidat ruhen nivelet Entry/Target/Stop dhe parametrat e momentit (RVOL, ATR%, regjimi, VIX, breadth).</p>
-                <p><strong className="text-foreground">Si ndodh ngjarja</strong> — pas sinjalit, çmimi ndiqet live (vëzhguesi çdo 15 min) dhe me bar-e ditore nga cron-i në 05:00 ET-ora: kur <span className="font-mono">high ≥ Entry</span> hyrja konsiderohet e kapur; pastaj nëse <span className="font-mono">high ≥ Target</span> → TARGET_HIT, nëse <span className="font-mono">low ≤ Stop</span> → STOP_HIT (nëse të dyja në të njëjtën ditë → konservativisht stop-i); nëse asnjë brenda 10 ditësh tregtimi → skadim.</p>
+                <p><strong className="text-foreground">Top 10 candidates</strong> — sinjale unike <span className="font-mono">(ditë + ticker)</span> brenda dritares: skanimet e përsëritura të njëjtës ditë s&apos;dubllojnë (përditësojnë rreshtin), por i njëjti aksion në ditë të ndryshme llogaritet si sinjal i veçantë me nivelet e veta. Çdo ditë skaneri zgjedh kandidatët READY me score më të lartë; për çdo kandidat ruhen nivelet Entry/Target/Stop dhe parametrat e momentit (RVOL, ATR%, regjimi, VIX, breadth).</p>
+                <p><strong className="text-foreground">Si ndodh ngjarja</strong> — pas sinjalit, çmimi ndiqet live (vëzhguesi çdo 15 min) dhe me bar-e ditore nga cron-i ditor në 05:00 UTC: kur <span className="font-mono">high ≥ Entry</span> hyrja konsiderohet e kapur; pastaj nëse <span className="font-mono">high ≥ Target</span> → TARGET_HIT, nëse <span className="font-mono">low ≤ Stop</span> → STOP_HIT (nëse të dyja në të njëjtën ditë → konservativisht stop-i); nëse asnjë brenda 10 ditësh tregtimi → skadim (PARTIAL_TARGET nëse ka fitim, TIME_EXIT ndryshe; nëse as hyrja s&apos;u prek → NO_FILL).</p>
                 <p><strong className="text-emerald-400">Target hit</strong> — tregtitë që e arritën/ekzekutuan targetin e planifikuar.</p>
                 <p><strong className="text-red-400">Stop hit</strong> — tregtitë që goditën stop-loss (−1R çdo e tregtisë e tillë).</p>
                 <p><strong className="text-amber-400">Open</strong> — ende aktive: hyrja u kap por as target as stop s’janë goditur ende.</p>
@@ -2449,15 +2693,8 @@ export function Top10JournalCard() {
             )}
             {!weeklyLoading && weekly?.dbActive && (
               <div className="space-y-3">
-                {/* Përmbledhja në krye (formati i spec-it) */}
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground bg-muted/10 rounded-md px-2.5 py-2">
-                  <span>Top 10 candidates: <strong className="text-foreground">{weekly.totals?.entries ?? 0}</strong></span>
-                  <span>Target hit: <strong className="text-emerald-400">{weekly.totals?.targetHits ?? 0}</strong></span>
-                  <span>Stop hit: <strong className="text-red-400">{weekly.totals?.stopHits ?? 0}</strong></span>
-                  <span>Open: <strong className="text-amber-400">{weekly.totals?.open ?? 0}</strong></span>
-                  <span>Expired: <strong className="text-foreground">{weekly.totals?.expired ?? 0}</strong></span>
-                  <span>Target hit rate: <strong className="text-cyan-400">{weekly.hitRate != null ? weekly.hitRate + '%' : '—'}</strong></span>
-                </div>
+                {/* Përmbledhja në krye (formati i spec-it) — çdo tregues me popup */}
+                <WeeklySummary weekly={weekly} />
 
                 {/* Tabela: Kompania | Entry | Target | Stop | Status | Target hit | P/L | R — me drill-down */}
                 {(weekly.signals?.length ?? 0) > 0 && (
@@ -2478,7 +2715,6 @@ export function Top10JournalCard() {
                       </thead>
                       <tbody>
                         {weekly.signals.map((s: any, i: number) => {
-                          const tb = tradeStatusBadge(s.status);
                           const dk = `${s.ticker}|${s.signalDate}|${i}`;
                           const isOpen = expandedTrades.has(dk);
                           return (
@@ -2503,7 +2739,7 @@ export function Top10JournalCard() {
                                 <td className="text-right py-1.5 px-1.5 font-mono text-emerald-400/90">{s.target != null ? s.target.toFixed(2) : '—'}</td>
                                 <td className="text-right py-1.5 px-1.5 font-mono text-red-400/80">{s.stop != null ? s.stop.toFixed(2) : '—'}</td>
                                 <td className="text-center py-1.5 px-1.5">
-                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${tb.cls}`}>{tb.label}</span>
+                                  <StatusPopover s={s} />
                                 </td>
                                 <td className="text-center py-1.5 px-1.5">
                                   {s.status === 'TARGET_HIT' ? (
