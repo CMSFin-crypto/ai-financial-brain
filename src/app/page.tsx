@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -53,6 +54,7 @@ import {
   BookOpen,
   LayoutGrid,
   CandlestickChart,
+  FlaskConical,
 } from 'lucide-react';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
@@ -288,6 +290,7 @@ function MetricsStatus({ summary }: { summary: KontrolSummary }) {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('ibkr');
+  const router = useRouter();
   const [quantTicker, setQuantTicker] = useState('');
   const [finvizTicker, setFinvizTicker] = useState('EXPE');
   const [kontrol, setKontrol] = useState<KontrolSummary | null>(null);
@@ -321,7 +324,7 @@ export default function Home() {
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Main Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={(v) => { if (v === 'social-arb') { router.push('/social-arb'); return; } setActiveTab(v); }} className="w-full">
           <div className="space-y-2">
           {/* Desktop: grouped tabs with category labels */}
           <div className="hidden lg:flex flex-col gap-2">
@@ -421,6 +424,15 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
               </div>
+              {/* Category: Lab — modul i pavarur, faqe e veçuar /social-arb */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Lab</span>
+                <TabsList className="flex gap-1 h-auto p-1 flex-1">
+                  <TabsTrigger value="social-arb" className="text-xs py-2 px-3 data-[state=active]:bg-rose-600 data-[state=active]:text-white">
+                    <FlaskConical className="w-3.5 h-3.5 mr-1.5" />Social Arb
+                  </TabsTrigger>
+                </TabsList>
+              </div>
             </div>
           {/* Mobile/Tablet: scrollable horizontal tabs by category */}
           <div className="lg:hidden space-y-2">
@@ -517,6 +529,15 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="metrics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
                     <BarChart3 className="w-3 h-3 mr-1" />Metrics
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Lab — Social Arb (faqe e veçuar /social-arb) */}
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Lab</span>
+                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                  <TabsTrigger value="social-arb" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-rose-600 data-[state=active]:text-white">
+                    <FlaskConical className="w-3 h-3 mr-1" />Social Arb
                   </TabsTrigger>
                 </TabsList>
               </div>
