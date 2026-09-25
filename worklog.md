@@ -567,3 +567,25 @@ Stage Summary:
 - Repo sinkron në c39931b; prod i verifikuar me numra të freskët (hit rate 6%→11% pas OKTA +2.58R)
 - Shpjegimi i plotë i 6 treguesve + udhëzimi i dropdown-it i dorëzuar userit në këtë sesion
 - Hapi i mbetur kritik është vetëm revokimi i token-it nga ana e userit
+
+---
+Task ID: 33
+Agent: Super Z (main)
+Task: "cka jane keta tregues... vendos popup" + "tek status me vendose popup me tregu tek secili stok se pse eshte OPEN/TARGET_HIT/NOT_HIT/TIME_EXIT/STOP_HIT/PARTIAL" + 4 pyetje semantike (126 unike apo snapshot-e? EXPIRED = pa hyrje apo pa target? 43 OPEN brenda afatit? TARGET_HIT pas hyrjes apo vetëm prekja?)
+
+Work Log:
+- PËRGJIGJET E KODIT (verifikuar në computeBarOutcome + buildWeeklyReport + API live):
+  * 126 = kombinime unike (ditë+ticker) — skanimet e përsëritura të njëjtës ditë PËRDITËSOJNË rreshtin (dedupe), por i njëjti aksion në ditë të ndryshme = sinjal i veçantë → 126 sinjale / 44 kompani unike / 6 ditë
+  * EXPIRED (65) ndahet në 3 rezultate të NDRYSHME: PARTIAL_TARGET 25 (hyrje e mbushur, skadoi në fitim >0.05R) · TIME_EXIT 18 (hyrje e mbushur, skadoi flat/humbje) · NO_FILL 22 (hyrja s'u prek kurrë — asnjë pozicion, s'është dështim tregtie)
+  * 43 OPEN: të gjitha nga 3 ditët e fundit (22/23/24 Shtator) — brenda afatit 10-ditor; 14 me pozicion të hapur, 29 me urdhër në pritje; s'hyjnë në hit rate (formula: target/(target+stop) vetëm te vendosurat)
+  * TARGET_HIT = pas hyrjes reale paper (high ≥ Entry) DHE ekzekutimit të daljes në target — jo thjesht prekja ("preku" shfaqet veçmas kur touched ≠ executed); rregull konservativ same-bar: stop-i i parë
+- UI (ibkr-strategy.tsx): statusWhy() + StatusPopover — badge-i i statusit në tabelën javore, listën ditore dhe historinë bëhet popup me rregullin + rreshtat specifike të asaj tregtie (kur u kap hyrja, kur u godit, çmimi i daljes, MFE/MAE, rezultati); OPEN ka 2 nënraste: 'pozicion aktiv' (me MFE/MAE/parealizuar) dhe 'urdhri pret hyrjen' (me nivelin e pritur)
+- MetricPopover + WeeklySummary — të 6 treguesit e përmbledhjes bëhen popup 'Çfarë tregon' + 'Si ndodh ngjarja': candidates me numrin e kompanive unike live (126 (44 unike)), Open me ndarjen pozicion/urdhër + datën më të vjetër, Expired me ndarjen 3-way me numra live, hit rate me formulën dhe shembullin numerik + shënimin mark-to-market për directionAccuracy
+- Legjenda u përditësua: candidates = ditë+ticker unike; skadimi me 3 daljet (PARTIAL/TIME_EXIT/NO_FILL); typo '05:00 ET-ora' → 05:00 UTC
+- VERIFIKIMI: tsc 145 = baza, 0 të reja; build OK; live prod me agent-browser — popup-i candidates (126/44), popup-i Expired (25/18/22), badge STOP_HIT (FTNT: hyrja 09/23, stop-i 09/24, $120.03, −1R), badge OPEN-urdhër (FTNT 09/24 entry $179.71), badge OPEN-pozicion (FTNT 09/23 'Hyrja u kap: 09/25/2026 · 01:36 AM ET'); screenshot-et në download/popup-*.png
+- Prod live (25 Shtator): hit rate 17% (3/18 — dritarja lëvizi, OKTA +2.58R hyri në llogaritje), Open 43, Expired 65
+
+Stage Summary:
+- Çdo numër i raportit javor dhe çdo status stoki tani shpjegohet brenda UI me 1 klik — rregulli i përgjithshëm + të dhënat specifike të asaj tregtie
+- 4 pyetjet semantike u përgjigjen me kod + të dhëna live (jo supozime); daljet NO_FILL tani janë të qarta se s'janë dështime tregtie
+- Commit: e70013b (push)
