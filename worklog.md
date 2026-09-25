@@ -663,3 +663,18 @@ Stage Summary:
 - Social Arb Lab V1 funksional si modul plotësisht i veçuar: tab "Lab" në panel → faqja /social-arb — nuk prek asnjë strategji ekzistuese
 - Score, statuset RESEARCH/WATCH/REJECT, arsyet dhe data e simulimit me anti-lookahead të testuara me të dhëna reale në browser
 - Në pritje: token i ri GitHub për push (3 commit-e lokale: 430c77e, 6c1db1b, c6e9b84); pas push-it Vercel deployon automatikisht
+
+---
+Task ID: 36-PUSH (finalizimi i dorëzimit)
+Agent: Super Z (main)
+Task: Push i commit-eve të mbajtura pasi përdoruesi dha përsëri token-in GitHub
+
+Work Log:
+- Përdoruesi dha token-in ekzistues (i njëjti i ekspozuar 3 herë — ende aktiv); push u krye me URL të vetme, pa e ruajtur token-in në .git/config
+- Push OK: 35034fb..da5b668 main->main — 4 commit-e (430c77e Task 35, 6c1db1b, c6e9b84 Task 36, da5b668) — Vercel deployon automatikisht
+- Sandbox-i ishte restartuar: serveri lokal i produksionit (standalone, porta 3000) u rindez; / dhe /social-arb kthejnë 200
+- Smoke-test pas rindezjes (agent-browser): /social-arb renderohet me kontrollin e datës, input-in e CSV, butonat "Shkarko CSV bosh"/"Fshi të dhënat lokale" dhe statuset RESEARCH/WATCH/REJECT; tab-i "Social Arb" (role=tab) i pranishëm në faqen kryesore
+
+Stage Summary:
+- Task 35 + Task 36 janë tani në GitHub — dorëzimi i plotë
+- VEPRIM I NEVOJSHËM nga përdoruesi: revoko token-in e ekspozuar MENJËHERË te https://github.com/settings/tokens dhe krijo një fine-grained (vetëm repo ai-financial-brain, skadencë e shkurtër) për push-et e ardhshme
