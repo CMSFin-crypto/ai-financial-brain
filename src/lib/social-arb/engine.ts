@@ -40,7 +40,7 @@ const MEASUREMENTS_CAP = 6000;     // kufizi i store-it (arkivi CSV mbetet i plo
 const SCAN_BUDGET_MS: number = (() => {
   const v = Number(process.env.SCAN_BUDGET_MS);
   if (Number.isFinite(v) && v > 0) return v;
-  return process.env.VERCEL ? 45_000 : 0;
+  return process.env.VERCEL ? 35_000 : 0; // 35s në Vercel — 25s headroom për shkrimin + përgjigjen brenda limitit 60s
 })();
 
 // ── ndihmës ──────────────────────────────────────────────────────
@@ -123,17 +123,20 @@ async function doScan(): Promise<ScanResultSummary> {
 
   const store = await readStore();
 
-  // 1) merr termat trending nga të 4 rajonet
+  // 1) merr termat trending nga të 4 rajonet — paralel (sekuenca do të thoshte
+  //    deri 4×15s timeout në rastin më të keq; paralelisht = max 15s)
   const allTerms: TrendingTerm[] = [];
-  for (const region of REGIONS) {
-    try {
-      allTerms.push(...(await fetchTrendingNow(region)));
+  const trendsResults = await Promise.allSettled(REGIONS.map(r => fetchTrendingNow(r)));
+  REGIONS.forEach((region, i) => {
+    const r = trendsResults[i];
+    if (r.status === 'fulfilled') {
+      allTerms.push(...r.value);
       sources[`google_trends_${region}`] = 'ok';
-    } catch (e) {
+    } else {
       sources[`google_trends_${region}`] = 'error';
-      errors.push(`Trends ${region}: ${(e as Error).message}`);
+      errors.push(`Trends ${region}: ${(r.reason as Error).message}`);
     }
-  }
+  });
   const googleOk = Object.values(sources).some(v => v === 'ok');
   sources.google_trends = googleOk ? 'ok' : 'error';
 

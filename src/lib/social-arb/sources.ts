@@ -85,12 +85,14 @@ async function gdeltFetch(params: string): Promise<unknown> {
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   lastGdeltAt = Date.now();
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?${params}&format=json`;
-  let res = await fetchWithTimeout(url, 20000);
-  if (res.status === 429) {
-    // njëtentativë e dytë pas 12s — pastaj dorëzohu
+  let res = await fetchWithTimeout(url, 12000);
+  if (res.status === 429 && !process.env.VERCEL) {
+    // njëtentativë e dytë pas 12s — vetëm lokalisht: në serverless koha e funksionit
+    // është e kufizuar (60s) dhe një 429 i menjëhershëm është më i shtrenjtë sesa
+    // vlen; motori mban matjen e fundit të vlefshme (carry-over) në vend të saj.
     await new Promise(r => setTimeout(r, 12000));
     lastGdeltAt = Date.now();
-    res = await fetchWithTimeout(url, 20000);
+    res = await fetchWithTimeout(url, 12000);
   }
   if (!res.ok) throw new Error(`GDELT: HTTP ${res.status}`);
   const text = await res.text();

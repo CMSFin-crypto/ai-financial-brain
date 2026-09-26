@@ -101,6 +101,23 @@ derisa të kalosh në planin Pro (crons çdo 2 min) dhe ta shtosh në `vercel.js
 - `https://<app>.vercel.app/api/social-arb/state` — JSON me `storage.backend: "upstash"`
 - Pas një skanimi manual (butoni «Skano tani» në faqe ose cron-i): `lastScanAt` përditësohet
 
+### Nëse skanimi kthen 503
+
+Para se të vendosësh variablat e Upstash, faqja në Vercel punon në mënyrë
+**vetëm-leximi**: shfaq snapshot-in e të dhënave që është commit-uar në git
+(`data/social-arb.json` hyn në bundle në build) — kandidatët duken, por
+«Përditësuar më …» nuk lëviz pa Upstash, dhe skanimi kthen:
+
+```
+503 — Në Vercel skanimet kërkojnë ruajtjen në Upstash…
+```
+
+Kjo është e qëllimshme (e sinqertë në vend e rreme): shkrimi në FS-in e
+funksionit serverless është i pamundur dhe do të humbiste çdo matje. Sapo
+të shtosh variablat dhe të bësh Redeploy, skanimi aktivizohet vetë. Deri
+atëherë, sandbox-i lokal vazhdon të skanojë çdo 2 orë dhe historia jeton
+në git — asgjë s'humbet.
+
 ---
 
 ## Siguria

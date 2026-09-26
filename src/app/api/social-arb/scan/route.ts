@@ -8,8 +8,18 @@ import { storageInfo } from '@/lib/social-arb/store';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 // 60s = maksimumi i planit Hobby në Vercel; lokalisht s'ka efekt (Next standalone e injoron).
-// Motori e mbyll veten me nder brenda buxhetit (SCAN_BUDGET_MS, default 45s në Vercel).
+// Motori e mbyll veten me nder brenda buxhetit (SCAN_BUDGET_MS, default 35s në Vercel).
 export const maxDuration = 60;
+
+/** Në Vercel, FS-i i funksionit është i vetëm-lexim (data/ vjen e ngrirë nga build-i) —
+ *  skanimet atje kërkojnë Upstash. Dështoj i menjëhershëm me porosi të qartë
+ *  në vend se një timeout 60s kot dhe humbje kohe funksioni. */
+function scanBlockedByConfig(): string | null {
+  if (process.env.VERCEL && storageInfo().backend !== 'upstash') {
+    return 'Në Vercel skanimet kërkojnë ruajtjen në Upstash: vendos UPSTASH_REDIS_REST_URL dhe UPSTASH_REDIS_REST_TOKEN te Settings → Environment Variables, pastaj Redeploy. (Deri atëherë faqja shfaq snapshot-in e fundit nga git — sandbox-i lokal vazhdon të skanojë normalisht.)';
+  }
+  return null;
+}
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -28,6 +38,10 @@ function authorized(req: Request): boolean {
 async function handle(req: Request): Promise<Response> {
   if (!authorized(req)) {
     return Response.json({ ok: false, error: 'E paautorizuar — vendos Bearer CRON_SECRET.' }, { status: 401 });
+  }
+  const blocked = scanBlockedByConfig();
+  if (blocked) {
+    return Response.json({ ok: false, error: blocked }, { status: 503 });
   }
   if (scanInProgress()) {
     return Response.json({ ok: false, error: 'Një skanim po ekzekutohet tashmë.' }, { status: 409 });
