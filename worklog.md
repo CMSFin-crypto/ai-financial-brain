@@ -774,3 +774,22 @@ Work Log:
 Stage Summary:
 - Cikli plotërisht autonom: serveri → planifikuesi → skanimet → zbulimi/konfirmimi — pa asnjë proces të jashtëm
 - Të dhënat e matjeve tani i mbijetojnë gabimeve të burimeve (carry-over) dhe sandbox-eve (git + push)
+
+---
+Task ID: 42
+Agent: Super Z (main)
+Task: Vercel-ready — store dy-backend (Upstash Redis REST), lock ndër-procesesh, buxhet kohor serverless, seed + dokumenti i setup-it
+
+Work Log:
+- src/lib/social-arb/upstash.ts (i ri): primitivë REST (GET/SET/HGETALL/HSET + SET NX EX lock me TTL 15min) — pa varësi të reja, aktivizohet vetëm me UPSTASH_REDIS_REST_URL + TOKEN
+- store.ts refactor: interfejs identik, degëzim file/Upstash (store JSON një çelës; arkivi CSV si HASH mujor; csvArchiveStats() për UI; storageInfo me backend)
+- engine.ts: ScanLockError (route → 409) + buxheti kohor SCAN_BUDGET_MS (default 45s në VERCEL, 0 lokal) — GDELT/çmimet kapërcehen me nder dhe vijojnë në skanimin tjetër
+- scan/route.ts: maxDuration 60 (Hobby-safe); state/route.ts: përdor csvArchiveStats (pa fs të drejtpërdrejtë); page.tsx: etiketa «Ruajtja: Redis (Upstash)»
+- scripts/seed-upstash.mjs: migrim një herë i të dhënave lokale (store + CSV) → Redis, i sigurt pa --force
+- VERCEL_SETUP.md: 5 hapa konkretë (Upstash → import Vercel → seed → cron-job.org 2-orësh → verifikim) + tabelat e kufijve Hobby + siguria
+- Verifikime: tsc 0 gabime në fichet e mia; build OK; modaliteti file i paprekur (SBUX RESEARCH 75, MSFT WATCH 40, CSV 48 rreshta); skanim i plotë 94s ok; skanim i dyfishtë → 409
+- Commit 7145380 + push në GitHub ✅
+
+Stage Summary:
+- KODI ëSHTË GATI për Vercel — mbeten vetëm hapat e përdoruesit (krijo Upstash, import repo, vendos 3 env vars, cron-job.org)
+- Arkitektura përfundimtare: sandbox-i + Vercel-i ndajnë të njëjtin Upstash; lock-i pengon përplasje skanimesh; carry-over i mbrerësh mbron nga 429-t
