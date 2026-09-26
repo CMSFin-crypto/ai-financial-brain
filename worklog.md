@@ -793,3 +793,19 @@ Work Log:
 Stage Summary:
 - KODI ëSHTË GATI për Vercel — mbeten vetëm hapat e përdoruesit (krijo Upstash, import repo, vendos 3 env vars, cron-job.org)
 - Arkitektura përfundimtare: sandbox-i + Vercel-i ndajnë të njëjtin Upstash; lock-i pengon përplasje skanimesh; carry-over i mbrerësh mbron nga 429-t
+
+---
+Task ID: 43
+Agent: Super Z (main)
+Task: Verifikimi i deploy-it të parë në Vercel + rregullimet serverless (504 timeout)
+
+Work Log:
+- Përdoruesi bëri import: https://ai-financial-brainzai.vercel.app — faqja 200, të dhënat dukën (SBUX/MSFT nga snapshot-i git)
+- Zbulimet: storage.backend=file në /var/task (Upstash env mungon) + skanimi 504 FUNCTION_INVOCATION_TIMEOUT (GDELT 429-retry 12s + timeout 20s + trendet sekuenciale → >60s)
+- Rregullime: trendet 4 rajone paralel (max 15s në vend se 60s); buxheti 35s në VERCEL; GDELT timeout 12s, 429-retry vetëm lokal (carry-over mban matjet); roja fail-fast në /scan — 503 me porosí të qartë kur mungon Upstash (në vend të timeout-it)
+- Verifikuar në prodkim: push 333cf04 → auto-deploy → faqja 200, skanimi 503 me mesazhin e saktë ✅ (deploy automatik GitHub→Vercel funksionon)
+- VERCEL_SETUP.md: seksioni «Nëse skanimi kthen 503» — shpjegon modalitetin vetëm-leximi para Upstash
+
+Stage Summary:
+- Lidhja GitHub→Vercel e verifikuar end-to-end; mbetet te përdoruesi: krijo Upstash + 2 env vars + Redeploy (hapi 1 i VERCEL_SETUP.md)
+- Opsionale: seed-i i të dhënave nga sandbox (scripts/seed-upstash.mjs) me kredencialet e Upstash
