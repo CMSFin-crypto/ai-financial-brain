@@ -144,6 +144,7 @@ async function doScan(): Promise<ScanResultSummary> {
   const activeKeys = [...matched.values()].filter(w => w.isNew || store.candidates[w.key]?.status !== 'REMOVED');
   const gdeltBudget = activeKeys.slice(0, MAX_GDELT_CANDIDATES);
   const seriesCache = new Map<string, GdeltDailyPoint[]>();
+  const gdeltErrored = new Set<string>();
   let gdeltThrottled = false;
   for (const w of gdeltBudget) {
     if (seriesCache.has(w.gdeltQuery)) continue;
@@ -151,6 +152,7 @@ async function doScan(): Promise<ScanResultSummary> {
       seriesCache.set(w.gdeltQuery, await gdeltDailySeries(w.gdeltQuery));
     } catch (e) {
       const msg = (e as Error).message;
+      gdeltErrored.add(w.gdeltQuery);
       if (msg.includes('429')) gdeltThrottled = true;
       errors.push(`GDELT "${w.gdeltQuery}": ${msg}`);
     }
@@ -199,8 +201,10 @@ async function doScan(): Promise<ScanResultSummary> {
   for (const w of matched.values()) {
     const b = w.entry;
     const mat = effectiveMateriality(b);
+    const prev = store.candidates[w.key]; // lëvizur lart: duhet për carry-over kur GDELT gabon
     const series = seriesCache.get(w.gdeltQuery) ?? null;
     const articles1d = articlesCache.get(w.gdeltQuery) ?? null;
+    const gdeltError = gdeltErrored.has(w.gdeltQuery);
 
     // rreshti i Google Trends (sot)
     newRows.push({
@@ -240,6 +244,12 @@ async function doScan(): Promise<ScanResultSummary> {
         growth = median(recent) / median(baseline) - 1;
       }
     }
+    // carry-over: kur GDELT gabon (429/rrjet) mbaj matjen e fundit të vlefshme —
+    // «e pamatshme» nuk do të thotë «e pakonfirmuar»; democioni për shkak të
+    // gabimit infrastrukture do të ishte i pandershëm ndaj të dhënave.
+    const carried = gdeltError && prev ? prev.gdelt : null;
+    if (growth === null && carried && carried.growth !== null) growth = carried.growth;
+    const carriedArticles = articles1d ?? (gdeltError ? carried?.articles1d ?? null : null);
     const confirmed = growth !== null && growth >= CONFIRM_GROWTH;
 
     // reagimi i çmimit (7 ditët e fundit me close)
@@ -260,7 +270,6 @@ async function doScan(): Promise<ScanResultSummary> {
     const score = Math.round(breakdown.demand + breakdown.confirmation + breakdown.materiality + breakdown.price + breakdown.quality + breakdown.event);
 
     // ── makina e statusit ──
-    const prev = store.candidates[w.key];
     let status: CandidateStatus;
     const reasons: string[] = [];
     reasons.push(`Zbuluar në Google Trends ${w.region}: «${w.term}»${w.google.approxTraffic ? ` (trafik ~${w.google.approxTraffic})` : ''} → marka i përket ${b.company} (${b.ticker}).`);
@@ -271,7 +280,10 @@ async function doScan(): Promise<ScanResultSummary> {
     } else {
       reasons.push('GDELT: pa histori të mjaftueshme për matjen e rritjes (duhen 2 pika të freskëta + 3 bazë).');
     }
-    if (articles1d !== null) reasons.push(`GDELT artikuj 24h: ${articles1d}${articles1d >= MAINSTREAM_ARTICLES ? ' — trendi është bërë MAINSTREAM (rregulli i daljes së Camillo)' : ''}.`);
+    if (gdeltError && carried) {
+      reasons.push('GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.');
+    }
+    if (carriedArticles !== null) reasons.push(`GDELT artikuj 24h: ${carriedArticles}${carriedArticles >= MAINSTREAM_ARTICLES ? ' — trendi është bërë MAINSTREAM (rregulli i daljes së Camillo)' : ''}.`);
     if (priceVsIndex !== null) {
       reasons.push(`Reagimi i çmimit: aksioni ${pct(stockR)} vs SPY ${pct(indexR)} → diferencë ${pct(priceVsIndex)} ndaj indeksit (${priceVsIndex <= PRICE_WINDOW_OPEN ? 'dritarja e hyrjes ende e hapur' : priceVsIndex <= PRICE_WINDOW_CLOSED ? 'reagim i pjesshëm — kujdes' : 'çmimi ka reaguar — dritarja u mbyll'}).`);
     } else {
@@ -282,9 +294,9 @@ async function doScan(): Promise<ScanResultSummary> {
       status = 'REMOVED';
       if (b.promoRisk >= 0.7) reasons.push(`Rrezik promovimi artificial i lartë (promo_risk ${b.promoRisk.toFixed(1)} ≥ 0.7) — kandidat i bllokuar.`);
       if (b.eventRisk >= 0.8) reasons.push(`Rrezik eventesh i lartë (event_risk ${b.eventRisk.toFixed(1)} ≥ 0.8) — kandidat i bllokuar.`);
-    } else if (articles1d !== null && articles1d >= MAINSTREAM_ARTICLES) {
+    } else if (carriedArticles !== null && carriedArticles >= MAINSTREAM_ARTICLES) {
       status = 'REMOVED';
-      reasons.push(`DALJE: trendi u bë mainstream — ${articles1d} artikuj në 24h (pragu ${MAINSTREAM_ARTICLES}); sipas Camillo, lajmi tashmë është i çmimit.`);
+      reasons.push(`DALJE: trendi u bë mainstream — ${carriedArticles} artikuj në 24h (pragu ${MAINSTREAM_ARTICLES}); sipas Camillo, lajmi tashmë është i çmimit.`);
     } else if (priceVsIndex !== null && priceVsIndex > PRICE_WINDOW_CLOSED) {
       status = 'REMOVED';
       reasons.push(`DALJE: aksioni ka tejkaluar indeksin me ${pct(priceVsIndex)} (>+10%) — lëvizja e çmimit ka zënë vend, ngecjen e pritjes së reflektuar.`);
@@ -335,7 +347,7 @@ async function doScan(): Promise<ScanResultSummary> {
     cand.breakdown = breakdown;
     cand.reasons = reasons;
     cand.google = { inFeedToday: w.google.inFeed, approxTraffic: w.google.approxTraffic, traffic: w.google.traffic };
-    cand.gdelt = { articles1d, growth, confirmed };
+    cand.gdelt = { articles1d: carriedArticles, growth, confirmed };
     cand.price = {
       stockReturn: stockR, indexReturn: indexR, priceVsIndex,
       asOf: (priceCache.get(b.ticker) ?? []).at(-1)?.date ?? null,

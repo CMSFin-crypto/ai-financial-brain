@@ -3,3 +3,7 @@ observed_at,available_at,trend,source,region,interest,ticker,product,company,mat
 2026-08-29,2026-08-29,starbucks canada,gdelt,CA,0.0337,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,
 2026-08-30,2026-08-30,starbucks canada,gdelt,CA,0.0252,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,
 2026-08-31,2026-08-31,starbucks canada,gdelt,CA,0.0288,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,
+2026-08-28,2026-08-28,minecraft live,gdelt,CA,0.1041,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-08-29,2026-08-29,minecraft live,gdelt,CA,0.05,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-08-30,2026-08-30,minecraft live,gdelt,CA,0.0529,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-08-31,2026-08-31,minecraft live,gdelt,CA,0.0595,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
