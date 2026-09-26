@@ -695,3 +695,26 @@ Work Log:
 Stage Summary:
 - Social Arb tani i shfaq stoqet kandidate si karta stokesh të plota (ticker, kompani, score, status, arsye) — dhe me një klik "shembull demo" i sheh menjëherë pa përgatitur CSV
 - Shtyrë në GitHub bashkë me këtë worklog; Vercel deploy automatik
+
+---
+Task ID: 38
+Agent: Super Z (main)
+Task: Ristrukturo /social-arb si DASHBOARD: lista e 10 kompanive (CELH, ELF, CROX, DECK, ONON, DUOL, CAVA, LULU, BIRK, RBLX) shfaqet menjëherë edhe pa CSV; klikimi hap dosjen (çfarë trendi të kërkosh / çfarë konfirmon / çfarë rrëzon / rreziku i interpretimit); filtra + tregues + panel i veçantë me arsyet e score-it; importi CSV poshtë te "Burimet e të dhënave"; "PA TË DHËNA" në vend se sinjale të shpikura
+
+Work Log:
+- Sandbox-i ishte restartuar PËRSËRI (repo lokale te Task 32): fetch + reset --hard në d843aa9 (remote), bun install --frozen-lockfile
+- RIKRIJIMI I FAQES si dashboard monitorimi:
+  * LISTA FIKE WATCHLIST (10 kompani konsumeri me dosje shqip): CELH/ELF/CROX/DECK/ONON/DUOL/CAVA/LULU/BIRK/RBLX — secila me search terms, confirm, kill, risk, basis (lidhja markë–ticker sipas materialeve të kompanive, p.sh. CELSIUS–CELH, Crocs/HEYDUDE–CROX)
+  * Karta të klikueshme (role=button, tastiera Enter/Space): pa të dhëna → badge «PA TË DHËNA» + hint «Kërko: "trend"»; me të dhëna → status me ngjyrë + shirit score + tregues (burime, aksion−indeks, snapshot-e)
+  * DOSJA nën listë: 4 blloqe (Search/CheckCircle2/XCircle/AlertTriangle) + panel i veçantë score-i me ZBËRTHIM në 6 komponentë me shirita (Rritja 25, Konfirmimi 20, Rëndësia 20, Çmimi 15, Cilësia 10, Eventi 10) + «Pse?» arsyet + treguesit
+  * FILTRA (Të gjitha/Pa të dhëna/Research/Watch/Reject me numërues) + renditja (fiks/score/emri) + data e simulimit lart në kontrolle
+  * TICKER-at nga CSV jashtë listës fiks → seksion «Nga importi — jashtë listës së monitorimit» (demo NVDA/AMD/GME/TSLA mbetet funksionale aty)
+  * Importi CSV + template + demo + fshirja → zhvendosen POSHTË te «Burimet e të dhënave» (me ikonë Database)
+- Logjika e score-it (scoreGroup) e paprekur — vetëm shtim aditiv: Result.breakdown me 6 komponentët e tashmë të llogaritur (score-i total identik); parseCSV/readCSV/uniqueKey/localStorage/anti-lookahead të paprekura
+- VERIFIKIMI: tsc 145 = baza 0 të reja; eslint pastër; build OK; browser: pa CSV → 10 karta menjëherë (të gjitha PA TË DHËNA, «0 me të dhëna · 10 pa të dhëna») + dosja CELH me 4 blloqe + panel PA TË DHËNA; injektim 18 snapshot-e (CELH 2 burime + CROX 1 burim) → CELH 92 RESEARCH dhe CROX 56 WATCH pikërisht si llogaritja me dorë; paneli i zbërthimit + «Pse?» konfirmuar; filtra: Research → vetëm CELH, Pa të dhëna → 8 kartat e tjera; anti-lookahead: data 2026-09-16 → CELH 92→28 REJECT; klik CAVA → dosja ndërrohet me PA TË DHËNA + «cava bowl»; demo → NVDA 92/AMD 59/GME 51 në «jashtë listës»; reload → 51 snapshot-e të qëndrueshme; VLM konfirmoi 3/3 (CELH RESEARCH jeshile, ELF PA TË DHËNA, CROX WATCH qelibër, filtrat + data)
+- SHËNIM: gabimet «[SNAPSHOT] Failed to save» në server.log janë të shërbimit ekzistues të snapshot-ëve (prisma o.id null) — paraprake, pa lidhje me këtë faqe statike
+- Commit bashkë me këtë worklog; push me tokenin e dhënë nga përdoruesi
+
+Stage Summary:
+- /social-arb tani është dashboard i vërtetë: 10 kompanitë shfaqen menjëherë me dosje hulumtimi; score-i hapet vetëm me të dhëna reale; «PA TË DHËNA» në vend të sinjaleve të shpikura
+- Nuk sjell ende kandidatë live nga TikTok/Google Trends (V1: vetëm import CSV); pas push-it Vercel deployon automatikisht
