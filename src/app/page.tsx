@@ -304,6 +304,17 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
+  // Deep-link nga Social Arb / kërkimi: /?tab=quant&ticker=SYMBOL
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      const ticker = params.get('ticker');
+      if (tab && tab !== 'social-arb') setActiveTab(tab);
+      if (ticker) setQuantTicker(ticker.toUpperCase());
+    } catch { /* ignore */ }
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col bg-background" suppressHydrationWarning>
       <Header />

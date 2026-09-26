@@ -1,0 +1,5 @@
+observed_at,available_at,trend,source,region,interest,ticker,product,company,materiality,promo_risk,event_risk,stock_price,index_price
+2026-08-28,2026-08-28,starbucks canada,gdelt,CA,0.035,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,
+2026-08-29,2026-08-29,starbucks canada,gdelt,CA,0.0337,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,
+2026-08-30,2026-08-30,starbucks canada,gdelt,CA,0.0252,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,
+2026-08-31,2026-08-31,starbucks canada,gdelt,CA,0.0288,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,,

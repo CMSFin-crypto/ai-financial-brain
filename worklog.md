@@ -718,3 +718,27 @@ Work Log:
 Stage Summary:
 - /social-arb tani është dashboard i vërtetë: 10 kompanitë shfaqen menjëherë me dosje hulumtimi; score-i hapet vetëm me të dhëna reale; «PA TË DHËNA» në vend të sinjaleve të shpikura
 - Nuk sjell ende kandidatë live nga TikTok/Google Trends (V1: vetëm import CSV); pas push-it Vercel deployon automatikisht
+
+---
+Task ID: 39
+Agent: Super Z (main)
+Task: Hiq panelin CSV nga faqja kryesore dhe zëvendëso listën demo me rrjedhën automatike: procesi periodik merr termat në rritje nga Google Trends «Trending now» RSS, klasifikon produkt/markë → e lidh me kompaninë/ticker-in, ruan burimin/datën/arsyen, e vendos në WATCH, e ngre në RESEARCH vetëm pas konfirmimit nga një burim tjetër (GDELT) dhe kontrollit të reagimit të çmimit; faqja shfaq kandidatët nga databaza me «Përditësuar më…» ose e thotë qartë që s'ka; CSV-të arkivohen në prapavijë për backtest (pa buton ngarkimi)
+
+Work Log:
+- Konteksti: sandbox-i ishte rikthyer në snapshot-in e 24 shtatorit (puna e sesioneve 33–38 jetonte vetëm në GitHub): fetch + ff-merge në f585596, hequr dega e dyzuar lokale «origin/main», bun install (827 paketa)
+- SHTATËSIA E RE — src/lib/social-arb/:
+  * types.ts — skema e matjes identike me CSV-në e backtest-it (14 kolona), Candidate/ScanRecord/Store
+  * brands.ts — fjalori me ~120 marka/produkte konsumeri → ticker, me materiality/promo_risk/event_risk (vlerësime manuale 0–1) + kova e kapitalizimit që kufizon materialitetin (rregulli Camillo: mega-cap s'lëviz nga trendet, tavani 0.35); klasifikimi në kufij fjalësh (as match i saktë, as substring i pambaruar); dosjet e vjetra të 10 kompanive (CELH/ELF/CROX/DECK/ONON/DUOL/CAVA/LULU/BIRK/RBLX) u mbajtën si pasurim hulumtimi kur një kandidat i zbuluar përputhet
+  * sources.ts — Google Trends RSS (trends.google.com/trending/rss?geo=US|GB|CA|AU), GDELT me distancë 6s mes kërkesave + retry 12s (timelinevol 30d për konfirmim, artlist 24h për testin mainstream), Yahoo chart API për çmimet (aksioni + SPY)
+  * store.ts — data/social-arb.json (jashtë .next/standalone — i mbijeton rebuild-it; bie në /tmp vetëm kur FS-i është read-only) + arkivi CSV në prapavijë data/social-arb-backtest/social-arb-YYYY-MM.csv (dedupe sipas uniqueKey, shtim vetëm nga skaneri)
+  * engine.ts — skanimi: 4 rajonet → klasifikim → WATCH i menjëhershëm; RESEARCH vetëm me konfirmim GDELT (+25% 7d kundrejt bazës 28d) DHE çmim ≤+3% vs SPY DHE score ≥60; REMOVED kur trendi bëhet mainstream (≥200 artikuj/24h — dita e daljes së Camillo), çmimi ka reaguar >+10% ndaj indeksit, promo_risk ≥0.7 / event_risk ≥0.8, ose 10+ ditë pa matje (ftohja); historia e plotë e tranzicioneve me arsye; mutex kundër skanimeve paralele
+- API — /api/social-arb/scan (POST manual + GET për cron; autorizim me CRON_SECRET opsional, same-origin i lejuar) dhe /api/social-arb/state (kandidatët, numëruesit, skanimet e fundit, shëndeti i burimeve, statistikat e arkivit CSV)
+- FAQJA /social-arb e rishkruar plotësisht: «Përditësuar më …» + «Skano tani» (me poll 5s gjatë skanimit) + shëndeti i burimeve; karta kandidatësh nga databaza (status, score, GDELT 7d, artikuj 24h, çmimi vs SPY, në trending sot); dosja me zbërthimin 6-komponentësh, arsyet, dosjen e markës, historinë e statusit dhe tri link-e (Google Trends / Finviz / «Analizo TICKER» me deep-link ?tab=quant&ticker= që paneli kryesor tani e kupton); empty state i sinqertë me shpjegimin e 4 hapave të rrjedhës — PA listë fikse, PA shembull demo, PA import CSV; seksioni «Prapavija» shfaq vetëm statistikat e arkivit CSV
+- Procesi periodik: scripts/social-arb-cron.mjs — nisur me nohup, godet /api/social-arb/scan çdo 2 orë
+- VERIFIKIMI LIVE: skanimi i parë real — 40 termа në 4 rajone, 1 klasifikuar («starbucks canada» → SBUX, trafik ~500+), kandidat WATCH me historik «NEW → WATCH»; skanimi i dytë (cron) — GDELT konfirmoi +58% kundrejt bazës + çmimi +0.2% vs SPY → NGJITJE në RESEARCH, score 75, historia e plotë e tranzicionit; 24 matje në store, 24 rreshta në 2 skedarë CSV (august + shtator) me skemën e saktë; materialiteti SBUX 0.95 → 0.55 nga kova large-cap; tsc 145 = baza 0 të reja; build OK (92/92 statike); serveri prod në port 3000 me store të paprekur pas rebuild-it
+- shtyrë në GitHub bashkë me worklog-un; Vercel deploy automatik
+
+Stage Summary:
+- /social-arb s'ka më panel CSV, listë demo 10 kompanish as shembuj të ngarkuar me dorë — kandidatët vijnë VETËM nga matjet e skanerit
+- Motori zbulon vetë (Trends RSS 4 rajone), ruan matjet, ngjitet vetëm me konfirmim të pavarur + dritare çmimi, del vetë kur bëhet mainstream ose ftohet; CSV-të mbledhen në prapavijë për backtest
+- Mbetet hap i hapshëm: në Vercel FS-i është i përkohshëm (pa DATABASE_URL skanimet atje jetojnë vetëm brenda një lambda) — serveri lokal është produksioni i vërtetë; cron-i lokal çdo 2 orë mban të dhënat të freskëta
