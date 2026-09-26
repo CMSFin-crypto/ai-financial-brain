@@ -43,7 +43,7 @@ interface StateResponse {
   lastScans: ScanRec[];
   measurements: number;
   csvArchive: { files: number; rows: number };
-  storage: { dir: string; persistent: boolean };
+  storage: { dir: string; persistent: boolean; backend?: 'file' | 'upstash' };
   storeFile: string;
   error?: string;
 }
@@ -513,7 +513,8 @@ export default function SocialArbPage() {
             Çdo matje (Google Trends + GDELT + çmimet) arkivohet automatikisht si CSV në prapavijë për backtest —
             {' '}<code className="rounded bg-slate-800 px-1 py-0.5 text-[11px] text-slate-300">data/social-arb-backtest/social-arb-YYYY-MM.csv</code> —
             {' '}pa buton ngarkimi në këtë ekran. Aktualisht: {state?.csvArchive.rows ?? 0} rreshta në {state?.csvArchive.files ?? 0} skedarë.
-            {!state?.storage.persistent && ' Shënim: file-sistemi i këtij ambienti është i përkohshëm — ruaj CSV-të për backtest afatgjatë.'}
+            {state?.storage.backend === 'upstash' && ' Ruajtja: Redis (Upstash) — e qëndrueshme në serverless.'}
+            {state?.storage.backend !== 'upstash' && !state?.storage.persistent && ' Shënim: file-sistemi i këtij ambienti është i përkohshëm — ruaj CSV-të për backtest afatgjatë.'}
           </p>
           <p className="mt-1.5 text-xs text-muted-foreground">
             Kjo faqe është laborator hulumtimi — jo rekomandim tregtimi. Score-i dhe statuset janë hedhje të parashikueshme,

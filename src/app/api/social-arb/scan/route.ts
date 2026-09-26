@@ -2,12 +2,14 @@
 // Autorizimi: nëse CRON_SECRET është vendosur, kërkesat nga jashtë duhet ta
 // mbajnë atë; kërkesat nga i njëjti origin (shfletuesi i faqes) lejohen.
 
-import { runScan, scanInProgress } from '@/lib/social-arb/engine';
+import { runScan, scanInProgress, ScanLockError } from '@/lib/social-arb/engine';
 import { storageInfo } from '@/lib/social-arb/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+// 60s = maksimumi i planit Hobby në Vercel; lokalisht s'ka efekt (Next standalone e injoron).
+// Motori e mbyll veten me nder brenda buxhetit (SCAN_BUDGET_MS, default 45s në Vercel).
+export const maxDuration = 60;
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -34,6 +36,9 @@ async function handle(req: Request): Promise<Response> {
     const summary = await runScan();
     return Response.json({ ...summary, storage: storageInfo() });
   } catch (e) {
+    if (e instanceof ScanLockError) {
+      return Response.json({ ok: false, error: e.message }, { status: 409 });
+    }
     return Response.json({ ok: false, error: (e as Error).message }, { status: 500 });
   }
 }

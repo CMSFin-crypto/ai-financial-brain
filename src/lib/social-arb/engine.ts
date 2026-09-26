@@ -19,7 +19,7 @@ import {
   fetchTrendingNow, gdeltDailySeries, gdeltArticleCount, fetchDailyCloses, fetchIndexCloses,
   type GdeltDailyPoint, type PricePoint, type TrendingTerm,
 } from './sources';
-import { readStore, writeStore, mergeMeasurements, archiveToCsv } from './store';
+import { readStore, writeStore, mergeMeasurements, archiveToCsv, acquireScanLock } from './store';
 import type {
   Candidate, CandidateStatus, Measurement, Region, ScanRecord, ScanResultSummary, ScoreBreakdown, SocialArbStore,
 } from './types';
@@ -33,6 +33,15 @@ const STALE_DAYS = 10;             // pa matje të reja → ftohje
 const RESEARCH_SCORE = 60;
 const MAX_GDELT_CANDIDATES = 10;   // kufi kohor: 2 thirrje GDELT × 6s secila
 const MEASUREMENTS_CAP = 6000;     // kufizi i store-it (arkivi CSV mbetet i plotë)
+
+// Buxheti kohor i skanimit: në Vercel Hobby funksionet ndalen në 60s —
+// skanimi duhet ta mbyllë veten me nder përpara. 0 = pa limit (lokal/sandbox).
+// Mund të mbivendoset me env SCAN_BUDGET_MS (ms).
+const SCAN_BUDGET_MS: number = (() => {
+  const v = Number(process.env.SCAN_BUDGET_MS);
+  if (Number.isFinite(v) && v > 0) return v;
+  return process.env.VERCEL ? 45_000 : 0;
+})();
 
 // ── ndihmës ──────────────────────────────────────────────────────
 
@@ -51,9 +60,29 @@ let scanning: Promise<ScanResultSummary> | null = null;
 export function scanInProgress(): boolean {
   return scanning !== null;
 }
+
+/** Një skanim po ekzekutohet në një proces/instancë tjetër (lock Redis). */
+export class ScanLockError extends Error {
+  constructor() {
+    super('Një skanim po ekzekutohet në një instancë tjetër (lock).');
+    this.name = 'ScanLockError';
+  }
+}
+
 export function runScan(): Promise<ScanResultSummary> {
   if (scanning) return scanning;
-  scanning = doScan().finally(() => { scanning = null; });
+  const p = (async () => {
+    // lock ndër-procesesh: sandbox-i dhe Vercel-i ndajnë të njëjtin Upstash —
+    // pengon dy skanime njëkohësisht (GDELT-i penalizon 429-sh)
+    const release = await acquireScanLock(900);
+    if (!release) throw new ScanLockError();
+    try {
+      return await doScan();
+    } finally {
+      void release();
+    }
+  })();
+  scanning = p.finally(() => { scanning = null; });
   return scanning;
 }
 
@@ -81,6 +110,16 @@ async function doScan(): Promise<ScanResultSummary> {
   const today = todayISO();
   const errors: string[] = [];
   const sources: Record<string, 'ok' | 'error' | 'throttled'> = {};
+
+  // buxheti kohor (vetëm kur ka limit — p.sh. Vercel): kur plotesohet,
+  // pyetjet e mbetura GDELT/çmime kapërcehen dhe vijojnë në skanimin tjetër
+  const deadline = SCAN_BUDGET_MS > 0 ? started + SCAN_BUDGET_MS : Number.POSITIVE_INFINITY;
+  let budgetHit = false;
+  const withinBudget = (): boolean => {
+    if (Date.now() <= deadline) return true;
+    budgetHit = true;
+    return false;
+  };
 
   const store = await readStore();
 
@@ -148,6 +187,7 @@ async function doScan(): Promise<ScanResultSummary> {
   let gdeltThrottled = false;
   for (const w of gdeltBudget) {
     if (seriesCache.has(w.gdeltQuery)) continue;
+    if (!withinBudget()) break; // buxheti — pjesa tjetër vijon në skanimin tjetër
     try {
       seriesCache.set(w.gdeltQuery, await gdeltDailySeries(w.gdeltQuery));
     } catch (e) {
@@ -163,6 +203,7 @@ async function doScan(): Promise<ScanResultSummary> {
   for (const w of gdeltBudget) {
     if (!seriesCache.has(w.gdeltQuery)) continue;
     if (articlesCache.has(w.gdeltQuery)) continue;
+    if (!withinBudget()) break; // buxheti — pjesa tjetër vijon në skanimin tjetër
     try {
       articlesCache.set(w.gdeltQuery, await gdeltArticleCount(w.gdeltQuery));
     } catch (e) {
@@ -185,11 +226,15 @@ async function doScan(): Promise<ScanResultSummary> {
   const priceCache = new Map<string, PricePoint[]>();
   for (const w of activeKeys) {
     if (priceCache.has(w.entry.ticker)) continue;
+    if (!withinBudget()) break; // buxheti — pjesa tjetër vijon në skanimin tjetër
     try {
       priceCache.set(w.entry.ticker, await fetchDailyCloses(w.entry.ticker, '1mo'));
     } catch (e) {
       errors.push(`Yahoo ${w.entry.ticker}: ${(e as Error).message}`);
     }
+  }
+  if (budgetHit) {
+    errors.push(`Buxheti kohor i skanimit (${Math.round(SCAN_BUDGET_MS / 1000)}s) u plotësua — disa pyetje GDELT/çmime u kapërcyen dhe vijojnë në skanimin tjetër.`);
   }
 
   // 6) ndërto matjet dhe përditëso kandidatët

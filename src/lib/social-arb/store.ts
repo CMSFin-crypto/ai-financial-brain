@@ -1,19 +1,29 @@
 // ═══════════════════════════════════════════════════════════════
-// SOCIAL ARB — store i qëndrueshëm
+// SOCIAL ARB — store i qëndrueshëm (dy backend-e)
 //
-// data/social-arb.json — gjendja e plotë (matjet + kandidatët + skanimet).
-// data/social-arb-backtest/social-arb-YYYY-MM.csv — arkivi CSV në
-// prapavijë për backtest (s'ka buton ngarkimi; skaneri shkruan vetë).
+// 1) SKEDAR (default — sandbox/lokal):
+//    data/social-arb.json — gjendja e plotë (matjet + kandidatët + skanimet).
+//    data/social-arb-backtest/social-arb-YYYY-MM.csv — arkivi CSV.
+//    Rruga zgjidhet që store-i të jetojë JASHTË .next/standalone.
 //
-// Rruga zgjidhet në mënyrë që store-i të jetojë JASHTË .next/standalone
-// (nuk fshihet në rebuild) dhe bie me hije në /tmp kur FS-i është
-// read-only (p.sh. serverless).
+// 2) UPSTASH REDIS (kur janë vendosur UPSTASH_REDIS_REST_URL dhe
+//    UPSTASH_REDIS_REST_TOKEN — p.sh. në Vercel serverless):
+//    social-arb:store  — JSON i plotë i store-it (një çelës)
+//    social-arb:csv    — HASH mujore me tekstet CSV (arkivi backtest)
+//    social-arb:scan-lock — lock ndër-procesesh (sandbox + Vercel)
+//
+// Interfejsi i eksportuar është identik për të dy backend-et —
+// motori dhe rrugët API s'kanë nevojë të dinë ku rri data.
 // ═══════════════════════════════════════════════════════════════
 
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import type { Measurement, SocialArbStore } from './types';
+import {
+  upstashEnabled, upstashGet, upstashSet, upstashHashGetAll, upstashHashSet, upstashLock,
+  STORE_KEY, CSV_KEY, LOCK_KEY,
+} from './upstash';
 
 export const CSV_HEADER =
   'observed_at,available_at,trend,source,region,interest,ticker,product,company,materiality,promo_risk,event_risk,stock_price,index_price';
@@ -38,6 +48,7 @@ function resolveDataDir(): string {
 }
 
 export function storePath(): string {
+  if (upstashEnabled()) return `redis://${STORE_KEY} (Upstash)`;
   return path.join(resolveDataDir(), 'social-arb.json');
 }
 
@@ -45,7 +56,7 @@ export function backtestDir(): string {
   return path.join(resolveDataDir(), 'social-arb-backtest');
 }
 
-// ── Store JSON ───────────────────────────────────────────────────
+// ── Store ───────────────────────────────────────────────────────
 
 const EMPTY_STORE: SocialArbStore = {
   version: 2,
@@ -60,19 +71,34 @@ export function emptyStore(): SocialArbStore {
   return { ...EMPTY_STORE, createdAt: new Date().toISOString(), measurements: [], candidates: {}, scans: [] };
 }
 
+/** Normalizon JSON-in e lexuar (çdo burim) në skemën v2. */
+function normalizeStore(s: unknown): SocialArbStore {
+  const st = s as Partial<SocialArbStore> | null;
+  if (!st || st.version !== 2) return emptyStore();
+  return {
+    version: 2,
+    createdAt: st.createdAt ?? new Date().toISOString(),
+    lastScanAt: st.lastScanAt ?? null,
+    measurements: Array.isArray(st.measurements) ? st.measurements : [],
+    candidates: st.candidates && typeof st.candidates === 'object' ? st.candidates : {},
+    scans: Array.isArray(st.scans) ? st.scans : [],
+  };
+}
+
 export async function readStore(): Promise<SocialArbStore> {
+  if (upstashEnabled()) {
+    try {
+      const raw = await upstashGet(STORE_KEY);
+      if (!raw) return emptyStore();
+      return normalizeStore(JSON.parse(raw));
+    } catch (e) {
+      console.error('[social-arb store] leximi nga Upstash dështoi — kthej store bosh (i sinqertë):', (e as Error).message);
+      return emptyStore();
+    }
+  }
   try {
-    const raw = await fsp.readFile(storePath(), 'utf8');
-    const s = JSON.parse(raw) as SocialArbStore;
-    if (!s || s.version !== 2) return emptyStore();
-    return {
-      version: 2,
-      createdAt: s.createdAt ?? new Date().toISOString(),
-      lastScanAt: s.lastScanAt ?? null,
-      measurements: Array.isArray(s.measurements) ? s.measurements : [],
-      candidates: s.candidates && typeof s.candidates === 'object' ? s.candidates : {},
-      scans: Array.isArray(s.scans) ? s.scans : [],
-    };
+    const raw = await fsp.readFile(path.join(resolveDataDir(), 'social-arb.json'), 'utf8');
+    return normalizeStore(JSON.parse(raw));
   } catch {
     return emptyStore();
   }
@@ -80,15 +106,20 @@ export async function readStore(): Promise<SocialArbStore> {
 
 let writeLock: Promise<void> = Promise.resolve();
 
-/** Shkrim atomic (tmp + rename) me mutex të thjeshtë në-proces. */
+/** Shkrim — atomic (tmp + rename) në modalitetin file; SET në Upstash. Mutex në-proces për të dyja. */
 export async function writeStore(store: SocialArbStore): Promise<void> {
   const run = async () => {
-    const dir = path.dirname(storePath());
+    if (upstashEnabled()) {
+      await upstashSet(STORE_KEY, JSON.stringify(store));
+      return;
+    }
+    const dir = resolveDataDir();
     await fsp.mkdir(dir, { recursive: true });
     await fsp.mkdir(backtestDir(), { recursive: true });
-    const tmp = `${storePath()}.tmp`;
+    const file = path.join(dir, 'social-arb.json');
+    const tmp = `${file}.tmp`;
     await fsp.writeFile(tmp, JSON.stringify(store, null, 1), 'utf8');
-    await fsp.rename(tmp, storePath());
+    await fsp.rename(tmp, file);
   };
   writeLock = writeLock.then(run, run);
   await writeLock;
@@ -121,8 +152,21 @@ export function rowToCsv(m: Measurement): string {
   ].map(csvEscape).join(',');
 }
 
+/** Çelësat ekzistues nga teksti CSV (dedupe identik për të dy backend-et). */
+function keysFromCsvText(existing: string): Set<string> {
+  const keys = new Set<string>();
+  for (const line of existing.split('\n').slice(1)) {
+    if (!line.trim()) continue;
+    const cells = line.split(','); // kolonat e para mjaftojnë për key
+    if (cells.length >= 5) {
+      keys.add([cells[2].toLowerCase().replace(/^"|"$/g, ''), cells[6] ?? '', cells[4] ?? '', cells[3] ?? '', cells[0] ?? ''].join('|'));
+    }
+  }
+  return keys;
+}
+
 /**
-// Shton rreshtat e rinj në arkivin mujor CSV (dedupe sipas uniqueKey).
+ * Shton rreshtat e rinj në arkivin mujor CSV (dedupe sipas uniqueKey).
  * Kjo është «ruajtja në prapavijë» — pa buton ngarkimi në ekran.
  */
 export async function archiveToCsv(rows: Measurement[]): Promise<number> {
@@ -132,6 +176,26 @@ export async function archiveToCsv(rows: Measurement[]): Promise<number> {
     const month = r.observed_at.slice(0, 7);
     byMonth.set(month, [...(byMonth.get(month) ?? []), r]);
   }
+
+  if (upstashEnabled()) {
+    let written = 0;
+    const existing = await upstashHashGetAll(CSV_KEY);
+    for (const [month, list] of byMonth) {
+      const text = existing[month] ?? '';
+      const existingKeys = keysFromCsvText(text);
+      const lines: string[] = text ? [] : [CSV_HEADER];
+      for (const r of list) {
+        if (existingKeys.has(measurementKey(r))) continue;
+        lines.push(rowToCsv(r));
+        written++;
+      }
+      if (lines.length) {
+        await upstashHashSet(CSV_KEY, month, (text ? (text.endsWith('\n') ? text : `${text}\n`) : '') + lines.join('\n') + '\n');
+      }
+    }
+    return written;
+  }
+
   let written = 0;
   for (const [month, list] of byMonth) {
     const file = path.join(backtestDir(), `social-arb-${month}.csv`);
@@ -139,32 +203,78 @@ export async function archiveToCsv(rows: Measurement[]): Promise<number> {
     let existing = '';
     try {
       existing = await fsp.readFile(file, 'utf8');
-      for (const line of existing.split('\n').slice(1)) {
-        if (!line.trim()) continue;
-        const cells = line.split(','); // kolonat e para mjaftojnë për key
-        if (cells.length >= 5) {
-          existingKeys.add([cells[2].toLowerCase().replace(/^"|"$/g, ''), cells[6] ?? '', cells[4] ?? '', cells[3] ?? '', cells[0] ?? ''].join('|'));
-        }
-      }
+      existingKeys = keysFromCsvText(existing);
     } catch { /* skedar i ri */ }
-    const lines: string[] = [];
-    if (!existing) lines.push(CSV_HEADER);
+    const lines: string[] = existing ? [] : [CSV_HEADER];
     for (const r of list) {
       const key = measurementKey(r);
       if (existingKeys.has(key)) continue;
       lines.push(rowToCsv(r));
       written++;
     }
-    if (lines.length > (existing ? 0 : 1)) {
+    if (lines.length) {
       await fsp.appendFile(file, (existing && !existing.endsWith('\n') ? '\n' : '') + lines.join('\n') + '\n', 'utf8');
     }
   }
   return written;
 }
 
+/** Statistika e arkivit CSV (numër skedarësh/fushash + rreshta) — për UI. */
+export async function csvArchiveStats(): Promise<{ files: number; rows: number }> {
+  if (upstashEnabled()) {
+    try {
+      const hash = await upstashHashGetAll(CSV_KEY);
+      const months = Object.keys(hash);
+      const rows = months.reduce((n, m) => n + hash[m].split('\n').filter(l => l.trim() && !l.startsWith('observed_at')).length, 0);
+      return { files: months.length, rows };
+    } catch {
+      return { files: 0, rows: 0 };
+    }
+  }
+  try {
+    const files = fs.readdirSync(backtestDir()).filter(f => f.endsWith('.csv'));
+    let rows = 0;
+    for (const f of files) {
+      const lines = fs.readFileSync(path.join(backtestDir(), f), 'utf8').split('\n');
+      rows += lines.filter(l => l.trim() && !l.startsWith('observed_at')).length;
+    }
+    return { files: files.length, rows };
+  } catch {
+    return { files: 0, rows: 0 };
+  }
+}
+
+// ── Lock ndër-procesesh ────────────────────────────────────────
+
+/**
+ * Lock-i i skanimit: në modalitetin file s'ka nevojë (një proces i vetëm,
+ * mutex-i i motori mjafton → noop); në Upstash, sandbox-i dhe Vercel-i
+ * mund të skanojnë njëkohësisht — lock-i me TTL e pengon dyfishimin.
+ * TTL-i është rrjeti i sigurisë: edhe nëse procesi vdes pa liruar,
+ * lock-i skadon vetë pas <ttlSeconds>.
+ */
+export async function acquireScanLock(ttlSeconds = 900): Promise<(() => Promise<void>) | null> {
+  if (!upstashEnabled()) {
+    return async () => { /* noop — modaliteti file ka një proces të vetëm */ };
+  }
+  try {
+    return await upstashLock(LOCK_KEY, ttlSeconds);
+  } catch (e) {
+    // Nëse vetë Redis-i është i palexueshëm, s'ka bazë për t'u ndalur —
+    // lëri skanimin të vazhdojë (preferohet puna e dyfishuar mbi e pamundura).
+    console.error('[social-arb store] lock-i Upstash dështoi — vazhdoj pa lock:', (e as Error).message);
+    return async () => { /* noop fallback */ };
+  }
+}
+
 /** Ku është store-i (për diagnostikë në UI). */
-export function storageInfo(): { dir: string; persistent: boolean } {
+export function storageInfo(): { dir: string; persistent: boolean; backend: 'file' | 'upstash' } {
+  if (upstashEnabled()) {
+    let host = 'upstash';
+    try { host = new URL(process.env.UPSTASH_REDIS_REST_URL!).host; } catch { /* keqkonfigurim */ }
+    return { dir: `Upstash Redis (${host})`, persistent: true, backend: 'upstash' };
+  }
   const dir = resolveDataDir();
   const persistent = !dir.startsWith('/tmp');
-  return { dir, persistent };
+  return { dir, persistent, backend: 'file' };
 }

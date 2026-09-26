@@ -1,10 +1,8 @@
 // GET /api/social-arb/state — gjendja për UI: kandidatët nga databaza,
 // «Përditësuar më …», skanimet e fundit dhe shëndeti i burimeve.
 
-import { readStore, storageInfo, backtestDir, storePath } from '@/lib/social-arb/store';
+import { readStore, storageInfo, csvArchiveStats, storePath } from '@/lib/social-arb/store';
 import { scanInProgress } from '@/lib/social-arb/engine';
-import fs from 'fs';
-import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,16 +12,8 @@ export async function GET(): Promise<Response> {
     const store = await readStore();
     const candidates = Object.values(store.candidates);
     // arkivi CSV në prapavijë — vetëm numërimi, jo përmbajtja
-    let csvRows = 0;
-    let csvFiles = 0;
-    try {
-      const files = fs.readdirSync(backtestDir()).filter(f => f.endsWith('.csv'));
-      csvFiles = files.length;
-      for (const f of files) {
-        const lines = fs.readFileSync(path.join(backtestDir(), f), 'utf8').split('\n');
-        csvRows += lines.filter(l => l.trim() && !l.startsWith('observed_at')).length;
-      }
-    } catch { /* pa arkiv */ }
+    // (funksionon si për backend-in file ashtu edhe për Upstash)
+    const csv = await csvArchiveStats();
     return Response.json({
       ok: true,
       lastScanAt: store.lastScanAt,
@@ -37,7 +27,7 @@ export async function GET(): Promise<Response> {
       },
       lastScans: store.scans.slice(-8).reverse(),
       measurements: store.measurements.length,
-      csvArchive: { files: csvFiles, rows: csvRows },
+      csvArchive: { files: csv.files, rows: csv.rows },
       storage: storageInfo(),
       storeFile: storePath(),
     });
