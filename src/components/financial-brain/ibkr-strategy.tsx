@@ -14,6 +14,9 @@ import {
   BookOpen, History, Brain, Sparkles,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+// Task «Diçka më shikuar»: vizualizime — radar, donut + sparkline SVG
+import { motion } from 'framer-motion';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 // Task 27: IBKR Validation Lab — backtest/OOS/walk-forward i së njëjtës strategji
 import { IBKRValidationLab } from './ibkr-validation-lab';
 // Task 26: Fundamental Context — popup për çdo kandidat (FAZA 1: vetëm informues)
@@ -92,6 +95,9 @@ interface FunnelStock {
   // NEW: Tradability — ATR% gate
   atrStatus: string;
   atrTradable: boolean;
+  // Vizual: sparkline 60 ditësh çmimesh + datat përkatëse
+  spark?: number[];
+  sparkDates?: string[];
 }
 
 interface FunnelResponse {
@@ -238,63 +244,293 @@ const FUNNEL_DETAILS: Record<string, { title: string; desc: string; ideal: strin
   },
 };
 
-// ── Funnel Visualization ──
+// ── Funnel Visualization — shtylla proporcionale të animuara me popup-in e fazës ──
 function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
   const steps = [
-    { label: 'Universe', count: funnel.universe, color: 'bg-blue-500/20 text-blue-400' },
-    { label: 'Liquidity', count: funnel.passedLiquidity, color: 'bg-cyan-500/20 text-cyan-400' },
-    { label: 'Trend + RS', count: funnel.passedTrend, color: 'bg-emerald-500/20 text-emerald-400' },
-    { label: 'Setup', count: funnel.passedSetup, color: 'bg-violet-500/20 text-violet-400' },
-    { label: 'Risk Gate', count: funnel.passedRisk, color: 'bg-amber-500/20 text-amber-400' },
-    { label: 'Event Risk', count: funnel.passedEventRisk ?? funnel.passedRisk, color: 'bg-red-500/20 text-red-400' },
-    { label: 'Sector Limit', count: funnel.passedSectorLimit ?? funnel.passedRisk, color: 'bg-indigo-500/20 text-indigo-400' },
-    { label: 'Top Stocks', count: funnel.displayed, color: 'bg-emerald-500/20 text-emerald-400' },
+    { label: 'Universe', count: funnel.universe, color: 'bg-blue-500/30 text-blue-400 border-blue-500/25' },
+    { label: 'Liquidity', count: funnel.passedLiquidity, color: 'bg-cyan-500/30 text-cyan-400 border-cyan-500/25' },
+    { label: 'Trend + RS', count: funnel.passedTrend, color: 'bg-emerald-500/30 text-emerald-400 border-emerald-500/25' },
+    { label: 'Setup', count: funnel.passedSetup, color: 'bg-violet-500/30 text-violet-400 border-violet-500/25' },
+    { label: 'Risk Gate', count: funnel.passedRisk, color: 'bg-amber-500/30 text-amber-400 border-amber-500/25' },
+    { label: 'Event Risk', count: funnel.passedEventRisk ?? funnel.passedRisk, color: 'bg-red-500/30 text-red-400 border-red-500/25' },
+    { label: 'Sector Limit', count: funnel.passedSectorLimit ?? funnel.passedRisk, color: 'bg-indigo-500/30 text-indigo-400 border-indigo-500/25' },
+    { label: 'Top Stocks', count: funnel.displayed, color: 'bg-emerald-500/40 text-emerald-300 border-emerald-500/40' },
   ];
 
   return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {steps.map((s, i) => {
-        const detail = FUNNEL_DETAILS[s.label];
-        return (
-          <div key={s.label} className="flex items-center gap-1">
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className={`rounded-md px-2.5 py-1.5 text-center ${s.color} hover:brightness-125 transition-all cursor-pointer group relative`}>
-                  <div className="flex items-center justify-center gap-1">
-                    <p className="text-[11px] font-medium opacity-70">{s.label}</p>
-                    <Info className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
-                  </div>
-                  <p className="text-[15px] font-bold">{s.count}</p>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="bottom" align="center" className="w-80 sm:w-96 p-0 overflow-hidden">
-                <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
-                  <div className="flex items-center gap-2">
-                    {detail && <detail.icon className={`w-4.5 h-4.5 ${s.color.split(' ')[1]}`} />}
-                    <h3 className="text-sm font-bold text-foreground">{detail?.title}</h3>
-                  </div>
+    <Card className="border-border/40">
+      <CardContent className="p-3.5">
+        <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-muted-foreground/60" />
+          <p className="text-[12.5px] font-semibold text-foreground">Funnel-i i Skanimit</p>
+          <span className="text-[11px] text-muted-foreground">{funnel.universe} → {funnel.displayed} kandidate</span>
+          <span className="ml-auto text-[10px] text-muted-foreground/60 hidden sm:inline">kliko fazën për shpjegimin e rregullit</span>
+        </div>
+        <div className="space-y-1">
+          {steps.map((s, i) => {
+            const detail = FUNNEL_DETAILS[s.label];
+            const prevCount = i === 0 ? funnel.universe : steps[i - 1].count;
+            const passPct = prevCount > 0 ? (s.count / prevCount) * 100 : 0;
+            const widthPct = funnel.universe > 0 ? Math.max(2.5, (s.count / funnel.universe) * 100) : 0;
+            return (
+              <div key={s.label} className="flex items-center gap-2 group/f">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="w-[88px] text-right flex-shrink-0 flex items-center justify-end gap-1 text-[10.5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+                      {s.label}
+                      <Info className="w-2.5 h-2.5 opacity-0 group-hover/f:opacity-50 transition-opacity" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="bottom" align="start" className="w-80 sm:w-96 p-0 overflow-hidden">
+                    <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-3 pb-2">
+                      <div className="flex items-center gap-2">
+                        {detail && <detail.icon className={`w-4.5 h-4.5 ${s.color.split(' ')[1]}`} />}
+                        <h3 className="text-sm font-bold text-foreground">{detail?.title}</h3>
+                      </div>
+                    </div>
+                    <div className="px-4 pb-4 space-y-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën kjo fazë?</p>
+                        <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.desc}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
+                        <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Pse është e rëndësishme?</p>
+                        <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.why}</p>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <div className="flex-1 h-4 rounded-sm bg-muted/15 overflow-hidden min-w-[60px]">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${widthPct}%` }}
+                    transition={{ duration: 0.55, delay: i * 0.05, ease: 'easeOut' }}
+                    className={`h-full rounded-sm border ${s.color}`}
+                  />
                 </div>
-                <div className="px-4 pb-4 space-y-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Çfarë bën kjo fazë?</p>
-                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.desc}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Idealisht</p>
-                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.ideal}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Pse është e rëndësishme?</p>
-                    <p className="text-[13px] leading-relaxed text-foreground/85">{detail?.why}</p>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-            {i < steps.length - 1 && <ArrowDown className="w-3.5 h-3.5 text-muted-foreground/40" />}
-          </div>
-        );
-      })}
+                <span className="w-[46px] text-[10.5px] font-mono font-semibold text-foreground/85 flex-shrink-0 text-right">{s.count}</span>
+                <span className="w-[58px] text-[9.5px] text-muted-foreground/60 flex-shrink-0">{i === 0 ? 'universe' : `${passPct.toFixed(0)}% pass`}</span>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ═══ Grafiku i çmimit 60-ditor — sparkline SVG me entry/stop/3R + hover ═══
+function MiniPriceChart({ stock }: { stock: FunnelStock }) {
+  const spark = stock.spark ?? [];
+  const dates = stock.sparkDates ?? [];
+  const [hover, setHover] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  if (spark.length < 10) return null;
+
+  const W = 600, H = 176;
+  const PADT = 14, PADB = 18, PADL = 6, PADR = 56;
+
+  // Y-domain: çmimet + nivelet e tregtisë (stop/entry/3R)
+  const levels = [stock.stop, stock.entry, stock.target3R].filter((v): v is number => typeof v === 'number' && v > 0);
+  let lo = Math.min(...spark, ...levels);
+  let hi = Math.max(...spark, ...levels);
+  const pad = (hi - lo) * 0.06 || hi * 0.02;
+  lo -= pad; hi += pad;
+
+  const n = spark.length;
+  const x = (i: number) => PADL + (i / (n - 1)) * (W - PADL - PADR);
+  const y = (v: number) => PADT + (1 - (v - lo) / (hi - lo)) * (H - PADT - PADB);
+
+  const line = spark.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const area = `${line} L${x(n - 1).toFixed(1)},${(H - PADB).toFixed(1)} L${x(0).toFixed(1)},${(H - PADB).toFixed(1)} Z`;
+
+  const changePct = ((spark[n - 1] - spark[0]) / spark[0]) * 100;
+  const up = changePct >= 0;
+  const lineColor = up ? '#34d399' : '#f87171';
+  const gradId = `spark-${stock.symbol}`;
+
+  // Nivelet reference të tregtisë — vetëm brenda dritares së dukshme
+  const refLines = [
+    { v: stock.stop, color: '#f87171', label: 'STOP' },
+    { v: stock.entry, color: '#60a5fa', label: 'ENTRY' },
+    { v: stock.target3R, color: '#34d399', label: '3R' },
+  ].filter(r => typeof r.v === 'number' && r.v > 0 && r.v >= lo && r.v <= hi);
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((px - PADL) / (W - PADL - PADR)) * (n - 1));
+    setHover(Math.max(0, Math.min(n - 1, idx)));
+  };
+
+  const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('sq-AL', { day: 'numeric', month: 'short' }) : '';
+  const hoverDelta = hover != null ? ((spark[hover] - spark[0]) / spark[0]) * 100 : 0;
+  const fmtPrice = (v: number) => `$${v >= 1000 ? v.toFixed(0) : v.toFixed(2)}`;
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-muted/5 overflow-hidden relative">
+      <div className="flex items-center justify-between px-2.5 pt-1.5">
+        <span className="text-[9.5px] uppercase tracking-wider text-muted-foreground font-medium">Çmimi · 60 ditë</span>
+        <span className={`text-[10.5px] font-bold ${up ? 'text-emerald-400' : 'text-red-400'}`}>
+          {up ? <ArrowUpRight className="w-3 h-3 inline -mt-0.5" /> : <ArrowDownRight className="w-3 h-3 inline -mt-0.5" />}
+          {up ? '+' : ''}{changePct.toFixed(1)}%
+        </span>
+      </div>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full block cursor-crosshair select-none"
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+        role="img"
+        aria-label={`Grafiku i çmimit 60-ditor për ${stock.symbol}`}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity={0.28} />
+            <stop offset="100%" stopColor={lineColor} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+
+        {/* Grid i butë horizontal */}
+        {[0.25, 0.5, 0.75].map(f => (
+          <line key={f} x1={PADL} x2={W - PADR + 4} y1={PADT + f * (H - PADT - PADB)} y2={PADT + f * (H - PADT - PADB)} stroke="currentColor" className="text-border/40" strokeWidth={0.6} strokeDasharray="2 4" />
+        ))}
+
+        {/* Niveli i çmimit aktual */}
+        <line x1={PADL} x2={W - PADR + 4} y1={y(spark[n - 1])} y2={y(spark[n - 1])} stroke={lineColor} strokeWidth={0.7} strokeDasharray="1 3" opacity={0.5} />
+
+        {/* Nivelet e tregtisë: stop / entry / 3R */}
+        {refLines.map(r => (
+          <g key={r.label}>
+            <line x1={PADL} x2={W - PADR + 4} y1={y(r.v)} y2={y(r.v)} stroke={r.color} strokeWidth={1} strokeDasharray="4 3" opacity={0.75} />
+            <text x={W - PADR + 8} y={y(r.v) + 3} fontSize={9.5} fill={r.color} fontWeight={700}>{r.label}</text>
+            <text x={W - PADR + 8} y={y(r.v) + 12.5} fontSize={8.5} fill={r.color} opacity={0.8}>{fmtPrice(r.v)}</text>
+          </g>
+        ))}
+
+        {/* Zona e fitimit (entry → 3R) dhe e humbjes (stop → entry) */}
+        {typeof stock.entry === 'number' && stock.entry > 0 && typeof stock.stop === 'number' && stock.stop > 0 && typeof stock.target3R === 'number' && stock.target3R > 0 && (
+          <>
+            <rect x={W - PADR + 2} y={y(stock.target3R)} width={4} height={Math.max(0, y(stock.entry) - y(stock.target3R))} fill="#34d399" opacity={0.35} rx={1} />
+            <rect x={W - PADR + 2} y={y(stock.entry)} width={4} height={Math.max(0, y(stock.stop) - y(stock.entry))} fill="#f87171" opacity={0.35} rx={1} />
+          </>
+        )}
+
+        {/* Sipërfaqja + linja */}
+        <motion.path d={area} fill={`url(#${gradId})`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7 }} />
+        <motion.path d={line} fill="none" stroke={lineColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
+          initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.9, ease: 'easeOut' }} />
+
+        {/* Pika e fundit me puls */}
+        <circle cx={x(n - 1)} cy={y(spark[n - 1])} r={3} fill={lineColor} stroke="currentColor" className="text-background" strokeWidth={1.2} />
+        <circle cx={x(n - 1)} cy={y(spark[n - 1])} r={3} fill="none" stroke={lineColor} strokeWidth={1.2}>
+          <animate attributeName="r" values="3;9;3" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.7;0;0.7" dur="2s" repeatCount="indefinite" />
+        </circle>
+
+        {/* Datat në boshe X */}
+        <text x={PADL} y={H - 5} fontSize={8.5} fill="currentColor" className="text-muted-foreground/60">{fmtDate(dates[0])}</text>
+        <text x={x(n - 1)} y={H - 5} fontSize={8.5} fill="currentColor" className="text-muted-foreground/60" textAnchor="end">{fmtDate(dates[n - 1])}</text>
+
+        {/* Crosshair i hover-it */}
+        {hover != null && (
+          <>
+            <line x1={x(hover)} x2={x(hover)} y1={PADT} y2={H - PADB} stroke="rgb(148 163 184)" strokeWidth={0.9} strokeDasharray="3 3" opacity={0.55} />
+            <circle cx={x(hover)} cy={y(spark[hover])} r={3.5} fill={lineColor} stroke="currentColor" className="text-background" strokeWidth={1.5} />
+          </>
+        )}
+      </svg>
+
+      {/* Tooltip-i i hover-it */}
+      {hover != null && (
+        <div
+          className="absolute top-1 pointer-events-none z-10 -translate-x-1/2 rounded-md border border-border/60 bg-popover/95 px-2 py-1 text-[10.5px] shadow-lg whitespace-nowrap"
+          style={{ left: `${Math.min(88, Math.max(12, (x(hover) / W) * 100))}%` }}
+        >
+          <span className="font-bold text-foreground">{fmtPrice(spark[hover])}</span>
+          <span className="text-muted-foreground"> · {fmtDate(dates[hover])}</span>
+          <span className={`ml-1 font-semibold ${hoverDelta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{hoverDelta >= 0 ? '+' : ''}{hoverDelta.toFixed(1)}%</span>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ═══ Radar i 6 shtyllave të score-it ═══
+function ScoreRadar({ stock }: { stock: FunnelStock }) {
+  const data = [
+    { k: 'Trend', v: stock.trendScore ?? 0 },
+    { k: 'RS', v: stock.rsScore ?? 0 },
+    { k: 'Mom', v: stock.momentumScore ?? 0 },
+    { k: 'Volum', v: stock.volConfScore ?? 0 },
+    { k: 'Setup', v: stock.setupScore ?? 0 },
+    { k: 'Risk', v: stock.riskScore ?? 0 },
+  ];
+  const c = stock.totalScore >= 65 ? '#34d399' : stock.totalScore >= 50 ? '#fbbf24' : '#f87171';
+  return (
+    <div className="h-[148px] w-full">
+      <ResponsiveContainer>
+        <RadarChart data={data} outerRadius="74%" margin={{ top: 4, right: 6, bottom: 0, left: 6 }}>
+          <PolarGrid stroke="rgb(148 163 184)" strokeOpacity={0.18} />
+          <PolarAngleAxis dataKey="k" tick={{ fontSize: 9, fill: 'rgb(148 163 184)' }} />
+          <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+          <Radar dataKey="v" stroke={c} fill={c} fillOpacity={0.3} strokeWidth={1.6} />
+        </RadarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ═══ Donut i ekspozimit sektorial të Top 10 ═══
+const PIE_COLORS = ['#34d399', '#a78bfa', '#38bdf8', '#fbbf24', '#fb7185', '#2dd4bf', '#fb923c', '#818cf8'];
+
+function SectorDonut({ sectorExposure }: { sectorExposure: Record<string, number> }) {
+  const entries = Object.entries(sectorExposure).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return null;
+  const pieData = entries.map(([k, v]) => ({ k, v }));
+  const total = entries.reduce((a, b) => a + b[1], 0);
+  return (
+    <Card className="border-border/40">
+      <CardContent className="p-3">
+        <div className="flex items-center gap-2 mb-1.5">
+          <Layers className="w-3.5 h-3.5 text-muted-foreground/60" />
+          <p className="text-[12.5px] font-semibold text-foreground">Ekspozimi Sektorial</p>
+          <span className="text-[11px] text-muted-foreground">— {total} kandidate, max 2 për sektor</span>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative h-[96px] w-[96px] flex-shrink-0">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={pieData} dataKey="v" nameKey="k" innerRadius="66%" outerRadius="96%" paddingAngle={2.5} strokeWidth={0}>
+                  {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-base font-bold text-foreground leading-none">{total}</span>
+              <span className="text-[8px] text-muted-foreground uppercase tracking-wide">kandidate</span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {pieData.map((d, i) => (
+              <div key={d.k} className="flex items-center gap-1.5 text-[11.5px]">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                <span className="text-foreground/90 truncate max-w-[140px]">{d.k}</span>
+                <span className="text-muted-foreground font-mono">{d.v}</span>
+                <span className="text-muted-foreground/50">{((d.v / total) * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -535,6 +771,20 @@ function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: FunnelStock;
             </MiniPopover>
           </div>
         </div>
+
+        {/* ═══ Vizual: grafiku i çmimit 60-ditor + radar i 6 shtyllave ═══ */}
+        {(stock.spark?.length ?? 0) > 10 && (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_196px] gap-2.5 items-stretch">
+            <MiniPriceChart stock={stock} />
+            <div className="rounded-lg border border-border/40 bg-muted/10 px-1.5 pt-1.5 pb-0.5 flex flex-col min-w-0">
+              <div className="flex items-center justify-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-violet-400/80" />
+                <span className="text-[9.5px] uppercase tracking-wider text-muted-foreground font-medium">Score Radar</span>
+              </div>
+              <ScoreRadar stock={stock} />
+            </div>
+          </div>
+        )}
 
         {/* Score breakdown - 6 sub-scores */}
         <div className="mt-3 grid grid-cols-6 gap-1.5">
@@ -3545,16 +3795,9 @@ export function IBKRStrategy() {
           {data.scannedAt && (<><span>·</span><span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(data.scannedAt).toLocaleTimeString('sq-AL')}</span></>)}
         </div>
 
-        {/* Sector Exposure */}
+        {/* Sector Exposure — donut vizual me legjendë */}
         {data.sectorExposure && Object.keys(data.sectorExposure).length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted-foreground">
-            <Layers className="w-3.5 h-3.5 text-muted-foreground/50" />
-            {Object.entries(data.sectorExposure).map(([sec, count]) => (
-              <span key={sec} className="px-2 py-0.5 rounded bg-muted/10 border border-border/30">
-                {sec} <strong className="text-foreground">{count}</strong>
-              </span>
-            ))}
-          </div>
+          <SectorDonut sectorExposure={data.sectorExposure} />
         )}
 
         {/* READY stocks */}

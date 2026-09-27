@@ -848,3 +848,23 @@ Stage Summary:
 - Social Arb v4 (1b65847) tani është në GitHub → deploy automatik në Vercel i aktivizuar
 - Skanimet në Vercel mbeten 503 derisa vendosen variablat e Upstash (RUJTJA); faqja + snapshot-i nga git funksionojnë
 - Hapi i mbetur te përdoruesi: Upstash Redis + 2 env vars + Redeploy (VERCEL_SETUP.md hapi 1)
+
+---
+Task ID: 46
+Agent: main
+Task: Tab-i IBKR «diçka më shikuar» — përmirësim vizual me grafikë realë
+
+Work Log:
+- API: FunnelStock (server) merr fusha të reja spark + sparkDates (60 ditët e fundit close + data) — bashkohen te topStocks në ibkr-scan dhe te stock në ibkr-analyze/[symbol]
+- MiniPriceChart (SVG i ndërtuar me dorë): gradient sipërfaqeje, linja animuar me pathLength (framer-motion), nivelet STOP/ENTRY/3R si linja të pikëzuara me çmim, zona fitimi/humbjes në krah, pika e fundit me puls, crosshair + tooltip në hover (çmim + datë + Δ%), datat në boshe X; ngjyra jeshile/kuqe sipas 3M
+- ScoreRadar (recharts): radari i 6 shtyllave (Trend/RS/Mom/Volum/Setup/Risk) me ngjyrë sipas score-it total — në çdo kartë, krahas grafikut
+- StockCard: band i ri pas rreshtit të sipërm — grid 1 kolonë mobile / [1fr_196px] desktop: grafiku + radari; kushtëzohet me spark > 10 pika (analiza e vjetër pa spark nuk thyhet)
+- FunnelViz rishkruar: 8 shtylla proporcionale të animuara (gjerësia = % e universe-it) + numri + % pass nga faza e mëparshme; popup-et e rregullave të fazave të ruajtura të integruara te etiketa
+- SectorDonut (recharts PieChart): donut me qendër «N kandidate» + legjendë me ngjyra/numra/% — zëvendësoi chips-at e thjeshtë
+- Rregullim bonus i 2 gabimeve TS para-ekzistuese në bllokun VP të ibkr-scan: rsVsSpy20d→rsVsSPY (fusha reale), dayChangePct llogaritet nga historiku; atrPct përdor fushën ekzistuese
+- Verifikime: tsc i pastër për skedarët IBKR; build i prodhimit kaloi; skanim real 400→10 në 20.8s me spark 60 pikat për të 10 (TAK/CRWD/MSFT...); DOM në browser: 10 sparkline + 10 radarë + 8 shtylla funeli + donut 6 sektorë; analiza e vetme MSFT me grafik + radar (WATCHLIST); 0 gabime konsole; mobile 390px pa overflow real (ticker-i është në kontejner overflow-x-auto)
+
+Stage Summary:
+- Tab-i IBKR tani ka 4 shtresa vizuale të reja: grafik çmimi 60-ditor me nivelet e tregtisë në çdo kartë, radar i score-it, funel i animuar me shtylla proporcionale, donut sektorial
+- Të dhënat e sparkline vijnë nga i njjëti historik që përdor skaneri (pa kërkesa shtesë rrjeti) — kosto zero
+- Komponentët e vjetër (VP READY, Top10Journal, Validation Lab) të paprekur

@@ -357,6 +357,9 @@ interface FunnelStock {
   // NEW: Tradability — ATR% gate
   atrStatus: string;            // OK | TOO_VOLATILE | TOO_SLOW
   atrTradable: boolean;         // 1.5% - 6%
+  // NEW: Vizual — sparkline 60 ditësh për grafikun e çmimit në klient
+  spark?: number[];
+  sparkDates?: string[];
 }
 
 interface FunnelResponse {
@@ -1211,6 +1214,16 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     sectorExposure[s.sector]++;
   }
 
+  // ── Sparkline: 60 ditët e fundit të çmimeve për grafikun në klient ──
+  for (const s of topStocks) {
+    const d = hist[s.symbol];
+    if (d && d.length > 10) {
+      const tail = d.slice(-60);
+      s.spark = tail.map(p => Math.round(p.close * 100) / 100);
+      s.sparkDates = tail.map(p => p.date);
+    }
+  }
+
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`[IBKR v2] ${syms.length} → ${passedLiquidity} → ${passedTrend} → ${passedSetup} → ${passedRisk} → ${passedSectorLimit} → ${topStocks.length} (${elapsed}s)`);
 
@@ -1338,6 +1351,11 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       if (!data || !stock.price) continue;
       const rsProxy = stock.trendScore >= 60 ? 2 : stock.trendScore >= 50 ? 0.5 : 0;
       const volProxy = stock.volConfScore >= 80 ? 1.4 : stock.volConfScore >= 60 ? 1.2 : 1.0;
+      // RS 22-ditor real vs SPY (fusha rsVsSPY) + ndryshimi ditor i fundit nga historiku
+      const dlen = data.length;
+      const lastClose = data[dlen - 1].close;
+      const prevClose = dlen >= 2 ? data[dlen - 2].close : lastClose;
+      const dayChangePct = prevClose > 0 ? ((lastClose - prevClose) / prevClose) * 100 : 0;
       allScanned.push({
         symbol: stock.symbol,
         score: stock.totalScore || 0,
@@ -1345,15 +1363,15 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
         bars: data.slice(-20).map((d: any) => ({
           high: d.high, low: d.low, close: d.close, volume: d.volume || 0,
         })),
-        rsSpy: stock.rsVsSpy20d || rsProxy,
+        rsSpy: stock.rsVsSPY || rsProxy,
         rsSector: stock.rsVsSector20d || rsProxy,
         distEma20: stock.pullbackPct || 0,
-        atrPct: stock.atr ? (stock.atr / stock.price) * 100 : 0,
+        atrPct: stock.atrPct || (stock.atr && stock.price ? (stock.atr / stock.price) * 100 : 0),
         volVs20d: volProxy,
         spreadBps: stock.spreadPct ? stock.spreadPct * 100 : 5,
         persistenceD: stock.totalScore >= 60 ? 3 : stock.totalScore >= 45 ? 2 : 1,
         eventRisk: stock.passedEventRisk ? 'NONE' : 'WARNING',
-        dayMovePct: stock.dayChangePct || 0,
+        dayMovePct: dayChangePct || 0,
         aboveSma50: stock.sma50Val ? stock.price >= stock.sma50Val : stock.passedTrend,
         aboveSma200: stock.passedTrend,
       });

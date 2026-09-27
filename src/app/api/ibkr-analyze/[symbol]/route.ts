@@ -582,6 +582,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         daysTo1R: atr > 0 ? Math.ceil(riskPerShare / atr) : 0,
         daysTo2R: atr > 0 ? Math.ceil((riskPerShare * 2) / atr) : 0,
         daysTo3R: atr > 0 ? Math.ceil((riskPerShare * 3) / atr) : 0,
+        // Sparkline: 60 ditët e fundit për grafikun e çmimit
+        spark: stockData.slice(-60).map(d => Math.round(d.close * 100) / 100),
+        sparkDates: stockData.slice(-60).map(d => d.date),
         // Catalyst gate defaults (no earnings/macro gate in single-stock view)
         catalystStatus: 'CLEAR' as const,
         daysToEarnings: null,
