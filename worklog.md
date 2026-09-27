@@ -950,3 +950,12 @@ Stage Summary:
 - Deploy në Vercel mbetet përmes GitHub integration (provuar 2 herë sot) — s'ka dyfishim me CLI
 - Kroni 2-orësh i Social Arb (nga sesioni paralel, d3d11c4) u verifikua: sekreti CRON_SECRET në repo + run i parë SUCCESS
 - Fix pas vëzhgimit të parë run-i: hapi «Run lint» kishte mbetur npx next lint (Next 16 e hoqi komandën — «Invalid project directory») → ndryshuar në npm run lint (eslint .); Build Check kaloi që në run-in e parë
+- Rrënja e vërtetë e dështimit të dytë: PA lock file, CI instalonte ESLint më të re (plugin react-hooks v7 me rregulla compiler) sesa sandbox-i → 4 gabime që lokalisht s'shfaqeshin. Zgjidhja përfundimtare: **package-lock.json i commit-uar** (938 paketa, npm ci --dry-run OK) → CI = sandbox determinist; npm ci + cache: npm u rikthye në të dy workflow-t
+- 3 nga 4 gabimet e reja u rregulluan edhe në kod: quant-dashboard + technical-analysis (effect-i zhvenduar PAS deklarimit të runAnalysisForTicker — akses para deklarimit), market-map (autoRefreshRef shkruhej gjatë render-it → update brenda useEffect)
+- E mbetur latente (vetëm me ESLint të ardhshëm): market-map.tsx:837 react-hooks/refs mbi cancelHide në onMouseEnter — event handler ligjor, rregull konservativ; s'aktivizohet me versionet e lock-uar
+- Verifikime: npm ci --dry-run OK · lint 0 gabime · build kalon
+
+Stage Summary (Task 50):
+- CI tani është e gjelbër deterministe: Lint (npm ci + eslint) + Build Check (npm ci + build), hera e parë funksionale në historinë e repo-s
+- package-lock.json mbyll çdo drift të ardhshëm sandbox↔CI↔Vercel
+- KONFIRMIM FINAL: Lint ✅ + Build Check ✅ në a7e4939 (e para CI e gjelbër në historinë e repo-s — 27 sht 2026)
