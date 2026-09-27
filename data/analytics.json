@@ -362,6 +362,54 @@
       "visitorNumber": 8,
       "isNewVisitor": false,
       "visitCount": 5
+    },
+    {
+      "id": "1790531108099-f5mdgs",
+      "timestamp": "2026-09-27T17:45:08.099Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+      "fingerprint": "fp_5dos8h",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "colorDepth": 24,
+      "pixelRatio": 3.1875,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "os": "Android 10",
+      "connectionType": "3g",
+      "isTouchDevice": true,
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome",
+      "visitorNumber": 9,
+      "isNewVisitor": true,
+      "visitCount": 1
+    },
+    {
+      "id": "1790532429308-v9b19y",
+      "timestamp": "2026-09-27T18:07:09.308Z",
+      "ip": "::1",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+      "fingerprint": "fp_jv24ww",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 800,
+      "screenHeight": 600,
+      "colorDepth": 24,
+      "pixelRatio": 1,
+      "language": "en-US",
+      "timezone": "UTC",
+      "os": "Linux",
+      "connectionType": "4g",
+      "isTouchDevice": false,
+      "country": "Local",
+      "device": "Desktop",
+      "browser": "Chrome",
+      "visitorNumber": 8,
+      "isNewVisitor": false,
+      "visitCount": 6
     }
   ],
   "fingerprintMap": {
@@ -410,8 +458,14 @@
     "fp_jv24ww": {
       "visitorNumber": 8,
       "firstSeen": "2026-09-23T10:27:44.261Z",
-      "lastSeen": "2026-09-27T17:24:02.486Z",
-      "visitCount": 5
+      "lastSeen": "2026-09-27T18:07:09.308Z",
+      "visitCount": 6
+    },
+    "fp_5dos8h": {
+      "visitorNumber": 9,
+      "firstSeen": "2026-09-27T17:45:08.099Z",
+      "lastSeen": "2026-09-27T17:45:08.099Z",
+      "visitCount": 1
     }
   }
 }

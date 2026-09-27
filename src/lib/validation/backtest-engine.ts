@@ -203,6 +203,9 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
 
   const reject = (r: string) => { entryOrdersRejected++; rejectReasons[r] = (rejectReasons[r] || 0) + 1; };
 
+  // Rikalibrimi v2: cooldown i simbolit — dita e kalendrit kur u mbyll pozicioni i fundit i simbolit
+  const lastExitDay = new Map<string, number>();
+
   for (let day = opts.startIndex; day <= opts.endIndex; day++) {
     const today = ctx.calendar[day];
 
@@ -250,6 +253,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
         setupType: pos.setupType,
         equityAfter: Math.round(equity * 100) / 100,
       });
+      lastExitDay.set(pos.symbol, day);
       open.splice(i, 1);
     }
 
@@ -259,6 +263,10 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
     todaySignals.sort((a, b) => b.score - a.score);
     for (const sig of todaySignals) {
       if (open.length >= exec.maxOpenPositions) { reject('POSITION_LIMIT'); continue; }
+      // Rikalibrimi v2: 1 pozicion për simbol + cooldown pas daljes (kundër churn-it)
+      if (open.some(p => p.symbol === sig.symbol)) { reject('SYMBOL_OPEN'); continue; }
+      const le = lastExitDay.get(sig.symbol);
+      if (le != null && day - le < (exec.symbolCooldownDays ?? 10)) { reject('SYMBOL_COOLDOWN'); continue; }
       const openInSector = open.filter(p => p.sector === sig.sector).length;
       if (openInSector >= exec.maxPerSector) { reject('SECTOR_LIMIT'); continue; }
 
@@ -389,7 +397,8 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       }
       const avgVol20 = volSum20 / n20;
       const avgDolVol = dolVolSum / n20;
-      const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
+      // Rikalibrimi v2: likuiditet $50M + çmim $15 (ishte $20M/$10) — më pak tregti me emra më të mirë
+      const passedLiq = price >= 15 && avgVol20 >= 1_000_000 && avgDolVol >= 50_000_000;
       if (!passedLiq) continue;
 
       const sma50V = s.sma50[idx] || 0;
@@ -481,6 +490,11 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       if (setup === 'NONE') continue;
       setupScore = Math.min(100, setupScore);
 
+      // ── SETUP POLICY (rikalibrimi v2) — si scanner-i live ──
+      // 10-vjeçari: PULLBACK 1473t -$12,281 · BREAKOUT 104t -$2,233 · TREND_CONT 202t +$2,729.
+      // Vetëm TREND_CONT tregtohet; PULLBACK/BREAKOUT refuzohen (numërohen për funnel-in).
+      if (setup !== 'TREND_CONT') { reject('SETUP_POLICY'); continue; }
+
       // ── SCORE — pesha bazë (Learning Engine neutral në backtest) ──
       // Trend (0-100)
       let tScore = 0;
@@ -545,44 +559,84 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       if (rvol >= 1.5) vScore += 10;
       vScore = Math.round(Math.max(0, Math.min(100, vScore)));
 
-      // ── ENTRY / STOP / TARGET — si scanner-i ──
-      const isBreakout = setup === 'BREAKOUT';
-      const entry = isBreakout ? Math.round(high20 * 1.002 * 100) / 100 : Math.round(price * 100) / 100;
+      // ── ENTRY / STOP / TARGET — si scanner-i (rikalibrimi v2: stop i gjërë për gap-et) ──
+      // Pas SETUP POLICY setup-i është gjithmonë TREND_CONT → hyrja me LIMIT në çmimin e mbylljes
+      const isBreakout = false;
+      const entry = Math.round(price * 100) / 100;
       const stopVol = useIbkrFilters ? stopVolMultiplier : 1.0;
-      const stopAtr = entry - atr * 1.5 * stopVol;
-      const stopSwing = swLow - atr * 0.2 * stopVol;
+      // Rikalibrimi v2.1: 1.8 ATR + swing 0.35 — mbrojtje nga gap-et pa vrarë targetat (2.2 i fikti fitimet)
+      const stopAtr = entry - atr * 1.8 * stopVol;
+      const stopSwing = swLow - atr * 0.35 * stopVol;
       const stop = Math.round(Math.max(stopAtr, stopSwing) * 100) / 100;
       const riskPerShare = entry - stop;
       if (riskPerShare <= 0) continue;
       const riskPct = (riskPerShare / entry) * 100;
 
-      // Risk (0-100)
+      // ── GAP-RESILIENCE (rikalibrimi v2) — si scanner-i live ──
+      // Gap-i mesatar |overnight| 20-ditor duhet ≤75% e distancës së stop-it, ndryshe
+      // stop-i është i cenueshëm ndaj hapjeve (burimi i GAP_STOP-eve).
+      let gapAbsSum = 0, gapCnt = 0;
+      const gapStart = Math.max(1, idx - 19);
+      for (let i = idx; i >= gapStart; i--) {
+        if (bars[i - 1].close > 0) {
+          gapAbsSum += Math.abs((bars[i].open - bars[i - 1].close) / bars[i - 1].close * 100);
+          gapCnt++;
+        }
+      }
+      const avgGap20 = gapCnt > 0 ? gapAbsSum / gapCnt : 0;
+      if (avgGap20 > 0.75 * riskPct) { reject('GAP_FRAGILE_STOP'); continue; }
+
+      // Risk (0-100) — rikalibrimi v2: përfshin gap-resilience (si scanner-i)
+      const rr3 = 3; // R:R strukturore deri te 3R target (si në scanner)
       let rScore = 50;
-      if (riskPct <= 3) rScore += 20;
-      else if (riskPct <= 5) rScore += 10;
-      else if (riskPct > 7) rScore -= 20;
-      rScore += 15; // rr = 3R si në scanner
-      if (atrPct < 2) rScore += 10;
-      else if (atrPct > 4) rScore -= 10;
+      if (riskPct <= 3) rScore += 15;
+      else if (riskPct <= 4.5) rScore += 8;
+      else if (riskPct > 5.5) rScore -= 20;
+      if (rr3 >= 2) rScore += 10;
+      else if (rr3 >= 1.5) rScore += 4;
+      else rScore -= 12;
+      if (atrPct < 2) rScore += 8;
+      else if (atrPct > 4) rScore -= 8;
+      const stopDistVsGap = riskPct > 0 ? avgGap20 / riskPct : 99;
+      if (stopDistVsGap <= 0.4) rScore += 12;
+      else if (stopDistVsGap <= 0.6) rScore += 6;
+      else if (stopDistVsGap > 0.9) rScore -= 15;
       rScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
       // ATR% tradability gate (1.5-6%) — bërthama e tradability
       if (atrPct > 6 || atrPct < 1.5) continue;
 
+      // ── LIQUIDITY SCORE — si scanner-i (rikalibrimi v2: real, jo konstante 50) ──
+      const advM0 = avgDolVol / 1_000_000;
+      const spreadPct0 = advM0 > 0 ? Math.min(0.5, 1.5 / Math.sqrt(advM0)) : 0.5;
+      let dvScore = 25;
+      if (avgDolVol > 100_000_000) dvScore = 100;
+      else if (avgDolVol > 50_000_000) dvScore = 85;
+      else if (avgDolVol > 20_000_000) dvScore = 70;
+      let spScore = 25;
+      if (spreadPct0 <= 0.10) spScore = 100;
+      else if (spreadPct0 <= 0.25) spScore = 80;
+      else if (spreadPct0 <= 0.50) spScore = 55;
+      const liqScore = Math.round(dvScore * 0.60 + spScore * 0.40);
+
+      // ── TOTAL SCORE — FORMULA E RE (rikalibrimi v2, si scanner-i live) ──
+      // Trend 15% (e saturuar nga filtrat mekanikë) + RS 25% (dallimi kryesor) +
+      // Mom 15% + Vol 15% + Setup 10% + Liq 10% (tani reale) + Risk 10% (me gap-resilience)
       const totalScoreRaw = Math.round(
-        tScore * 0.25 + rsScore * 0.20 + mScore * 0.15 + vScore * 0.15 +
-        setupScore * 0.10 + 50 * 0.10 + rScore * 0.05,
+        tScore * 0.15 + rsScore * 0.25 + mScore * 0.15 + vScore * 0.15 +
+        setupScore * 0.10 + liqScore * 0.10 + rScore * 0.10,
       );
       // EVENT SCORE: pikët e specifikimit (-3/-1/+1/+2/-2) mbi score-in bazë
       const totalScore = Math.max(0, Math.min(100, totalScoreRaw + evPts));
 
-      // ── VENDIMI — gates sipas variantit ──
+      // ── VENDIMI — gates sipas variantit (rikalibrimi v2: risk 5.5%, score 55) ──
       const rsiOk = rsiV >= 30 && rsiV <= 75;   // bërthama e setup-it (të gjithë variantet)
-      const riskOk = riskPct <= 8;               // menaxhimi bazë i rrezikut
-      const scoreOk = totalScore >= 45;          // me pikët e event-it
+      const riskOk = riskPct <= 5.5;            // ishte 8% — kap më fort me stop e gjerë
+      const scoreOk = totalScore >= 55;         // ishte 45 — me formulën e re
+      const scoreBandOk = totalScore <= 84;      // rikalibrimi v2.1: 85+ = i mbivlerësuar (banda fituese 75-84)
       const sectorRsOk = !(sectorRsStatus === 'LAGGING' && !sectorAboveSma50);
 
-      if (!(rsiOk && riskOk && scoreOk)) continue;
+      if (!(rsiOk && riskOk && scoreOk && scoreBandOk)) continue;
       if (useIbkrFilters) {
         if (regimeLevel === 'RISK') continue;
         if (!sectorRsOk) continue;
@@ -617,7 +671,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
       const eventRisky = evState.earningsWithin2d || (lastReactPct !== null && lastReactPct <= -2);
       const breakdown = {
         trend: (stackedMA ? 1 : 0) + (adxV > 25 ? 1 : 0), // /2
-        pullback: setup === 'PULLBACK' ? 2 : setup === 'BREAKOUT' ? 1 : 1, // /2
+        pullback: 1, // TREND_CONT pas SETUP POLICY — vazhdim trendi, jo fade
         rs: rsSpy60 > 0 ? 1 : 0, // /1
         volume: vScore >= 60 ? 1 : 0, // /1
         market: regimeLevel === 'OK' ? 1 : 0, // /1
@@ -669,6 +723,7 @@ export function runBacktest(ctx: BacktestContext, opts: BacktestOptions): Backte
         const barIdx = asOfIndex(ps, today);
         if (barIdx < 0) continue;
         const exitBar = ps.bars[barIdx];
+        lastExitDay.set(pos.symbol, day);
         const costs = computeTradeCosts({
           shares: pos.shares, entryPrice: pos.entry, exitPrice: exitBar.close,
           spreadPct: pos.spreadPct, atrPct: pos.atrPct, avgDolVol: pos.avgDolVol,

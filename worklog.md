@@ -868,3 +868,26 @@ Stage Summary:
 - Tab-i IBKR tani ka 4 shtresa vizuale të reja: grafik çmimi 60-ditor me nivelet e tregtisë në çdo kartë, radar i score-it, funel i animuar me shtylla proporcionale, donut sektorial
 - Të dhënat e sparkline vijnë nga i njjëti historik që përdor skaneri (pa kërkesa shtesë rrjeti) — kosto zero
 - Komponentët e vjetër (VP READY, Top10Journal, Validation Lab) të paprekur
+
+---
+Task ID: 47
+Agent: main
+Task: IBKR Rikalibrimi v2 — 6 kërkesat e userit nga analiza e 10-vjeçarit të validimit
+
+Work Log:
+- Bazuar në /tmp/bt.json (backtest-i ekzistues): PULLBACK 1473t -$12,281 (71% e tregtive) · TREND_CONT 202t +$2,729 (i vetmi fitues) · BREAKOUT 104t -$2,233 · kostot $35.7K = 149.3% e fitimit bruto · GAP_STOP 313 (të 5 më të këqijat) · score 85+ -$10.5K kundrejt 75-84 -$2.0K (pa fuqi parashikuese) · POSITION_LIMIT refuzoi 21,427 sinjale (mbi-tregtim strukturor)
+- 1) SETUP POLICY: vetëm TREND_CONT lejon READY; PULLBACK/BREAKOUT vetëm WATCHLIST me arsyen historike në warning — në skaner, analyze dhe backtest-engine
+- 2) Frekuenca: likuiditet $20M→$50M + çmim $10→$15 · maxOpenPositions 5→3 · maxPerSector 2→1 · cooldown 10 ditë/simbol (1 pozicion/simbol) — SYMBOL_OPEN/SYMBOL_COOLDOWN si reject-reasons të reja
+- 3) Score-i i rindërtuar nga zero: Trend 25→15% (i saturuar nga filtrat mekanikë), RS 20→25%, Risk 5→10% (tani me GAP-RESILIENCË brenda rScore), Likuiditeti real (dv×0.6+spread×0.4) jo konstantja 50; prag 45→55; Learning multipliers neutralë siç ishin (DB jo-aktive)
+- 4) Koncentrimi: MAX_PER_SECTOR=1, maxOpen=3, cooldown — plus kriteri ekzistues top-3 simbolet ≤80%
+- 5) GAP_STOP: stop ATR 1.5→2.2 testuar (GAP_STOP 313→83 por targetat u zgjatën — fitimet fikën, avgR 0.14→0.02) → rikalibrim v2.1: 1.8 ATR + swing 0.35 + GATE i re: gap-i mesatar |overnight| 20d ≤75% e distancës së stop-it (GAP_FRAGILE_STOP refuzon 622 sinjale); riskPct max 8→5.5%
+- 5b) Tavani i score-it (v2.1): READY vetëm 55-84 — mbi 84 → EXTENDED «i mbivlerësuar»; 10-vjeçari i ri konfirmoi: 85+ -$12.3K kundrejt 75-84 +$2.5K
+- 6) Gate 6 LIVE: tekst i qartë «BLLOKUAR — gates 1-5 s'janë kaluar (verdikt REJECT)»; UI: «Gate 6 — LIVE me 0.25% risk — BLLOKUAR»; asnjë kod nuk aktivizon LIVE (asnjëherë s'kishte)
+- UI: karta «Trend Continuation Swing v2» me peshat e reja + notat e politikës/frekuencës; STRATEGY_RULES të rishkruara; tekstet e setup-eve në Validation Lab me verdikte të reja; bandat e score-it në popup
+- Rezultatet e backtest-it v2.1 (full): IS +$3,323 PF 1.05 DD 24.5% (i pari IS pozitiv!) · 654→557 tregti (-69% nga 1,779) · GAP_STOP 313→75 (-76%) · kostot $35.7K→$12.0K (-66%) · OOS -$8.3K (të GJITHA variantet kanë OOS negativ — familja e qasjejes nuk ka edge në 2023-2026; jo overfit më tej)
+- Verifikime: tsc 0 gabime; build i prodhimit kaloi; skanim real: 400→9 të listuara, 0 READY (regjimi RISK — saktë), portat SETUP/GAP/Tavan demonstrohen në warnings; PK analyze OK; browser: karta v2 + 12 SETUP POLICY warnings renderohen
+
+Stage Summary:
+- Sistemi tani reflekton disiplinën e kërkuar: -69% frekuencë, -76% GAP_STOP, -66% kosto, 1/sektor, 3 pozicione max, cooldown 10-ditësh
+- IS u kthye pozitiv për herë të parë (+$3.3K), por OOS mbetet negativ në TË GJITHA variantet → verdikti qëndron REJECT dhe Gate 6 LIVE mbetet i kyçur — saktësisht siç kërkoi useri
+- Tavani i score-it ≤84 është gjetja strukturore e re: 85+ = kushte të mbivlerësuara, jo «elite»

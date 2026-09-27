@@ -238,7 +238,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
     const avgDolVol = price * avgVol20;
-    const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
+    // Rikalibrimi v2: likuiditet $50M + çmim $15 (si ibkr-scan)
+    const passedLiq = price >= 15 && avgVol20 >= 1_000_000 && avgDolVol >= 50_000_000;
 
     const sma50 = calculateSMA(closes, 50), sma200 = calculateSMA(closes, 200);
     const ema20 = calcEMA(closes, 20);
@@ -370,12 +371,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
     sScore = Math.min(100, sScore);
 
-    // Entry / Stop / Target (v2 — stop widened by VIX stopVolMultiplier, same as ibkr-scan)
+    // ── SETUP POLICY (rikalibrimi v2) — si ibkr-scan ──
+    // Vetëm TREND_CONT lejon READY; PULLBACK/BREAKOUT vetëm WATCHLIST (10-vjeçari i validimit)
+    const tradeableSetup = setup === 'TREND_CONT';
+    if (!tradeableSetup && setup !== 'NONE') {
+      reasons.push('SETUP POLICY: vetëm TREND_CONT lejon READY — ky setup humb pas kostove (10-vjeçar)');
+    }
+
+    // Entry / Stop / Target (v2 — rikalibrimi: stop ATR 2.2 + swing buffer 0.5 për të absorbuar gap-e)
     const isBreakout = setup === 'BREAKOUT';
     const high20 = Math.max(...highs.slice(-20));
     const entry = isBreakout ? Math.round((high20 * 1.002) * 100) / 100 : Math.round(price * 100) / 100;
-    const stopAtr = Math.round((entry - atr * 1.5 * stopVolMultiplier) * 100) / 100;
-    const stopSwing = Math.round((swLow - atr * 0.2 * stopVolMultiplier) * 100) / 100;
+    const stopAtr = Math.round((entry - atr * 1.8 * stopVolMultiplier) * 100) / 100;
+    const stopSwing = Math.round((swLow - atr * 0.35 * stopVolMultiplier) * 100) / 100;
     const stop = Math.max(stopAtr, stopSwing);
     const riskPerShare = entry - stop;
     const riskPct = entry > 0 ? (riskPerShare / entry) * 100 : 0;
@@ -393,23 +401,49 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const atrStatus = atrPct > 6 ? 'TOO_VOLATILE' : atrPct < 1.5 ? 'TOO_SLOW' : 'OK';
     const atrTradable = atrStatus === 'OK';
 
-    // Risk Score
+    // Risk Score — rikalibrimi v2: me gap-resilience (si ibkr-scan)
+    // Gap-i mesatar |overnight| 20-ditor llogaritet herët për portën e re
+    const opensEarly = stockData.map(d => d.open);
+    const gapsEarly: number[] = [];
+    for (let i = Math.max(1, stockData.length - 20); i < stockData.length; i++) {
+      if (closes[i-1] > 0) gapsEarly.push(Math.abs((opensEarly[i] - closes[i-1]) / closes[i-1] * 100));
+    }
+    const avgGap20Early = gapsEarly.length > 0 ? gapsEarly.reduce((a,b) => a+b, 0) / gapsEarly.length : 0;
+    const stopDistPctEarly = entry > 0 ? riskPct : 0;
     let rScore = 50;
-    if (riskPct <= 3) rScore += 20; else if (riskPct <= 5) rScore += 10; else if (riskPct > 7) rScore -= 20;
-    if (rr >= 2) rScore += 15; else if (rr >= 1.5) rScore += 5; else rScore -= 15;
-    if (atrPct < 2) rScore += 10; else if (atrPct > 4) rScore -= 10;
+    if (riskPct <= 3) rScore += 15; else if (riskPct <= 4.5) rScore += 8; else if (riskPct > 5.5) rScore -= 20;
+    if (rr >= 2) rScore += 10; else if (rr >= 1.5) rScore += 4; else rScore -= 12;
+    if (atrPct < 2) rScore += 8; else if (atrPct > 4) rScore -= 8;
+    const stopDistVsGap = stopDistPctEarly > 0 ? avgGap20Early / stopDistPctEarly : 99;
+    if (stopDistVsGap <= 0.4) rScore += 12;
+    else if (stopDistVsGap <= 0.6) rScore += 6;
+    else if (stopDistVsGap > 0.9) rScore -= 15;
     if (!passedEventRisk) rScore -= 25;
     rScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
-    // Total Score
-    const totalScore = Math.round(tScore * 0.25 + rsScore * 0.20 + mScore * 0.15 + vScore * 0.15 + sScore * 0.10 + 50 * 0.10 + rScore * 0.05);
+    // Likuiditet real (rikalibrimi v2 — zëvendëson konstanten 50 në formule)
+    const advM0 = avgDolVol / 1_000_000;
+    const spreadPct0 = advM0 > 0 ? Math.min(0.5, 1.5 / Math.sqrt(advM0)) : 0.5;
+    let dvScore0 = 25;
+    if (avgDolVol > 100_000_000) dvScore0 = 100;
+    else if (avgDolVol > 50_000_000) dvScore0 = 85;
+    else if (avgDolVol > 20_000_000) dvScore0 = 70;
+    else if (avgDolVol > 10_000_000) dvScore0 = 50;
+    let spScore0 = 25;
+    if (spreadPct0 <= 0.10) spScore0 = 100;
+    else if (spreadPct0 <= 0.25) spScore0 = 80;
+    else if (spreadPct0 <= 0.50) spScore0 = 55;
+    const liqScore0 = Math.round(dvScore0 * 0.60 + spScore0 * 0.40);
+
+    // Total Score — FORMULA E RE (rikalibrimi v2): Trend 15 + RS 25 + Mom 15 + Vol 15 + Setup 10 + Liq 10 + Risk 10
+    const totalScore = Math.round(tScore * 0.15 + rsScore * 0.25 + mScore * 0.15 + vScore * 0.15 + sScore * 0.10 + liqScore0 * 0.10 + rScore * 0.10);
 
     // Decision
     const warnings: string[] = [];
     let decision: Decision = 'NO_TRADE';
     if (rr < 2.0) warnings.push(`R:R ${rr.toFixed(1)} — i ulet (duhet 1:2 me 3R target)`);
     if (rsi > 75) warnings.push(`RSI ${rsi.toFixed(0)} — i mbivleresuar`);
-    if (riskPct > 8) warnings.push(`Rreziku ${riskPct.toFixed(1)}% — shume i larte`);
+    if (riskPct > 5.5) warnings.push(`Rreziku ${riskPct.toFixed(1)}% — mbi kufirin 5.5% (rikalibrimi v2)`);
     if (adx < 20) warnings.push(`ADX ${adx.toFixed(1)} — trend i dobet`);
     // NEW: ATR% tradability warnings
     if (atrStatus === 'TOO_VOLATILE') warnings.push(`ATR ${atrPct.toFixed(1)}% — shume i paqendrueshem per swing (max 6%)`);
@@ -424,11 +458,25 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!stackedMA) warnings.push('MA jo te stackuara');
     if (pbPct > -0.5 && setup === 'PULLBACK') warnings.push('Jo pullback i vertete — extended');
 
-    const hasRR = rr >= 2.0, rsiOk = rsi >= 30 && rsi <= 75, riskOk = riskPct <= 8, scoreOk = totalScore >= 45, eventOk = passedEventRisk;
-    if (hasRR && rsiOk && riskOk && scoreOk && regimeLevel !== 'RISK' && eventOk) decision = 'READY';
+    // ── Portat e reja të rikalibrimit v2 (si ibkr-scan) ──
+    const setupOk = tradeableSetup;
+    if (!setupOk && setup !== 'NONE') {
+      warnings.push(`SETUP POLICY: ${setup} s'lejon READY — 10-vjeçari: PULLBACK -$12.3K, BREAKOUT -$2.2K; vetëm TREND_CONT +$2.7K`);
+    }
+    const gapOk = stopDistPctEarly > 0 && avgGap20Early <= 0.75 * stopDistPctEarly;
+    const scoreBandOk = totalScore <= 84; // rikalibrimi v2.1: 85+ = i mbivlerësuar (10-vjeçar)
+    if (!scoreBandOk) {
+      warnings.push(`SCORE ${totalScore} mbi 84 — i mbivlerësuar (10-vjeçari: 85+ më keq se 75-84); konsiderohet EXTENDED`);
+    }
+    if (!gapOk) {
+      warnings.push(`GAP RISK: gap-i mesatar ${avgGap20Early.toFixed(2)}% vs stop ${stopDistPctEarly.toFixed(2)}% — stop-i s'absorbon gap-et (313 GAP_STOP në 10-vjeçar)`);
+    }
+
+    const hasRR = rr >= 2.0, rsiOk = rsi >= 30 && rsi <= 75, riskOk = riskPct <= 5.5, scoreOk = totalScore >= 55, eventOk = passedEventRisk;
+    if (hasRR && rsiOk && riskOk && scoreOk && scoreBandOk && setupOk && gapOk && regimeLevel !== 'RISK' && eventOk) decision = 'READY';
     else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || regimeLevel === 'RISK')) { decision = 'WATCHLIST'; if (regimeLevel === 'RISK') warnings.push('WATCHLIST: Regjimi RISK nuk lejon long tani'); if (!eventOk) warnings.push('WATCHLIST: Event risk'); }
     else if (!hasRR || riskPct > 6) { if (sScore >= 50) decision = 'WATCHLIST'; else decision = 'NO_TRADE'; }
-    else if (rsi > 72 || pbPct > -0.3) decision = 'EXTENDED';
+    else if (rsi > 72 || pbPct > -0.3 || !scoreBandOk) decision = 'EXTENDED';
     else decision = 'WATCHLIST';
     if (!eventOk && decision === 'READY') { decision = 'EVENT_RISK'; warnings.push('EVENT_RISK: Ngjarje kritike'); }
     // NEW: ATR% gate — cap READY to WATCHLIST if too volatile for swing (same as ibkr-scan)

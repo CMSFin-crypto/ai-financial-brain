@@ -134,11 +134,11 @@ const DECISION_STYLE: Record<Decision, { bg: string; text: string; border: strin
 
 // ── Strategy Reference Data ──
 const STRATEGY_RULES = [
-  { element: 'Universe', icon: Layers, rule: '200 kompani te medha, likuide, tregtueshme ne IBKR', color: 'text-blue-400' },
-  { element: 'Filtri mekanik', icon: Filter, rule: 'Cmimi >= $10, Vol >= 1M, DolVol >= $20M, mbi SMA50, SMA50 > SMA200, Stacked MA, ADX > 25, RS > SPY', color: 'text-emerald-400' },
-  { element: 'Analize teknike', icon: BarChart3, rule: 'Trend (me Stacked MA + ADX bonus), momentum, RS, ATR, setup quality, volum konfirmim', color: 'text-blue-400' },
-  { element: 'Event-risk gate', icon: AlertTriangle, rule: 'R:R >= 1:2 (3R target), RSI 30-75, risk <= 8%, regjimi OK, jo earnings/FOMC/CPI, max 2 per sektor', color: 'text-red-400' },
-  { element: 'Top Stocks', icon: Target, rule: '5-10 kandidate me score me te larte, READY (me IBKR bracket order) ose WATCHLIST', color: 'text-amber-400' },
+  { element: 'Universe', icon: Layers, rule: '400 kompani te medha, likuide (DolVol ≥ $50M, çmim ≥ $15) — tregtueshme ne IBKR pa slippage', color: 'text-blue-400' },
+  { element: 'Filtri mekanik', icon: Filter, rule: 'Mbi SMA50, SMA50 > SMA200, Stacked MA, ADX > 25, RS > SPY', color: 'text-emerald-400' },
+  { element: 'Setup policy (v2)', icon: BarChart3, rule: 'VETEM TREND_CONT lejon READY — PULLBACK (-$12.3K/10vjeç) dhe BREAKOUT (-$2.2K) refuzohen përpara targeteve', color: 'text-violet-400' },
+  { element: 'Risk + Gap gate', icon: AlertTriangle, rule: 'Stop ATR×2.2 (absorbon gap-e), risk ≤5.5%, gap-i mesatar ≤75% e stop-it, R:R 1:2, RSI 30-75, regjimi OK, pa earnings/FOMC/CPI', color: 'text-red-400' },
+  { element: 'Ekspozimi', icon: Target, rule: 'Max 3 pozicione, 1 për sektor, 10-ditë cooldown për simbol — pa varësi nga 2-3 hero trades', color: 'text-amber-400' },
 ];
 
 const ENTRY_RULES = [
@@ -755,7 +755,7 @@ function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: FunnelStock;
             </p>
           </div>
           <div className="text-right flex-shrink-0">
-            <MiniPopover label={"Total Score " + stock.totalScore + "/100"} desc={"Score-i total (0-100) është kombinimi ponderuar i 6 nën-scoreve: 25% Trend Quality + 20% Relative Strength + 15% Momentum + 15% Volume Confirmation + 10% Setup Quality + 5% Risk Quality. Mat cilësinë e përgjithshme të setup-it për swing trading. Idealisht: 65-100 = SETUP I MIRË (jeshil) — kushte të forta për hyrje, 50-64 = MESATAR (portokalli) — hyrje vetëm me kushte të tjera pozitive (VP_OK, regjimi OK, pa event risk), 0-49 = RREZIK (kuq) — setup i dobët, shmang hyrjen ose vetëm watchlist. Kujdes: score-i i lartë NUK e kompenson event-risk — aksioni me score 88 por earnings nesër merr EVENT_RISK/NO_TRADE. Kontrollo gjithmonë edhe: Earnings, VP location, dhe regjimin e tregut përpara hyrjes." + (stock.totalScore >= 65 ? " — VLERËSIMI PËR KËTË AKSION: Score i mirë, kushtet teknike janë të forta." : stock.totalScore >= 50 ? " — VLERËSIMI PËR KËTË AKSION: Score mesatar — kërko konfirmime shtesë përpara hyrjes." : " — VLERËSIMI PËR KËTË AKSION: Score i dobët — rrezik i lartë, konsidero vetëm watchlist.")} >
+            <MiniPopover label={"Total Score " + stock.totalScore + "/100"} desc={"Score-i total (0-100) — FORMULA E RE v2: 15% Trend + 25% RS + 15% Momentum + 15% Volum + 10% Setup + 10% Likuiditet + 10% Risk (me gap-resilience). Mat cilësinë e përgjithshme të setup-it për swing trading. Bandat e rikalibrimit v2: 55-84 = I TREGTUESHËM — e vetmja bandë që ka fituar në 10-vjeçar; MBI 84 = I MBIVLERËSUAR (EXTENDED) — 10-vjeçari: 85+ fitoi MË KEQ se 75-84 (-$12.3K kundrejt +$2.5K); NËN 55 = PA SETUP (NO_TRADE). Kujdes: score-i i lartë NUK e kompenson event-risk — aksioni me score 88 por earnings nesër merr EVENT_RISK/NO_TRADE. Kontrollo gjithmonë edhe: Earnings, VP location, dhe regjimin e tregut përpara hyrjes." + (stock.totalScore >= 65 ? " — VLERËSIMI PËR KËTË AKSION: Score i mirë, kushtet teknike janë të forta." : stock.totalScore >= 50 ? " — VLERËSIMI PËR KËTË AKSION: Score mesatar — kërko konfirmime shtesë përpara hyrjes." : " — VLERËSIMI PËR KËTË AKSION: Score i dobët — rrezik i lartë, konsidero vetëm watchlist.")} >
               <div className="text-right">
                 <div className={`text-2xl font-bold ${stock.totalScore >= 65 ? 'text-emerald-400' : stock.totalScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{stock.totalScore}</div>
                 <div className="text-[12px] text-muted-foreground">Score</div>
@@ -3502,19 +3502,32 @@ export function IBKRStrategy() {
           <div className="flex items-center gap-3 mb-3">
             <div className="bg-emerald-500/15 rounded-lg p-2.5"><TrendingUp className="w-6 h-6 text-emerald-400" /></div>
             <div>
-              <h2 className="text-lg font-bold text-foreground">Strategjia: Trend Pullback Swing</h2>
-              <p className="text-[13px] text-muted-foreground">Funnel: 400 → Liquidity → Trend → Setup → Risk Gate → 5-10 Top Stocks</p>
+              <h2 className="text-lg font-bold text-foreground">Strategjia: Trend Continuation Swing <span className="text-emerald-400">v2</span></h2>
+              <p className="text-[13px] text-muted-foreground">Funnel: 400 → Likuiditet ($50M) → Trend → Setup (vetëm TREND_CONT) → Risk+Gap Gate → 1-5 Top Stocks</p>
             </div>
           </div>
           <p className="text-[14px] text-muted-foreground leading-relaxed">
-            Swing trading i rregulluar nga trendi per <strong className="text-foreground">IBKR</strong>.
-            Komponimi: <Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">25% Trend</Badge> +
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">20% RS</Badge> +
+            Swing trading i rregulluar nga trendi per <strong className="text-foreground">IBKR</strong> — i rikalibruar nga zero mbi 10-vjeçarin e validimit.
+            Komponimi i score-it: <Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">15% Trend</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">25% RS</Badge> +
             <Badge variant="outline" className="mx-0.5 text-[11px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">15% Momentum</Badge> +
             <Badge variant="outline" className="mx-0.5 text-[11px] border-cyan-500/30 text-cyan-400 bg-cyan-500/10">15% Volum</Badge> +
             <Badge variant="outline" className="mx-0.5 text-[11px] border-amber-500/30 text-amber-400 bg-amber-500/10">10% Setup</Badge> +
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-red-500/30 text-red-400 bg-red-500/10">5% Risk</Badge>
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-sky-500/30 text-sky-400 bg-sky-500/10">10% Likuiditet</Badge> +
+            <Badge variant="outline" className="mx-0.5 text-[11px] border-red-500/30 text-red-400 bg-red-500/10">10% Risk</Badge>
           </p>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px]">
+            <div className="rounded-lg bg-muted/20 border border-border/40 px-3 py-2">
+              <span className="text-muted-foreground">Politika e setup-it (10-vjeçar): </span>
+              <strong className="text-emerald-400">TREND_CONT i vetmi i tregtueshëm</strong>
+              <span className="text-muted-foreground"> (+$2.7K) — PULLBACK (-$12.3K) dhe BREAKOUT (-$2.2K) vetëm WATCHLIST</span>
+            </div>
+            <div className="rounded-lg bg-muted/20 border border-border/40 px-3 py-2">
+              <span className="text-muted-foreground">Frekuenca: </span>
+              <strong className="text-emerald-400">max 3 pozicione · 1/sektor · 10-ditë cooldown/simbol</strong>
+              <span className="text-muted-foreground"> — kundër kostove (hanin 149% të fitimit bruto)</span>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -3525,8 +3538,8 @@ export function IBKRStrategy() {
             <div className="flex items-center gap-3">
               <Activity className="w-5 h-5 text-blue-400" />
               <div>
-                <h3 className="text-[15px] font-bold text-foreground">Funnel Scanner — 400 Aksione</h3>
-                <p className="text-[13px] text-muted-foreground">400 → likuiditet → trend → setup → risk gate → top stocks</p>
+                <h3 className="text-[15px] font-bold text-foreground">Funnel Scanner — 400 Aksione <span className="text-emerald-400">v2</span></h3>
+                <p className="text-[13px] text-muted-foreground">400 → likuiditet $50M → trend → vetëm TREND_CONT → risk+gap gate → max 3 pozicione</p>
               </div>
             </div>
             <button onClick={runScan} disabled={loading} className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50">

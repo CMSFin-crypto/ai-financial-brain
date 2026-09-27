@@ -23,15 +23,18 @@ export interface ExecutionConfig {
   accountEquity: number;
   /** Nëse open(t+1) > entry*(1+gapLimit) → mos e ndjek (urdhri nuk mbushet) */
   maxEntryGapPct: number;
+  /** Rikalibrimi v2: ditë tregtimi cooldown pas daljes nga një simbol përpara hyrjes së re */
+  symbolCooldownDays: number;
 }
 
 export const DEFAULT_EXECUTION: ExecutionConfig = {
-  maxOpenPositions: 5,
-  maxPerSector: 2,
+  maxOpenPositions: 3,   // rikalibrimi v2: ishte 5 — më pak pozicione, më të përzgjedhura
+  maxPerSector: 1,       // rikalibrimi v2: ishte 2 — kundër koncentrimit «hero trades»
   maxHoldDays: 20,
   riskPctPerTrade: 1.0,
   accountEquity: 25000,
   maxEntryGapPct: 3.0,
+  symbolCooldownDays: 10, // rikalibrimi v2: pa re-hyrje në të njëjtin emër brenda 10 ditësh
 };
 
 export type ExitReason =

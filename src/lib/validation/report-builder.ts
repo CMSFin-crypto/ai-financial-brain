@@ -412,6 +412,8 @@ export function buildGateChecks(params: {
   const wfPositive = wf.trades >= 10 && wf.winRatePct >= Math.max(35, is.winRatePct - 25);
   const paperEnough = paperTradesCount >= 50;
   const slippageOk = slippageEstimatePct <= 0.35; // kosto totale per tregti ≤ 0.35% të pozicionit
+  // Gate 6 (LIVE) kërkohet qartë nga politika: asnjë aktivizim sa kohë çdo portë 1-5 deshton
+  const gates15AllPassed = backtestPositive && oosPositive && wfPositive && paperEnough && slippageOk;
 
   return [
     {
@@ -453,7 +455,9 @@ export function buildGateChecks(params: {
       gate: '6. LIVE me 0.25% risk',
       description: 'Vetëm pas gates 1-5: rreziku real për tregti gjysmë i rrezikut të backtest-it (1% → 0.25%)',
       required: 'gates 1-5 kaluar',
-      actual: 'pritet aktivizimi manual',
+      actual: gates15AllPassed
+        ? 'gates 1-5 kaluan — mbetet aktivizimi MANUAL'
+        : `BLLOKUAR — gates 1-5 s'janë kaluar (verdikt REJECT). Aktivizimi manual mbetet i kyçur: s'ka hyrje LIVE derisa backtest-i të kalojë të 5 portat e para`,
       passed: null,
     },
   ];

@@ -391,8 +391,15 @@ export const maxDuration = 120;
 export async function runIBKRScan(): Promise<FunnelResponse> {
   const t0 = Date.now();
   const ACCOUNT_EQUITY = 25000; // default demo account
-  const MAX_RISK_PCT = 1.0;   // max 1% of equity per trade
-  const MAX_PER_SECTOR = 2;   // max 2 stocks per sector
+  const MAX_RISK_PCT = 1.0;   // max 1% of equity per trade (LIVE përfundimtar mbetet 0.25% — vetëm manual, Gate 6)
+  const MAX_PER_SECTOR = 1;   // max 1 stock per sector — kundër koncentrimit (ishte 2)
+  // ── Rikalibrimi v2 (nga analiza 10-vjeçare e validimit) ──
+  // Kostot hanin 149% të fitimit bruto → më pak tregti me likuiditet më të mirë.
+  const MIN_DOL_VOL = 50_000_000; // ishte $20M — vetëm emra të tregtueshëm me spread minimal
+  const MIN_PRICE = 15;           // ishte $10 — elimino gjysmën e vogël të çmimeve
+  const MIN_SCORE = 55;          // ishte 45 — me formulën e RE ndërtuar nga zero
+  const MAX_SCORE = 84;          // rikalibrimi v2.1: 85+ performon MË KEQ se 75-84 në 10-vjeçar (banda e vetme fituese: 75-84)
+  const MAX_RISK_PCT_ENTRY = 5.5; // ishte 8% — stop-i më i gjerë por risku kapuar më fort
 
   // ── 0. Fetch benchmarks + sector ETFs + VIX ──
   const [spyData, qqqData, vixData, ...sectorDataArr] = await Promise.all([
@@ -582,7 +589,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     const last = closes.length - 1;
     const price = closes[last];
 
-    // Liquidity checks
+    // Liquidity checks — ngritur: $50M dollar-volume + çmim $15 (rikalibrimi v2)
     const avgVol20 = vols.slice(-20).reduce((a,b) => a+b, 0) / 20;
     // Proper avg dollar volume: average of daily (close * volume)
     const n20 = Math.min(20, closes.length, vols.length);
@@ -591,7 +598,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       dailyDolVols.push(closes[i] * vols[i]);
     }
     const avgDolVol = dailyDolVols.reduce((a,b) => a+b, 0) / n20;
-    const passedLiq = price >= 10 && avgVol20 >= 1_000_000 && avgDolVol >= 20_000_000;
+    const passedLiq = price >= MIN_PRICE && avgVol20 >= 1_000_000 && avgDolVol >= MIN_DOL_VOL;
 
     // Trend checks (existing)
     const sma50 = calculateSMA(closes, 50);
@@ -858,6 +865,15 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       if (lastDaySpike) { sScore += 10; reasons.push('Volum konfirmim'); }
     }
 
+    // ── POLITIKA E SETUP-EVE (rikalibrimi v2, nga backtest-i 10-vjeçar) ──
+    // TREND_CONT: 202 tregti · WR 43.1% · avgR +0.14 · +$2,729 → I VETMI i tregtueshëm
+    // PULLBACK:   1473 tregti · WR 41.9% · avgR +0.06 · -$12,281 → jo i tregtueshëm (vetëm watchlist)
+    // BREAKOUT:    104 tregti · WR 34.6% · avgR -0.06 · -$2,233 → jo i tregtueshëm (vetëm watchlist)
+    const tradeableSetup = setup === 'TREND_CONT';
+    if (!tradeableSetup && setup !== 'NONE') {
+      reasons.push('SETUP POLICY: vetëm TREND_CONT lejon READY — ky setup humb pas kostove (10-vjeçar)');
+    }
+
     stock.setup = setup;
     stock.setupScore = Math.min(100, sScore);
     stock.rsi = Math.round(rsi * 10) / 10;
@@ -872,8 +888,11 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       ? Math.round((high20 * 1.002) * 100) / 100
       : Math.round(price * 100) / 100;
 
-    const stopAtr = Math.round((entry - atr * 1.5 * stopVolMultiplier) * 100) / 100;
-    const stopSwing = Math.round((swLow - atr * 0.2 * stopVolMultiplier) * 100) / 100;
+    // ── STOP i moderuar + gate i gap-it (rikalibrimi v2.1) ──
+    // 313 GAP_STOP kërkuan mbrojtje, por 2.2 ATR i zgjati targetat pak
+    // (fitimet fikën: avgR 0.14→0.02). 1.8 ATR + gap-gate: bilanci i saktë.
+    const stopAtr = Math.round((entry - atr * 1.8 * stopVolMultiplier) * 100) / 100;
+    const stopSwing = Math.round((swLow - atr * 0.35 * stopVolMultiplier) * 100) / 100;
     const stop = Math.max(stopAtr, stopSwing);
 
     const riskPerShare = entry - stop;
@@ -986,40 +1005,50 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     else if (liqScore >= 40) stock.liquidityStatus = 'MEDIUM';
     else stock.liquidityStatus = 'LOW';
 
-    // ── F) Risk Quality (0-100) — 5% weight ──
+    // ── F) Risk Quality (0-100) — 10% weight (rikalibrimi v2) ──
+    // Risku tani përfshin GAP-RESILIENCËN: distanca e stop-it kundrejt gap-it mesatar
+    // overnight — një stop që mund të absorbon gap-et e zakonshme nuk bëhet GAP_STOP.
     let rScore = 50;
-    if (riskPct <= 3) rScore += 20;
-    else if (riskPct <= 5) rScore += 10;
-    else if (riskPct > 7) rScore -= 20;
-    if (rr >= 2) rScore += 15;
-    else if (rr >= 1.5) rScore += 5;
-    else rScore -= 15;
-    if (atrPct < 2) rScore += 10;
-    else if (atrPct > 4) rScore -= 10;
+    if (riskPct <= 3) rScore += 15;
+    else if (riskPct <= 4.5) rScore += 8;
+    else if (riskPct > MAX_RISK_PCT_ENTRY) rScore -= 20;
+    if (rr >= 2) rScore += 10;
+    else if (rr >= 1.5) rScore += 4;
+    else rScore -= 12;
+    if (atrPct < 2) rScore += 8;
+    else if (atrPct > 4) rScore -= 8;
+    // Gap-resilience: raporti i gap-it mesatar 20-ditor ndaj distancës së stop-it
+    const stopDistVsGap = stock.stopDistPct > 0 ? avgOG20 / stock.stopDistPct : 99;
+    if (stopDistVsGap <= 0.4) rScore += 12;       // stop-i mban 2.5× gap-in mesatar
+    else if (stopDistVsGap <= 0.6) rScore += 6;   // mban ~1.7×
+    else if (stopDistVsGap > 0.9) rScore -= 15;   // gap-i mesatar gati sa distanca — i cenueshëm
     if (!stock.passedEventRisk) rScore -= 25;
     stock.riskScore = Math.round(Math.max(0, Math.min(100, rScore)));
 
-    // ── Total Score — me peshat e mësuara nga Learning Engine ──
-    // Peshat bazë: 25% Trend + 20% RS + 15% Momentum + 15% Volume + 10% Setup + 10% Likuiditet + 5% Risk
-    // Multiplikatorët e mësuar i shumëzojnë peshat bazë, pastaj rinormalizohen (shuma = 1)
+    // ── Total Score — FORMULA E RE (rikalibrimi v2, e ndërtuar nga zero) ──
+    // Vjetra: 25% Trend + 20% RS + 15% Mom + 15% Vol + 10% Setup + 10% Liq + 5% Risk
+    // Problemi: score 85+ (1526 tregti) performoi MË KEQ se 75-84 — Trend-i i saturuar
+    // (kalonet mekanike e kalojnë ~gjithmonë) + kontribute konstante → pa fuqi dalluese.
+    // E reja: Trend 15% (bie — e saturuar nga filtrat mekanikë) + RS 25% (ngjitet — dallimi
+    // kryesor ndërmjet emrave) + Risk 10% (dubluar — tani me gap-resilience) + pjesa tjetër pandryshuar.
     const effW = {
-      trend: 0.25 * LW.TREND,
-      rs: 0.20 * LW.RS,
+      trend: 0.15 * LW.TREND,
+      rs: 0.25 * LW.RS,
       momentum: 0.15 * LW.MOMENTUM,
       volume: 0.15 * LW.VOLUME,
       setup: 0.10 * LW.SETUP,
       liq: 0.10 * LW.LIQUIDITY,
-      risk: 0.05 * LW.RISK,
+      risk: 0.10 * LW.RISK,
     };
     const wSum = Object.values(effW).reduce((a, b) => a + b, 0) || 1;
     const baseScore = Math.round(
-      stock.trendScore * 0.25 +
-      stock.rsScore * 0.20 +
+      stock.trendScore * 0.15 +
+      stock.rsScore * 0.25 +
       stock.momentumScore * 0.15 +
       stock.volConfScore * 0.15 +
       sScore * 0.10 +
-      50 * 0.10 +
-      stock.riskScore * 0.05
+      stock.liquidityScore * 0.10 +
+      stock.riskScore * 0.10
     );
     stock.totalScore = Math.round(
       (stock.trendScore * effW.trend +
@@ -1027,7 +1056,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
         stock.momentumScore * effW.momentum +
         stock.volConfScore * effW.volume +
         sScore * effW.setup +
-        50 * effW.liq +
+        stock.liquidityScore * effW.liq +
         stock.riskScore * effW.risk) / wSum
     );
     // Diferenca nga mësimi (për UI): sa pikë shtoi/hoqi sistemi i të nxënit
@@ -1049,7 +1078,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
 
     if (stock.rewardRiskRatio < 2.0) warnings.push(`R:R ${stock.rewardRiskRatio} — i ulet (duhet 1:2 me 3R target)`);
     if (stock.rsi > 75) warnings.push(`RSI ${stock.rsi} — i mbivleresuar`);
-    if (stock.riskPct > 8) warnings.push(`Rreziku ${stock.riskPct}% — shume i larte`);
+    if (stock.riskPct > MAX_RISK_PCT_ENTRY) warnings.push(`Rreziku ${stock.riskPct}% — mbi kufirin ${MAX_RISK_PCT_ENTRY}% (rikalibrimi v2)`);
     if (stock.adx < 20) warnings.push(`ADX ${stock.adx} — trendi i dobet (duhet > 25)`);
     // NEW: ATR% tradability warnings
     if (stock.atrStatus === 'TOO_VOLATILE') warnings.push(`ATR ${stock.atrPct}% — shume i paqendrueshem per swing (max 6%)`);
@@ -1064,15 +1093,32 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     if (stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50) warnings.push(`SECTOR RS: ${stock.rsVsSector20d}% vs ${stock.sectorEtf} — sektori i dobet`);
     if (stock.pullbackPct > -0.5 && stock.setup === 'PULLBACK') warnings.push('Jo te vertete nje pullback — extended');
 
+    // ── Portat e reja të rikalibrimit v2 ──
+    // Setup policy: vetëm TREND_CONT është i tregtueshëm (backtest 10-vjeçar)
+    const setupOk = stock.setup === 'TREND_CONT';
+    if (!setupOk) {
+      warnings.push(`SETUP POLICY: ${stock.setup} s'lejon READY — 10-vjeçari: PULLBACK -$12.3K, BREAKOUT -$2.2K; vetëm TREND_CONT +$2.7K`);
+    }
+    // Gap-resilience: gap-i mesatar overnight duhet të jetë ≤75% e distancës së stop-it
+    const gapOk = stock.stopDistPct > 0 && stock.avgOvernightGap20 <= 0.75 * stock.stopDistPct;
+    // Tavani i score-it: 85+ = kushte të mbivlerësuara (10-vjeçar: -$12.3K kundrejt +$2.5K të bandës 75-84)
+    const scoreBandOk = stock.totalScore <= MAX_SCORE;
+    if (!scoreBandOk) {
+      warnings.push(`SCORE ${stock.totalScore} mbi 84 — i mbivlerësuar (10-vjeçari: 85+ performoi më keq se 75-84); konsiderohet EXTENDED`);
+    }
+    if (!gapOk) {
+      warnings.push(`GAP RISK: gap-i mesatar ${stock.avgOvernightGap20}% vs stop ${stock.stopDistPct}% — stop-i s'absorbon gap-et (313 GAP_STOP në 10-vjeçar)`);
+    }
+
     const hasRR = stock.rewardRiskRatio >= 2.0;
     const rsiOk = stock.rsi >= 30 && stock.rsi <= 75;
-    const riskOk = stock.riskPct <= 8;
-    const scoreOk = stock.totalScore >= 45;
+    const riskOk = stock.riskPct <= MAX_RISK_PCT_ENTRY;
+    const scoreOk = stock.totalScore >= MIN_SCORE;
     const eventOk = stock.passedEventRisk;
     const catalystOk = stock.allowNewEntry;
     const sectorRsOk = !(stock.sectorRsStatus === 'LAGGING' && !stock.sectorAboveSma50);
 
-    if (hasRR && rsiOk && riskOk && scoreOk && regimeLevel !== 'RISK' && eventOk && catalystOk && sectorRsOk) {
+    if (hasRR && rsiOk && riskOk && scoreOk && scoreBandOk && setupOk && gapOk && regimeLevel !== 'RISK' && eventOk && catalystOk && sectorRsOk) {
       decision = 'READY';
     } else if (hasRR && rsiOk && riskOk && scoreOk && (eventOk || regimeLevel === 'RISK')) {
       decision = 'WATCHLIST';
@@ -1084,7 +1130,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     } else if (!hasRR || stock.riskPct > 6) {
       if (stock.setupScore >= 50) decision = 'WATCHLIST';
       else decision = 'NO_TRADE';
-    } else if (stock.rsi > 72 || stock.pullbackPct > -0.3) {
+    } else if (stock.rsi > 72 || stock.pullbackPct > -0.3 || !scoreBandOk) {
       decision = 'EXTENDED';
     } else {
       decision = 'WATCHLIST';
