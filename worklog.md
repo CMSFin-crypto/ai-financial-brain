@@ -809,3 +809,27 @@ Work Log:
 Stage Summary:
 - Lidhja GitHub→Vercel e verifikuar end-to-end; mbetet te përdoruesi: krijo Upstash + 2 env vars + Redeploy (hapi 1 i VERCEL_SETUP.md)
 - Opsionale: seed-i i të dhënave nga sandbox (scripts/seed-upstash.mjs) me kredencialet e Upstash
+---
+Task ID: 44
+Agent: main
+Task: Social Arb v4 — çmime të fiksuar + provat para statusit (4 kërkesat e userit)
+
+Work Log:
+- Diagnoza e çmimeve: Yahoo query1 dhe query2 kthejnë HTTP 429 "Too Many Requests" për të gjitha ticker-at (burst-triggered, IP block) — kjo ishte shkaku që çmimet dilnin bosh
+- sources.ts: multi-burim i ri — stockanalysis.com (primar, pa çelës, close të ajustuar, 3M histori) → Yahoo query2 → Yahoo query1; PriceFeedError ruan çdo tentativë (burim + status HTTP + mesazh); gdeltArticleList kthen titujt + URL-t (përveç numrit)
+- engine.ts (rishkrim): computePriceWindow — dritarja e balancuar me të NJËJTAT data tregtimi për aksionin dhe SPY (prerja e kalendareve); lastCloseOnOrBefore për rreshtat e matjeve (close-i i fundit i vlefshëm, jo bosh në fundjavë)
+- P2 — classifyCause: klasifikim i shkakut të trendit (positive_demand_possible / news_launch_no_proof / negative_event / unclear) nga titujt GDELT 24h + lajmi RSS; fjalët kyçe + deri 5 tituj/URL ruhen në kandidat për kontroll manual
+- P3 — makina e statusit e varur nga provat: DISCOVERED (termi+marka) → WATCH (lidhja e verifikuar, mungon prova) → RESEARCH VETËM me të gjitha: shkak pozitiv + provë e pavarur GDELT ≥+25% + çmime të vlefshme E të freskëta (dritare ≤+3%) + pa flamur bllokues; score ≥60 mbetet kusht sekondar që s'zëvendëson provat; REJECT/REMOVED për shkak negativ/mainstream/dritare të mbyllur/ftohje
+- Mungesa e çmimeve NUK kthehet në 0%: priceVsIndex null → «e pamatshme» + gabimi konkret (burimi + HTTP status) ruhet në kandidat.price.error dhe shfaqet kuq në panel; pa çmime të reja s'ka ngritje RESEARCH; carry-over i të dhënave të vjetra i datuar qartë
+- P4 — updateOutcome: baza = close-i i përbashkët i zbulimit; d5/d20 = pas 5/20 ditësh TREGTIMI, aksioni vs SPY në të njëjtat data; gjendet për TË GJITHË kandidatët përfshirë REMOVED-it (deri 12/skanim); pendingNote kur pritet
+- Skema v3 + normalizim v2→v3 (të dhënat ekzistuese ruajten); rregulluar bug: normalizeStore po i fshinte fushat e reja të çmimeve në çdo lexim
+- UI: paneli «Shkaku i trendit» me badge + arsye + titujt e klikueshëm; paneli i çmimeve me burim/dritare/çmimet e përdora OSE gabimin konkret kuq; paneli «Rezultati 5/20 ditë vs SPY»; filtri + badge DISCOVERED; tekstet e rregullave të përditësuara
+- Teste: scripts/test-social-arb-v4.ts — 25/25 (dritarja e balancuar, rasti SPY-me-datë-më-shumë, null≠0%, klasifikimi pozitiv/negativ/lançim, d5/d20 + pending); skanim real end-to-end: çmimet OK nga stockanalysis, GDELT throttled (bllokim IP i përkohshëm nga testet) → carry-over punoi, asnjë democion i pafitur
+- Qëndrueshmëria: pas rindezjes së serverit 50 matje + 2 kandidatë + baza e gjurmimit mbeten (backend file)
+- Build i prodhimit kaloi; tsc 0 gabime në social-arb
+
+Stage Summary:
+- Shkaku rrënjësor i çmimeve të thyera: Yahoo 429 (i konfirmuar me curl); zgjidhur me multi-burim + gabime të eksplicite
+- RESEARCH tani është i varur nga 4 provat DHE score-i — score 75 pa prova s'ngjitet më (SBUX democionohet sinqerisht me arsye në histori)
+- Gjurmimi 5/20 ditë vs SPY për të gjithë, përfshi refuzuarit — sinqeriteti statistikor
+- Vercel: skanimet mbeten 503 derisa vendosen variablat e Upstash (RUJTJA e përhershme); faqja + të dhënat snapshot nga git punojnë

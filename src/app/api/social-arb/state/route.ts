@@ -20,6 +20,7 @@ export async function GET(): Promise<Response> {
       scanning: scanInProgress(),
       candidates: candidates.sort((a, b) => b.score - a.score),
       counts: {
+        DISCOVERED: candidates.filter(c => c.status === 'DISCOVERED').length,
         WATCH: candidates.filter(c => c.status === 'WATCH').length,
         RESEARCH: candidates.filter(c => c.status === 'RESEARCH').length,
         REMOVED: candidates.filter(c => c.status === 'REMOVED').length,

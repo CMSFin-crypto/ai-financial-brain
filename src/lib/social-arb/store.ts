@@ -59,7 +59,7 @@ export function backtestDir(): string {
 // ── Store ───────────────────────────────────────────────────────
 
 const EMPTY_STORE: SocialArbStore = {
-  version: 2,
+  version: 3,
   createdAt: new Date().toISOString(),
   lastScanAt: null,
   measurements: [],
@@ -71,16 +71,39 @@ export function emptyStore(): SocialArbStore {
   return { ...EMPTY_STORE, createdAt: new Date().toISOString(), measurements: [], candidates: {}, scans: [] };
 }
 
-/** Normalizon JSON-in e lexuar (çdo burim) në skemën v2. */
+/** Normalizon JSON-in e lexuar (çdo burim) në skemën v3. Pranon edhe v2 dhe e zgjeron. */
 function normalizeStore(s: unknown): SocialArbStore {
-  const st = s as Partial<SocialArbStore> | null;
-  if (!st || st.version !== 2) return emptyStore();
+  const st = s as Partial<SocialArbStore> & { version?: number } | null;
+  if (!st) return emptyStore();
+  const version = st.version as number | undefined;
+  if (version !== 2 && version !== 3) return emptyStore();
+  const candidates: SocialArbStore['candidates'] = {};
+  for (const [key, c] of Object.entries(st.candidates ?? {})) {
+    candidates[key] = {
+      ...c,
+      status: c.status ?? 'WATCH',
+      cause: c.cause ?? null,
+      price: {
+        stockReturn: c.price?.stockReturn ?? null,
+        indexReturn: c.price?.indexReturn ?? null,
+        priceVsIndex: c.price?.priceVsIndex ?? null,
+        asOf: c.price?.asOf ?? null,
+        fromDate: c.price?.fromDate ?? null,
+        stockPrice: c.price?.stockPrice ?? null,
+        indexPrice: c.price?.indexPrice ?? null,
+        source: c.price?.source ?? null,
+        error: c.price?.error ?? null,
+        checkedAt: c.price?.checkedAt ?? null,
+      },
+      outcome: c.outcome ?? { baseDate: null, baseStock: null, baseIndex: null, d5: null, d20: null, pendingNote: null, lastCheckedAt: null },
+    };
+  }
   return {
-    version: 2,
+    version: 3,
     createdAt: st.createdAt ?? new Date().toISOString(),
     lastScanAt: st.lastScanAt ?? null,
     measurements: Array.isArray(st.measurements) ? st.measurements : [],
-    candidates: st.candidates && typeof st.candidates === 'object' ? st.candidates : {},
+    candidates,
     scans: Array.isArray(st.scans) ? st.scans : [],
   };
 }

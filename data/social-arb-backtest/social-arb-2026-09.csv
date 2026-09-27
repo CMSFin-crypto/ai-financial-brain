@@ -39,3 +39,5 @@ observed_at,available_at,trend,source,region,interest,ticker,product,company,mat
 2026-09-23,2026-09-23,minecraft live,gdelt,CA,0.0554,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,500.5899963378906,767.8099975585938
 2026-09-24,2026-09-24,minecraft live,gdelt,CA,0.1148,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,497.92999267578125,767.1799926757812
 2026-09-25,2026-09-25,minecraft live,gdelt,CA,0.0357,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,516.1699829101562,771.3499755859375
+2026-09-27,2026-09-27,starbucks canada,google_trends,CA,50,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,94.86,771.35
+2026-09-27,2026-09-27,minecraft live,google_trends,CA,50,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,516.17,771.35

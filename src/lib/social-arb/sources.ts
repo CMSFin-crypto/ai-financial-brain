@@ -124,17 +124,67 @@ export async function gdeltArticleCount(query: string): Promise<number> {
   return data.articles?.length ?? 0;
 }
 
-// ── Çmimet (Yahoo chart API) ─────────────────────────────────────
+// ── Çmimet (multi-burim, me gabime të eksplicite) ────────────────
+//
+// Rendit i provave: stockanalysis.com (pa çelës, i qëndrueshëm — close të
+// ajustuar) → Yahoo query2 → Yahoo query1. Yahoo ndëshkon IP-të që bëjnë
+// burst-kërkesa me HTTP 429 (kjo ishte shkaku që çmimet dilnin bosh);
+// prandaj burimi primar është stockanalysis.com dhe çdo dështim ruhet
+// me burimin + statusin konkrete, që gabimi të shfaqet në panelin teknik
+// e jo si «0%» ose «pa të dhëna» misterioze.
 
 export interface PricePoint { date: string; close: number } // YYYY-MM-DD
 
-export async function fetchDailyCloses(ticker: string, range = '1mo'): Promise<PricePoint[]> {
+/** Historia e një gabimi të çmimit — shfaqet në panelin teknik. */
+export interface PriceFetchError {
+  source: string;       // 'stockanalysis' | 'yahoo-q2' | 'yahoo-q1'
+  status: number | null; // HTTP status ose null (rrjet/timeout)
+  message: string;
+}
+
+export interface PriceSeries {
+  ticker: string;
+  source: string;         // burimi që dha të dhënat
+  closes: PricePoint[];   // renditur ngjitëse sipas datës
+}
+
+export class PriceFeedError extends Error {
+  attempts: PriceFetchError[];
+  constructor(ticker: string, attempts: PriceFetchError[]) {
+    super(`${ticker}: ${attempts.map(a => `${a.source} ${a.status ?? ''} ${a.message}`.trim()).join('; ')}`);
+    this.name = 'PriceFeedError';
+    this.attempts = attempts;
+  }
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** stockanalysis.com — histori ditore (t=datë, c=close, a=close i ajustuar). */
+async function fetchStockAnalysis(ticker: string, range: string): Promise<PricePoint[]> {
   const sym = encodeURIComponent(ticker.toUpperCase());
   const res = await fetchWithTimeout(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${range}&interval=1d`,
-    15000,
+    `https://stockanalysis.com/api/symbol/s/${sym}/history?range=${range}&period=Daily`,
+    12000,
   );
-  if (!res.ok) throw new Error(`Yahoo ${ticker}: HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { httpStatus: res.status });
+  const j = (await res.json()) as { status?: number; data?: { t: string; c: number; a?: number }[] };
+  const rows = j.data ?? [];
+  if (!rows.length) throw Object.assign(new Error(`përgjigje bosh (${rows.length} rreshta)`), { httpStatus: res.status });
+  // rreshtat vijnë zbritëse (më e reja e para) → ktheji ngjitëse
+  return rows
+    .map(r => ({ date: r.t, close: typeof r.a === 'number' && Number.isFinite(r.a) ? r.a : r.c }))
+    .filter(p => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && Number.isFinite(p.close))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Yahoo v8 chart — fallback (i ndjeshëm ndaj 429 pas burst-esh). */
+async function fetchYahoo(ticker: string, range: string, host: 'query1' | 'query2'): Promise<PricePoint[]> {
+  const sym = encodeURIComponent(ticker.toUpperCase());
+  const res = await fetchWithTimeout(
+    `https://${host}.finance.yahoo.com/v8/finance/chart/${sym}?range=${range}&interval=1d`,
+    12000,
+  );
+  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { httpStatus: res.status });
   const j = (await res.json()) as {
     chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
   };
@@ -147,10 +197,73 @@ export async function fetchDailyCloses(ticker: string, range = '1mo'): Promise<P
     if (typeof c !== 'number' || !Number.isFinite(c)) continue;
     out.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), close: c });
   }
+  if (!out.length) throw Object.assign(new Error('përgjigje pa close të vlefshme'), { httpStatus: res.status });
   return out;
+}
+
+/**
+ * Merr close-t ditore për një ticker — provon burimet në rend dhe
+ kur dështon të gjithë, hedh PriceFeedError me listën e plotë të
+ tentativave (burim + status + mesazh) për t'u ruajtur dhe shfaqur.
+ */
+export async function fetchDailyCloses(ticker: string, range = '3M'): Promise<PricePoint[]> {
+  const series = await fetchPriceSeries(ticker, range);
+  return series.closes;
+}
+
+/** Si fetchDailyCloses, por kthen edhe burimin (për panelin teknik). */
+export async function fetchPriceSeries(ticker: string, range = '3M'): Promise<PriceSeries> {
+  const attempts: PriceFetchError[] = [];
+  const providers: { source: string; fn: () => Promise<PricePoint[]> }[] = [
+    { source: 'stockanalysis', fn: () => fetchStockAnalysis(ticker, range) },
+    { source: 'yahoo-q2', fn: () => fetchYahoo(ticker, range, 'query2') },
+    { source: 'yahoo-q1', fn: () => fetchYahoo(ticker, range, 'query1') },
+  ];
+  for (const p of providers) {
+    try {
+      const closes = await p.fn();
+      return { ticker: ticker.toUpperCase(), source: p.source, closes };
+    } catch (e) {
+      const err = e as Error & { httpStatus?: number };
+      attempts.push({
+        source: p.source,
+        status: err.httpStatus ?? null,
+        message: err.name === 'TimeoutError' || err.name === 'AbortError' ? 'timeout' : err.message,
+      });
+      await sleep(400); // mos i shty burimet në burst
+    }
+  }
+  throw new PriceFeedError(ticker.toUpperCase(), attempts);
 }
 
 /** Close-i i fundit i SPY (indeks referimi). */
 export async function fetchIndexCloses(): Promise<PricePoint[]> {
-  return fetchDailyCloses('SPY', '1mo');
+  return fetchDailyCloses('SPY', '3M');
+}
+
+// ── GDELT: lista e artikujve (për verifikimin e shkakut) ────────
+
+export interface GdeltArticle {
+  title: string;
+  url: string;
+  domain: string;
+  seenAt: string; // ISO
+}
+
+/** Artikujt e fundit (deri 50): numri + titujt/URL-t — ushqen klasifikimin e shkakut. */
+export async function gdeltArticleList(query: string, maxRecords = 50): Promise<{ count: number; articles: GdeltArticle[] }> {
+  const data = (await gdeltFetch(
+    `query=${encodeURIComponent(query)}&mode=artlist&maxrecords=${maxRecords}&timespan=1d&sort=datedesc`,
+  )) as { articles?: { title?: string; url?: string; domain?: string; seendate?: string }[] };
+  const articles: GdeltArticle[] = [];
+  for (const a of data.articles ?? []) {
+    if (!a.title || !a.url) continue;
+    // seendate: "20260926T121500Z" → ISO
+    const sd = a.seendate ?? '';
+    const iso = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.test(sd)
+      ? `${sd.slice(0, 4)}-${sd.slice(4, 6)}-${sd.slice(6, 8)}T${sd.slice(9, 11)}:${sd.slice(11, 13)}:${sd.slice(13, 15)}Z`
+      : new Date().toISOString();
+    articles.push({ title: a.title, url: a.url, domain: a.domain ?? '', seenAt: iso });
+  }
+  return { count: articles.length, articles };
 }

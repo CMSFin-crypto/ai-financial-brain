@@ -1,14 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
-// SOCIAL ARB — llojet e dhënash
+// SOCIAL ARB — llojet e dhënash (skema v3)
 // Rrjedha: Google Trends "Trending now" RSS → klasifikim markë/produkt
-// → lidhje me ticker → WATCH → RESEARCH (pas konfirmimit + çmimit).
-// Skema e matjes është identike me CSV-në e backtest-it që arkivohet
+// → DISCOVERED → WATCH (lidhja e verifikuar) → RESEARCH (vetëm me
+// prova: shkak potencialisht pozitiv + provë e pavarur e kërkesës +
+// çmime të vlefshme + pa flamur bllokues).
+// Skema e matjes mbetet identike me CSV-në e backtest-it që arkivohet
 // në prapavijë (data/social-arb-backtest/).
 // ═══════════════════════════════════════════════════════════════
 
 export type SourceKind = 'google_trends' | 'gdelt';
 export type Region = 'US' | 'GB' | 'CA' | 'AU';
-export type CandidateStatus = 'WATCH' | 'RESEARCH' | 'REMOVED';
+export type CandidateStatus = 'DISCOVERED' | 'WATCH' | 'RESEARCH' | 'REMOVED';
 
 /** Një matje e interesit — rresht i CSV-së së arkivit. */
 export interface Measurement {
@@ -32,7 +34,7 @@ export interface ScoreBreakdown {
   demand: number;        // max 25
   confirmation: number;  // max 20
   materiality: number;   // max 20
-  price: number;         // max 15
+  price: number;         // max 15 — 0 kur s'ka të dhëna (e pamatshme ≠ pa reagim)
   quality: number;       // max 10
   event: number;         // max 10
 }
@@ -42,6 +44,67 @@ export interface StatusEvent {
   from: CandidateStatus | 'NEW';
   to: CandidateStatus;
   reason: string;
+}
+
+// ── Verifikimi i shkakut të trendit (P2) ────────────────────────
+
+export type CauseType =
+  | 'positive_demand_possible'   // kërkesë pozitive e mundshme
+  | 'news_launch_no_proof'       // lajm/lançim pa provë shitjesh
+  | 'negative_event'             // ngjarje negative
+  | 'unclear';                   // e paqartë
+
+export interface CauseArticle {
+  title: string;
+  url: string;
+  domain: string;
+  seenAt: string; // ISO
+}
+
+export interface CauseInfo {
+  type: CauseType;
+  reason: string;            // pse klasifikohet kështu (fjalët kyçe + titujt)
+  keywords: string[];         // fjalët kyçe që aktivizuan klasifikimin
+  articles: CauseArticle[];   // deri 5 tituj/URL për kontroll manual
+  newsTitle: string | null;   // lajmi i bashkangjitur në Google Trends RSS
+  newsSource: string | null;
+  checkedAt: string;          // ISO — kur u kontrollua
+}
+
+// ── Çmimet e detajuara (P1) ─────────────────────────────────────
+
+export interface CandidatePrice {
+  stockReturn: number | null;     // kthimi i aksionit në dritaren e balancuar
+  indexReturn: number | null;    // kthimi i SPY në të NJËJTAT data
+  priceVsIndex: number | null;   // diferencë — reagimi relativ
+  asOf: string | null;            // data e fundit e PËRBASHKËT (të dyja anët kanë close)
+  fromDate: string | null;        // data e parë e përbashkët e dritares
+  stockPrice: number | null;      // close i aksionit në asOf
+  indexPrice: number | null;      // close i SPY në asOf
+  source: string | null;          // 'stockanalysis' | 'yahoo-q2' | 'yahoo-q1'
+  error: string | null;           // gabimi konkret kur feed-i dështoi (të gjitha tentativat)
+  checkedAt: string | null;       // ISO — kur u kontrollua së fundmi
+}
+
+// ── Rezultatet 5/20 ditë (P4) — për të gjithë, përfshi refuzuarit ──
+
+export interface OutcomePoint {
+  date: string;               // data e fundit e përbashkët e përdorur
+  stockPrice: number;
+  indexPrice: number;
+  stockRet: number;           // bazë → kjo datë
+  indexRet: number;
+  relative: number;           // stockRet − indexRet
+}
+
+export interface CandidateOutcome {
+  baseDate: string | null;    // close i përbashkët më i afërt me zbulimin
+  baseStock: number | null;
+  baseIndex: number | null;
+  d5: OutcomePoint | null;    // mbushet kur ka ≥5 ditë tregtimi pas bazës
+  d20: OutcomePoint | null;  // mbushet kur ka ≥20 ditë tregtimi pas bazës
+  pendingNote: string | null; // p.sh. «prit edhe 3 ditë tregtimi»
+  lastCheckedAt: string | null;
 }
 
 export interface Candidate {
@@ -68,12 +131,9 @@ export interface Candidate {
     growth: number | null;         // 7d kundrejt 28d bazës (raport -1)
     confirmed: boolean;
   };
-  price: {
-    stockReturn: number | null;    // 7 dite
-    indexReturn: number | null;
-    priceVsIndex: number | null;  // diferencë — reagimi relativ
-    asOf: string | null;          // data e close-it të fundit
-  };
+  cause: CauseInfo | null;         // verifikimi i shkakut (P2)
+  price: CandidatePrice;
+  outcome: CandidateOutcome;
   history: StatusEvent[];
 }
 
@@ -91,7 +151,7 @@ export interface ScanRecord {
 }
 
 export interface SocialArbStore {
-  version: 2;
+  version: 3;
   createdAt: string;
   lastScanAt: string | null;
   measurements: Measurement[];

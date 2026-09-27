@@ -39,7 +39,7 @@ interface StateResponse {
   lastScanAt: string | null;
   scanning: boolean;
   candidates: Candidate[];
-  counts: { WATCH: number; RESEARCH: number; REMOVED: number; total: number };
+  counts: { DISCOVERED: number; WATCH: number; RESEARCH: number; REMOVED: number; total: number };
   lastScans: ScanRec[];
   measurements: number;
   csvArchive: { files: number; rows: number };
@@ -76,6 +76,7 @@ const FILTERS: { key: FilterKind; label: string }[] = [
   { key: 'ALL', label: 'Të gjithë kandidatët' },
   { key: 'RESEARCH', label: 'Research' },
   { key: 'WATCH', label: 'Watch' },
+  { key: 'DISCOVERED', label: 'Discovered' },
   { key: 'REMOVED', label: 'Removed' },
 ];
 const BREAKDOWN_ROWS: { key: keyof Candidate['breakdown']; label: string; max: number }[] = [
@@ -89,9 +90,23 @@ const BREAKDOWN_ROWS: { key: keyof Candidate['breakdown']; label: string; max: n
 const statusTone: Record<CandidateStatus, string> = {
   RESEARCH: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400',
   WATCH: 'bg-amber-500/15 border-amber-500/40 text-amber-400',
+  DISCOVERED: 'bg-sky-500/15 border-sky-500/40 text-sky-400',
   REMOVED: 'bg-red-500/15 border-red-500/40 text-red-400',
 };
-const barColor: Record<CandidateStatus, string> = { RESEARCH: '#10b981', WATCH: '#f59e0b', REMOVED: '#ef4444' };
+const barColor: Record<CandidateStatus, string> = { RESEARCH: '#10b981', WATCH: '#f59e0b', DISCOVERED: '#0ea5e9', REMOVED: '#ef4444' };
+
+const CAUSE_TONE: Record<string, string> = {
+  positive_demand_possible: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400',
+  news_launch_no_proof: 'bg-amber-500/15 border-amber-500/40 text-amber-400',
+  negative_event: 'bg-red-500/15 border-red-500/40 text-red-400',
+  unclear: 'bg-slate-500/15 border-slate-500/40 text-slate-400',
+};
+const CAUSE_SHORT: Record<string, string> = {
+  positive_demand_possible: 'Kërkesë pozitive?',
+  news_launch_no_proof: 'Lajm/lançim pa provë',
+  negative_event: 'Ngjarje negative',
+  unclear: 'E paqartë',
+};
 
 const box: React.CSSProperties = { background: '#111c2e', border: '1px solid #334155', borderRadius: 12, padding: 20, margin: '20px 0' };
 const ghostButton: React.CSSProperties = { background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', borderRadius: 6, padding: '8px 12px', cursor: 'pointer', fontSize: 12 };
@@ -156,7 +171,7 @@ export default function SocialArbPage() {
   }
 
   const candidates = state?.candidates ?? [];
-  const counts = state?.counts ?? { WATCH: 0, RESEARCH: 0, REMOVED: 0, total: 0 };
+  const counts = state?.counts ?? { DISCOVERED: 0, WATCH: 0, RESEARCH: 0, REMOVED: 0, total: 0 };
   const lastScan = state?.lastScans?.[0] ?? null;
 
   const shown = useMemo(() => {
@@ -299,7 +314,8 @@ export default function SocialArbPage() {
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                     <span>GDELT 7d: <b className={c.gdelt.confirmed ? 'text-emerald-400' : 'text-foreground'}>{c.gdelt.growth !== null ? pct(c.gdelt.growth) : 'n/a'}</b></span>
                     <span>Artikuj 24h: <b className="text-foreground">{c.gdelt.articles1d ?? 'n/a'}</b></span>
-                    <span>Çmimi vs SPY: <b className="text-foreground">{pct(c.price.priceVsIndex)}</b></span>
+                    <span>Çmimi vs SPY: <b className={c.price.priceVsIndex !== null ? 'text-foreground' : 'text-red-400'}>{c.price.priceVsIndex !== null ? pct(c.price.priceVsIndex) : 'e pamatshme'}</b></span>
+                    {c.cause && <span>Shkaku: <b className="text-foreground/80">{CAUSE_SHORT[c.cause.type]}</b></span>}
                   </div>
                   <p className="mt-1.5 text-[11px] text-muted-foreground">parë së pari {fmtAgo(c.firstSeenAt)} · matja e fundit {fmtAgo(c.lastSeenAt)}</p>
                 </div>
@@ -318,10 +334,10 @@ export default function SocialArbPage() {
               </p>
               <div className="mx-auto mt-4 grid max-w-2xl gap-2 text-left sm:grid-cols-2">
                 {[
-                  ['1. Zbulimi', 'Google Trends «Trending now» RSS — 4 rajone (US/GB/CA/AU), disa herë në ditë.'],
-                  ['2. Klasifikimi', 'Termi duhet të përputhet me një markë/produkt të listuar → lidhet me kompaninë/ticker-in, ruhet burimi, data dhe arsyeja.'],
-                  ['3. WATCH', 'Kandidati hyjnë në WATCH me matjen e parë — pa pretendim sinjali tregtimi.'],
-                  ['4. RESEARCH (opsionale)', 'Vetëm pas konfirmimit nga GDELT (+25% kundrejt bazës) DHE reagimit të çmimit ≤ +3% ndaj SPY.'],
+                  ['1. Zbulimi', 'Google Trends «Trending now» RSS — 4 rajone (US/GB/CA/AU). Termi + marka → DISCOVERED.'],
+                  ['2. WATCH', 'Lidhja me ticker-in verifikohet nga GDELT; kërkesa reale ose reagimi i tregut mungon ende.'],
+                  ['3. RESEARCH (me prova)', 'Vetëm kur: shkak potencialisht pozitiv + provë e pavarur e kërkesës (GDELT ≥+25%) + çmime të vlefshme (dritare ≤+3% vs SPY) + pa flamur bllokues. Score-i nuk zëvendëson provat.'],
+                  ['4. REJECT/REMOVED', 'Shkak negativ, lidhje e gabuar, mainstream (≥200 artikuj/24h), çmimi ka reaguar >+10%, ose interesi u ftoh — refuzuarit gjurmohen ende 5/20 ditë për sinqeritet statistikor.'],
                 ].map(([t, d]) => (
                   <div key={t} className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
                     <p className="text-xs font-semibold text-foreground">{t}</p>
@@ -377,32 +393,94 @@ export default function SocialArbPage() {
               </Link>
             </div>
 
-            {/* treguesit e gjallë */}
+            {/* provat e gjalla: shkaku + konfirmimi + çmimet */}
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {/* P2 — shkaku i trendit */}
               <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5 text-rose-400" /> Google Trends</p>
-                <p className="mt-1.5 text-xs text-foreground/90">
-                  {active.google.inFeedToday
-                    ? <>Në «Trending now» sot{active.google.approxTraffic ? ` — trafik ~${active.google.approxTraffic}` : ''}.</>
-                    : <>S\'është në feed sot — matja e fundit {fmtAgo(active.lastSeenAt)}.</>}
-                </p>
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><Newspaper className="w-3.5 h-3.5 text-sky-400" /> Shkaku i trendit</p>
+                {active.cause ? (
+                  <>
+                    <p className="mt-1.5">
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${CAUSE_TONE[active.cause.type] ?? CAUSE_TONE.unclear}`}>{CAUSE_SHORT[active.cause.type] ?? active.cause.type}</span>
+                      <span className="ml-1.5 text-[10px] text-muted-foreground">kontrolluar {active.cause.checkedAt?.slice(0, 10)}</span>
+                    </p>
+                    <p className="mt-1.5 text-xs text-foreground/90">{active.cause.reason}</p>
+                  </>
+                ) : (
+                  <p className="mt-1.5 text-xs text-muted-foreground">S'është verifikuar dot — pa klasifikim s'ka ngritje statusi.</p>
+                )}
               </div>
               <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><Newspaper className="w-3.5 h-3.5 text-sky-400" /> GDELT (konfirmimi)</p>
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5 text-rose-400" /> Prova e pavarur (GDELT)</p>
                 <p className="mt-1.5 text-xs text-foreground/90">
                   Rritja 7d vs baza 28d: <b className={active.gdelt.confirmed ? 'text-emerald-400' : 'text-foreground'}>{pct(active.gdelt.growth)}</b>
                   {' '}· artikuj 24h: <b className="text-foreground">{active.gdelt.articles1d ?? 'n/a'}</b>
                   {active.gdelt.confirmed && <span className="text-emerald-400"> — konfirmuar</span>}
                 </p>
-              </div>
-              <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><LineChartIcon className="w-3.5 h-3.5 text-violet-400" /> Reagimi i çmimit</p>
-                <p className="mt-1.5 text-xs text-foreground/90">
-                  7 ditë: aksioni {pct(active.price.stockReturn)} vs SPY {pct(active.price.indexReturn)} →
-                  {' '}<b className="text-foreground">{pct(active.price.priceVsIndex)}</b> ndaj indeksit
-                  {active.price.asOf && <> (close {active.price.asOf})</>}.
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {active.google.inFeedToday
+                    ? <>Në «Trending now» sot{active.google.approxTraffic ? ` — trafik ~${active.google.approxTraffic}` : ''}.</>
+                    : <>S'është në feed sot — matja e fundit {fmtAgo(active.lastSeenAt)}.</>}
                 </p>
               </div>
+              {/* P1 — çmimet me burim, datë dhe çmimet e përdora — ose gabimin konkret */}
+              <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><LineChartIcon className="w-3.5 h-3.5 text-violet-400" /> Reagimi i çmimit</p>
+                {active.price.priceVsIndex !== null ? (
+                  <p className="mt-1.5 text-xs text-foreground/90">
+                    {active.price.fromDate && active.price.asOf
+                      ? <>Dritarja <b className="text-foreground">{active.price.fromDate} → {active.price.asOf}</b> (të njëjtat data): {active.ticker} <b className="text-foreground">{active.price.stockPrice?.toFixed(2)}</b> vs SPY <b className="text-foreground">{active.price.indexPrice?.toFixed(2)}</b> → diferencë <b className="text-foreground">{pct(active.price.priceVsIndex)}</b></>
+                      : <>Diferenca <b className="text-foreground">{pct(active.price.priceVsIndex)}</b> ndaj indeksit</>}
+                    {active.price.source && <> · burimi <b className="text-foreground">{active.price.source}</b></>}
+                    {active.price.checkedAt && <> · kontrolluar {active.price.checkedAt.slice(0, 10)}</>}
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-red-400">
+                    KRAHASIMI NUK U KRYE — e pamatshme, jo 0%.
+                    {active.price.error && <> Gabimi konkret: <span className="text-red-300">{active.price.error}</span></>}
+                    {active.price.asOf && active.price.stockPrice !== null && <> (matja e fundit e vlefshme: close {active.price.asOf}, {active.price.stockPrice.toFixed(2)} vs SPY {active.price.indexPrice?.toFixed(2) ?? 'n/a'})</>}
+                    {active.price.checkedAt && <> · kontrolluar {active.price.checkedAt.slice(0, 10)}</>}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* P2 — titujt e ruajtur për kontroll manual */}
+            {active.cause && active.cause.articles.length > 0 && (
+              <div className="mt-2 rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Titujt e përdorur për klasifikim (kontrolloji vetë)</p>
+                <ul className="mt-1.5 space-y-1">
+                  {active.cause.articles.map((a, i) => (
+                    <li key={`${a.url}-${i}`} className="text-[11px]">
+                      <a href={a.url} target="_blank" rel="noreferrer" className="text-sky-400 hover:text-sky-300 hover:underline">{a.title}</a>
+                      <span className="text-muted-foreground"> · {a.domain || 'pa domen'} · {a.seenAt?.slice(0, 10)}</span>
+                    </li>
+                  ))}
+                </ul>
+                {active.cause.newsTitle && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Lajmi në RSS të Trends: «{active.cause.newsTitle}»{active.cause.newsSource ? ` — ${active.cause.newsSource}` : ''}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* P4 — rezultati pas 5 dhe 20 ditësh, kundrejt SPY (përfshirë refuzuarit) */}
+            <div className="mt-2 rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><HistoryIcon className="w-3.5 h-3.5 text-violet-400" /> Rezultati: çmimi pas 5 dhe 20 ditësh (vs SPY)</p>
+              {active.outcome?.baseDate ? (
+                <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
+                  <p className="text-[11px] text-muted-foreground">Baza: <b className="text-foreground">{active.outcome.baseDate}</b> — {active.ticker} {active.outcome.baseStock?.toFixed(2)} · SPY {active.outcome.baseIndex?.toFixed(2)}</p>
+                  <p className="text-[11px] text-muted-foreground">Pas 5 ditësh tregtimi: {active.outcome.d5
+                    ? <><b className="text-foreground">{active.outcome.d5.date}</b> · {active.ticker} {pct(active.outcome.d5.stockRet)} vs SPY {pct(active.outcome.d5.indexRet)} → <b className={active.outcome.d5.relative >= 0 ? 'text-emerald-400' : 'text-red-400'}>{pct(active.outcome.d5.relative)}</b></>
+                    : <span className="text-amber-400">{active.outcome.pendingNote ?? 'prit'}</span>}</p>
+                  <p className="text-[11px] text-muted-foreground">Pas 20 ditësh tregtimi: {active.outcome.d20
+                    ? <><b className="text-foreground">{active.outcome.d20.date}</b> · {active.ticker} {pct(active.outcome.d20.stockRet)} vs SPY {pct(active.outcome.d20.indexRet)} → <b className={active.outcome.d20.relative >= 0 ? 'text-emerald-400' : 'text-red-400'}>{pct(active.outcome.d20.relative)}</b></>
+                    : <span className="text-amber-400">{active.outcome.pendingNote ?? 'prit'}</span>}</p>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-xs text-muted-foreground">{active.outcome?.pendingNote ?? 'baza e gjurmimit vendoset në skanimin e radhës…'}</p>
+              )}
             </div>
 
             {/* score breakdown */}
@@ -429,8 +507,9 @@ export default function SocialArbPage() {
                 </ul>
               </div>
               <small style={{ display: 'block', marginTop: 8 }}>
-                Rregullat e statusit: WATCH hyjnë automatikisht nga zbulimi; RESEARCH kërkon konfirmim GDELT (+25%) + çmim pa reagim (≤ +3% vs SPY) + score ≥ 60.
-                REMOVED kur trendi bëhet mainstream (≥200 artikuj/24h — dita e daljes së Camillo), çmimi ka reaguar &gt;+10% ndaj indeksit, ose interesi ftohet (10+ ditë pa matje).
+                Rregullat e statusit (i varur nga provat): DISCOVERED — u gjet termi dhe marka. WATCH — lidhja me ticker-in u verifikua, por mungon kërkesa reale ose reagimi i tregut.
+                RESEARCH kërkon të GJITHA: shkak potencialisht pozitiv + provë të pavarur të kërkesës (GDELT ≥+25%) + çmime të vlefshme e të freskëta me dritare ≤+3% vs SPY + pa flamur bllokues — score ≥60 mbetet kusht sekondar dhe s'zëvendëson asnjë provë.
+                REMOVED/REJECT: shkak negativ, lidhje e gabuar, mainstream (≥200 artikuj/24h), çmimi ka reaguar &gt;+10%, ose interesi u ftoh (10+ ditë). Çdo kandidat gjurmohet për rezultatin 5/20 ditë vs SPY — përfshirë refuzuarit.
               </small>
             </div>
 
