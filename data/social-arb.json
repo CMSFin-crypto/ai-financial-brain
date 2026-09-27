@@ -1,7 +1,7 @@
 {
  "version": 3,
  "createdAt": "2026-09-26T17:29:23.993Z",
- "lastScanAt": "2026-09-27T16:21:44.714Z",
+ "lastScanAt": "2026-09-27T18:07:38.552Z",
  "measurements": [
   {
    "observed_at": "2026-09-26",
@@ -885,7 +885,7 @@
     "indexPrice": 771.35,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-09-27T16:21:44.714Z"
+    "checkedAt": "2026-09-27T18:07:38.552Z"
    },
    "cause": null,
    "outcome": {
@@ -895,7 +895,7 @@
     "d5": null,
     "d20": null,
     "pendingNote": "prit edhe 5 ditë tregtimi për d5 · prit edhe 20 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-09-27T16:21:44.714Z"
+    "lastCheckedAt": "2026-09-27T18:07:38.552Z"
    }
   },
   "minecraft live|MSFT|CA": {
@@ -954,7 +954,7 @@
     "indexPrice": 771.35,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-09-27T16:21:44.714Z"
+    "checkedAt": "2026-09-27T18:07:38.552Z"
    },
    "cause": null,
    "outcome": {
@@ -964,7 +964,7 @@
     "d5": null,
     "d20": null,
     "pendingNote": "prit edhe 5 ditë tregtimi për d5 · prit edhe 20 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-09-27T16:21:44.714Z"
+    "lastCheckedAt": "2026-09-27T18:07:38.552Z"
    }
   }
  },
@@ -1165,6 +1165,36 @@
     "GDELT \"xbox\": fetch failed",
     "GDELT artlist \"starbucks\": fetch failed",
     "GDELT artlist \"xbox\": fetch failed"
+   ]
+  },
+  {
+   "at": "2026-09-27T18:07:38.552Z",
+   "durationMs": 67838,
+   "regions": [
+    "US",
+    "GB",
+    "CA",
+    "AU"
+   ],
+   "termsScanned": 40,
+   "termsClassified": 0,
+   "candidatesActive": 2,
+   "promoted": 0,
+   "removed": 0,
+   "sources": {
+    "google_trends_US": "ok",
+    "google_trends_GB": "ok",
+    "google_trends_CA": "ok",
+    "google_trends_AU": "ok",
+    "google_trends": "ok",
+    "gdelt": "error",
+    "prices": "ok"
+   },
+   "errors": [
+    "GDELT \"starbucks\": fetch failed",
+    "GDELT \"xbox\": fetch failed",
+    "GDELT artlist \"starbucks\": fetch failed",
+    "GDELT artlist \"xbox\": This operation was aborted"
    ]
   }
  ]
