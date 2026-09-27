@@ -1,5 +1,5 @@
 // Test the new StockAnalysis fetcher
-const { fetchYahooFloat, fetchYahooFloatBatch } = require('../src/lib/yahoo-float-fetcher.ts');
+// (logjika testohet inline — skedari .ts s'mund të require-ohet direkt nga node)
 
 // Can't import TS directly, so test the logic inline
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';

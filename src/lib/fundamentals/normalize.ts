@@ -136,10 +136,8 @@ function num(v: number | undefined, digits = 1): string {
 
 // ─── Normalizimi kryesor ───
 
-export interface NormalizeExtras extends RiskFlagExtras {
-  // asgjë ekstra për momentin; RiskFlagExtras sjell nextEarningsDate,
-  // price60dChangePct, sharesYoYGrowthPct.
-}
+export type NormalizeExtras = RiskFlagExtras;
+// RiskFlagExtras sjell nextEarningsDate, price60dChangePct, sharesYoYGrowthPct.
 
 export function normalizeYahooFundamentals(
   symbol: string,

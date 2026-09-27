@@ -4,7 +4,8 @@
 // Pure math, no external ML dependencies.
 // ============================================================
 
-import { featuresToArray, type SpilloverFeatures, FEATURE_NAMES } from './spillover-features';
+import { featuresToArray, buildSpilloverFeatures, type SpilloverFeatures, FEATURE_NAMES } from './spillover-features';
+import { pctChange } from './global-market-data';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -194,9 +195,6 @@ export function buildSpilloverDataset(
   for (const d of qR) { allDates.add(d.date); const e = byDate.get(d.date); if (e) e.qqq = d; }
   for (const d of vR) { allDates.add(d.date); const e = byDate.get(d.date); if (e) e.vix = d; }
   for (const d of tR) { allDates.add(d.date); const e = byDate.get(d.date); if (e) e.target = d; }
-
-  const { buildSpilloverFeatures } = require('./spillover-features');
-  const { pctChange } = require('./global-market-data');
 
   const rows: SpilloverDatasetRow[] = [];
   const dates = [...allDates].sort();

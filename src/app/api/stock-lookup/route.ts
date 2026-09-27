@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchLivePrices, getOrCreateStock } from '@/lib/market-data';
+import { fetchLivePrices, getOrCreateStock, getStock } from '@/lib/market-data';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -42,6 +42,5 @@ export async function GET(request: NextRequest) {
 }
 
 function getStaticStock(ticker: string) {
-  const { getStock } = require('@/lib/market-data');
   return getStock(ticker);
 }

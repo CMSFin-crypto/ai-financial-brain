@@ -19,6 +19,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     // React rules
     "react-hooks/exhaustive-deps": "off",
     "react-hooks/purity": "off",
+    "react-hooks/set-state-in-effect": "off", // flagon modelet kanonike hydration-safe (URL params pas mount, mounted-detection, fetch lifecycle)
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
     "react/prop-types": "off",

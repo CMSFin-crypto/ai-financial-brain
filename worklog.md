@@ -926,3 +926,26 @@ Stage Summary:
 - PRODHIMI PUNON PLOTËSISHT: faqe + state + skanim live + ruajtje e përhershme Upstash — e gjithë pipelines e Social Arb tani është funksionale në Vercel pa asnjë hap të mbetur nga useri
 - IBKR v2 (rikalibrimi) u auto-deployua gjithashtu nga push-i 40b73cf
 - Opcionale: cron-job.org për skanime të automatizuara (VERCEL_SETUP.md hapi 3, me Bearer CRON_SECRET); seed-i i të dhënave më të pasura të sandbox-it me scripts/seed-upstash.mjs
+
+---
+Task ID: 50
+Agent: main
+Task: Rregullimi i CI-së (Lint + Build dështonin në çdo push) — zbuluar gjatë verifikimit të prodhimit
+
+Work Log:
+- Shkaku rrënjësor: workflow-t kishin cache: npm + npm ci që KËRKOJNË package-lock.json — repo s'e ka fare (dështonte në «Setup Node.js 20» para se lint/build të ekzekutoheshin ndonjëherë; 3 runs të bardha #224-226)
+- deploy.yml: hequr job-i «Deploy to Vercel Production» (kërkonte VERCEL_TOKEN/ORG_ID/PROJECT_ID që s'ekzistojnë; Vercel-i deploy-on vetë nga GitHub integration — i verifikuar dje/sot) → workflow tani është «Build Check» i pastër (checkout → npm install → npm run build)
+- lint.yml: cache: npm hequr, npm ci → npm install, dhe npx next lint → npm run lint (Next 16 e hoqi next lint; repo përdor ESLint flat config me eslint .)
+- 8 gabimet e vjetra lint (që CI s'i kishte parë kurrë) rregulluar: 
+  · scripts/test-sa-fetcher.js — require i vdekur i një skedari .ts (i përdorur 0 herë) fshirë
+  · stock-lookup/route.ts — require('@/lib/market-data') lazy → import top-level (getStock shtuar te importi ekzistues; pa varësi cirkuale)
+  · spillover-v2.ts — 2 require-të lazy → importe top-level (buildSpilloverFeatures te importi ekzistues + pctChange i re; pa varësi cirkuale)
+  · fundamentals/normalize.ts — interface bosh NormalizeExtras extends RiskFlagExtras → type alias
+  · eslint.config.mjs — react-hooks/set-state-in-effect OFF (në linjë me filozofinë ekzistuese; flagon modelet kanonike hydration-safe: URL params pas mount në page.tsx, mounted-detection në header.tsx, fetch lifecycle në ibkr-strategy.tsx)
+- Në asnjë skedar social-arb s'u prek logjika (vetëm konstatim i një warning-i jo-blokues në scheduler.ts — lënë pa prek)
+- Verifikime: npm run lint → 0 gabime (6 warnings jo-blokuese, të gjitha para-ekzistuese); npm run build → kalon; gabimet e tsc janë vetëm në download/ + examples/ + scripts/ (jashtë src/, para-ekzistuese, s'përfshihen në build)
+
+Stage Summary:
+- CI tani pritet të jetë e gjelbër: Lint (npm install + eslint) + Build Check (npm install + build) — hera e parë që këto ekzekutohen realisht
+- Deploy në Vercel mbetet përmes GitHub integration (provuar 2 herë sot) — s'ka dyfishim me CLI
+- Kroni 2-orësh i Social Arb (nga sesioni paralel, d3d11c4) u verifikua: sekreti CRON_SECRET në repo + run i parë SUCCESS
