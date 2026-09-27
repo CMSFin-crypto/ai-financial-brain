@@ -1,0 +1,53 @@
+# Skanim periodik i Social Arb — thërret /api/social-arb/scan në prodhim çdo 2 orë.
+# Pse Actions e jo Vercel cron: Vercel Hobby lejon vetëm cron ditor; këtu kemi
+# 12 skanime/ditë pa kosto (repo publike), me sekret Bearer CRON_SECRET.
+# Shënim: GitHub cron-i mund të vonesohet disa minuta — pranueshme për ritëm 2-orësh.
+
+name: Social Arb — skanim periodik
+
+on:
+  schedule:
+    - cron: '7 */2 * * *' # çdo 2 orë, minuta 7 (UTC) — shmang pikun e :00
+  workflow_dispatch: # buton manual në tab-in Actions
+
+permissions: {} # asnjë leje token-i — vetëm thirrje HTTP
+
+concurrency:
+  group: social-arb-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Thirr skanerin
+        env:
+          SCAN_URL: https://ai-financial-brainzai.vercel.app/api/social-arb/scan
+          SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          code=$(curl -s -o resp.json -w "%{http_code}" \
+            -H "Authorization: Bearer $SECRET" \
+            -H "Content-Type: application/json" \
+            -X POST "$SCAN_URL" \
+            -d '{}' \
+            --max-time 90)
+          echo "HTTP $code"
+          cat resp.json; echo
+          case "$code" in
+            200)
+              echo "Skanimi u krye me sukses."
+              ;;
+            409)
+              echo "::warning::Skanim tjetër po ekzekutohet (409) — kalohet këtë raund."
+              exit 0
+              ;;
+            503)
+              echo "::warning::Skaneri i bllokuar nga konfigurimi (503) — kontrollo Upstash env në Vercel."
+              exit 1
+              ;;
+            *)
+              echo "::error::Skanimi dështoi me HTTP $code"
+              exit 1
+              ;;
+          esac
