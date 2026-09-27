@@ -276,7 +276,7 @@ export async function csvArchiveStats(): Promise<{ files: number; rows: number }
  * TTL-i është rrjeti i sigurisë: edhe nëse procesi vdes pa liruar,
  * lock-i skadon vetë pas <ttlSeconds>.
  */
-export async function acquireScanLock(ttlSeconds = 900): Promise<(() => Promise<void>) | null> {
+export async function acquireScanLock(ttlSeconds = 120): Promise<(() => Promise<void>) | null> {
   if (!upstashEnabled()) {
     return async () => { /* noop — modaliteti file ka një proces të vetëm */ };
   }

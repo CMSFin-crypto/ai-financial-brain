@@ -85,12 +85,23 @@ export class ScanLockError extends Error {
 export function runScan(): Promise<ScanResultSummary> {
   if (scanning) return scanning;
   const p = (async () => {
-    const release = await acquireScanLock(900);
+    // TTL 120s — skanimi zgjat ≤60s në Vercel (maxDuration) dhe ~90s lokalisht.
+    // TTL-i është vetëm rrjetë e sigurisë: nëse release-i dështon, bllokimi
+    // max 2 min (dikur 900s — skanimet manuale mbeteshin pa ajër 1/15 min).
+    const release = await acquireScanLock(120);
     if (!release) throw new ScanLockError();
     try {
       return await doScan();
     } finally {
-      void release();
+      // KRITIKE në serverless: release-i DUHET pritur — `void release()` kthehej
+      // fire-and-forget dhe Vercel-i e ngrinte funksionin para se DEL-i të
+      // arrinte në Upstash → lock i ndenjur deri me TTL (provuar live 2×).
+      // Kufizohet me 5s që një rrjet i varur të mos e hajë kohën e funksionit.
+      try {
+        await Promise.race([release(), new Promise(r => setTimeout(r, 5000))]);
+      } catch (e) {
+        console.error('[social-arb engine] release-i i lock-ut dështoi — TTL 120s do ta pastrojë:', (e as Error).message);
+      }
     }
   })();
   scanning = p.finally(() => { scanning = null; });
@@ -418,7 +429,39 @@ async function doScan(): Promise<ScanResultSummary> {
     });
   }
 
-  // 4) GDELT — seri 30-ditore + lista e artikujve (numri DHE titujt për shkakun)
+  // 4) çmimet — PRIMARE ndaj GDELT-t. Dikur ekzekutoheshin PAS GDELT-t dhe,
+  //    sa herë GDELT-i ishte 429 (timeout 12s + 3×gap 6s ≈ gjithë buxheti 35s),
+  //    rruga e çmimeve pritej me `withinBudget()` ÇDO skanim — çmimet për
+  //    ticker-a nuk morën kurrë radhën (livelock i provuar live 2 skanime).
+  //    Tani çmimet (shpejt, ~5s via stockanalysis.com) marrin radhën e parë.
+  let spySeries: { source: string; closes: PricePoint[] } | null = null;
+  try {
+    const spy = await fetchPriceSeries('SPY', '3M');
+    spySeries = { source: spy.source, closes: spy.closes };
+    sources.prices = 'ok';
+  } catch (e) {
+    sources.prices = 'error';
+    errors.push(`SPY: ${(e as Error).message}`);
+  }
+  const priceErrors = new Map<string, string>();
+  const priceCache = new Map<string, PricePoint[]>();
+  const priceSource = new Map<string, string>();
+  for (const w of matched.values()) {
+    if (priceCache.has(w.entry.ticker)) continue;
+    if (!withinBudget()) break;
+    try {
+      const s = await fetchPriceSeries(w.entry.ticker, '3M');
+      priceCache.set(w.entry.ticker, s.closes);
+      priceSource.set(w.entry.ticker, s.source);
+    } catch (e) {
+      priceErrors.set(w.entry.ticker, (e as Error).message);
+      errors.push(`Çmimet ${w.entry.ticker}: ${(e as Error).message}`);
+    }
+  }
+
+  // 5) GDELT — seri 30-ditore + lista e artikujve (numri DHE titujt për shkakun).
+  //    Me buxhetin e MBBETUR: kur është 429, thirrjet e ngadalta e shterojnë —
+  //    në atë rast matjet e fundit të vlefshme mbahen (carry-over, hapi 6).
   const gdeltBudget = [...matched.values()].slice(0, MAX_GDELT_CANDIDATES);
   const seriesCache = new Map<string, GdeltDailyPoint[]>();
   const articlesCache = new Map<string, GdeltArticle[]>();
@@ -450,33 +493,8 @@ async function doScan(): Promise<ScanResultSummary> {
   }
   sources.gdelt = gdeltThrottled ? 'throttled' : errors.some(e => e.startsWith('GDELT')) ? 'error' : 'ok';
 
-  // 5) çmimet — SPY një herë, secili ticker një herë; dështimet ruhen me gabimin konkret
-  let spySeries: { source: string; closes: PricePoint[] } | null = null;
-  try {
-    const spy = await fetchPriceSeries('SPY', '3M');
-    spySeries = { source: spy.source, closes: spy.closes };
-    sources.prices = 'ok';
-  } catch (e) {
-    sources.prices = 'error';
-    errors.push(`SPY: ${(e as Error).message}`);
-  }
-  const priceErrors = new Map<string, string>();
-  const priceCache = new Map<string, PricePoint[]>();
-  const priceSource = new Map<string, string>();
-  for (const w of matched.values()) {
-    if (priceCache.has(w.entry.ticker)) continue;
-    if (!withinBudget()) break;
-    try {
-      const s = await fetchPriceSeries(w.entry.ticker, '3M');
-      priceCache.set(w.entry.ticker, s.closes);
-      priceSource.set(w.entry.ticker, s.source);
-    } catch (e) {
-      priceErrors.set(w.entry.ticker, (e as Error).message);
-      errors.push(`Çmimet ${w.entry.ticker}: ${(e as Error).message}`);
-    }
-  }
   if (budgetHit) {
-    errors.push(`Buxheti kohor i skanimit (${Math.round(SCAN_BUDGET_MS / 1000)}s) u plotësua — disa pyetje GDELT/çmime u kapërcyen dhe vijojnë në skanimin tjetër.`);
+    errors.push(`Buxheti kohor i skanimit (${Math.round(SCAN_BUDGET_MS / 1000)}s) u plotësua — disa pyetje GDELT u kapërcyen; matja e fundit e vlefshme mbahet (carry-over) dhe vijon në skanimin tjetër.`);
   }
 
   // 6) ndërto matjet dhe përditëso kandidatët
