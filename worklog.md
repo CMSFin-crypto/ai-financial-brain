@@ -833,3 +833,18 @@ Stage Summary:
 - RESEARCH tani është i varur nga 4 provat DHE score-i — score 75 pa prova s'ngjitet më (SBUX democionohet sinqerisht me arsye në histori)
 - Gjurmimi 5/20 ditë vs SPY për të gjithë, përfshi refuzuarit — sinqeriteti statistikor
 - Vercel: skanimet mbeten 503 derisa vendosen variablat e Upstash (RUJTJA e përhershme); faqja + të dhënat snapshot nga git punojnë
+---
+Task ID: 45
+Agent: main
+Task: Push në GitHub — token-i i ri i qasjes (ghp_…) pas rindezjes së sesionit
+
+Work Log:
+- Verifikuar token-i me GitHub API: 200 OK, push/admin në CMSFin-crypto/ai-financial-brain
+- Kontrolluar gjendja lokale: 1 commit i pa-push-uar (1b65847 — Social Arb v4) + refresh i të dhënave pas-commit (data/social-arb.json, skanimi 16:21:44, 42.6s)
+- Commit: refresh-i i skanimit të fundit (mbajtjet e matjeve, ndërrimi i burimit të çmimeve me sukses pas 429)
+- Push të dyja commit-et në origin/main; verifikim që remote përputhet me lokal
+
+Stage Summary:
+- Social Arb v4 (1b65847) tani është në GitHub → deploy automatik në Vercel i aktivizuar
+- Skanimet në Vercel mbeten 503 derisa vendosen variablat e Upstash (RUJTJA); faqja + snapshot-i nga git funksionojnë
+- Hapi i mbetur te përdoruesi: Upstash Redis + 2 env vars + Redeploy (VERCEL_SETUP.md hapi 1)
