@@ -908,3 +908,21 @@ Work Log:
 Stage Summary:
 - IBKR dhe Social Arb janë të pavarur 100%: kode të ndara, të dhëna të ndara, faqe UI të ndara — asnjë pikë përzierjeje
 - Rregull i mbartur për çdo punë të ardhshme: puna në IBKR s'prek asnjë skedar social-arb dhe anasjelltas
+
+---
+Task ID: 49
+Agent: main
+Task: Verifikimi i prodhimit në Vercel pas konfigurimit të Upstash nga useri
+
+Work Log:
+- Faqet: / → 200, /social-arb → 200 (butoni «Skano tani» + statuse WATCH renderohen)
+- State API: backend: upstash (mint-bluejay-303418.upstash.io), persistent: true — env vars të lidhura me sukses
+- CRON_SECRET: i vendosur — POST pa autorizim → 401 «E paautorizuar» (mbrojtja punon); thirrjet same-origin (rruga e butonit në faqe) lejohen siç ishte projektuar
+- Skanim LIVE në prodhim: ok:true, 44.9s (brenda maxDuration 60s), 4 rajonet paralele OK, çmimet OK nga multi-burimi; GDELT throttled (429 në IP-të e përbashkëta të Vercel-it) — carry-over i mban matjet dhe makina e statusit s'democionohet padrejtësisht
+- Persistenca: lastScanAt e re përputhet saktësisht me përfundimin e skanimit tim (19:06:05 UTC); 8 skanime historike, 26 matje, 3 kandidatë (TGT 49 / NFLX 40 / RACE 36, të gjithë WATCH — saktë: pa provë të freskët GDELT s'ka ngritje RESEARCH, by design)
+- Zgjidhja e mistereve të orës: UTC+8 vs UTC — data e sistemit (28 sht) = mbrëmja e 27-tës në Budapest; skanimi 19:03:36 ishte i userit nga shfletuesi, 19:06:05 imi
+
+Stage Summary:
+- PRODHIMI PUNON PLOTËSISHT: faqe + state + skanim live + ruajtje e përhershme Upstash — e gjithë pipelines e Social Arb tani është funksionale në Vercel pa asnjë hap të mbetur nga useri
+- IBKR v2 (rikalibrimi) u auto-deployua gjithashtu nga push-i 40b73cf
+- Opcionale: cron-job.org për skanime të automatizuara (VERCEL_SETUP.md hapi 3, me Bearer CRON_SECRET); seed-i i të dhënave më të pasura të sandbox-it me scripts/seed-upstash.mjs
