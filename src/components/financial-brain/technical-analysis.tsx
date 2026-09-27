@@ -1992,24 +1992,6 @@ export function TechnicalAnalysis() {
   const lastAnalyzedTimeframe = useRef<string>('');
   const lastAnalyzedTicker = useRef<string>('');
 
-  useEffect(() => {
-    // Only auto-run if:
-    // 1. We have a ticker
-    // 2. We already analyzed something before (lastAnalyzedTicker is set)
-    // 3. The new timeframe is different from the one we last analyzed
-    if (
-      ticker &&
-      lastAnalyzedTicker.current &&
-      lastAnalyzedTicker.current === ticker &&
-      lastAnalyzedTimeframe.current &&
-      lastAnalyzedTimeframe.current !== timeframe
-    ) {
-      lastAnalyzedTimeframe.current = timeframe;
-      runAnalysisForTicker();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeframe]);
-
   const runAnalysisForTicker = async (tickerSymbol?: string) => {
     const sym = (tickerSymbol || ticker).trim().toUpperCase();
     if (!sym) return;
@@ -2044,6 +2026,26 @@ export function TechnicalAnalysis() {
       setIsLoading(false);
     }
   };
+
+  // Riekkzekuto automatikisht kur ndryshon timeframe-i
+  // (pas deklarimit — runAnalysisForTicker aksesohet brenda effect-it)
+  useEffect(() => {
+    // Only auto-run if:
+    // 1. We have a ticker
+    // 2. We already analyzed something before (lastAnalyzedTicker is set)
+    // 3. The new timeframe is different from the one we last analyzed
+    if (
+      ticker &&
+      lastAnalyzedTicker.current &&
+      lastAnalyzedTicker.current === ticker &&
+      lastAnalyzedTimeframe.current &&
+      lastAnalyzedTimeframe.current !== timeframe
+    ) {
+      lastAnalyzedTimeframe.current = timeframe;
+      runAnalysisForTicker();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeframe]);
 
   const runAnalysis = () => runAnalysisForTicker();
 

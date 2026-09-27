@@ -294,7 +294,9 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
 
   // Rifreskimi automatik çdo 60s
   const autoRefreshRef = useRef(autoRefresh);
-  autoRefreshRef.current = autoRefresh;
+  useEffect(() => {
+    autoRefreshRef.current = autoRefresh;
+  }, [autoRefresh]);
   useEffect(() => {
     const id = window.setInterval(() => {
       if (autoRefreshRef.current) load(false);

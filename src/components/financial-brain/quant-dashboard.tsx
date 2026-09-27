@@ -233,19 +233,6 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
     agents: true, debate: true, scoring: true, final: true,
   });
 
-  // Auto-analyze when initialTicker is set from Sector Scanner
-  useEffect(() => {
-    if (initialTicker && initialTicker !== hasAutoAnalyzed.current) {
-      hasAutoAnalyzed.current = initialTicker;
-      setTicker(initialTicker.toUpperCase());
-      // Run analysis on next tick after state updates
-      const timer = setTimeout(() => {
-        runAnalysisForTicker(initialTicker.toUpperCase());
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [initialTicker]);
-
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
@@ -280,6 +267,20 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
       setIsLoading(false);
     }
   };
+
+  // Auto-analyze when initialTicker is set from Sector Scanner
+  // (pas deklarimit — runAnalysisForTicker aksesohet brenda timeout-it)
+  useEffect(() => {
+    if (initialTicker && initialTicker !== hasAutoAnalyzed.current) {
+      hasAutoAnalyzed.current = initialTicker;
+      setTicker(initialTicker.toUpperCase());
+      // Run analysis on next tick after state updates
+      const timer = setTimeout(() => {
+        runAnalysisForTicker(initialTicker.toUpperCase());
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [initialTicker]);
 
   const runAnalysis = () => runAnalysisForTicker();
 
