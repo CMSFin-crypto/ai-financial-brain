@@ -949,3 +949,4 @@ Stage Summary:
 - CI tani pritet të jetë e gjelbër: Lint (npm install + eslint) + Build Check (npm install + build) — hera e parë që këto ekzekutohen realisht
 - Deploy në Vercel mbetet përmes GitHub integration (provuar 2 herë sot) — s'ka dyfishim me CLI
 - Kroni 2-orësh i Social Arb (nga sesioni paralel, d3d11c4) u verifikua: sekreti CRON_SECRET në repo + run i parë SUCCESS
+- Fix pas vëzhgimit të parë run-i: hapi «Run lint» kishte mbetur npx next lint (Next 16 e hoqi komandën — «Invalid project directory») → ndryshuar në npm run lint (eslint .); Build Check kaloi që në run-in e parë
