@@ -891,3 +891,20 @@ Stage Summary:
 - Sistemi tani reflekton disiplinën e kërkuar: -69% frekuencë, -76% GAP_STOP, -66% kosto, 1/sektor, 3 pozicione max, cooldown 10-ditësh
 - IS u kthye pozitiv për herë të parë (+$3.3K), por OOS mbetet negativ në TË GJITHA variantet → verdikti qëndron REJECT dhe Gate 6 LIVE mbetet i kyçur — saktësisht siç kërkoi useri
 - Tavani i score-it ≤84 është gjetja strukturore e re: 85+ = kushte të mbivlerësuara, jo «elite»
+
+---
+Task ID: 48
+Agent: main
+Task: Verifikimi i ndarjes së plotë IBKR ↔ Social Arb (kërkesa e userit: «mos të përzihen»)
+
+Work Log:
+- Kontroll commit-esh: IBKR v2 (9eb2587 — 9 skedarë, asnjë në social-arb) dhe Social Arb v5 (ccb6a90 — 3 skedarë, asnjë në IBKR) — zero mbivendosje skedarësh
+- Kontroll import-esh në të dy drejtimet: ibkr-scan/ibkr-analyze/ibkr-strategy/ibkr-validation-lab nuk importojnë asgjë nga social-arb; src/lib/social-arb/* dhe api/social-arb/* nuk importojnë asgjë nga ibkr ose lib/validation
+- UI: IBKR është tab i faqes kryesore (IBKRStrategy); Social Arb është faqe krejtësisht e veçuar /social-arb — trigger-i në tab bar vetëm bën router.push('/social-arb'); deep-link-i nga URL përjashton tab-in social-arb
+- E vetmja lidhje ekzistuese: navigim i qëllimshëm UX nga faqja /social-arb (rreshti 389) → /?tab=quant&ticker=… për analizë të mëtejshme të një kandidate në tab-in QUANT (jo IBKR) — vetëm link navigimi, pa ndarje të dhënash apo logjike
+- Të dhënat: data/social-arb.json + Upstash (Social Arb) vs scan-on-the-fly (IBKR); analytics.json është vetëm gjurmim vizitash (visits/fingerprintMap) nga /api/analytics — i papërfshirë strategjikisht
+- Commit i vogël pastrimi: data/analytics.json (20 vizita / 9 fingerprint-e nga testet e browserit të Task 47)
+
+Stage Summary:
+- IBKR dhe Social Arb janë të pavarur 100%: kode të ndara, të dhëna të ndara, faqe UI të ndara — asnjë pikë përzierjeje
+- Rregull i mbartur për çdo punë të ardhshme: puna në IBKR s'prek asnjë skedar social-arb dhe anasjelltas
