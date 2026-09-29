@@ -984,3 +984,21 @@ Stage Summary:
 - REV v1 tani jeton krejtësisht e izoluar si familje REV_* — skedarë, API, UI dhe metrika të veta; asnjë import nga logjika e CTC/CAMS/Social Arb (vetëm libra neutralë të përbashkët: alpha-vantage, universe-400, sec-edgar, ticker-names)
 - Pipeline-i i validimit është funksional end-to-end dhe rezultati i parë real (REJECT me knife-rate 43%) demonstron saktësisht disiplinën e kërkuar: gjetja specifike i atribuohet konfirmimit, jo rikalibrimit të parametrave
 - CI pritet e gjelbër: lint 0 gabime + build kalon; Vercel do të bëjë auto-deploy nga push-i
+
+---
+Task ID: 52
+Agent: main (Super Z)
+Task: CTC v2 — Delivery si tab i veçantë (kërkesa e userit: «të jetë në vete, mos të përzihet me të gjitha strategjitë»)
+
+Work Log:
+- Eksportuar përbërësit e ripërdorshëm nga ibkr-strategy.tsx (vetëm fjalëkalimi `export` — zero ndryshim sjelljeje): FunnelViz, SectorDonut, StockCard, RegimeBanner
+- Skedar i ri 100% izoluar: src/components/financial-brain/ctc-v2-delivery.tsx — pamja e dedikuar e strategjisë: shënim izolimi, Overview (delivery = swing 1–10 ditë, politikat, peshat e score-it), Funnel Scanner live (i njëjta API /api/ibkr-scan — zero dyfishim logjike), FunnelViz + ora e skanimit + RegimeBanner + SectorDonut, kandidatët READY (Bracket Order gati) + WATCHLIST me StockCard të plotë, Ditari Top 10 (Top10JournalCard)
+- NUK u zhvendos asgjë nga tab-i IBKR: Learning Engine, Kërko Aksion, Validation Lab dhe referencat mbeten aty — tab-i i ri tregon VETËM strategjinë delivery
+- page.tsx: tab «CTC v2 — Delivery» (emerald, TrendingUp) i PARI te kategoria Tregu — desktop (etiketa e plotë) + mobil (etiketa e shkurtër «CTC v2») + TabsContent para ibkr; import CTCDelivery + ikona TrendingUp
+- Verifikime: npm run lint → 0 gabime (6 warnings para-ekzistuese); npm run build → kalon; smoke test E2E me agent-browser mbi build standalone: hidratim OK, klikimi i tab-it aktivizon panelin, shënimi i izolimit + overview + skanimi live me rezultate (READY/WATCHLIST + ora e skanimit) renderohen, Ditari Top 10 renderohet (kujdes: heading-i real është «Ditar Top 10»), viewport mobil 390px → trigger-i dukshëm me etiketën e shkurtër; 0 gabime console
+- Shënim hulumtimi: rreshti 3403 i ibkr-strategy.tsx u duk «i prishur» nga disa mjete (sed/cat) — i rremë: shtresa e renditjes së output-it ha sekuencën [h nga teksti i shfaqur; skedari në repo është i saktë (konfirmuar me grep + node byte-level)
+
+Stage Summary:
+- CTC v2 — Delivery tani jeton si tab i pavarur i pari te kategoria Tregu: strategjia (skanim → kandidatë → ditari) e izoluar plotësisht nga mjetet e IBKR; ripërdorim i kartave ekzistuese pa asnjë dyfishim logjike
+- Zero prekje ndaj IBKR/CAMS/Social Arb/REV (vetëm shtesa e fjalës «export» në 4 funksione)
+- CI pritet e gjelbër (lint 0 gabime + build kalon); Vercel bën auto-deploy nga push-i

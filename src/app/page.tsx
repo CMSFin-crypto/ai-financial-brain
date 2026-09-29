@@ -56,8 +56,10 @@ import {
   CandlestickChart,
   FlaskConical,
   TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
 import { REVStrategy } from '@/components/financial-brain/rev-strategy';
+import { CTCDelivery } from '@/components/financial-brain/ctc-v2-delivery';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
@@ -345,6 +347,9 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Tregu</span>
                 <TabsList className="flex flex-wrap gap-1 h-auto p-1 flex-1">
+                  <TabsTrigger value="ctc-v2" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <TrendingUp className="w-3.5 h-3.5 mr-1.5" />CTC v2 — Delivery
+                  </TabsTrigger>
                   <TabsTrigger value="ibkr" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Briefcase className="w-3.5 h-3.5 mr-1.5" />IBKR
                   </TabsTrigger>
@@ -456,6 +461,9 @@ export default function Home() {
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
                 <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                  <TabsTrigger value="ctc-v2" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <TrendingUp className="w-3 h-3 mr-1" />CTC v2
+                  </TabsTrigger>
                   <TabsTrigger value="ibkr" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <Briefcase className="w-3 h-3 mr-1" />IBKR
                   </TabsTrigger>
@@ -562,6 +570,18 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* Tab: CTC v2 — Delivery (strategjia e izoluar; mjetet te tab-i IBKR) */}
+          <TabsContent value="ctc-v2" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <CTCDelivery />
+            </motion.div>
+          </TabsContent>
 
           <TabsContent value="ibkr" className="mt-4">
             <motion.div

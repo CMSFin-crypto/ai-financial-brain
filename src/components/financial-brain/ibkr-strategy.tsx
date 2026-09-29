@@ -245,7 +245,7 @@ const FUNNEL_DETAILS: Record<string, { title: string; desc: string; ideal: strin
 };
 
 // ── Funnel Visualization — shtylla proporcionale të animuara me popup-in e fazës ──
-function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
+export function FunnelViz({ funnel }: { funnel: FunnelResponse['funnel'] }) {
   const steps = [
     { label: 'Universe', count: funnel.universe, color: 'bg-blue-500/30 text-blue-400 border-blue-500/25' },
     { label: 'Liquidity', count: funnel.passedLiquidity, color: 'bg-cyan-500/30 text-cyan-400 border-cyan-500/25' },
@@ -491,7 +491,7 @@ function ScoreRadar({ stock }: { stock: FunnelStock }) {
 // ═══ Donut i ekspozimit sektorial të Top 10 ═══
 const PIE_COLORS = ['#34d399', '#a78bfa', '#38bdf8', '#fbbf24', '#fb7185', '#2dd4bf', '#fb923c', '#818cf8'];
 
-function SectorDonut({ sectorExposure }: { sectorExposure: Record<string, number> }) {
+export function SectorDonut({ sectorExposure }: { sectorExposure: Record<string, number> }) {
   const entries = Object.entries(sectorExposure).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) return null;
   const pieData = entries.map(([k, v]) => ({ k, v }));
@@ -640,7 +640,7 @@ function fundSectionCls(label: string): string {
 }
 
 // ── Stock Card ──
-function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: FunnelStock; rank: number; vp?: any; fund?: FundamentalReport | null; fundLoading?: boolean }) {
+export function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: FunnelStock; rank: number; vp?: any; fund?: FundamentalReport | null; fundLoading?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [rankingChanges, setRankingChanges] = useState<any[] | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
@@ -1920,7 +1920,7 @@ function SectorBreadthRow({
 }
 
 // ── Regime Banner ──
-function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: FunnelResponse['regimeDetail']; regimeOk: boolean; compact?: boolean }) {
+export function RegimeBanner({ regimeDetail, regimeOk, compact }: { regimeDetail: FunnelResponse['regimeDetail']; regimeOk: boolean; compact?: boolean }) {
   const vix = regimeDetail.vix;
   const breadth = regimeDetail.breadth;
   const sectorBreadth = regimeDetail.sectorBreadth ?? [];
