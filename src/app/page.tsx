@@ -55,7 +55,9 @@ import {
   LayoutGrid,
   CandlestickChart,
   FlaskConical,
+  TrendingDown,
 } from 'lucide-react';
+import { REVStrategy } from '@/components/financial-brain/rev-strategy';
 import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashboard';
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
@@ -349,6 +351,9 @@ export default function Home() {
                   <TabsTrigger value="cams" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <Crosshair className="w-3.5 h-3.5 mr-1.5" />CAMS
                   </TabsTrigger>
+                  <TabsTrigger value="rev" className="text-xs py-2 px-3 data-[state=active]:bg-cyan-600 data-[state=active]:text-white">
+                    <TrendingDown className="w-3.5 h-3.5 mr-1.5" />REV
+                  </TabsTrigger>
                   <TabsTrigger value="journal" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" />Ditari Javor
                   </TabsTrigger>
@@ -456,6 +461,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="cams" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <Crosshair className="w-3 h-3 mr-1" />CAMS
+                  </TabsTrigger>
+                  <TabsTrigger value="rev" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-cyan-600 data-[state=active]:text-white">
+                    <TrendingDown className="w-3 h-3 mr-1" />REV
                   </TabsTrigger>
                   <TabsTrigger value="journal" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BookOpen className="w-3 h-3 mr-1" />Ditari
@@ -575,6 +583,18 @@ export default function Home() {
               className="space-y-4"
             >
               <CAMSStrategy />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: REV v1 — Confirmed Short-Term Reversal (familje e veçantë nga CTC) */}
+          <TabsContent value="rev" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <REVStrategy />
             </motion.div>
           </TabsContent>
 

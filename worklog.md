@@ -959,3 +959,28 @@ Stage Summary (Task 50):
 - CI tani është e gjelbër deterministe: Lint (npm ci + eslint) + Build Check (npm ci + build), hera e parë funksionale në historinë e repo-s
 - package-lock.json mbyll çdo drift të ardhshëm sandbox↔CI↔Vercel
 - KONFIRMIM FINAL: Lint ✅ + Build Check ✅ në a7e4939 (e para CI e gjelbër në historinë e repo-s — 27 sht 2026)
+
+---
+Task ID: 51
+Agent: main (Super Z)
+Task: REV v1 — strategji e RE e "Confirmed Short-Term Reversal" si tab i veçantë (kërkesa e userit: «tek financial brain ndërtoje këtë në një tab të ri dhe mos e përziej me të tjerat»)
+
+Work Log:
+- Skedarë të rinj 100% të izoluar (zero prekje ndaj IBKR/CTC, CAMS, Social Arb):
+  · REV_v1_strategy_spec.md — speku i plotë i para-regjistruar (v1, data 2026-09-29)
+  · scripts/rev_v1_validator.py — validator Python self-contained (REVHypothesis e ngrirë + evaluate_rev_gates + falling_knife_rate); testuar, ekzekutohet OK
+  · src/lib/rev/hypothesis.ts — hipoteza e ngrirë TS (pasqyrë 1:1 e Python-it) + REV_GATES + EXPECTED_PROFILE_REVERSAL (60-70% WR) + evaluateRevGates
+  · src/lib/rev/signal.ts — motori i sinjalit: RSI(2)/ATR(14)/dollar-vol20 self-contained, zona e likuiditetit 20-80 percentile POINT-IN-TIME, sinjali (ret3 ≤ -8% OSE RSI2 < 10 + idiosinkratik vs SPY), circuit-breaker SPY -3%, konfirmimi (green candle / higher low + volum në rënie + low i ri → invalide), 8-K material gate (EDGAR, items 1.01/1.02/2.02/2.03/2.04/2.05/2.06/3.01/4.02), sizing 0.5%
+  · src/lib/rev/backtest.ts — backtest historik: zona point-in-time ditë-për-ditë, konfirmim t+1, hyrje në close të konfirmimit, stop 1.3×ATR14 / target 1.2R / time-stop 3d / max 5d, falling-knife flag, kosto (slippage 5bp + gjysmë-spread 10bp + komision) me sensitivitet +10bp, IS/OOS 70/30, 5 dritare WF kalendarike, koncentrim top-3, DD i përbërë
+  · src/app/api/rev-scan/route.ts (maxDuration 300) — skanim live: SPY regime → univers 400 (BATCH 10) → zona 20-80p → sinjal dje+sot → 8-K vetëm për kandidatët → HYRJE_TANI / PRIT_KONFIRMIM / BLLOKUAR_8K / BLLOKUAR_SPY_CRASH / INVALIDUAR_LOW_I_RI / KONFIRMIM_PLOTFULLYEM + slot-et (max 3 pozicione, 1/sektor)
+  · src/app/api/rev-validate/route.ts (maxDuration 300, cache 30min) — backtest + gates + verdikti PASS/REJECT + kontrolli i profilit REV (jo ai i CTC)
+  · src/components/financial-brain/rev-strategy.tsx — UI i tab-it: hipoteza e ngrirë, tabela CTC↔REV, skanim live me karta kandidatësh (konfirmimi ✅/✗, gates, sizing), Validation Lab REV (verdikti, IS/OOS, WF, falling-knife, kampion tregtish)
+- page.tsx: tab «REV» (cyan, ikona TrendingDown) në kategorinë Tregu pas CAMS — desktop + mobile + TabsContent; import REVStrategy
+- Verifikime: npm run lint → 0 gabime (6 warnings para-ekzistuese); npm run build → kalon, /api/rev-scan + /api/rev-validate të regjistruara; tsc në skedarët REV → pa gabime (rregulluar narrowing-i i confIdx, getCompanyName ?? sym, tipi i openUntilBySymbol)
+- Smoke test real (dev): faqja 200 + tab-i renderohet; rev-validate 100 simbole/2v → 739 tregti, verdikt REJECT (IS PF 0.99, OOS PF 0.98, knife-rate 43% > 40%) — gjetja specifike saktësisht siç e parashikoi spec: konfirmimi Sec.3, JO target/stop; rev-scan live → 400→213 në zonë, 5 HYRJE_TANI (slot-et punojnë: OPEN_OK/SEKTOR_PLOT), 18 PRIT_KONFIRMIM, 36 INVALIDUAR_LOW_I_RI, 1 BLLOKUAR_8K
+- Disiplina e ruajtur: parametrat e ngrirë, REJECT nuk «rregullohet» — hipoteza del siç del dhe raportohet siç është
+
+Stage Summary:
+- REV v1 tani jeton krejtësisht e izoluar si familje REV_* — skedarë, API, UI dhe metrika të veta; asnjë import nga logjika e CTC/CAMS/Social Arb (vetëm libra neutralë të përbashkët: alpha-vantage, universe-400, sec-edgar, ticker-names)
+- Pipeline-i i validimit është funksional end-to-end dhe rezultati i parë real (REJECT me knife-rate 43%) demonstron saktësisht disiplinën e kërkuar: gjetja specifike i atribuohet konfirmimit, jo rikalibrimit të parametrave
+- CI pritet e gjelbër: lint 0 gabime + build kalon; Vercel do të bëjë auto-deploy nga push-i
