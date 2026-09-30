@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchHistoricalData } from '@/lib/alpha-vantage';
-import { getScanUniverse } from '@/lib/scanner/universe-400';
+import { getScanUniverse } from '@/lib/scanner/universe-core';
 import { getCompanyName } from '@/lib/scanner/ticker-names';
 import { fetchRecentFilings } from '@/lib/sec-edgar';
 import {

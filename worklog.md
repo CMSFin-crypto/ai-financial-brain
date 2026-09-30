@@ -1002,3 +1002,23 @@ Stage Summary:
 - CTC v2 — Delivery tani jeton si tab i pavarur i pari te kategoria Tregu: strategjia (skanim → kandidatë → ditari) e izoluar plotësisht nga mjetet e IBKR; ripërdorim i kartave ekzistuese pa asnjë dyfishim logjike
 - Zero prekje ndaj IBKR/CAMS/Social Arb/REV (vetëm shtesa e fjalës «export» në 4 funksione)
 - CI pritet e gjelbër (lint 0 gabime + build kalon); Vercel bën auto-deploy nga push-i
+
+---
+Task ID: 53
+Agent: main (Super Z)
+Task: Universi bazë i pastër për CTC v2 — zëvendëso «400 emra të përzier» me ~200 US-domestic filers + top-kuintil percentile mbi bazën e pastër (kërkesë e userit: korrigjim cilësie të dhënash, JO tunim)
+
+Work Log:
+- Krijuar src/lib/scanner/universe-core.ts: UNIVERSE_CORE v2 (201 emra unikë, verifikuar me skript: zero duplikate, zero ADR/20-F, zero emra të vdekur) — kriteret e fiksuara PARA rankimit: US-domestic, US-GAAP filer (10-K/10-Q/8-K), large/mega-cap, likuide, listing primar NYSE/Nasdaq; UNIVERSE_CORE_META (version/datë/kritere/arsyetim) për audtim; API e njëjtë (getScanUniverse, batchUniverse)
+- Fshirë src/lib/scanner/universe-400.ts (lista e përzier me ADR: BABA/TSM/AZN/TM/SHOP/SPOT..., emra të vdekur: NKLA/KSU/SGEN/PXD/MRO/PARA/DFS/X..., ticker të pavlefshëm: CISCO — arsyetimi i plotë te CTC_v2_strategy_spec.md §2.1-2.2)
+- Rilidhur 7 konsumatorët: ibkr-scan, ibkr-analyze, rev-scan, rev-validate, cams-scan, validation-lab, adaptive-scanner-learning (+ scripts/run-task26-ab.ts)
+- ibkr-scan (CTC v2): shtuar pre-pass dollar-volume 20d point-in-time për bazën me të dhëna; pragu Q80 nearest-rank = zona CTC (top-kuintil); passedLiquidity tani kërkon inTopQuintile + dyshemetë absolute ($50M ADV, çmim ≥ $15, ≥ 1M aksione); fusha të reja: FunnelStock.liquidityPctile/inTopQuintile, funnel.universeCore/withData/quintileThresholdDolVol, universeMeta në përgjigje
+- Krijuar CTC_v2_strategy_spec.md ( Seksioni 2 = rregulli i manduar: filtri «US-domestic, US-GAAP filer» PARA rankimit të likuiditetit; §2.2 kushti anti-tuning i para-regjistruar; §2.4 versionim i detyrueshëm; §7 historiku) — rendi i dokumentuar: korrigjim i dhënash para/ndarë nga vlerësimi i rezultateve
+- REV_v1_strategy_spec.md: adendë — baza e përbashkët korrigjua, zonat percentile 20-80 janë invariante, REV_HYPOTHESIS_VERSION mbetet 1
+- UI: ctc-v2-delivery.tsx (funnel «Bazë core (~200 US-domestic) → Top-kuintil likuiditet → ...», «Funnel Scanner — Univers Core v2 (~200)»), ibkr-strategy.tsx (STRATEGY_RULES Universe + popup-i FUNNEL_DETAILS.Universe)
+- Verifikime: npx tsc --noEmit → 0 gabime në src/ (vetëm legacy download/examples/scripts jashtë build-it); npm run lint → 0 gabime; npm run build → kalon
+
+Stage Summary:
+- Universi bazë i strategjive tani është homogjen regjistrimi (201 US-domestic filers) — rankimi i likuiditetit (top-kuintil Q80) llogaritet mbi bazën e pastër, jo mbi 400-listën e përzier
+- Rendi i rregullit i dokumentuar dhe i zbatuar në kod: filtri i bazës → pastaj rankimi i likuiditetit; ndryshimi i para-regjistruar si cilësi të dhënash (EDGAR coverage + ADR filing mismatch) — jo si tunim pasi të shihen rezultatet
+- CI e gjelbër e pritur; Vercel bën auto-deploy nga push-i (kërkon token të ri — i vjetri i revokuar)

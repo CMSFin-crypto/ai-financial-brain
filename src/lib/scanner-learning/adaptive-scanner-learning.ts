@@ -11,7 +11,7 @@
 // Snapshots: 5x/day during RTH (OPEN_15M, MID_AM, LUNCH, MID_PM, CLOSE)
 
 import { prisma } from "@/lib/prisma";
-import { getScanUniverse } from "@/lib/scanner/universe-400";
+import { getScanUniverse } from "@/lib/scanner/universe-core";
 import { buildVolumeProfile, type OhlcvBar, type VolumeProfile } from "@/lib/scanner/volume-profile";
 
 export type ScanStatus =

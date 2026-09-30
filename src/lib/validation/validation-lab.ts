@@ -15,7 +15,7 @@
 // Mos ndrysho rregullat e strategjisë — ndrysho vetëm universin.
 // ═══════════════════════════════════════════════════════════════
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
-import { getScanUniverse } from '@/lib/scanner/universe-400';
+import { getScanUniverse } from '@/lib/scanner/universe-core';
 import { SECTOR_MAP } from '@/app/api/ibkr-scan/route';
 import {
   BacktestContext, PreparedSymbol, runBacktest, prepareSymbol, BacktestVariant,

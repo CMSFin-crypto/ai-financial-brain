@@ -194,3 +194,17 @@ CTC (IBKR), CAMS apo Social Arb:
 
 Tab-i në UI: **"REV"** (kategoria Tregu, ngjyra cyan — e veçuar nga IBKR
 jeshilja, CAMS vjollca). Label: *"REV v1 — Reversal (familje e veçantë nga CTC)"*.
+
+---
+
+## Addendum (2026-09-30) — Universi bazë i përbashkët u korrigjua
+
+Universi bazë i përbashkët CTC/REV zëvendësua si **korrigjim cilësie të
+dhënash** (EDGAR coverage, ADR filing mismatch, emra të vdekur): nga
+"400-lista e përzier" te `src/lib/scanner/universe-core.ts` (~200 emra
+US-domestic, US-GAAP filers, large/mega-cap, likuide) — `UNIVERSE_CORE_VERSION = 2`.
+
+Zonat e likuiditetit të REV janë **percentile-based (20–80)** brenda bazës,
+pra janë invariante ndaj kësaj korrigjimi — adaptohen automatikisht te baza e
+re pa ndryshim hipoteze (REV_HYPOTHESIS_VERSION mbetet 1). Detajet dhe kushti
+anti-tuning: `CTC_v2_strategy_spec.md`, Seksioni 2.

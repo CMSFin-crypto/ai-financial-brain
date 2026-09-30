@@ -134,7 +134,7 @@ const DECISION_STYLE: Record<Decision, { bg: string; text: string; border: strin
 
 // ── Strategy Reference Data ──
 const STRATEGY_RULES = [
-  { element: 'Universe', icon: Layers, rule: '400 kompani te medha, likuide (DolVol ≥ $50M, çmim ≥ $15) — tregtueshme ne IBKR pa slippage', color: 'text-blue-400' },
+  { element: 'Universe', icon: Layers, rule: 'Baze core ~200 kompani US-domestic, US-GAAP filers (jo ADR/20-F), large/mega-cap, likuide — korrigjim cilesie te dhënash', color: 'text-blue-400' },
   { element: 'Filtri mekanik', icon: Filter, rule: 'Mbi SMA50, SMA50 > SMA200, Stacked MA, ADX > 25, RS > SPY', color: 'text-emerald-400' },
   { element: 'Setup policy (v2)', icon: BarChart3, rule: 'VETEM TREND_CONT lejon READY — PULLBACK (-$12.3K/10vjeç) dhe BREAKOUT (-$2.2K) refuzohen përpara targeteve', color: 'text-violet-400' },
   { element: 'Risk + Gap gate', icon: AlertTriangle, rule: 'Stop ATR×2.2 (absorbon gap-e), risk ≤5.5%, gap-i mesatar ≤75% e stop-it, R:R 1:2, RSI 30-75, regjimi OK, pa earnings/FOMC/CPI', color: 'text-red-400' },
@@ -187,11 +187,11 @@ function Section({ title, icon: Icon, children, color = 'text-emerald-400', defa
 // ── Funnel step detail popups ──
 const FUNNEL_DETAILS: Record<string, { title: string; desc: string; ideal: string; why: string; icon: any }> = {
   'Universe': {
-    title: '1. Universe — 200 Kompanite Me te Medha',
+    title: '1. Universi Bazë Core — ~200 US-domestic Filers',
     icon: Layers,
-    desc: 'Kjo eshte hapa e pare e funnel-it. Ne fillojme me 200 kompanite me te medha sipas kapitalizimit ne tregun amerikan (S&P 500 top). Keto kompani jane te zgjedhura sepse kane likuiditet te larte, jane te disponueshme per tregtim ne IBKR, dhe zakonisht kane volatilite me te mire per swing trading.',
-    ideal: 'Idealisht 200 kompani. Ceshtje nese keni me pak se 150 (some tickers nuk u morren nga API).',
-    why: 'Nuk ka rendesi sa kompani kalojne — qellimi eshte te kete nje base te ampler per te gjetur cfaredo setup-i i mire qe ekziston ne treg.',
+    desc: 'Kjo eshte hapa e pare e funnel-it. Ne fillojme me nje baze te paster ~200 kompani large/mega-cap: US-domestic filers (depozitojne 10-K/10-Q/8-K ne US-GAAP prane SEC — JO ADR/20-F), likuide, te listuara ne NYSE/Nasdaq. Zevendesoi 400-listen e perzier si korrigjim cilesie te dhënash (EDGAR coverage, ADR filing mismatch) — i para-regjistruar, jo tunim parametri.',
+    ideal: 'Idealisht ~200 kompani me te dhëna. Ceshtje nese keni me pak se 150 (disa tickers nuk u morren nga API).',
+    why: 'Rendi i fiksur: filtri i bazës (US-domestic, US-GAAP filer) aplikohet PARA rankimit te likuiditetit — percentile-t duhet te llogariten mbi nje baze homogjene regjistrimi, perndryshe perziejne regjime te ndryshme te dhënash.',
   },
   'Liquidity': {
     title: '2. Liquidity — Filtri Mekanik',

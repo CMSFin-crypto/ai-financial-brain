@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/alpha-vantage';
 import { calculateSMA, calculateRSI, calculateADX } from '@/lib/indicators';
 import { checkMultiEventRisk } from '@/lib/event-risk';
-import { getScanUniverse } from '@/lib/scanner/universe-400';
+import { getScanUniverse } from '@/lib/scanner/universe-core';
 import { SECTOR_MAP } from '@/app/api/ibkr-scan/route';
 import {
   computeCams,

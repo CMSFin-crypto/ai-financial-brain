@@ -92,7 +92,7 @@ export function CTCDelivery() {
           </div>
           <p className="text-[14px] text-muted-foreground leading-relaxed">
             Swing trading i rregulluar nga trendi — çdo kandidat delivery kalon funnel-in:
-            <strong className="text-foreground"> 400 → Likuiditet ($50M) → Trend → Setup (vetëm TREND_CONT) → Risk+Gap Gate → Top 1–5</strong>.
+            <strong className="text-foreground"> Bazë core (~200 US-domestic) → Top-kuintil likuiditet → Trend → Setup (vetëm TREND_CONT) → Risk+Gap Gate → Top 1–5</strong>.
             Komponimi i score-it:{' '}
             <Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">15% Trend</Badge>+
             <Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">25% RS</Badge>+
@@ -124,8 +124,8 @@ export function CTCDelivery() {
             <div className="flex items-center gap-3">
               <Activity className="w-5 h-5 text-blue-400" />
               <div>
-                <h3 className="text-[15px] font-bold text-foreground">Funnel Scanner — 400 Aksione <span className="text-emerald-400">v2</span></h3>
-                <p className="text-[13px] text-muted-foreground">Kandidatët delivery: 400 → likuiditet $50M → trend → vetëm TREND_CONT → risk+gap gate → max 3 pozicione</p>
+                <h3 className="text-[15px] font-bold text-foreground">Funnel Scanner — Univers Core <span className="text-emerald-400">v2</span> (~200)</h3>
+                <p className="text-[13px] text-muted-foreground">Kandidatët delivery: bazë core US-domestic (~200) → top-kuintil dollar-vol → trend → vetëm TREND_CONT → risk+gap gate → max 3 pozicione</p>
               </div>
             </div>
             <button onClick={runScan} disabled={loading} className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50">

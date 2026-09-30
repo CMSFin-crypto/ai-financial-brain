@@ -11,7 +11,7 @@
 // ═══════════════════════════════════════════════════════════════
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { fetchHistoricalData, HistoricalDataPoint } from '../src/lib/alpha-vantage';
-import { getScanUniverse } from '../src/lib/scanner/universe-400';
+import { getScanUniverse } from '../src/lib/scanner/universe-core';
 import { SECTOR_MAP } from '../src/app/api/ibkr-scan/route';
 import {
   runBacktest, prepareSymbol, BacktestContext, BacktestResult, BacktestVariant,

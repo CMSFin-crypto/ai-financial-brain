@@ -12,10 +12,12 @@ export type { FunnelStock, FunnelResponse };
 // 5 shtresa: Data → Signal → Execution → Risk → Reporting
 // ═══════════════════════════════════════════════════════════════
 
-// Universe 400 — liquid US stocks (deduped, batchable)
-import { getScanUniverse } from '@/lib/scanner/universe-400';
+// Universi bazë CORE — US-domestic, US-GAAP filers (jo ADR/20-F), large/mega-cap, likuide.
+// Korrigjim cilësie të dhënash (jo tunim parametri): zëvendëson 400-listën e përzier.
+// RENDI I FIKSUR: filtri i bazës PARA rankimit të likuiditetit — CTC_v2_strategy_spec.md §2.
+import { getScanUniverse, UNIVERSE_CORE_META } from '@/lib/scanner/universe-core';
 import { getCompanyName } from '@/lib/scanner/ticker-names';
-const UNIVERSE = getScanUniverse(400);
+const UNIVERSE = getScanUniverse();
 
 const DEDUPED_UNIVERSE = [...new Set(UNIVERSE)];
 
@@ -338,6 +340,9 @@ interface FunnelStock {
   spreadPct: number;
   liquidityScore: number;
   liquidityStatus: string;
+  // NEW: Zona CTC e likuiditetit — top-kuintil percentile brenda bazës së pastër (spec §2)
+  liquidityPctile: number;              // percentile i dollar-vol 20d brenda bazës core (0–100)
+  inTopQuintile: boolean;               // top-kuintil (top 20%) — kusht i zonës CTC
   // NEW: Overnight Risk
   avgOvernightGap20: number;
   avgOvernightGap60: number;
@@ -376,7 +381,9 @@ interface FunnelResponse {
     regimeMultiplier: number;       // 1.0 | 0.75 | 0.5
     stopVolMultiplier: number;      // 1.0 | 1.2 | 1.5
   };
-  funnel: { universe: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; passedEventRisk: number; passedSectorLimit: number; };
+  funnel: { universe: number; universeCore: number; withData: number; quintileThresholdDolVol: number; passedLiquidity: number; passedTrend: number; passedSetup: number; passedRisk: number; displayed: number; passedEventRisk: number; passedSectorLimit: number; };
+  // Meta e universit bazë — korrigjim cilësie të dhënash, i para-regjistruar (spec §2)
+  universeMeta?: { version: number; effectiveDate: string; criteria: string; size: number; rationale: string };
   results: FunnelStock[];
   // NEW: exposure summary
   sectorExposure: Record<string, number>;
@@ -447,6 +454,24 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
 
   console.log(`[IBKR v2] Fetched ${Object.keys(hist).length}/${syms.length} stocks in ${((Date.now()-t0)/1000).toFixed(1)}s`);
 
+  // ── 1b. TOP-KUINTIL I LIKUIDITETIT mbi BAZËN E PASTËR (CTC v2 — spec §2) ──
+  // Dollar-volume 20d point-in-time për çdo emër me të dhëna; pragu Q80 (nearest-rank)
+  // përcakton zonën CTC (top 20%). Llogaritet mbi bazën core (~200 US-domestic filers) —
+  // JO mbi 400-listën e vjetër të përzier. Rendi: filtër bazë → pastaj rankim likuiditeti.
+  const dolVolBySym = new Map<string, number>();
+  for (const sym of syms) {
+    const d = hist[sym];
+    if (!d || d.length < 20) continue;
+    const n = Math.min(20, d.length);
+    let dv = 0;
+    for (let i = d.length - n; i < d.length; i++) dv += (d[i].close || 0) * (d[i].volume || 0);
+    dolVolBySym.set(sym, dv / n);
+  }
+  const dolVolsSorted = [...dolVolBySym.values()].sort((a, b) => a - b);
+  const nBase = dolVolsSorted.length;
+  const quintileThreshold = nBase >= 5 ? dolVolsSorted[Math.ceil(0.8 * nBase) - 1] : 0;
+  console.log(`[IBKR v2] Univers core v${UNIVERSE_CORE_META.version}: ${syms.length} emra | me të dhëna: ${nBase} | top-kuintil ≥ $${(quintileThreshold / 1e6).toFixed(0)}M dollar-vol/ditë`);
+
   // ── NEW: Market Breadth — % of universe above 50D SMA (leading regime indicator) ──
   // Grouped per sector: breadth-i i sektorit tregon KU ka continuation dhe KU pullback-et vdesin.
   // Labels (Task 15 — Sector Breadth Gate): DEAD <20% · WEAK 20-40% · OK 40-55% · STRONG ≥55%
@@ -479,12 +504,11 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
   const breadthStatus = breadthPct >= 55 ? 'HEALTHY' : breadthPct >= 40 ? 'MIXED' : 'WEAK';
 
   // ── Task 16b: SEKTORËT E HOLLE — plotësim anëtarësh vetëm për breadth-in e sektorit ──
-  // getScanUniverse(400) = DEDUPED.slice(0,400) pret fundin e listës, ku ndodhen emrat
-  // e Energy (40 në SECTOR_MAP) dhe Materials (17) → Energy mbetet me 2 anëtarë dhe
-  // breadth-i e tij është zhurmë statistikore (2/2 = 100% STRONG!). Plotësojmë sektorët
-  // me < 18 anëtarë duke marrë emra nga SECTOR_MAP që NUK janë në universin e skanuar.
-  // ⚠️ Vetëm për sector breadth + popup: NUK ndikon në market breadth (titullin 400),
-  // NUK hyn në funnel (rezultatet e skanimit mbeten të njëjta).
+  // Universi core është i leanë sipas dizajnit (8–29 emra/sektor — pa prerje truncation).
+  // Sektorët me < 18 anëtarë (p.sh. Materials, Utilities, REITs) plotësohen me emra nga
+  // SECTOR_MAP që NUK janë në universin e skanuar, për robustësi statistikore të breadth-it.
+  // ⚠️ Vetëm për sector breadth + popup: NUK ndikon në market breadth, NUK hyn në funnel
+  // (kandidatët mbeten vetëm bazë core + top-kuintil likuiditet — spec §2).
   const SECTOR_MIN_MEMBERS = 18;
   const countedSet = new Set(syms);
   const extrasPerSec: Record<string, number> = {};
@@ -598,7 +622,13 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       dailyDolVols.push(closes[i] * vols[i]);
     }
     const avgDolVol = dailyDolVols.reduce((a,b) => a+b, 0) / n20;
-    const passedLiq = price >= MIN_PRICE && avgVol20 >= 1_000_000 && avgDolVol >= MIN_DOL_VOL;
+    // Zona CTC: top-kuintil percentile i dollar-vol brenda BAZËS SË PASTËR (spec §2)
+    // + pragjet absolute ($50M ADV, çmim ≥ $15, ≥ 1M aksione) si dysheme sanitarë.
+    const liqPctile = nBase > 0
+      ? Math.round((dolVolsSorted.filter(v => v <= avgDolVol).length / nBase) * 100)
+      : 0;
+    const inTopQuintile = nBase >= 5 ? avgDolVol >= quintileThreshold : true;
+    const passedLiq = price >= MIN_PRICE && avgVol20 >= 1_000_000 && avgDolVol >= MIN_DOL_VOL && inTopQuintile;
 
     // Trend checks (existing)
     const sma50 = calculateSMA(closes, 50);
@@ -668,6 +698,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       overnightRiskLevel: 'SAFE', overnightBias: 'NEUTRAL',
       gapCanSkipStop: false, stopDistPct: 0,
       spreadPct: 0, liquidityScore: 0, liquidityStatus: 'N/A',
+      liquidityPctile: liqPctile, inTopQuintile,
       rvol: 0, rvolStatus: 'N/A', high52w: 0, distFrom52wHighPct: 0, near52wHigh: false,
       atrStatus: 'N/A', atrTradable: false,
     });
@@ -1289,6 +1320,9 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     },
     funnel: {
       universe: syms.length,
+      universeCore: UNIVERSE_CORE_META.size,
+      withData: nBase,
+      quintileThresholdDolVol: Math.round(quintileThreshold),
       passedLiquidity,
       passedTrend,
       passedSetup,
@@ -1297,6 +1331,7 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
       passedSectorLimit,
       displayed: topStocks.length,
     },
+    universeMeta: UNIVERSE_CORE_META,
     results: topStocks,
     sectorExposure,
     learning: {
