@@ -16,7 +16,7 @@
 // ku CTC operon).
 // ═══════════════════════════════════════════════════════════════════
 
-export const REV_HYPOTHESIS_VERSION = 1;
+export const REV_HYPOTHESIS_VERSION = 1.1;
 
 export interface RevChangeLogEntry {
   version: number;
@@ -35,6 +35,25 @@ export const REV_CHANGE_LOG: RevChangeLogEntry[] = [
       'circuit-breaker kundër crash sistemik. E ndarë plotësisht nga CTC — ' +
       "s'e ndryshon, s'e prek funnel-in e saj.",
   },
+  {
+    version: 1.1,
+    date: '2026-09-30',
+    note:
+      'AMENDIM PARA-TESTIMIT (asnjë rezultat i parë — arsyetim vetëm ' +
+      'teorik, pra i ligjshëm para regjistrimit final): (1) EDGAR ' +
+      'FAIL-CLOSED — event-gate 8-K te REV është kusht SIGURIE, jo ' +
+      'cilësi e dhënash si te CTC (PEAD bonus): vetëm US-domestic filers, ' +
+      'emrat pa timeline EDGAR të plotë (p.sh. ADR me 6-K/20-F) ' +
+      'EKSKLUDOHEN krejtësisht, jo "event-neutral"; (2) SHTRESA MID-CAP ' +
+      'dedikuese në univers — Nagel (2012) e gjen edge-in te mid-cap i ' +
+      'vërtetë ($2-20B), jo "jo-mega-cap brenda liste large-cap"; zona ' +
+      '20-80p duhet të përmbajë ≥40% mid-cap, përndryshe hipoteza testohet ' +
+      'mbi zonën e gabuar të spektrit të likuiditetit (gate i re); ' +
+      '(3) DOBËSI SEKTORIALE — rënia duhet dukshëm negative edhe kundrejt ' +
+      'sektorit të vet (jo vetëm SPY), që të kapet dobësi specifike e ' +
+      'kompanisë, jo shock i gjithë grupit (korrelacioni brenda sektorit ' +
+      'rritet, njësoj si te crash sistemik).',
+  },
 ];
 
 // ── Hipoteza e ngrirë (pasqyrë 1:1 e REVHypothesis në rev_v1_validator.py) ──
@@ -49,12 +68,27 @@ export interface RevHypothesis {
   minPrice: number;
   minDollarVolumeFloor: number;
 
+  // Universi — shtresa mid-cap dedikuese (amendimi 1.1; Nagel 2012)
+  universeSource: string; // 'rev_dedicated' — pool REV = baza + shtresa mid-cap, JO vetëm lista large-cap
+  requireMidcapLayer: boolean;
+  midcapMktCapMin: number;
+  midcapMktCapMax: number;
+  revPoolMidcapMinSharePct: number; // min % mid-cap brenda ZONËS 20-80p (zona reale e testit)
+
   // Sinjali i hyrjes
   min3DayCumReturnPct: number; // ose RSI(2) < rsi2Oversold
   rsi2Oversold: number;
   idiosyncraticVsSpyRequired: boolean; // rënia duhet MË E MADHE se SPY
+  sectorRelativeRequired: boolean; // DHE dukshëm negative kundrejt sektorit të vet (amendimi 1.1)
+  sectorRelativeUnderperformancePct: number; // margjina e nënperformimit (0 = çdo nënperformim)
+  minSectorPeers: number; // peers minimalë për mesataren sektoriale; nëse më pak → fail-closed
   blockIfReal8kWithinDays: number; // event-gate real (EDGAR)
   blockIfSpyDailyMovePctBelow: number; // circuit-breaker crash
+
+  // EDGAR fail-closed (amendimi 1.1) — KUSHT SIGURIE, jo cilësi e dhënash
+  usDomesticFilersOnly: boolean; // ADR / foreign private issuers (6-K, 20-F) JASHTË
+  edgarCoverageProbeDays: number; // dritarja e sondazhit të timeline-it EDGAR
+  excludeIncompleteEdgarCoverage: boolean; // pa timeline të plotë → EKSKLUZOHET nga REV krejtësisht
 
   // Konfirmimi (MBROJTJA kryesore kundër falling knife)
   requireGreenCandleOrHigherLow: boolean;
@@ -90,11 +124,24 @@ export const REV_HYPOTHESIS: RevHypothesis = {
   minPrice: 10.0,
   minDollarVolumeFloor: 10_000_000.0,
 
+  universeSource: 'rev_dedicated',
+  requireMidcapLayer: true,
+  midcapMktCapMin: 2_000_000_000.0,
+  midcapMktCapMax: 20_000_000_000.0,
+  revPoolMidcapMinSharePct: 40.0,
+
   min3DayCumReturnPct: -8.0,
   rsi2Oversold: 10.0,
   idiosyncraticVsSpyRequired: true,
+  sectorRelativeRequired: true,
+  sectorRelativeUnderperformancePct: 0.0,
+  minSectorPeers: 3,
   blockIfReal8kWithinDays: 2,
   blockIfSpyDailyMovePctBelow: -3.0,
+
+  usDomesticFilersOnly: true,
+  edgarCoverageProbeDays: 120,
+  excludeIncompleteEdgarCoverage: true,
 
   requireGreenCandleOrHigherLow: true,
   requireVolumeDecliningOnConfirmation: true,
@@ -151,6 +198,7 @@ export interface RevValidationGates {
   maxIsOosWinrateDeviationPp: number;
   minPfAt10bpExtraCost: number;
   maxFallingKnifeRate: number;
+  minPoolMidcapSharePct: number; // gate i amendimit 1.1 — përbërja e zonës REV
 }
 
 export const FALLING_KNIFE_MAX_ACCEPTABLE = 0.40;
@@ -167,6 +215,7 @@ export const REV_GATES: RevValidationGates = {
   maxIsOosWinrateDeviationPp: 10.0,
   minPfAt10bpExtraCost: 1.05,
   maxFallingKnifeRate: FALLING_KNIFE_MAX_ACCEPTABLE,
+  minPoolMidcapSharePct: 40.0,
 };
 
 // ── Vlerësimi i portave (pasqyrë e evaluate_rev_gates në Python) ──────
@@ -198,6 +247,7 @@ export interface RevGateInput {
   symbolProfitConcentrationPct: number;
   costSensitivityResults: Record<string, number>; // "10" → PF
   knifeRate: number;
+  poolMidcapSharePct?: number; // % mid-cap në zonën 20-80p — NËSE mungon, gate dështon (fail-closed)
 }
 
 export function evaluateRevGates(input: RevGateInput): {
@@ -277,6 +327,18 @@ export function evaluateRevGates(input: RevGateInput): {
     detail: `${Math.round(knifeRate * 100)}% e tregtive bënë low të ri pas hyrjes (kufiri ${Math.round(g.maxFallingKnifeRate * 100)}%)`,
   });
 
+  // 9. Përbërja e zonës REV — shtresa mid-cap (amendimi 1.1, Nagel 2012)
+  // FAIL-CLOSED: nëse përbërja s'u raportua, s'mund të pretendojmë që
+  // hipoteza u testua në zonën e duhur të spektrit të likuiditetit.
+  const midcapReported = typeof input.poolMidcapSharePct === 'number';
+  results.push({
+    gateName: 'Shtresa mid-cap në zonën REV (amendimi 1.1)',
+    passed: midcapReported && input.poolMidcapSharePct! >= g.minPoolMidcapSharePct,
+    detail: midcapReported
+      ? `${input.poolMidcapSharePct!.toFixed(1)}% e zonës 20-80p është mid-cap $2-20B (kufiri ≥${g.minPoolMidcapSharePct}%)`
+      : "s'u raportua — fail-closed (përbërja e universit duhet matur)",
+  });
+
   const allPassed = results.every((r) => r.passed);
   return { allPassed, results };
 }
@@ -285,8 +347,9 @@ export function evaluateRevGates(input: RevGateInput): {
 
 export const REV_VS_CTC_COMPARISON = [
   { dimension: 'Beti', ctc: 'Vazhdon lëvizja', rev: 'Kthehet mbrapsht lëvizja' },
-  { dimension: 'Likuiditeti', ctc: 'Top kuintil (top 20%)', rev: 'Zona e mesme (20-80 percentile)' },
-  { dimension: 'Regjimi i preferuar', ctc: 'Trending (ADX i lartë)', rev: 'Edhe në chop; kujdes te crash sistemik' },
+  { dimension: 'Likuiditeti', ctc: 'Top kuintil (top 20%)', rev: 'Zona e mesme (20-80p) mbi pool dedikuar me shtresë mid-cap' },
+  { dimension: 'Gate i lajmeve', ctc: 'PEAD — bonus (mungesa thjesht e humb përforcimin)', rev: '8-K real → BLLOKO + EDGAR fail-closed (kusht sigurie)' },
+  { dimension: 'Regjimi i preferuar', ctc: 'Trending (ADX i lartë)', rev: 'Edhe në chop; kujdes te crash sistemik DHE shock sektorial' },
   { dimension: 'Win rate i pritur', ctc: '~35-45%', rev: '~60-70%' },
   { dimension: 'R mesatar', ctc: 'I vogël pozitiv, R:R>1', rev: 'Target modest, win rate kompenson' },
   { dimension: 'Rreziku kryesor', ctc: 'Hyrje e vonuar', rev: '"Falling knife" — vazhdim i rënies' },

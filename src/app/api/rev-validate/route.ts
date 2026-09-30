@@ -14,7 +14,14 @@ import {
   type RevBacktestResult,
   type RevTrade,
 } from '@/lib/rev/backtest';
-import type { RevBar, RevFiling8k } from '@/lib/rev/signal';
+import {
+  EDGAR_ELIGIBILITY_FORMS,
+  revEdgarEligibilityCheck,
+  revUniverseComposition,
+  REV_MIDCAP_TIER,
+  type RevBar,
+  type RevFiling8k,
+} from '@/lib/rev/signal';
 import { fetchRecentFilings } from '@/lib/sec-edgar';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -73,6 +80,14 @@ export interface RevValidateResponse {
   gates: GateResult[];
   verdict: 'PASS' | 'REJECT';
   verdictNote: string;
+  universeComposition: {
+    zoneTotal: number;
+    midcapCount: number;
+    midcapSharePct: number;
+    ok: boolean;
+    note: string;
+  };
+  edgar: { checked: number; eligible: number; foreign: number; noTimeline: number }; // amendimi 1.1
   profileCheck: {
     winRateInRange: boolean;
     profitFactorInRange: boolean;
@@ -106,9 +121,15 @@ export async function GET(request: Request) {
       );
     }
 
-    // ── 2. Universi — ditare ditor në pako me buxhet kohe ──
-    const universe = [...new Set(getScanUniverse(universeSize))];
+    // ── 2. Universi REV DEDIKUAR (amendimi 1.1) — baza + shtresa mid-cap ──
+    // Shtresa mid-cap (S&P 400 / Russell Midcap-stil) shtohet POSAÇËRISHT:
+    // baza 400 është e përqendruar në large/mega-cap, kështu që zona 20-80p
+    // e saj do të ishte "jo-mega-cap brenda liste large-cap" — jo mid-cap
+    // i vërtetë ku Nagel (2012) e gjen edge-in.
+    const universe = [...new Set([...getScanUniverse(universeSize), ...REV_MIDCAP_TIER])];
     const series: { symbol: string; bars: RevBar[] }[] = [];
+    const filingsBySymbol: Record<string, RevFiling8k[]> = {};
+    const edgarStats = { checked: 0, eligible: 0, foreign: 0, noTimeline: 0 };
     const BATCH = 10;
     const deadline = Date.now() + 200_000; // lëre kohë për backtest-un + kthim brenda maxDuration
     for (let i = 0; i < universe.length; i += BATCH) {
@@ -118,11 +139,21 @@ export async function GET(request: Request) {
         batch.map(async (s) => ({
           symbol: s,
           bars: (await fetchHistoricalData(s, range, { interval: '1d' })) as RevBar[] | null,
+          filings: await fetchRecentFilings(s, EDGAR_ELIGIBILITY_FORMS, 120),
         })),
       );
       for (const r of res) {
         if (r.status === 'fulfilled' && r.value.bars && r.value.bars.length >= 120) {
           series.push({ symbol: r.value.symbol, bars: r.value.bars });
+          // EDGAR fail-closed (amendimi 1.1): mbledh timeline-in për eligjibilitet
+          const list: RevFiling8k[] = r.value.filings
+            ? r.value.filings.filings.map((f) => ({
+                filingDate: f.filingDate,
+                items: (f.items ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+                form: f.form,
+              }))
+            : [];
+          filingsBySymbol[r.value.symbol] = list;
         }
       }
       if (i + BATCH < universe.length) await new Promise((r) => setTimeout(r, 150));
@@ -135,28 +166,20 @@ export async function GET(request: Request) {
       );
     }
 
-    // ── 3. 8-K reale (EDGAR recent) për simbolet — event-gate historik ──
-    // Submissions API kthen filing-et e fundit (~1000) — mbulojnë periudhën
-    // e shkurtër të backtest-it (1-3v) për shumicën e emrave.
-    const filings8k: Record<string, RevFiling8k[]> = {};
-    const edgarDeadline = Date.now() + 40_000;
+    // ── 3. Eligjibiliteti EDGAR fail-closed (amendimi 1.1 — KUSHT SIGURIE) ──
+    // Emrat pa timeline EDGAR të verifikueshme (pa të dhëna, ADR/foreign
+    // 6-K/20-F, ose pa filing të freskët) EKSKLUDOHEN krejtësisht nga REV.
+    const asOfDate = spyBars[spyBars.length - 1].date;
     for (const s of series) {
-      if (Date.now() > edgarDeadline) break;
-      try {
-        const res = await fetchRecentFilings(s.symbol, ['8-K'], 60);
-        if (res && res.filings.length) {
-          filings8k[s.symbol] = res.filings.map((f) => ({
-            filingDate: f.filingDate,
-            items: (f.items ?? '').split(',').map((x) => x.trim()).filter(Boolean),
-          }));
-        }
-      } catch {
-        // EDGAR jo kritik — gate-i mbetet pasiv për këtë simbol
-      }
+      const elig = revEdgarEligibilityCheck(filingsBySymbol[s.symbol] ?? [], asOfDate);
+      edgarStats.checked++;
+      if (elig.eligible) edgarStats.eligible++;
+      else if (elig.reason === 'FOREIGN_FILER') edgarStats.foreign++;
+      else edgarStats.noTimeline++;
     }
 
-    // ── 4. Backtest-i REV ──
-    const bt = runRevBacktest({ series, spyBars, filings8k, isSplitPct: 0.7, wfWindowCount: 5 });
+    // ── 4. Backtest-i REV (ai vetë e zbaton fail-closed në nivel simboli) ──
+    const bt = runRevBacktest({ series, spyBars, filings8k: filingsBySymbol, isSplitPct: 0.7, wfWindowCount: 5 });
 
     // ── 5. Portat + verdikti ──
     const { allPassed, results } = evaluateRevGates({
@@ -166,6 +189,7 @@ export async function GET(request: Request) {
       symbolProfitConcentrationPct: bt.symbolConcentrationPct,
       costSensitivityResults: bt.costSensitivity,
       knifeRate: bt.knifeRate,
+      poolMidcapSharePct: bt.universeComposition.midcapSharePct, // gate i përbërjes (amendimi 1.1)
     });
 
     // Kontrolli i profilit të pritshëm (60-70% WR) — JO profili i CTC
@@ -220,6 +244,14 @@ export async function GET(request: Request) {
       gates: results,
       verdict,
       verdictNote,
+      universeComposition: {
+        zoneTotal: bt.universeComposition.zoneTotal,
+        midcapCount: bt.universeComposition.midcapCount,
+        midcapSharePct: bt.universeComposition.midcapSharePct,
+        ok: bt.universeComposition.ok,
+        note: bt.universeComposition.note,
+      },
+      edgar: edgarStats,
       profileCheck: {
         winRateInRange,
         profitFactorInRange,

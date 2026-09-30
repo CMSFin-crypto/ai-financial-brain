@@ -3,9 +3,19 @@
 // ═══════════════════════════════════════════════════════════════════
 // E VEÇANTË nga logjika e tab-it IBKR (CTC v2) — mos e përziej.
 // Këtu janë: treguesit e vegjël (RSI, ATR), zona e likuiditetit 20-80
-// percentile, sinjali i hyrjes (ret3 ≤ -8% OSE RSI(2) < 10, idiosinkratik
-// vs SPY), gates realë (8-K EDGAR, SPY crash), dhe konfirmimi kundër
-// "falling knife" (green candle / higher low + volum në rënie).
+// percentile mbi pool-in dedikuar REV (baza + shtresa mid-cap), sinjali
+// i hyrjes (ret3 ≤ -8% OSE RSI(2) < 10, idiosinkratik vs SPY DHE vs
+// SEKTORIN e vet), gates realë (8-K EDGAR FAIL-CLOSED — vetëm domestic
+// filers, emrat pa timeline ekskludohen; SPY crash), dhe konfirmimi
+// kundër "falling knife" (green candle / higher low + volum në rënie).
+//
+// Amendimi 1.1 (para-testimit, 2026-09-30):
+//  1. EDGAR fail-closed — event-gate te REV është kusht SIGURIE (te CTC
+//     është vetëm bonus PEAD): ADR/foreign filers (6-K/20-F) dhe emrat
+//     pa timeline EDGAR të plotë EKSKLUDOHEN, jo "event-neutral".
+//  2. Shtresa mid-cap — Nagel (2012): edge-i te mid-cap i vërtetë.
+//  3. Dobësi sektoriale — shock-i i gjithë grupit s'ka të bëjë me
+//     overreaction të emrit individual.
 // ═══════════════════════════════════════════════════════════════════
 
 import { REV_HYPOTHESIS as H } from './hypothesis';
@@ -183,10 +193,111 @@ export const REV_SECTOR_MAP: Record<string, string> = {
   ESTC: 'Tech', CFLT: 'Tech', AI: 'Tech', BBAI: 'Tech', ADP: 'Tech', WDAY: 'Tech', VEEV: 'Healthcare',
   HUBS: 'Tech', ANSS: 'Tech', FTNT: 'Tech', NET: 'Tech', ZS: 'Tech', DDOG: 'Tech', AKAM: 'Tech',
   CTSH: 'Tech', JNPR: 'Tech', FFIV: 'Tech', CIEN: 'Tech', NTAP: 'Tech', PSTG: 'Tech',
+  // Shtresa mid-cap REV (amendimi 1.1) — sektorët e kandidatëve të shtresës
+  NTNX: 'Tech', GTLB: 'Tech', DBX: 'Tech', DOCN: 'Tech', WIX: 'Tech', TER: 'Tech',
+  ZBRA: 'Tech', JBL: 'Tech', FLEX: 'Tech', ONTO: 'Tech', IPGP: 'Tech', CGNX: 'Tech',
+  KTOS: 'Industrial', FIX: 'Industrial', STRL: 'Industrial', ACM: 'Industrial',
+  BLD: 'Industrial', SITE: 'Industrial', WMS: 'Industrial',
+  EWBC: 'Finance', CMA: 'Finance', FHN: 'Finance', SNV: 'Finance', ONB: 'Finance',
+  GBCI: 'Finance', WAL: 'Finance',
+  LNTH: 'Healthcare', CORT: 'Healthcare', INSP: 'Healthcare', RGEN: 'Healthcare',
+  MEDP: 'Healthcare', TXG: 'Healthcare', EHC: 'Healthcare',
+  WING: 'Consumer', CAVA: 'Consumer', DKS: 'Consumer', SHAK: 'Consumer', BOOT: 'Consumer',
+  BFAM: 'Consumer', TPX: 'Consumer', NWL: 'Consumer', CROX: 'Consumer', YETI: 'Consumer',
+  MTDR: 'Energy', VNOM: 'Energy', CIVI: 'Energy',
+  MOS: 'Materials', CF: 'Materials',
+  UDR: 'REITs', MAA: 'REITs', CPT: 'REITs', INVH: 'REITs', AMH: 'REITs',
+  ATO: 'Utilities', NJR: 'Utilities', SR: 'Utilities', POWL: 'Utilities',
+  CARG: 'Communication', TDS: 'Communication',
 };
 
 export function revSectorOf(symbol: string): string {
   return REV_SECTOR_MAP[symbol] ?? 'Tjetër';
+}
+
+// ── Shtresa mid-cap (amendimi 1.1 — Nagel 2012) ───────────────────
+
+/**
+ * SHTRESA MID-CAP — kandidatë likuidë S&P 400 / Russell Midcap-stil
+ * ($2-20B), të shtuar POSAÇËRISHT për REV. Problemi: baza 400 e
+ * përbashkët është e përqendruar në large/mega-cap, kështu që zona
+ * 20-80p e saj është "jo-mega-cap brenda liste large-cap" — jo mid-cap
+ * i vërtetë ku Nagel (2012) e gjen edge-in më të fortë. Këta emra
+ * s'zëvendësojnë bazën — e ZGJEROJNË pool-in REV; filtri 20-80
+ * percentile + pragjet absolute ($10M/ditë, $10) vazhdojnë të vlejnë
+ * për të gjithë. Anëtarësimi në shtresë shërben edhe si klasifikim
+ * mid-cap kur market cap nuk është i disponueshëm.
+ */
+export const REV_MIDCAP_TIER: string[] = [
+  // Tech / Semikonduktorë
+  'NTNX', 'GTLB', 'DBX', 'DOCN', 'WIX', 'TER', 'ZBRA', 'JBL', 'FLEX', 'ONTO', 'IPGP', 'CGNX',
+  // Industrial / Aérospaciale / Ndërtim
+  'KTOS', 'FIX', 'STRL', 'ACM', 'BLD', 'SITE', 'WMS',
+  // Financa / Banka rajonale
+  'EWBC', 'CMA', 'FHN', 'SNV', 'ONB', 'GBCI', 'WAL',
+  // Healthcare / Biotech / Medtech
+  'LNTH', 'CORT', 'INSP', 'RGEN', 'MEDP', 'TXG', 'EHC',
+  // Consumer / Retail / Restorante
+  'WING', 'CAVA', 'DKS', 'SHAK', 'BOOT', 'BFAM', 'TPX', 'NWL', 'CROX', 'YETI',
+  // Energji
+  'MTDR', 'VNOM', 'CIVI',
+  // Materiale
+  'MOS', 'CF',
+  // REITs
+  'UDR', 'MAA', 'CPT', 'INVH', 'AMH',
+  // Komunalitete
+  'ATO', 'NJR', 'SR', 'POWL',
+  // Komunikim / Media
+  'CARG', 'TDS',
+];
+
+const REV_MIDCAP_TIER_SET = new Set(REV_MIDCAP_TIER);
+
+/**
+ * A është emri mid-cap? Nëse market cap është i disponueshëm → klasifiko
+ * sipas pragjeve $2-20B të ngrira; përndryshe sipas anëtarësimit në
+ * shtresën mid-cap dedikuese REV.
+ */
+export function revIsMidcapCandidate(symbol: string, mktCap?: number | null): boolean {
+  if (typeof mktCap === 'number' && Number.isFinite(mktCap) && mktCap > 0) {
+    return mktCap >= H.midcapMktCapMin && mktCap <= H.midcapMktCapMax;
+  }
+  return H.requireMidcapLayer && REV_MIDCAP_TIER_SET.has(symbol);
+}
+
+export interface RevUniverseComposition {
+  zoneTotal: number;
+  midcapCount: number;
+  midcapSharePct: number;
+  ok: boolean; // ≥ revPoolMidcapMinSharePct
+  note: string;
+}
+
+/**
+ * Përbërja e ZONËS 20-80p (jo e gjithë pool-it!) — sa % e emrave që REV
+ * vërtet do të testonte janë mid-cap. Kjo është matja e amendimit 1.1:
+ * nëse zona është plot large-caps, hipoteza testohet mbi zonën e gabuar
+ * të spektrit të likuiditetit dhe gate-i i përbërjes dështon.
+ */
+export function revUniverseComposition(
+  zone: { symbol: string; mktCap?: number | null }[],
+): RevUniverseComposition {
+  const total = zone.length;
+  let midcap = 0;
+  for (const s of zone) {
+    if (revIsMidcapCandidate(s.symbol, s.mktCap)) midcap++;
+  }
+  const midcapSharePct = total ? (midcap / total) * 100 : 0;
+  const ok = midcapSharePct >= H.revPoolMidcapMinSharePct;
+  return {
+    zoneTotal: total,
+    midcapCount: midcap,
+    midcapSharePct: Math.round(midcapSharePct * 10) / 10,
+    ok,
+    note: ok
+      ? `Zona përmban ${midcapSharePct.toFixed(0)}% mid-cap — hipoteza testohet në zonën e duhur`
+      : `Zona ka vetëm ${midcapSharePct.toFixed(0)}% mid-cap (< ${H.revPoolMidcapMinSharePct}%) — zgjero shtresën mid-cap ose pranoje se teston zonën e gabuar`,
+  };
 }
 
 // ── Zona e likuiditetit 20-80 percentile (POINT-IN-TIME) ──────────────
@@ -233,12 +344,14 @@ export interface RevSignalInput {
   ret3Pct: number; // kthimi kumulativ 3-ditor %
   rsi2: number;
   spyRet3Pct: number; // kthimi 3-ditor i SPY në të njëjtën periudhë
+  sectorRet3Pct: number; // mesatarja equal-weight 3-ditore e sektorit PA veten; NaN nëse peers < minSectorPeers
   spyDailyMovePct: number; // lëvizja ditore e SPY ditën e sinjalit
 }
 
 export interface RevSignalResult {
   dropTriggered: boolean; // ret3 ≤ -8% OSE RSI(2) < 10
   idiosyncratic: boolean; // ret3 < spyRet3 (rënia më e madhe se tregu)
+  sectorRelative: boolean; // ret3 < mesatarja e sektorit — dobësi specifike, jo shock grupi (amendimi 1.1)
   spyCrash: boolean; // SPY ≤ -3% ditën e sinjalit → circuit breaker
   passed: boolean;
 }
@@ -249,8 +362,25 @@ export function revSignalCheck(inp: RevSignalInput): RevSignalResult {
   const idiosyncratic = H.idiosyncraticVsSpyRequired
     ? inp.ret3Pct < inp.spyRet3Pct
     : true;
+  // Amendimi 1.1: rënia duhet dukshëm negative EDHE kundrejt sektorit të
+  // vet. Një aksion mund të bjerë njësoj si gjithë sektori (shock sektorial
+  // — p.sh. lajm makro bankar) pa u dukur kundrejt SPY; aty reversal-i
+  // individual është më pak i besueshëm (korrelacioni brenda sektorit
+  // rritet, njësoj si te crash sistemik). Pa peers të mjaftueshëm →
+  // fail-closed (s'kemi si ta verifikojmë dobësinë specifike).
+  const sectorRelative = H.sectorRelativeRequired
+    ? Number.isFinite(inp.sectorRet3Pct) &&
+      inp.ret3Pct - inp.sectorRet3Pct <
+        -Math.abs(H.sectorRelativeUnderperformancePct)
+    : true;
   const spyCrash = inp.spyDailyMovePct <= H.blockIfSpyDailyMovePctBelow;
-  return { dropTriggered, idiosyncratic, spyCrash, passed: dropTriggered && idiosyncratic && !spyCrash };
+  return {
+    dropTriggered,
+    idiosyncratic,
+    sectorRelative,
+    spyCrash,
+    passed: dropTriggered && idiosyncratic && sectorRelative && !spyCrash,
+  };
 }
 
 // ── Konfirmimi (Seksioni 3 i spec-it — mbrojtja kundër falling knife) ──
@@ -304,6 +434,7 @@ export const MATERIAL_8K_ITEMS = new Set([
 export interface RevFiling8k {
   filingDate: string; // YYYY-MM-DD
   items: string[]; // ["2.02", ...]
+  form?: string; // '8-K', '10-Q', '6-K', '20-F', … — për kontrollin e eligjibilitetit (amendimi 1.1)
 }
 
 /**
@@ -326,6 +457,104 @@ export function revHasRecentMaterial8k(
   // 8-K pa items të parsueshme → trajtoje si material (konservator)
   const material = inWindow.find((f) => f.items.length === 0 || f.items.some((it) => MATERIAL_8K_ITEMS.has(it)));
   return material ? { blocked: true, lastFiling: material } : { blocked: false };
+}
+
+// ── EDGAR FAIL-CLOSED (amendimi 1.1) — kusht SIGURIE, jo cilësi e dhënash ──
+//
+// Te CTC event-gate është bonus (PEAD) — nëse mungon, humbet vetëm një
+// përforcim. Te REV event-gate BLLOKON hyrjen: nëse mbulimi EDGAR mungon
+// për një emër (p.sh. ADR që depoziton 6-K jo 8-K), gate-i do të
+// dështonte në heshtje dhe REV mund të hynte pikërisht në rënie me
+// arsye fondamentale reale — skenari më i keq, sepse humbet mbrojtja
+// kryesore kundër falling-knife. Prandaj: emri pa timeline EDGAR të
+// plotë EKSKLUDOHET nga REV krejtësisht — jo "event-neutral".
+
+/** Formularët e foreign private issuers — këta s'depozitojnë 8-K. */
+export const FOREIGN_FILER_FORMS = new Set([
+  '6-K', '6-K/A', // raporte të përkohshme të të huajve
+  '20-F', '20-F/A', // raport vjetor i të huajve
+  '40-F', '40-F/A', // raport vjetor MJDS (Kanada)
+]);
+
+/**
+ * Formularët që tërhiqen për kontrollin e eligjibilitetit — mbulojnë
+ * detektimin domestic vs foreign + sondazhin e aktivitetit të timeline-it.
+ */
+export const EDGAR_ELIGIBILITY_FORMS = [
+  '8-K', '8-K/A',
+  '10-K', '10-K/A', '10-Q', '10-Q/A',
+  '6-K', '6-K/A', '20-F', '20-F/A', '40-F', '40-F/A',
+];
+
+export interface RevEdgarEligibilityResult {
+  eligible: boolean;
+  reason?: 'FOREIGN_FILER' | 'NO_EDGAR_TIMELINE';
+  detail: string;
+}
+
+/**
+ * A ka ky emër timeline EDGAR të plotë që REV mund t'i besojë?
+ * FAIL-CLOSED në tre nivele:
+ *  1. Pa të dhëna fare → NO_EDGAR_TIMELINE (gate-i do të ishte i verbër)
+ *  2. Formular foreign (6-K/20-F/40-F) → FOREIGN_FILER (8-K s'ekziston)
+ *  3. Pa asnjë filing brenda edgarCoverageProbeDays → NO_EDGAR_TIMELINE
+ * Vetëm pas kalimit të të treva konsiderohet emri "event-verifiable".
+ */
+export function revEdgarEligibilityCheck(
+  filings: RevFiling8k[] | null | undefined,
+  asOfDate: string,
+): RevEdgarEligibilityResult {
+  if (!H.excludeIncompleteEdgarCoverage && !H.usDomesticFilersOnly) {
+    return { eligible: true, detail: 'EDGAR gate jo aktiv (konfigurim i vjetër)' };
+  }
+
+  // 1. Fail-closed absolute: pa të dhëna → s'kemi mënyrë ta verifikojmë event-gate
+  if (!filings || !filings.length) {
+    return {
+      eligible: false,
+      reason: 'NO_EDGAR_TIMELINE',
+      detail:
+        'Pa timeline EDGAR — event-gate 8-K do të dështonte në heshtje; ' +
+        'ekskluzohet nga REV (kusht sigurie, spec Seks. 2.3-amendimi 1.1)',
+    };
+  }
+
+  // 2. Detektim foreign private issuer / ADR
+  if (H.usDomesticFilersOnly) {
+    const foreign = filings.find(
+      (f) => f.form && FOREIGN_FILER_FORMS.has(f.form.toUpperCase()),
+    );
+    if (foreign) {
+      return {
+        eligible: false,
+        reason: 'FOREIGN_FILER',
+        detail:
+          `Filing ${foreign.form} (foreign private issuer / ADR) — 8-K s'ekziston ` +
+          'për këtë emër, gate-i s\'do të funksiononte; ekskluzohet nga REV',
+      };
+    }
+  }
+
+  // 3. Sondazhi i timeline-it: të paktën një filing brenda dritares së sondazhit
+  if (H.excludeIncompleteEdgarCoverage) {
+    const t = new Date(asOfDate + 'T00:00:00Z').getTime();
+    const probeMs = H.edgarCoverageProbeDays * 86400_000;
+    const hasRecent = filings.some((f) => {
+      const ft = new Date(f.filingDate + 'T00:00:00Z').getTime();
+      return Number.isFinite(ft) && ft <= t && t - ft <= probeMs;
+    });
+    if (!hasRecent) {
+      return {
+        eligible: false,
+        reason: 'NO_EDGAR_TIMELINE',
+        detail:
+          `Pa filing brenda ${H.edgarCoverageProbeDays} ditëve deri ${asOfDate} — ` +
+          'timeline EDGAR e pamjaftueshme; ekskluzohet nga REV',
+      };
+    }
+  }
+
+  return { eligible: true, detail: 'Domestic filer me timeline EDGAR aktive — event-gate i verifikueshëm' };
 }
 
 // ── Sizing (Seksioni 5 i spec-it) ─────────────────────────────────────
@@ -351,6 +580,8 @@ export type RevScanStatus =
   | 'HYRJE_TANI' // sinjal dje + konfirmim sot OK → hyrje
   | 'PRIT_KONFIRMIM' // sinjal sot → prit konfirmimin nesër
   | 'BLLOKUAR_8K' // sinjal OK por 8-K material brenda 2 ditëve
+  | 'BLLOKUAR_SEKTOR' // sinjal OK por rënia ndjek sektorin — jo dobësi specifike (amendimi 1.1)
+  | 'EXKLUDUAR_EDGAR' // pa timeline EDGAR të verifikueshme / foreign filer → JASHTË nga REV (amendimi 1.1)
   | 'BLLOKUAR_SPY_CRASH' // sinjal OK por SPY në crash sistemik
   | 'INVALIDUAR_LOW_I_RI' // low i ri ditën e konfirmimit → mos hyr fare
   | 'KONFIRMIM_PLOTFULLYEM' // pa green candle/higher low ose volumi rritet → s'ka hyrje

@@ -16,8 +16,13 @@ import {
   revSignalCheck,
   revConfirmationCheck,
   revHasRecentMaterial8k,
+  revEdgarEligibilityCheck,
+  revUniverseComposition,
+  EDGAR_ELIGIBILITY_FORMS,
+  REV_MIDCAP_TIER,
   revPositionSize,
   type RevBar,
+  type RevFiling8k,
   type RevScanStatus,
 } from '@/lib/rev/signal';
 
@@ -31,7 +36,7 @@ import {
 
 export const maxDuration = 300;
 
-const UNIVERSE = [...new Set(getScanUniverse(400))];
+const UNIVERSE = [...new Set([...getScanUniverse(400), ...REV_MIDCAP_TIER])]; // pool i dedikuar REV (amendimi 1.1)
 
 export interface RevScanCandidate {
   symbol: string;
@@ -42,6 +47,7 @@ export interface RevScanCandidate {
   ret3Pct: number;
   rsi2: number;
   spyRet3Pct: number;
+  sectorRet3Pct?: number; // mesatarja e sektorit 3d (amendimi 1.1) — undefined nëse peers të pamjaftueshëm
   idioSpreadPct: number; // ret3(stock) − ret3(SPY)
   dollarVol20: number;
   liquidityPctile: number;
@@ -60,6 +66,7 @@ export interface RevScanCandidate {
     confirmed: boolean;
   };
   gate8k?: { blocked: boolean; lastFilingDate?: string; items?: string };
+  edgarGate?: { eligible: boolean; reason?: string; detail: string }; // amendimi 1.1
   slot: 'OPEN_OK' | 'SEKTOR_PLOT' | 'MAX_POZICIONE' | 'VETEM_WATCH';
   reasons: string[];
   warnings: string[];
@@ -96,11 +103,13 @@ export interface RevScanResponse {
     spyRet3Pct: number;
     note: string;
   };
-  universe: { total: number; withData: number; inZone: number };
+  universe: { total: number; withData: number; inZone: number; midcapSharePct?: number };
   counts: {
     hyrjeTani: number;
     pritKonfirmim: number;
     bllokuar8k: number;
+    bllokuarSektor: number; // amendimi 1.1
+    exkluduarEdgar: number; // amendimi 1.1
     bllokuarSpyCrash: number;
     invaliduarLowIRi: number;
     konfirmimPlotfullyem: number;
@@ -114,11 +123,20 @@ export interface RevScanResponse {
 
 function frozenInfo() {
   return {
-    liquidityZone: `${Math.round(H.liquidityPercentileLow * 100)}-${Math.round(H.liquidityPercentileHigh * 100)} percentile (zona e mesme, JO top-kuintil si CTC)`,
+    liquidityZone: `${Math.round(H.liquidityPercentileLow * 100)}-${Math.round(H.liquidityPercentileHigh * 100)} percentile mbi pool-in dedikuar REV (baza + shtresa mid-cap)`,
+    midcapLayer: H.requireMidcapLayer
+      ? `shtresa mid-cap $${(H.midcapMktCapMin / 1e9).toFixed(0)}-${(H.midcapMktCapMax / 1e9).toFixed(0)}B; zona 20-80p duhet ≥${H.revPoolMidcapMinSharePct}% mid-cap`
+      : 'jo-aktive',
     minDollarVolume: `$${(H.minDollarVolumeFloor / 1e6).toFixed(0)}M/ditë`,
     minPrice: H.minPrice,
     dropOrRsi2: `ret3d ≤ ${H.min3DayCumReturnPct}% OSE RSI(2) < ${H.rsi2Oversold}`,
     idiosyncraticVsSpy: H.idiosyncraticVsSpyRequired,
+    sectorRelative: H.sectorRelativeRequired
+      ? `dukshëm negative edhe vs sektorin (≥${H.minSectorPeers} peers; nënperformim > ${H.sectorRelativeUnderperformancePct}pp)`
+      : false,
+    edgarGate: H.excludeIncompleteEdgarCoverage
+      ? `FAIL-CLOSED: vetëm US-domestic filers; pa timeline EDGAR ${H.edgarCoverageProbeDays}d → EKSKLUZOHET (kusht sigurie)`
+      : 'pasiv',
     block8kWithinDays: H.blockIfReal8kWithinDays,
     spyCrashBelowPct: H.blockIfSpyDailyMovePctBelow,
     confirmation: 'Green candle OSE higher low + volum në rënie; low i ri → invalide',
@@ -170,6 +188,36 @@ export async function GET() {
       snapshot.push({ symbol: sym, dollarVol20: revDollarVol20(bars, i), price: bars[i].close });
     }
     const { inZone, pctBySymbol } = revLiquidityZoneAt(snapshot);
+
+    // Përbërja e zonës (amendimi 1.1) — sa % e zonës është mid-cap
+    const zoneComposition = revUniverseComposition([...inZone].map((s) => ({ symbol: s })));
+
+    // ── Mesatarja sektoriale 3-ditore (amendimi 1.1) ──
+    // Equal-weight ret3 i sektorit PA veten, mbi simbolet me të dhëna.
+    // Pa ≥minSectorPeers peers → null → fail-closed për atë emër.
+    const ret3OnDate = (bars: RevBar[], idx: number): number =>
+      idx >= 3 ? (bars[idx].close / bars[idx - 3].close - 1) * 100 : NaN;
+    const sectorRet3Memo = new Map<string, number | null>();
+    const sectorRet3At = (date: string, sector: string, excludeSymbol: string): number | null => {
+      const key = `${date}|${sector}|${excludeSymbol}`;
+      const memo = sectorRet3Memo.get(key);
+      if (memo !== undefined) return memo;
+      let sum = 0;
+      let cnt = 0;
+      for (const [sym, peerBars] of seriesMap) {
+        if (sym === excludeSymbol || revSectorOf(sym) !== sector) continue;
+        const pi = peerBars.findIndex((b) => b.date === date);
+        if (pi < 3) continue;
+        const r3 = ret3OnDate(peerBars, pi);
+        if (Number.isFinite(r3)) {
+          sum += r3;
+          cnt++;
+        }
+      }
+      const val = cnt >= H.minSectorPeers ? sum / cnt : null;
+      sectorRet3Memo.set(key, val);
+      return val;
+    };
 
     // ── 4. Vlerësimi i sinjalit + konfirmimit për çdo emër në zonë ──
     const candidates: RevScanCandidate[] = [];
@@ -264,7 +312,49 @@ export async function GET() {
         });
         const dropYesterday = sigY.dropTriggered && ret3Y < spyRet3Y;
         if (dropYesterday) {
-          const filings = await fetch8kSafe(sym);
+          // ── EDGAR fail-closed (amendimi 1.1 — kusht SIGURIE) ──
+          // Pa timeline EDGAR të verifikueshme → EKSKLUZOHET, jo "event-neutral":
+          // gate-i 8-K do të dështonte në heshtje pikërisht kur nevojitet më shumë.
+          const filings = await fetchRevEdgarFilings(sym);
+          const elig = revEdgarEligibilityCheck(filings, bars[sigI].date);
+          if (!elig.eligible) {
+            const cand = mkCandidate(
+              'EXKLUDUAR_EDGAR',
+              sigI,
+              i,
+              [`Sinjal reversal më ${bars[sigI].date} (ret3 ${ret3Y.toFixed(1)}%)`],
+              [],
+            );
+            cand.edgarGate = { eligible: false, reason: elig.reason, detail: elig.detail };
+            cand.warnings.push(elig.detail);
+            candidates.push(cand);
+            continue;
+          }
+
+          // ── Dobësi sektoriale (amendimi 1.1) ──
+          // Rënia duhet dukshëm negative edhe kundrejt sektorit — shock-i i
+          // gjithë grupit s'kapërcehet si "idiosinkratik" vetëm se SPY qëndron.
+          const secRet3Y = sectorRet3At(bars[sigI].date, revSectorOf(sym), sym);
+          const sectorOk =
+            secRet3Y !== null &&
+            ret3Y - secRet3Y < -Math.abs(H.sectorRelativeUnderperformancePct);
+          if (!sectorOk) {
+            const cand = mkCandidate(
+              'BLLOKUAR_SEKTOR',
+              sigI,
+              i,
+              [`Sinjal reversal më ${bars[sigI].date} (ret3 ${ret3Y.toFixed(1)}%)`],
+              [
+                secRet3Y === null
+                  ? `Pa ≥${H.minSectorPeers} peers sektorikë për verifikim — fail-closed`
+                  : `Rënia ndjek sektorin (${revSectorOf(sym)}: ${secRet3Y.toFixed(1)}%) — shock grupi, jo dobësi specifike`,
+              ],
+            );
+            if (secRet3Y !== null) cand.sectorRet3Pct = Math.round(secRet3Y * 100) / 100;
+            candidates.push(cand);
+            continue;
+          }
+
           const gate = revHasRecentMaterial8k(filings, bars[sigI].date);
           const crashYesterday =
             spyBars[spyIdxY] && spyIdxY >= 1
@@ -328,10 +418,12 @@ export async function GET() {
 
       // (b) Sinjal SOT → PRIT_KONFIRMIM (nesër vlerësohet konfirmimi)
       const ret3T = (bars[i].close / bars[i - 3].close - 1) * 100;
+      const secRet3T = sectorRet3At(bars[i].date, revSectorOf(sym), sym);
       const sigT = revSignalCheck({
         ret3Pct: ret3T,
         rsi2: rsi2Arr[i],
         spyRet3Pct: spyRet3Here,
+        sectorRet3Pct: secRet3T === null ? NaN : secRet3T,
         spyDailyMovePct: spyLastMove,
       });
       if (sigT.dropTriggered && sigT.idiosyncratic) {
@@ -341,23 +433,40 @@ export async function GET() {
               'SPY sot ≤ -3% — circuit breaker',
             ]),
           );
+        } else if (!sigT.sectorRelative) {
+          const cand = mkCandidate('BLLOKUAR_SEKTOR', i, null, [`Rënie 3-ditore ${ret3T.toFixed(1)}% sot`], [
+            secRet3T === null
+              ? `Pa ≥${H.minSectorPeers} peers sektorikë për verifikim — fail-closed`
+              : `Rënia ndjek sektorin (${revSectorOf(sym)}: ${secRet3T.toFixed(1)}%) — shock grupi, jo dobësi specifike`,
+          ]);
+          if (secRet3T !== null) cand.sectorRet3Pct = Math.round(secRet3T * 100) / 100;
+          candidates.push(cand);
         } else {
-          const filings = await fetch8kSafe(sym);
-          const gate = revHasRecentMaterial8k(filings, today);
-          if (gate.blocked) {
-            candidates.push(
-              mkCandidate('BLLOKUAR_8K', i, null, [`Rënie 3-ditore ${ret3T.toFixed(1)}% sot`], [
-                `8-K material brenda ${H.blockIfReal8kWithinDays} ditëve`,
-              ], { blocked: true, lastFilingDate: gate.lastFiling?.filingDate, items: gate.lastFiling?.items.join(', ') }),
-            );
+          // EDGAR fail-closed (amendimi 1.1) — para se ta shpallësh kandidatin
+          const filings = await fetchRevEdgarFilings(sym);
+          const elig = revEdgarEligibilityCheck(filings, bars[i].date);
+          if (!elig.eligible) {
+            const cand = mkCandidate('EXKLUDUAR_EDGAR', i, null, [`Rënie 3-ditore ${ret3T.toFixed(1)}% sot`], []);
+            cand.edgarGate = { eligible: false, reason: elig.reason, detail: elig.detail };
+            cand.warnings.push(elig.detail);
+            candidates.push(cand);
           } else {
-            const trig = ret3T <= H.min3DayCumReturnPct ? `ret3d ${ret3T.toFixed(1)}%` : `RSI(2) ${(rsi2Arr[i] ?? 0).toFixed(0)}`;
-            candidates.push(
-              mkCandidate('PRIT_KONFIRMIM', i, null, [
+            const gate = revHasRecentMaterial8k(filings, today);
+            if (gate.blocked) {
+              candidates.push(
+                mkCandidate('BLLOKUAR_8K', i, null, [`Rënie 3-ditore ${ret3T.toFixed(1)}% sot`], [
+                  `8-K material brenda ${H.blockIfReal8kWithinDays} ditëve`,
+                ], { blocked: true, lastFilingDate: gate.lastFiling?.filingDate, items: gate.lastFiling?.items.join(', ') }),
+              );
+            } else {
+              const trig = ret3T <= H.min3DayCumReturnPct ? `ret3d ${ret3T.toFixed(1)}%` : `RSI(2) ${(rsi2Arr[i] ?? 0).toFixed(0)}`;
+              const cand = mkCandidate('PRIT_KONFIRMIM', i, null, [
                 `Rënie e konsiderueshme sot: ${trig}`,
-                `Idiosinkratike: ${ret3T.toFixed(1)}% vs SPY ${spyRet3Here.toFixed(1)}%`,
-              ], ['PRIT konfirmimin nesër: green candle / higher low + volum në rënie']),
-            );
+                `Idiosinkratike: ${ret3T.toFixed(1)}% vs SPY ${spyRet3Here.toFixed(1)}% DHE vs sektor ${secRet3T!.toFixed(1)}%`,
+              ], ['PRIT konfirmimin nesër: green candle / higher low + volum në rënie']);
+              cand.sectorRet3Pct = Math.round(secRet3T! * 100) / 100;
+              candidates.push(cand);
+            }
           }
         }
       }
@@ -394,6 +503,8 @@ export async function GET() {
       hyrjeTani: hyrje.length,
       pritKonfirmim: prit.length,
       bllokuar8k: candidates.filter((c) => c.status === 'BLLOKUAR_8K').length,
+      bllokuarSektor: candidates.filter((c) => c.status === 'BLLOKUAR_SEKTOR').length,
+      exkluduarEdgar: candidates.filter((c) => c.status === 'EXKLUDUAR_EDGAR').length,
       bllokuarSpyCrash: candidates.filter((c) => c.status === 'BLLOKUAR_SPY_CRASH').length,
       invaliduarLowIRi: candidates.filter((c) => c.status === 'INVALIDUAR_LOW_I_RI').length,
       konfirmimPlotfullyem: candidates.filter((c) => c.status === 'KONFIRMIM_PLOTFULLYEM').length,
@@ -418,7 +529,12 @@ export async function GET() {
           ? 'CIRCUIT BREAKER aktiv — SPY ka rënë >3% ditën e fundit; pa hyrje REV (korrelacionet shkojnë drejt 1)'
           : 'Regjimi i lejuar — SPY pa crash sistemik',
       },
-      universe: { total: UNIVERSE.length, withData: seriesMap.size, inZone: inZone.size },
+      universe: {
+        total: UNIVERSE.length,
+        withData: seriesMap.size,
+        inZone: inZone.size,
+        midcapSharePct: zoneComposition.midcapSharePct,
+      },
       counts,
       hyrjeTani: hyrje,
       pritKonfirmim: prit,
@@ -433,16 +549,19 @@ export async function GET() {
   }
 }
 
-// ── 8-K real nga EDGAR (vetëm për kandidatët me sinjal — jo për universin) ──
-async function fetch8kSafe(sym: string) {
+// ── EDGAR (amendimi 1.1) — formularë të gjerë për eligjibilitet + gate 8-K ──
+// Vetëm për kandidatët me sinjal — jo për gjithë universin (kursim API).
+// FAIL-CLOSED: nëse EDGAR s'përgjigjet, lista bosh → EXKLUDUAR_EDGAR.
+async function fetchRevEdgarFilings(sym: string): Promise<RevFiling8k[]> {
   try {
-    const res = await fetchRecentFilings(sym, ['8-K'], 30);
+    const res = await fetchRecentFilings(sym, EDGAR_ELIGIBILITY_FORMS, 120);
     if (!res) return [];
     return res.filings.map((f) => ({
       filingDate: f.filingDate,
       items: (f.items ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+      form: f.form,
     }));
   } catch {
-    return [];
+    return []; // fail-closed: pa të dhëna → jo-eligible
   }
 }

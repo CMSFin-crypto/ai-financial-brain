@@ -29,6 +29,7 @@ interface RevCandidate {
   ret3Pct: number;
   rsi2: number;
   spyRet3Pct: number;
+  sectorRet3Pct?: number;
   idioSpreadPct: number;
   dollarVol20: number;
   liquidityPctile: number;
@@ -41,6 +42,7 @@ interface RevCandidate {
   signalDate: string;
   confirmation?: { greenCandle: boolean; higherLow: boolean; volumeDeclining: boolean; newLow: boolean; confirmed: boolean };
   gate8k?: { blocked: boolean; lastFilingDate?: string; items?: string };
+  edgarGate?: { eligible: boolean; reason?: string; detail: string };
   slot: 'OPEN_OK' | 'SEKTOR_PLOT' | 'MAX_POZICIONE' | 'VETEM_WATCH';
   reasons: string[];
   warnings: string[];
@@ -56,8 +58,8 @@ interface RevScanData {
     noteSeparation: string;
   };
   regime: { spyLastMovePct: number; spyCrash: boolean; spyRet3Pct: number; note: string };
-  universe: { total: number; withData: number; inZone: number };
-  counts: { hyrjeTani: number; pritKonfirmim: number; bllokuar8k: number; bllokuarSpyCrash: number; invaliduarLowIRi: number; konfirmimPlotfullyem: number; paSinjal: number };
+  universe: { total: number; withData: number; inZone: number; midcapSharePct?: number };
+  counts: { hyrjeTani: number; pritKonfirmim: number; bllokuar8k: number; bllokuarSektor?: number; exkluduarEdgar?: number; bllokuarSpyCrash: number; invaliduarLowIRi: number; konfirmimPlotfullyem: number; paSinjal: number };
   hyrjeTani: RevCandidate[];
   pritKonfirmim: RevCandidate[];
   bllokuar: RevCandidate[];
@@ -71,7 +73,7 @@ interface RevValidateData {
   expectedProfile: { winRateRange: [number, number]; profitFactorRange: [number, number]; profitFactorSuspiciousAbove: number; annualCostDragPctRange: [number, number]; avgRPerTradeRange: [number, number] };
   backtest: {
     dataCoverage: { from: string; to: string };
-    funnel: { symbolsRequested: number; symbolsWithData: number; tradingDays: number; signalsExamined: number; blockedBy8k: number; blockedBySpyCrash: number; blockedByNewLow: number; blockedByConfirmFail: number; blockedByCooldown: number; tradesTaken: number };
+    funnel: { symbolsRequested: number; symbolsWithData: number; excludedByEdgar?: number; tradingDays: number; signalsExamined: number; blockedBy8k: number; blockedBySectorRelative?: number; blockedBySpyCrash: number; blockedByNewLow: number; blockedByConfirmFail: number; blockedByCooldown: number; tradesTaken: number };
     tradesSample: Array<{ symbol: string; sector: string; signalDate: string; entryDate: string; exitDate: string; entry: number; stop: number; target: number; exitPrice: number; exitReason: string; rNet: number; madeNewLowAfterEntry: boolean }>;
   };
   is: { trades: number; profitFactor: number; winRate: number; maxDrawdownPct: number; totalR: number };
@@ -83,14 +85,17 @@ interface RevValidateData {
   gates: Array<{ gateName: string; passed: boolean; detail: string }>;
   verdict: 'PASS' | 'REJECT';
   verdictNote: string;
+  universeComposition?: { zoneTotal: number; midcapCount: number; midcapSharePct: number; ok: boolean; note: string };
+  edgar?: { checked: number; eligible: number; foreign: number; noTimeline: number };
   profileCheck: { winRateInRange: boolean; profitFactorInRange: boolean; suspiciouslyHighPf: boolean; note: string };
   error?: string;
 }
 
 const CTC_COMPARISON = [
   { dimension: 'Beti', ctc: 'Vazhdon lëvizja', rev: 'Kthehet mbrapsht lëvizja' },
-  { dimension: 'Likuiditeti', ctc: 'Top kuintil (top 20%)', rev: 'Zona e mesme (20-80 percentile)' },
-  { dimension: 'Regjimi i preferuar', ctc: 'Trending (ADX i lartë)', rev: 'Edhe në chop; kujdes te crash sistemik' },
+  { dimension: 'Likuiditeti', ctc: 'Top kuintil (top 20%)', rev: 'Zona e mesme (20-80p) mbi pool dedikuar me shtresë mid-cap' },
+  { dimension: 'Gate i lajmeve', ctc: 'PEAD — bonus', rev: '8-K real → BLLOKO + EDGAR fail-closed (kusht sigurie)' },
+  { dimension: 'Regjimi i preferuar', ctc: 'Trending (ADX i lartë)', rev: 'Edhe në chop; kujdes te crash sistemik DHE shock sektorial' },
   { dimension: 'Win rate i pritur', ctc: '~35-45%', rev: '~60-70% (profili i GLM-it)' },
   { dimension: 'R mesatar', ctc: 'I vogël pozitiv, R:R>1', rev: 'Target modest, win rate kompenson' },
   { dimension: 'Rreziku kryesor', ctc: 'Hyrje e vonuar', rev: '"Falling knife" — vazhdim i rënies' },
@@ -108,6 +113,8 @@ function CandidateCard({ c, kind }: { c: RevCandidate; kind: 'hyrje' | 'prit' | 
     c.status === 'HYRJE_TANI' ? 'HYRJE E KONFIRMUAR' :
     c.status === 'PRIT_KONFIRMIM' ? 'PRIT KONFIRMIMIN NESËR' :
     c.status === 'BLLOKUAR_8K' ? 'BLLOKUAR — 8-K MATERIAL' :
+    c.status === 'BLLOKUAR_SEKTOR' ? 'BLLOKUAR — SHOCK SEKTORIAL' :
+    c.status === 'EXKLUDUAR_EDGAR' ? 'EXKLUDUAR — EDGAR FAIL-CLOSED' :
     c.status === 'BLLOKUAR_SPY_CRASH' ? 'BLLOKUAR — SPY CRASH' :
     c.status === 'INVALIDUAR_LOW_I_RI' ? 'INVALIDUAR — LOW I RI' :
     'KONFIRMIMI DËSHTOI';
@@ -192,6 +199,12 @@ function CandidateCard({ c, kind }: { c: RevCandidate; kind: 'hyrje' | 'prit' | 
             8-K material më {c.gate8k.lastFilingDate}{c.gate8k.items ? ` (items: ${c.gate8k.items})` : ''} — lajmi real, jo overreaction
           </li>
         )}
+        {c.edgarGate && !c.edgarGate.eligible && (
+          <li className="text-[10px] text-red-400 flex items-start gap-1">
+            <Ban className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" />
+            {c.edgarGate.detail}
+          </li>
+        )}
       </ul>
 
       {kind === 'hyrje' && (
@@ -258,7 +271,7 @@ export function REVStrategy() {
             <div className="flex items-center gap-2">
               <TrendingDown className="w-5 h-5 text-cyan-400" />
               <h2 className="text-lg font-bold">REV v1 — Confirmed Short-Term Reversal</h2>
-              <Badge className="bg-cyan-600 text-white text-[10px]">v1 · HIPOTEZË E NGRIRË</Badge>
+              <Badge className="bg-cyan-600 text-white text-[10px]">v1.1 · HIPOTEZË E NGRIRË</Badge>
             </div>
             <Badge variant="outline" className="text-[10px] border-cyan-500/40 text-cyan-400">
               <GitCompareArrows className="w-3 h-3 mr-1" /> Familje e VEÇANTË nga CTC (IBKR)
@@ -266,15 +279,15 @@ export function REVStrategy() {
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             Reversal 1-javor me <span className="text-cyan-400 font-semibold">konfirmim kundër &quot;falling knife&quot;</span> — univers
-            me likuiditet <span className="text-cyan-400">mesatar (20-80 percentile)</span>, jo top-kuintil si CTC.
-            Baza teorike: Lehmann (1990), Jegadeesh (1990), Nagel (2012). Parametrat janë{' '}
+            me likuiditet <span className="text-cyan-400">mesatar (20-80 percentile)</span> mbi pool-in dedikuar me shtresë mid-cap,
+            jo top-kuintil si CTC. Baza teorike: Lehmann (1990), Jegadeesh (1990), Nagel (2012). Parametrat janë{' '}
             <span className="inline-flex items-center gap-1 text-cyan-400 font-semibold"><Snowflake className="w-3 h-3" />të ngrirë</span> —
             s&apos;ndryshohen duke parë rezultatet; REJECT mbetet REJECT.
           </p>
           <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
-            <span className="px-2 py-1 rounded bg-muted/15">Likuiditeti: 20-80 percentile · ≥$10M/ditë · ≥$10</span>
-            <span className="px-2 py-1 rounded bg-muted/15">Sinjal: ret3d ≤ -8% OSE RSI(2) &lt; 10 · idiosinkratik vs SPY</span>
-            <span className="px-2 py-1 rounded bg-muted/15">Gates: 8-K material brenda 2d → blloko · SPY ≤ -3% → blloko</span>
+            <span className="px-2 py-1 rounded bg-muted/15">Likuiditeti: 20-80 percentile · ≥$10M/ditë · ≥$10 · shtresë mid-cap $2-20B</span>
+            <span className="px-2 py-1 rounded bg-muted/15">Sinjal: ret3d ≤ -8% OSE RSI(2) &lt; 10 · idiosinkratik vs SPY DHE sektor</span>
+            <span className="px-2 py-1 rounded bg-muted/15">Gates: 8-K material → blloko · EDGAR fail-closed (vetëm domestic) · SPY ≤ -3% → blloko</span>
             <span className="px-2 py-1 rounded bg-muted/15">Konfirmim: green candle / higher low + volum në rënie</span>
             <span className="px-2 py-1 rounded bg-muted/15">Exit: stop 1.3×ATR14 · target 1.2R · time-stop 3d · max 5d</span>
             <span className="px-2 py-1 rounded bg-muted/15">Risk: 0.5%/tregti · max 3 pozicione · 1/sektor · cooldown 5d</span>
@@ -366,7 +379,7 @@ export function REVStrategy() {
                   { l: 'Zona 20-80p', v: scan.universe.inZone },
                   { l: 'Hyrje tani', v: scan.counts.hyrjeTani },
                   { l: 'Prit konfirmim', v: scan.counts.pritKonfirmim },
-                  { l: 'Bllokuar', v: scan.counts.bllokuar8k + scan.counts.bllokuarSpyCrash },
+                  { l: 'Bllokuar', v: scan.counts.bllokuar8k + scan.counts.bllokuarSpyCrash + (scan.counts.bllokuarSektor ?? 0) + (scan.counts.exkluduarEdgar ?? 0) },
                 ].map((s) => (
                   <div key={s.l} className="rounded-md bg-muted/10 p-1.5">
                     <p className="text-[9px] text-muted-foreground">{s.l}</p>
@@ -374,6 +387,11 @@ export function REVStrategy() {
                   </div>
                 ))}
               </div>
+              {typeof scan.universe.midcapSharePct === 'number' && (
+                <p className="text-[10px] text-muted-foreground">
+                  Përbërja e zonës: <span className={scan.universe.midcapSharePct >= 40 ? 'text-emerald-400' : 'text-amber-400'}>{scan.universe.midcapSharePct.toFixed(0)}% mid-cap</span> (amendimi 1.1 — kufiri ≥40%; shock sektorial bllokuar: {scan.counts.bllokuarSektor ?? 0} · EDGAR fail-closed: {scan.counts.exkluduarEdgar ?? 0})
+                </p>
+              )}
 
               {/* Hyrje të konfirmuara */}
               <div>
@@ -572,7 +590,15 @@ export function REVStrategy() {
                   <p className="font-semibold">Funnel-i i backtest-it</p>
                   <p className="text-muted-foreground">Simbole me të dhëna: {validation.backtest.funnel.symbolsWithData}/{validation.backtest.funnel.symbolsRequested} · ditë tregtimi: {validation.backtest.funnel.tradingDays}</p>
                   <p className="text-muted-foreground">Sinjale të shqyrtuara: {validation.backtest.funnel.signalsExamined} · tregti: {validation.backtest.funnel.tradesTaken}</p>
-                  <p className="text-muted-foreground">Bllokime: 8-K {validation.backtest.funnel.blockedBy8k} · SPY crash {validation.backtest.funnel.blockedBySpyCrash} · low i ri {validation.backtest.funnel.blockedByNewLow} · konfirmim dështoi {validation.backtest.funnel.blockedByConfirmFail} · cooldown {validation.backtest.funnel.blockedByCooldown}</p>
+                  <p className="text-muted-foreground">Bllokime: 8-K {validation.backtest.funnel.blockedBy8k} · SPY crash {validation.backtest.funnel.blockedBySpyCrash} · sektor {validation.backtest.funnel.blockedBySectorRelative ?? 0} · low i ri {validation.backtest.funnel.blockedByNewLow} · konfirmim dështoi {validation.backtest.funnel.blockedByConfirmFail} · cooldown {validation.backtest.funnel.blockedByCooldown}</p>
+                  {typeof validation.backtest.funnel.excludedByEdgar === 'number' && (
+                    <p className="text-muted-foreground">EDGAR fail-closed (amendimi 1.1): {validation.backtest.funnel.excludedByEdgar} simbole ekskluduar{validation.edgar ? ` · foreign filers: ${validation.edgar.foreign} · pa timeline: ${validation.edgar.noTimeline}` : ''}</p>
+                  )}
+                  {validation.universeComposition && (
+                    <p className={validation.universeComposition.ok ? 'text-emerald-400' : 'text-amber-400'}>
+                      Shtresa mid-cap në zonë: {validation.universeComposition.midcapSharePct.toFixed(1)}% ({validation.universeComposition.midcapCount}/{validation.universeComposition.zoneTotal}) — {validation.universeComposition.note}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-md bg-muted/10 p-2.5 text-[11px] space-y-0.5">
                   <p className="font-semibold">Gate specifik REV</p>

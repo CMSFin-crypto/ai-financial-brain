@@ -1022,3 +1022,32 @@ Stage Summary:
 - Universi bazë i strategjive tani është homogjen regjistrimi (201 US-domestic filers) — rankimi i likuiditetit (top-kuintil Q80) llogaritet mbi bazën e pastër, jo mbi 400-listën e përzier
 - Rendi i rregullit i dokumentuar dhe i zbatuar në kod: filtri i bazës → pastaj rankimi i likuiditetit; ndryshimi i para-regjistruar si cilësi të dhënash (EDGAR coverage + ADR filing mismatch) — jo si tunim pasi të shihen rezultatet
 - CI e gjelbër e pritur; Vercel bën auto-deploy nga push-i (kërkon token të ri — i vjetri i revokuar)
+
+Task: REV v1.1 — Amendim para-testimit me 3 rafinime (kërkesa e userit: «i kisha preferuar keto ndryshime ne strategjine rev»)
+
+Work Log:
+- Amendimi është PARA-TESTIMIT (2026-09-30): asnjë rezultat i parë ka ndikuar — arsyetim vetëm teorik, pra i ligjshëm para regjistrimit final; REV_HYPOTHESIS_VERSION 1 → 1.1, hyrje e re në REV_CHANGE_LOG që dokumenton të tria
+- RAFINIMI 1 — EDGAR FAIL-CLOSED (kusht SIGURIE, jo cilësi e dhënash): te CTC event-gate është bonus PEAD, te REV ai BLLOKON hyrjen — nëse mbulimi EDGAR mungon (ADR me 6-K/20-F/40-F, ose pa asnjë filing brenda 120 ditëve, ose pa të dhëna fare), gate-i do të dështonte në heshtje dhe REV mund të hynte pikërisht në rënie me arsye fondamentale reale; zgjidhja: vetëm US-domestic filers, emrat pa timeline të verifikueshme EKSKLUDOHEN krejtësisht (jo «event-neutral»)
+  · hypothesis.ts: usDomesticFilersOnly=true, edgarCoverageProbeDays=120, excludeIncompleteEdgarCoverage=true
+  · signal.ts: FOREIGN_FILER_FORMS, EDGAR_ELIGIBILITY_FORMS (12 formularë), revEdgarEligibilityCheck() me fail-closed 3-nivelesh
+  · backtest.ts: filtri para-llogarit Eligible per symbol → excludedByEdgar në funnel; simbolet jo-eligible s'përjashtohen vetëm nga sinjalet por nga gjithë cross-seksioni (zona 20-80p llogaritet vetëm mbi eligible)
+  · rev-scan: fetch8kSafe → fetchRevEdgarFilings (formularë të gjerë, 120) + status i ri EXKLUDUAR_EDGAR me edgarGate detail; rev-validate: EDGAR tërhiqet paralelisht me çmimet në çdo batch (hequr loop-i i veçantë 40s) + statistika edgar {checked, eligible, foreign, noTimeline} në përgjigje
+- RAFINIMI 2 — SHTRESA MID-CAP (Nagel 2012: edge-i te mid-cap i VËRTETË $2-20B, jo «jo-mega-cap brenda liste large-cap»): REV ka tani pool të dedikuar — baza 400 + REV_MIDCAP_TIER (59 kandidatë likuidë S&P 400 / Russell Midcap-stil, 10 sektorë, me sektorë në REV_SECTOR_MAP); GATE i re i validimit: zona 20-80p duhet ≥40% mid-cap (revPoolMidcapMinSharePct=40), FAIL-CLOSED nëse përbërja s'u raportua
+  · signal.ts: REV_MIDCAP_TIER, revIsMidcapCandidate() (pragje $2-20B nëse mktCap i dhënë, përndryshe anëtarësimi në shtresë), revUniverseComposition() mbi ZONËN (jo gjithë pool-in)
+  · backtest.ts: universeComposition matur në zonën e ditës së fundit → evaluateRevGates({poolMidcapSharePct})
+  · rev-scan: universi = baza + tier; përgjigja tani përfshin universe.midcapSharePct
+- RAFINIMI 3 — DOBËSI SEKTORIALE (shock-i i gjithë grupit s'kapërcehet si «idiosinkratik» vetëm se SPY qëndron): kusht i re i sinjalit — ret3 duhet < mesatarja equal-weight 3-ditore e sektorit PA veten (min 3 peers, përndryshe fail-closed)
+  · hypothesis.ts: sectorRelativeRequired=true, sectorRelativeUnderperformancePct=0.0, minSectorPeers=3
+  · signal.ts: RevSignalInput.sectorRet3Pct + RevSignalResult.sectorRelative në revSignalCheck()
+  · backtest.ts: mesatarja sektoriale llogaritet çdo ditë mbi gjithë simbolet me të dhëna (jo vetëm zonën) → blockedBySectorRelative në funnel
+  · rev-scan: sectorRet3At() me memo; statuset e reja BLLOKUAR_SEKTOR në të dy degët (sinjal dje + sot); kandidatët marrin sectorRet3Pct
+- UI (rev-strategy.tsx): badge v1.1, chips të përditësuara (shtresë mid-cap, «vs SPY DHE sektor», EDGAR fail-closed), tabela CTC↔REV me rreshtin «Gate i lajmeve», statuset e reja (SHOCK SEKTORIAL / EDGAR FAIL-CLOSED), përbërja e zonës + ekskluzionet EDGAR në funnel, universeComposition në Validation Lab
+- spec MD: header v1.1 + nenekapitulli 1.1 «Pse shtresa mid-cap», kushti i re 2.3 (sektori) + 2.4 (EDGAR fail-closed), rresht i ri i gates (mid-cap ≥40%)
+- validator Python: pasqyrë 1:1 — edgar_eligibility_check(), REV_MIDCAP_TIER, rev_universe_composition(), gate i re në evaluate_rev_gates (pool_midcap_share_pct, fail-closed)
+- Verifikime: python rev_v1_validator.py → v1.1 printohet saktë; 7 teste unit Python (fail-closed 3-nivelesh, FOREIGN_FILER, përbërja, gate fail-closed) → të gjitha OK; npx tsx smoke test 13 raste TS → të gjitha OK (korrigjuar një pritshmëri të gabuar testi: -9% vs sektori -12% është shock grupi, -9% vs -2% është dobësi specifike); npm run lint → 0 gabime (6 warnings para-ekzistuese, s'i preka); npm run build → kalon, /api/rev-scan + /api/rev-validate të regjistruara
+
+Stage Summary:
+- REV v1.1 tani zbaton të tria rafinimet si kushte Të NGRIRA para-testimit: EDGAR fail-closed (siguri), shtresa mid-cap + gate përbërjeje (perputhshmëri me Nagel), dobësi sektoriale (rafinim sinjali) — të tria me sjellje fail-closed në çdo nivel
+- Izolimi nga CTC i paprekur — asnjë skedar i përbashkët i prekur; skedarët e ndryshuar janë vetëm ata REV (hypothesis/signal/backtest/2 routes/UI/spec/validator) + worklog
+- REZULTATI I KUJDESIT: me këto filtra më të ashpër, numri i sinjaleve do të jetë më i ulët se v1.0 (739 tregti në smoke test) — kjo NUK është arsye për uljen e pragjeve; gates+profile vlerësohen ashtu siç dalin
+- CI pritet e gjelbër: lint 0 gabime + build kalon; Vercel bën auto-deploy nga push-i

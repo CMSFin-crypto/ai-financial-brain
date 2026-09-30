@@ -25,9 +25,12 @@ import {
   revSignalCheck,
   revConfirmationCheck,
   revHasRecentMaterial8k,
+  revEdgarEligibilityCheck,
+  revUniverseComposition,
   type RevBar,
   type RevFiling8k,
   type RevSeries,
+  type RevUniverseComposition,
 } from './signal';
 
 // ── Tregtia ───────────────────────────────────────────────────────────
@@ -52,9 +55,11 @@ export interface RevTrade {
 export interface RevBacktestFunnel {
   symbolsRequested: number;
   symbolsWithData: number;
+  excludedByEdgar: number; // pa timeline EDGAR / foreign filer → JASHTË (amendimi 1.1, fail-closed)
   tradingDays: number;
   signalsExamined: number;
   blockedBy8k: number;
+  blockedBySectorRelative: number; // rënia ndjek sektorin, jo dobësi specifike (amendimi 1.1)
   blockedBySpyCrash: number;
   blockedByNewLow: number;
   blockedByConfirmFail: number;
@@ -79,6 +84,7 @@ export interface RevBacktestResult {
   symbolConcentrationPct: number;
   costSensitivity: Record<string, number>;
   funnel: RevBacktestFunnel;
+  universeComposition: RevUniverseComposition; // përbërja e zonës 20-80p ditën e fundit (amendimi 1.1)
   dataCoverage: { from: string; to: string };
 }
 
@@ -141,15 +147,29 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
   const funnel: RevBacktestFunnel = {
     symbolsRequested: series.length,
     symbolsWithData: 0,
+    excludedByEdgar: 0,
     tradingDays: 0,
     signalsExamined: 0,
     blockedBy8k: 0,
+    blockedBySectorRelative: 0,
     blockedBySpyCrash: 0,
     blockedByNewLow: 0,
     blockedByConfirmFail: 0,
     blockedByCooldown: 0,
     tradesTaken: 0,
   };
+
+  // ── EDGAR fail-closed (amendimi 1.1) — kusht SIGURIE ──
+  // Simbolet pa timeline EDGAR të verifikueshme (pa të dhëna, foreign
+  // filers 6-K/20-F, ose pa filing brenda dritares së sondazhit)
+  // EKSKLUDOHEN krejtësisht — gate-i 8-K nuk guxon të dështojë në heshtje.
+  const dataEndDate = spyBars.length ? spyBars[spyBars.length - 1].date : '';
+  const edgarEligible = new Set<string>();
+  for (const s of series) {
+    const elig = revEdgarEligibilityCheck(filings8k[s.symbol], dataEndDate);
+    if (elig.eligible) edgarEligible.add(s.symbol);
+  }
+  funnel.excludedByEdgar = series.length - edgarEligible.size;
 
   // Indekset e ditareve
   const spyDates = spyBars.map((b) => b.date);
@@ -164,15 +184,18 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
     i >= 1 ? (c / spyClose[i - 1] - 1) * 100 : NaN,
   );
 
-  // Përgatitja për simbol: treguesit e para-llogaritur
-  const per = series.map((s) => {
-    const closes = s.bars.map((b) => b.close);
-    const rsi2 = revRsi(closes, 2);
-    const atr14 = revAtr(s.bars, 14);
-    const dateIdx = new Map<string, number>();
-    s.bars.forEach((b, i) => dateIdx.set(b.date, i));
-    return { s, closes, rsi2, atr14, dateIdx };
-  });
+  // Përgatitja për simbol: treguesit e para-llogaritur (VETËM simbolet EDGAR-eligible)
+  const per = series
+    .filter((s) => edgarEligible.has(s.symbol))
+    .map((s) => {
+      const closes = s.bars.map((b) => b.close);
+      const rsi2 = revRsi(closes, 2);
+      const atr14 = revAtr(s.bars, 14);
+      const dateIdx = new Map<string, number>();
+      s.bars.forEach((b, i) => dateIdx.set(b.date, i));
+      return { s, closes, rsi2, atr14, dateIdx, sector: revSectorOf(s.symbol) };
+    });
+  const perBySymbol = new Map(per.map((p) => [p.s.symbol, p]));
   funnel.symbolsWithData = per.filter((p) => p.s.bars.length > 30).length;
 
   // Gjendja e pozicioneve / cooldown
@@ -180,6 +203,7 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
   const openUntilBySymbol = new Map<string, string>(); // symbol → exitDate (skip sinjalet deri atëherë)
 
   const trades: RevTrade[] = [];
+  let lastZone: string[] | null = null; // zona 20-80p e ditës së fundit të procesuar (për përbërjen)
 
   // Iterim kronologjik mbi ditat e SPY
   for (let di = 30; di < spyBars.length - 1; di++) {
@@ -204,6 +228,33 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
     if (!snapshot.length) continue;
     funnel.tradingDays = Math.max(funnel.tradingDays, di);
     const { inZone } = revLiquidityZoneAt(snapshot);
+    lastZone = [...inZone];
+
+    // ── Mesatarja sektoriale 3-ditore (amendimi 1.1) ──
+    // Equal-weight ret3 i secilit sektor PA veten, mbi gjithë simbolet me
+    // të dhëna ditën e datës (jo vetëm zonën — përfaqësueshmëri më e madhe
+    // e sektorit). Pa peers të mjaftueshëm → NaN → fail-closed për emrin.
+    const sectorAgg = new Map<string, { sum: number; cnt: number }>();
+    const ret3BySymbol = new Map<string, number>();
+    for (const [sym, iHere] of idxHere) {
+      const pHere = perBySymbol.get(sym);
+      if (!pHere || iHere < 3) continue;
+      const r3 = (pHere.closes[iHere] / pHere.closes[iHere - 3] - 1) * 100;
+      if (!Number.isFinite(r3)) continue;
+      ret3BySymbol.set(sym, r3);
+      const agg = sectorAgg.get(pHere.sector) ?? { sum: 0, cnt: 0 };
+      agg.sum += r3;
+      agg.cnt++;
+      sectorAgg.set(pHere.sector, agg);
+    }
+    const sectorRet3Of = (sym: string): number => {
+      const own = ret3BySymbol.get(sym);
+      if (own === undefined) return NaN;
+      const sec = perBySymbol.get(sym)!.sector;
+      const agg = sectorAgg.get(sec);
+      if (!agg || agg.cnt - 1 < H.minSectorPeers) return NaN;
+      return (agg.sum - own) / (agg.cnt - 1);
+    };
 
     for (const p of per) {
       const i = idxHere.get(p.s.symbol);
@@ -234,7 +285,13 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
       const r2 = p.rsi2[i];
       if (!Number.isFinite(r2)) continue;
 
-      const sig = revSignalCheck({ ret3Pct: ret3, rsi2: r2, spyRet3Pct: spyRet3Here, spyDailyMovePct: spyDailyHere });
+      const sig = revSignalCheck({
+        ret3Pct: ret3,
+        rsi2: r2,
+        spyRet3Pct: spyRet3Here,
+        sectorRet3Pct: sectorRet3Of(p.s.symbol),
+        spyDailyMovePct: spyDailyHere,
+      });
       if (!sig.dropTriggered) continue;
       funnel.signalsExamined++;
 
@@ -243,6 +300,10 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
         continue;
       }
       if (!sig.idiosyncratic) continue;
+      if (!sig.sectorRelative) {
+        funnel.blockedBySectorRelative++;
+        continue;
+      }
 
       // Event-gate real: 8-K material brenda 2 ditëve PARA ditës së sinjalit
       const filings = filings8k[p.s.symbol];
@@ -400,6 +461,9 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
   const [, pf10] = pfAt('10', (t) => t.rNetPlus10bp);
   costSensitivity['10'] = pf10;
 
+  // ── Përbërja e zonës REV (amendimi 1.1) — matur në zonën e ditës së fundit ──
+  const universeComposition = revUniverseComposition((lastZone ?? []).map((symbol) => ({ symbol })));
+
   return {
     trades,
     is,
@@ -409,6 +473,7 @@ export function runRevBacktest(input: RevBacktestInput): RevBacktestResult {
     symbolConcentrationPct,
     costSensitivity,
     funnel,
+    universeComposition,
     dataCoverage: {
       from: spyBars[0]?.date ?? '',
       to: spyBars[spyBars.length - 1]?.date ?? '',

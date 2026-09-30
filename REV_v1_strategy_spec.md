@@ -5,14 +5,19 @@
 **Statusi:** Hipotezë e para-regjistruar për t'u VALIDUAR. E veçantë krejtësisht
 nga CTC — s'e ndryshon atë, s'e prek funnel-in e saj, rendet paralel.
 
-**Version:** REV_HYPOTHESIS_VERSION = 1 (familje e re, jo vazhdim i CTC)
+**Version:** REV_HYPOTHESIS_VERSION = 1.1 (familje e re, jo vazhdim i CTC)
 
-**Data e regjistrimit:** 2026-09-29
+**Data e regjistrimit fillestar:** 2026-09-29 (v1)
+
+**Amendimi para-testimit:** 2026-09-30 (v1.1) — TË TRIA rafinimet më poshtë
+janë arsyetuar VETËM teorikisht, pa parë asnjë rezultat testi — prandaj janë
+të ligjshme për t'u regjistruar tani. Pas fillimit të testimit, ASNJË ndryshim
+më parametrash (e njëjta disiplinë si regjistrimi fillestar).
 
 **Baza teorike (ndryshe nga CTC):**
 - Lehmann (1990), Jegadeesh (1990): kthimet 1-javore priren të kthehen mbrapsht
 - Nagel (2012): kompensimi i furnizimit të likuiditetit — edge më i fortë te
-  aksionet me likuiditet MESATAR, jo mega-cap (ku CTC operon)
+  aksionet me likuiditet MESATAR (mid-cap i vërtetë), jo mega-cap (ku CTC operon)
 
 ---
 
@@ -21,19 +26,19 @@ nga CTC — s'e ndryshon atë, s'e prek funnel-in e saj, rendet paralel.
 | | CTC v2 (ekzistuese) | REV v1 (e re) |
 |---|---|---|
 | Beti | Vazhdon lëvizja | Kthehet mbrapsht lëvizja |
-| Likuiditeti | Top kuintil (top 20%) | Zona e mesme (~20-80 percentile, jo top/fund) |
-| Regjimi i preferuar | Trending (ADX i lartë) | Funksionon edhe në chop; kujdes te crash sistemik |
+| Likuiditeti | Top kuintil (top 20%) | Zona e mesme (20-80p) mbi pool dedikuar me shtresë mid-cap |
+| Gate i lajmeve | PEAD — bonus (mungesa thjesht e humb përforcimin) | 8-K real → BLLOKO + EDGAR fail-closed (kusht sigurie) |
+| Regjimi i preferuar | Trending (ADX i lartë) | Funksionon edhe në chop; kujdes te crash sistemik DHE shock sektorial |
 | Win rate i pritur | ~35-45% | **~60-70%** (këtu aplikohet profili i GLM-it) |
 | R mesatar | I vogël pozitiv, R:R>1 | Target modest, win rate kompenson |
 | Rreziku kryesor | Hyrje e vonuar | "Falling knife" — vazhdim i rënies |
 
 **Mos e vendos në të njëjtin funnel/score me CTC.** Rendi si proces i pavarur
-skanimi, me sinjale të veçanta, edhe nëse ndajnë të njëjtin universe bazë 400
-emrash.
+skanimi, me sinjale të veçanta dhe me pool-in e vet dedikuar (Seksioni 1).
 
 ---
 
-## 1. Universi & Likuiditeti — zona e mesme, JO top-kuintil
+## 1. Universi & Likuiditeti — zona e mesme mbi pool DEDIKUAR REV
 
 | Kusht | Prag |
 |---|---|
@@ -41,6 +46,24 @@ emrash.
 | Zona e lejuar | 20-80 percentile (përjashto top 20% mega-cap DHE fundin 20% jo-likuid) |
 | $ Volume min absolut | $10M/ditë (më i ulët se CTC, sepse s'kërkojmë mega-cap) |
 | Çmimi min | $10 |
+| **Shtresa mid-cap (amendimi 1.1)** | Pool-i REV = baza + shtresa mid-cap dedikuese ($2-20B, S&P 400 / Russell Midcap-stil) |
+| **Përbërja e zonës (amendimi 1.1)** | Zona 20-80p duhet të përmbajë **≥40% mid-cap** — GATE i validimit |
+
+### 1.1 Pse shtresa mid-cap (amendimi 1.1 — Nagel 2012)
+
+Nagel (2012) e gjen kompensimin e likuiditetit më të fortë te emrat që s'janë
+thjesht "jo top 20%", por VËRTET mid-cap. Problemi praktik: baza 400 e
+përbashkët është e përqendruar në large/mega-cap, kështu që zona 20-80
+percentile e kësaj liste do të ishte "jo-mega-cap brenda liste large-cap" —
+jo mid-cap i vërtetë ku edge-i është më i fortë. Do ta testoja hipotezën mbi
+zonën e gabuar të spektrit të likuiditetit.
+
+Zgjidhja e para-regjistruar: REV ka pool-in e vet dedikuar — baza e zmadhuar
+me një shtresë mid-cap (kandidatë likuidë $2-20B, `REV_MIDCAP_TIER` në
+`src/lib/rev/signal.ts`). Filtri 20-80 percentile + pragjet absolute vlejnë
+për të gjithë pool-in. Dhe matja nuk është opsionale: **përbërja e zonës**
+(sa % e emrave brenda 20-80p janë mid-cap) duhet ≥40% — përndryshe gate-i i
+validimit dështon (fail-closed).
 
 **Pse jo top-kuintil:** Nagel (2012) e lidh edge-in e reversal-it me
 kompensimin për furnizim likuiditeti — kjo është më e fortë pikërisht ku
@@ -59,11 +82,29 @@ Të GJITHA kushtet duhet plotësuar:
    i SPY në të njëjtën periudhë) duhet të jetë dukshëm negativ — pra aksioni
    po bie MË SHUMË se tregu, jo thjesht duke ndjekur një ditë të kuqe të
    përgjithshme
-3. **Pa event fondamental real**: GATE — nëse ka 8-K real (jo çdo filing, por
-   njoftim material, p.sh. Item 2.02 earnings surprise negative, guidance
-   cut, etj.) brenda 2 ditëve, **BLLOKO** — kjo s'është "overreaction e
-   tregut", është reagim ndaj lajmi real, ka gjasa të vazhdojë
-4. **Regjimi sistemik s'është crash**: SPY vetë s'ka rënë >3% brenda ditës —
+3. **Dobësi kundrejt sektorit të vet (amendimi 1.1)**: kthimi i aksionit duhet
+   të jetë dukshëm negativ EDHE kundrejt mesatares së sektorit të vet (jo
+   vetëm SPY). Një aksion mund të bjerë njësoj si gjithë sektori (p.sh.
+   gjithë bankat bien nga një lajm makro bankar) pa u dukur kundrejt SPY —
+   aty shock-i është sektorial, korrelacioni brenda sektorit rritet (njësoj
+   si te crash sistemik) dhe reversal-i individual është më pak i besueshëm.
+   Mesatarja e sektorit llogaritet equal-weight mbi peers me të dhëna,
+   PA veten; kërkohen **≥3 peers** — nëse më pak, kushti s'kubohet ta
+   verifikojë → fail-closed (pa sinjal).
+4. **Pa event fondamental real — GATE me FAIL-CLOSED (amendimi 1.1)**: nëse
+   ka 8-K real (jo çdo filing, por njoftim material, p.sh. Item 2.02
+   earnings surprise negative, guidance cut, etj.) brenda 2 ditëve,
+   **BLLOKO** — kjo s'është "overreaction e tregut", është reagim ndaj lajmi
+   real, ka gjasa të vazhdojë. KRITIK: te CTC event-gate është bonus (PEAD)
+   — nëse mungon, humbet vetëm një përforcim. Te REV ai BLLOKON hyrjen, dhe
+   prandaj është **kusht sigurie**: (a) vetëm **US-domestic filers** — ADR/foreign
+   private issuers (formularët 6-K, 20-F, 40-F) nuk depozitojnë 8-K, gate-i
+   do të ishte i verbër për ta → **EKSKLUZOHEN nga REV krejtësisht**;
+   (b) emri pa timeline EDGAR të plotë (pa asnjë filing brenda 120 ditëve,
+   ose pa të dhëna fare) gjithashtu **EKSKLUZOHET** — në asnjë rast s'trajetohet
+   "event-neutral". Skenari më i keq (hyrje në rënie me lajm real të paverifikueshëm)
+   duhet të jetë i pamundur strukturisht, jo thjesht i rrallë.
+5. **Regjimi sistemik s'është crash**: SPY vetë s'ka rënë >3% brenda ditës —
    në ditë crash-i, korrelacionet shkojnë drejt 1 dhe reversal individual
    bëhet më pak i besueshëm
 
@@ -150,6 +191,7 @@ Gates (REV_GATES — të ngrira):
 | Stabilitet IS→OOS win-rate | devijim ≤ 10 pp |
 | Cost sensitivity +10bp | PF ≥ 1.05 |
 | **Falling-knife rate (SPECIFIK REV)** | ≤ 40% e tregtive bëjnë low të ri pas hyrjes |
+| **Shtresa mid-cap në zonën REV (amendimi 1.1)** | ≥ 40% e zonës 20-80p mid-cap ($2-20B); fail-closed nëse s'matet |
 
 **Gate shtesë specifik për REV** — Falling-Knife Check:
 Mat % e tregtive që bënë "low të ri" pas hyrjes PARA se të arrinin target
@@ -165,9 +207,9 @@ statistikore krejt të ndryshme.
 
 ## 9. Si rendet paralel me CTC — jo në konflikt
 
-- Të dyja mund të skanojnë të njëjtin universe bazë 400 emrash, por me
-  filtra likuiditeti të ndryshëm (CTC: top 20%; REV: 20-80 percentile) —
-  **mbivendosje minimale natyrshëm**
+- Të dyja skanojnë universet me mbivendosje të pjesshme, por REV ka pool-in
+  e vet dedikuar (baza + shtresa mid-cap) me filtra likuiditeti të ndryshëm
+  (CTC: top 20%; REV: 20-80 percentile) — **mbivendosje minimale natyrshëm**
 - Nëse një simbol kualifikohet rastësisht për të dyja (rrallë, për shkak të
   zonave të ndryshme likuiditeti), **mos hap dy pozicione të kundërta** —
   REV ka përparësi nëse konfirmimi i saj është më i fortë, përndryshe anashkalo
@@ -206,5 +248,6 @@ US-domestic, US-GAAP filers, large/mega-cap, likuide) — `UNIVERSE_CORE_VERSION
 
 Zonat e likuiditetit të REV janë **percentile-based (20–80)** brenda bazës,
 pra janë invariante ndaj kësaj korrigjimi — adaptohen automatikisht te baza e
-re pa ndryshim hipoteze (REV_HYPOTHESIS_VERSION mbetet 1). Detajet dhe kushti
-anti-tuning: `CTC_v2_strategy_spec.md`, Seksioni 2.
+re pa ndryshim hipoteze. Kjo korrigjim tani është pjesë e amendimit **v1.1**
+(më poshtë: shtresa mid-cap u shtua pikërisht mbi këtë bazë të pastër
+US-domestic). Detajet dhe kushti anti-tuning: `CTC_v2_strategy_spec.md`, Seksioni 2.
