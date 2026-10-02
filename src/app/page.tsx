@@ -382,7 +382,7 @@ export default function Home() {
               {/* Category: Analizë */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-14 flex-shrink-0">Analizë</span>
-                <TabsList className="flex gap-1 h-auto p-1 flex-1 overflow-x-auto scrollbar-none">
+                <TabsList className="flex justify-start gap-1 h-auto p-1 flex-1 overflow-x-auto scrollbar-none">
                   <TabsTrigger value="daily-picks" className="text-xs py-2 px-3 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                     <Target className="w-3.5 h-3.5 mr-1.5" />Pikat Ditore
                   </TabsTrigger>
@@ -460,7 +460,7 @@ export default function Home() {
               {/* Tregu */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="ctc-v2" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <TrendingUp className="w-3 h-3 mr-1" />CTC v2
                   </TabsTrigger>
@@ -496,7 +496,7 @@ export default function Home() {
               {/* Analizë */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <FileText className="w-3 h-3 mr-1" />10-Q
                   </TabsTrigger>
@@ -523,7 +523,7 @@ export default function Home() {
               {/* AI & Trading */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">AI &</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="trading" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <ShoppingCart className="w-3 h-3 mr-1" />Trading
                   </TabsTrigger>
@@ -544,7 +544,7 @@ export default function Home() {
               {/* Kontrol */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Kontrol</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="drift" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
                     <Activity className="w-3 h-3 mr-1" />Drift
                   </TabsTrigger>
@@ -562,7 +562,7 @@ export default function Home() {
               {/* Lab — Social Arb (faqe e veçuar /social-arb) */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Lab</span>
-                <TabsList className="flex gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
                   <TabsTrigger value="social-arb" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-rose-600 data-[state=active]:text-white">
                     <FlaskConical className="w-3 h-3 mr-1" />Social Arb
                   </TabsTrigger>
