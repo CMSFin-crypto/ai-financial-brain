@@ -3553,11 +3553,12 @@ export function IBKRStrategy() {
       {/* Learning Engine — Adaptive Scanner (lart në faqe, pas Funnel Scanner) */}
       <Card className="border-violet-500/20 bg-violet-500/5">
         <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <GitCompareArrows className="w-4 h-4 text-violet-400" />
+          {/* flex-wrap: butonat bien nën titull në mobile — s'dalin jashtë viewport-it */}
+          <div className="flex flex-wrap items-center justify-between gap-y-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <GitCompareArrows className="w-4 h-4 text-violet-400 flex-shrink-0" />
               <h3 className="text-[14px] font-bold text-foreground">Learning Engine</h3>
-              <span className="text-[11px] text-muted-foreground">— mëson nga rezultatet e kaluara</span>
+              <span className="text-[11px] text-muted-foreground hidden sm:inline">— mëson nga rezultatet e kaluara</span>
             </div>
             <div className="flex items-center gap-2">
               {/* ═══ MËSIMET — çfarë mësoi sistemi nga e kaluara ═══ */}
@@ -3842,7 +3843,8 @@ export function IBKRStrategy() {
             {data.vpReady.map((vp: any, i: number) => (
               <Card key={vp.symbol} className="border-blue-500/20 bg-blue-500/5">
                 <CardContent className="pt-4 pb-4">
-                  <div className="flex items-center justify-between mb-2">
+                  {/* flex-wrap: në mobile rreshti i chipave bie nën simbol — s'dalë jashtë viewport-it */}
+                  <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-lg font-bold">{vp.symbol}</span>
                       <MiniPopover label="VP READY — Kaloi VP Gate" desc={"Kjo etiketë tregon se aksioni ka kaluar Volume Profile gate-in e Adaptive Scanner Engine: (1) trend rritës me pullback te EMA20, (2) persistencë 2+ ditë, (3) volum konfirmues, (4) VP support poshtë çmimit (HVN/POC brenda 1.2%), DHE (5) pa rezistencë volumi të afërt sipër. Idealisht: këto janë kandidatët me prioritet për tregtim — kushtet e hyrjes janë konfirmuar nga volumi i tregtuar. Kujdes: VP READY nuk e zëvendëson kontrollin e earnings/macro events — verifikoi gjithmonë Event Gate para hyrjes. Këto tickers mund të mos jenë në listën Top 10 të IBKR funnel-it sepse janë nga universe-i i plotë i 400 aksioneve."} >
@@ -3856,7 +3858,7 @@ export function IBKRStrategy() {
                         </span>
                       </MiniPopover>
                   </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                       {/* TASK 26: fundamentet edhe për kandidatët VP READY (të gjithë) */}
                       <span title={`Fundamental Context: ${fundReports[vp.symbol]?.contextLabel ?? 'N/A'}`}
                         className={`text-[9.5px] px-1.5 py-0.5 rounded-full font-bold border ${

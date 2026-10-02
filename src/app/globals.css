@@ -119,6 +119,16 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Mobile: ndalo pan-anësor të faqes — elementë që dalin 1-2px jashtë
+     viewport-it e bënin faqen të rrëshqasë horizontalisht pa dashje, dhe
+     rreshtat e tab-ave në qoshen e majtë "zhdukeshin" (fiksohet vetëm me
+     rotacionin e ekranit). `clip` nuk krijon scroll container → sticky
+     header vazhdon të punojë; `hidden` mbetet si fallback. */
+  html,
+  body {
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
 }
 
 @layer utilities {
