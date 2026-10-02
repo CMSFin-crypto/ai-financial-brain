@@ -1,0 +1,9 @@
+observed_at,available_at,trend,source,region,interest,ticker,product,company,materiality,promo_risk,event_risk,stock_price,index_price
+2026-10-02,2026-10-02,jim farley ford skilled trades ai,google_trends,US,1000,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.27,763.99
+2026-10-02,2026-10-02,xbox disc to digital,google_trends,GB,1000,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99
+2026-10-01,2026-10-01,xbox disc to digital,gdelt,GB,0.0704,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99
+2026-10-02,2026-10-02,xbox disc to digital,gdelt,GB,0.0576,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99
+2026-10-02,2026-10-02,starbucks canada,google_trends,CA,50,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,94.88,763.99
+2026-10-02,2026-10-02,minecraft live,google_trends,CA,50,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99
+2026-10-01,2026-10-01,minecraft live,gdelt,CA,0.0704,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99
+2026-10-02,2026-10-02,minecraft live,gdelt,CA,0.0576,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99

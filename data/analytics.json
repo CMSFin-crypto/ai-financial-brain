@@ -434,6 +434,78 @@
       "visitorNumber": 9,
       "isNewVisitor": false,
       "visitCount": 2
+    },
+    {
+      "id": "1790962703315-idhzgd",
+      "timestamp": "2026-10-02T17:38:23.315Z",
+      "ip": "::1",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+      "fingerprint": "fp_jv24ww",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 800,
+      "screenHeight": 600,
+      "colorDepth": 24,
+      "pixelRatio": 1,
+      "language": "en-US",
+      "timezone": "UTC",
+      "os": "Linux",
+      "connectionType": "4g",
+      "isTouchDevice": false,
+      "country": "Local",
+      "device": "Desktop",
+      "browser": "Chrome",
+      "visitorNumber": 8,
+      "isNewVisitor": false,
+      "visitCount": 7
+    },
+    {
+      "id": "1790962719562-wd2nqv",
+      "timestamp": "2026-10-02T17:38:39.562Z",
+      "ip": "::ffff:127.0.0.1",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+      "fingerprint": "fp_jv24ww",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 800,
+      "screenHeight": 600,
+      "colorDepth": 24,
+      "pixelRatio": 1,
+      "language": "en-US",
+      "timezone": "UTC",
+      "os": "Linux",
+      "connectionType": "4g",
+      "isTouchDevice": false,
+      "country": "Unknown",
+      "device": "Desktop",
+      "browser": "Chrome",
+      "visitorNumber": 8,
+      "isNewVisitor": false,
+      "visitCount": 8
+    },
+    {
+      "id": "1790962841772-uz8rw9",
+      "timestamp": "2026-10-02T17:40:41.772Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36",
+      "fingerprint": "fp_1hddsi",
+      "page": "/",
+      "referrer": "",
+      "screenWidth": 339,
+      "screenHeight": 727,
+      "colorDepth": 24,
+      "pixelRatio": 3.1875,
+      "language": "en-GB",
+      "timezone": "Europe/Belgrade",
+      "os": "Android 10",
+      "connectionType": "4g",
+      "isTouchDevice": true,
+      "country": "Unknown",
+      "device": "Mobile",
+      "browser": "Chrome",
+      "visitorNumber": 10,
+      "isNewVisitor": true,
+      "visitCount": 1
     }
   ],
   "fingerprintMap": {
@@ -482,14 +554,20 @@
     "fp_jv24ww": {
       "visitorNumber": 8,
       "firstSeen": "2026-09-23T10:27:44.261Z",
-      "lastSeen": "2026-09-27T18:07:09.308Z",
-      "visitCount": 6
+      "lastSeen": "2026-10-02T17:38:39.562Z",
+      "visitCount": 8
     },
     "fp_5dos8h": {
       "visitorNumber": 9,
       "firstSeen": "2026-09-27T17:45:08.099Z",
       "lastSeen": "2026-09-27T18:36:02.671Z",
       "visitCount": 2
+    },
+    "fp_1hddsi": {
+      "visitorNumber": 10,
+      "firstSeen": "2026-10-02T17:40:41.772Z",
+      "lastSeen": "2026-10-02T17:40:41.772Z",
+      "visitCount": 1
     }
   }
 }

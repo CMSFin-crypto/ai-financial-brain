@@ -41,3 +41,28 @@ observed_at,available_at,trend,source,region,interest,ticker,product,company,mat
 2026-09-25,2026-09-25,minecraft live,gdelt,CA,0.0357,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,516.1699829101562,771.3499755859375
 2026-09-27,2026-09-27,starbucks canada,google_trends,CA,50,SBUX,Starbucks (kafenetë),Starbucks,0.55,0.15,0.35,94.86,771.35
 2026-09-27,2026-09-27,minecraft live,google_trends,CA,50,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,516.17,771.35
+2026-09-03,2026-09-03,xbox disc to digital,gdelt,GB,0.0713,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-04,2026-09-04,xbox disc to digital,gdelt,GB,0.0844,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-05,2026-09-05,xbox disc to digital,gdelt,GB,0.0438,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-06,2026-09-06,xbox disc to digital,gdelt,GB,0.0426,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-07,2026-09-07,xbox disc to digital,gdelt,GB,0.05,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-08,2026-09-08,xbox disc to digital,gdelt,GB,0.0414,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-09,2026-09-09,xbox disc to digital,gdelt,GB,0.0535,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-10,2026-09-10,xbox disc to digital,gdelt,GB,0.0626,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-11,2026-09-11,xbox disc to digital,gdelt,GB,0.0532,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-12,2026-09-12,xbox disc to digital,gdelt,GB,0.0505,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-13,2026-09-13,xbox disc to digital,gdelt,GB,0.0411,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-20,2026-09-20,xbox disc to digital,gdelt,GB,0.0588,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-21,2026-09-21,xbox disc to digital,gdelt,GB,0.0571,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-22,2026-09-22,xbox disc to digital,gdelt,GB,0.1002,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-23,2026-09-23,xbox disc to digital,gdelt,GB,0.0554,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-24,2026-09-24,xbox disc to digital,gdelt,GB,0.1148,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-25,2026-09-25,xbox disc to digital,gdelt,GB,0.0357,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,,
+2026-09-27,2026-09-27,xbox disc to digital,gdelt,GB,0.0388,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,516.17,771.35
+2026-09-28,2026-09-28,xbox disc to digital,gdelt,GB,0.0801,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,509.22,765.61
+2026-09-29,2026-09-29,xbox disc to digital,gdelt,GB,0.0422,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,508.96,764.2
+2026-09-30,2026-09-30,xbox disc to digital,gdelt,GB,0.0727,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.9,762.63
+2026-09-27,2026-09-27,minecraft live,gdelt,CA,0.0388,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,516.17,771.35
+2026-09-28,2026-09-28,minecraft live,gdelt,CA,0.0801,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,509.22,765.61
+2026-09-29,2026-09-29,minecraft live,gdelt,CA,0.0422,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,508.96,764.2
+2026-09-30,2026-09-30,minecraft live,gdelt,CA,0.0727,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.9,762.63

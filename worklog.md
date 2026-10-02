@@ -1051,3 +1051,23 @@ Stage Summary:
 - Izolimi nga CTC i paprekur — asnjë skedar i përbashkët i prekur; skedarët e ndryshuar janë vetëm ata REV (hypothesis/signal/backtest/2 routes/UI/spec/validator) + worklog
 - REZULTATI I KUJDESIT: me këto filtra më të ashpër, numri i sinjaleve do të jetë më i ulët se v1.0 (739 tregti në smoke test) — kjo NUK është arsye për uljen e pragjeve; gates+profile vlerësohen ashtu siç dalin
 - CI pritet e gjelbër: lint 0 gabime + build kalon; Vercel bën auto-deploy nga push-i
+
+---
+Task ID: mobile-tabs-fix
+Agent: Super Z (main)
+Task: Fix mobile bug — homepage tab strips in left corner disappear when page is panned sideways; user had to rotate screen to bring them back.
+
+Work Log:
+- Workspace was reset; re-cloned repo from GitHub (token auth) and re-initialized dev environment; root project = repo (same layout as previous session).
+- Reproduced with agent-browser at 390x844: documentElement.scrollWidth = 417px vs viewport 390px → page-level horizontal overflow (page pans sideways invisibly; scrollbars hidden) → left-corner tab rows pushed off-screen; rotation widens viewport → overflow < viewport → scrollX resets → tabs return. Matches reported behavior exactly.
+- Traced offenders (unclipped, right edge = doc edge): VP READY card header chip rows (ibkr-strategy.tsx ~L3845/3859, right=417) and Learning Engine header (ibkr-strategy.tsx ~L3556, right=392); 15 page-level offender elements total.
+- Fix 1 (safety net): globals.css @layer base — html,body overflow-x: hidden + overflow-x: clip (clip does not create a scroll container → sticky header unaffected).
+- Fix 2 (source): ibkr-strategy.tsx — VP READY card header row + chip row get flex-wrap/min-w-0 (chips wrap to second line on mobile); Learning Engine header gets flex-wrap + hidden sm:inline subtitle.
+- Verified with agent-browser: overflow 0px on ALL 10 tabs at 390px; sticky header top=0 after 600px scroll; landscape 844px overflow 0; real pointer click on "Tregu" switches panel (Radix needs pointer events, JS .click() doesn't — test artifact only).
+- bun run lint: 0 errors (6 pre-existing warnings in unrelated files).
+- Commit 7cda8a4 pushed to origin main (c4ff0c1..7cda8a4).
+
+Stage Summary:
+- Bug root cause: page-level horizontal overflow → invisible sideways pan on phone → left tab strips off-screen; rotation reset scrollX.
+- Deliverable: commit 7cda8a4 on CMSFin-crypto/ai-financial-brain (globals.css + ibkr-strategy.tsx).
+- Note: token ghp_2vYs... remains exposed in chat; user should rotate it on GitHub.
