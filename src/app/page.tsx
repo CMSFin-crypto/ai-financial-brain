@@ -460,12 +460,12 @@ export default function Home() {
                 </TabsList>
               </div>
             </div>
-          {/* Mobile/Tablet: scrollable horizontal tabs by category */}
+          {/* Mobile/Tablet: tabs per kategori — flex-wrap që të dukën të gjithë pa scroll horizontal */}
           <div className="lg:hidden space-y-2">
               {/* Tregu */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
                   <TabsTrigger value="ctc-v2" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <TrendingUp className="w-3 h-3 mr-1" />CTC v2
                   </TabsTrigger>
@@ -504,7 +504,7 @@ export default function Home() {
               {/* Analizë */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
                   <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
                     <FileText className="w-3 h-3 mr-1" />10-Q
                   </TabsTrigger>
@@ -531,7 +531,7 @@ export default function Home() {
               {/* AI & Trading */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">AI &</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
                   <TabsTrigger value="trading" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <ShoppingCart className="w-3 h-3 mr-1" />Trading
                   </TabsTrigger>
@@ -552,7 +552,7 @@ export default function Home() {
               {/* Kontrol */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Kontrol</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
                   <TabsTrigger value="drift" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
                     <Activity className="w-3 h-3 mr-1" />Drift
                   </TabsTrigger>
@@ -570,7 +570,7 @@ export default function Home() {
               {/* Lab — Social Arb (faqe e veçuar /social-arb) */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Lab</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 overflow-x-auto flex-nowrap w-full scrollbar-none">
+                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
                   <TabsTrigger value="social-arb" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-rose-600 data-[state=active]:text-white">
                     <FlaskConical className="w-3 h-3 mr-1" />Social Arb
                   </TabsTrigger>
