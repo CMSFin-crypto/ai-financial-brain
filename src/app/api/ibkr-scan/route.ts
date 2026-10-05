@@ -1417,6 +1417,33 @@ export async function runIBKRScan(): Promise<FunnelResponse> {
     console.error('[IBKR v2] Journal ingest failed (non-blocking):', e?.message || e);
   }
 
+  // ── DITARI I SINJALEVE (Gjurmuesi) — JOB A (CTC) piggyback ──
+  // Regjistro ÇDO kandidat delivery-eligible (READY + TREND_CONT) — jo
+  // vetëm Top 10 — edhe pa slot (flag pa_slot). Non-blocking: pa DB,
+  // skanimi vazhdon normalisht. Idempotent (strategji+simbol+datë).
+  try {
+    const { ingestSignalJournalCTC, currentEtSessionDate } = await import('@/lib/signal-journal');
+    const sj = await ingestSignalJournalCTC({
+      stocks: phase3.map((s) => ({
+        symbol: s.symbol,
+        sector: s.sector,
+        totalScore: s.totalScore,
+        decision: s.decision,
+        setup: s.setup,
+        entry: s.entry,
+        stop: s.stop,
+        target3R: s.target3R,
+      })),
+      sessionDate: currentEtSessionDate(),
+      spyBars: (spyData ?? []).map((b) => ({ date: b.date, close: b.close })),
+    });
+    console.log(
+      `[IBKR v2] Ditari Sinjaleve (CTC): ${sj.saved} të reja, ${sj.updated} rifreskime${sj.error ? ` — ERR: ${sj.error}` : ''}`
+    );
+  } catch (e: any) {
+    console.error('[IBKR v2] Ditari Sinjaleve (CTC) failed (non-blocking):', e?.message || e);
+  }
+
   // ── NEW: Volume Profile Engine (in-memory, no DB required) ──
   // Calculates VP for every candidate. Works on both sandbox (with DB)
   // and Vercel (without DB) since VP is computed in-memory.

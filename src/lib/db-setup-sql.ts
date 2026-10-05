@@ -1219,4 +1219,46 @@ ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "tradeStatus" TEXT;
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "realizedPnlPct" DOUBLE PRECISION;
 ALTER TABLE "Top10JournalEntry" ADD COLUMN IF NOT EXISTS "companyName" TEXT;
 
+
+
+-- =============================================================
+-- DITARI I SINJALEVE (Gjurmuesi) - SignalJournalEntry (CTC & REV)
+-- =============================================================
+CREATE TABLE IF NOT EXISTS "SignalJournalEntry" (
+    "id" TEXT NOT NULL,
+    "strategy" TEXT NOT NULL,
+    "symbol" TEXT NOT NULL,
+    "companyName" TEXT,
+    "sector" TEXT,
+    "signalDate" TEXT NOT NULL,
+    "entryDate" TEXT,
+    "entry" DOUBLE PRECISION,
+    "stop" DOUBLE PRECISION,
+    "target" DOUBLE PRECISION,
+    "score" DOUBLE PRECISION,
+    "regime" TEXT,
+    "noSlot" BOOLEAN NOT NULL DEFAULT false,
+    "slotNote" TEXT,
+    "checkpoints" JSONB,
+    "finalStatus" TEXT,
+    "finalDate" TEXT,
+    "finalDayN" INTEGER,
+    "exitPrice" DOUBLE PRECISION,
+    "resultR" DOUBLE PRECISION,
+    "mfeR" DOUBLE PRECISION,
+    "maeR" DOUBLE PRECISION,
+    "pnlPctNet" DOUBLE PRECISION,
+    "source" TEXT NOT NULL DEFAULT 'live',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "SignalJournalEntry_pkey" PRIMARY KEY ("id")
+);
+
+-- Ditari i sinjaleve: indekset
+CREATE INDEX IF NOT EXISTS "SignalJournalEntry_strategy_signalDate_idx" ON "SignalJournalEntry"("strategy", "signalDate");
+CREATE INDEX IF NOT EXISTS "SignalJournalEntry_finalStatus_idx" ON "SignalJournalEntry"("finalStatus");
+CREATE INDEX IF NOT EXISTS "SignalJournalEntry_entryDate_idx" ON "SignalJournalEntry"("entryDate");
+CREATE UNIQUE INDEX IF NOT EXISTS "SignalJournalEntry_strategy_symbol_signalDate_key" ON "SignalJournalEntry"("strategy", "symbol", "signalDate");
+
 `;

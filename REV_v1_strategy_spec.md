@@ -251,3 +251,32 @@ pra janë invariante ndaj kësaj korrigjimi — adaptohen automatikisht te baza 
 re pa ndryshim hipoteze. Kjo korrigjim tani është pjesë e amendimit **v1.1**
 (më poshtë: shtresa mid-cap u shtua pikërisht mbi këtë bazë të pastër
 US-domestic). Detajet dhe kushti anti-tuning: `CTC_v2_strategy_spec.md`, Seksioni 2.
+
+---
+
+## Adenda — Ditari i Sinjaleve (Gjurmuesi), 2026-09-30
+
+REV hyn në ditarin deskriptiv të sinjaleve (`SignalJournalEntry`, tab-i
+«Gjurmuesi») si strategji e veçantë — metrikat e REV **s'përzier kurrë** me
+të CTC (Seksioni 9 i këtij spec-i). Rregullat me të cilat ditari e vlerëson
+REV janë pikërisht rregullat e hipotezës së ngrirë, pa asnjë ndryshim:
+
+- **Regjistrimi (Job A):** çdo sinjal `HYRJE_TANI` të skanimit ditor —
+  hyrja reale = close i ditës së konfirmimit (T+1). Sinjalet
+  `PRIT_KONFIRMIM` NUK regjistrohen (rregulli i hyrjes: pa konfirmim, pa
+  tregti). Flag-u `pa_slot` vjen nga slot-et e skanimit (max 3 pozicione,
+  1/sektor) — çdo sinjal i konfirmuar rregjistrohet gjithësesi.
+- **Vlerësimi (Job B):** checkpoint-e d1..d5 ku `d1 = dita pas hyrjes`;
+  target hit = high ≥ target; stop hit = low ≤ stop; qiri që i prek të
+  dyja → **STOP** (konservativ); gap nën stop → **GAP_STOP** te çmimi i
+  hapjes; **time-stop dita 3** te close (fund i fortë dita 5, si MAX_HOLD).
+- **Kostoja C = 0.20%** round-trip — vetëm për kolonën «PnL net %».
+- **Kushti anti-tuning** (i njëjta disiplinë si te CTC, Seksioni 2.2): ditari
+  është **deskriptiv** — mat çfarë ndodhi pas sinjaleve. NUK përdoret për të
+  ndryshuar stop 1.3×ATR, target 1.2R, time-stop 3d apo ndonjë prag tjetër.
+  Modelet interesante regjistrohen si hipotezë e re (version i ri) dhe
+  testohen me backtest + OOS përpara çdo ndryshimi të hipotezës së ngrirë.
+
+Detajet e plota të infrastrukturës (tabela, job-et idempotente, crons,
+rregullat e leximit, testi i konsistencës):
+`CTC_v2_strategy_spec.md`, Seksioni 8.

@@ -308,6 +308,9 @@ export async function GET() {
           ret3Pct: ret3Y,
           rsi2: rsi2Arr[sigI],
           spyRet3Pct: spyRet3Y,
+          // Kontrolli sektorik i DJE-së bëhet më poshtë (BLLOKUAR_SEKTOR me
+          // secRet3Y) — NaN këtu = neutrale për revSignalCheck (si rruga e sotme).
+          sectorRet3Pct: NaN,
           spyDailyMovePct: NaN, // circuit breaker i vlerësuar më poshtë nga regjimi global
         });
         const dropYesterday = sigY.dropTriggered && ret3Y < spyRet3Y;
@@ -510,6 +513,34 @@ export async function GET() {
       konfirmimPlotfullyem: candidates.filter((c) => c.status === 'KONFIRMIM_PLOTFULLYEM').length,
       paSinjal: UNIVERSE.length - inZone.size + (inZone.size - candidates.length),
     };
+
+    // ── DITARI I SINJALEVE (Gjurmuesi) — JOB A (REV) piggyback ──
+    // Regjistro çdo sinjal të konfirmuar (HYRJE_TANI): hyrja reale = close
+    // e ditës së konfirmimit. Flag-u pa_slot vjen nga slot-et e llogaritura
+    // më sipër (max 3 pozicione, 1/sektor). Non-blocking; idempotent.
+    try {
+      const { ingestSignalJournalREV, currentEtSessionDate } = await import('@/lib/signal-journal');
+      const sj = await ingestSignalJournalREV({
+        candidates: hyrje.map((c) => ({
+          symbol: c.symbol,
+          sector: c.sector,
+          status: c.status,
+          signalDate: c.signalDate,
+          price: c.price,
+          stop: c.stop,
+          target: c.target,
+          slot: c.slot,
+          warnings: c.warnings,
+        })),
+        sessionDate: currentEtSessionDate(),
+        spyBars: (spyBars ?? []).map((b) => ({ date: b.date, close: b.close })),
+      });
+      console.log(
+        `[REV] Ditari Sinjaleve (REV): ${sj.saved} të reja, ${sj.updated} rifreskime${sj.error ? ` — ERR: ${sj.error}` : ''}`
+      );
+    } catch (e: any) {
+      console.error('[REV] Ditari Sinjaleve (REV) failed (non-blocking):', e?.message || e);
+    }
 
     const response: RevScanResponse = {
       scannedAt: new Date().toISOString(),

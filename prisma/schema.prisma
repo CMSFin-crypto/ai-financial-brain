@@ -1099,3 +1099,61 @@ model EarningsCache {
 
   @@index([fetchedAt])
 }
+
+// ═══════════════════════════════════════════════════════════════
+// DITARI I SINJALEVE (Gjurmuesi) — ditar DESKRIPTIV për CTC & REV
+// ═══════════════════════════════════════════════════════════════
+// Çdo ditë ruhen sinjalet që nxjerrin strategjitë (Job A) dhe pas
+// 1–5 ditëve tregtare plotësohen kontrollet (Job B): a arriti targetin,
+// a goditi stop-in, ku është çmimi, R në close. Ky ditar është VETËM
+// matës i asaj çfarë ndodhi — NUK përdoret për të tunuar parametrat
+// e strategjisë (shik CTC_v2_strategy_spec.md, Seksioni 8).
+//
+// Çelësi unik (strategy, symbol, signalDate) garanton që job-et
+// idempotente — asnjë dyfishim edhe kur ekzekutohen dy herë.
+// ═══════════════════════════════════════════════════════════════
+model SignalJournalEntry {
+  id       String @id @default(cuid())
+  strategy String // "CTC" | "REV"
+  symbol   String
+  companyName String?
+  sector   String?
+
+  // Data e sinjalit & hyrjes (YYYY-MM-DD, sesioni ET)
+  signalDate String // dita e sinjalit (CTC: dita e skanimit; REV: dita e rënies)
+  entryDate  String? // CTC: dita pasues (hyrje në open); REV: dita e konfirmimit (hyrje në close)
+  entry      Float? // çmimi i hyrjes (CTC: open e ditës pasuese; REV: close e konfirmimit)
+  stop       Float?
+  target     Float? // CTC: target 3R (bracket); REV: 1.2R sipas hipotezës
+  score      Float? // CTC: totalScore; REV: null (renditet me idioSpread)
+  regime     String? // TRENDING | TRANSITIONAL | CHOP (në ditën e sinjalit — klasifikues deskriptiv SPY)
+
+  // Sinjal i plotë sipas rregullave por pa slot të lirë (statistikat
+  // s'varin nga rendi i hapjes — rregjistrohet gjithësesi)
+  noSlot   Boolean @default(false)
+  slotNote String?
+
+  // Checkpoints d1..d5: { dN: { date, close, highSoFar, lowSoFar,
+  // rAtClose, mfeR, maeR, status } } — plotësohen nga Job B ditë pas dite
+  checkpoints Json?
+
+  // Statusi final — KYÇET kur ndodh e para, pastaj s'ndryshon më
+  finalStatus String? // target | stop | gap_stop | time_stop | no_entry | open
+  finalDate   String?
+  finalDayN   Int? // në cilën dN u kyç (1..5)
+  exitPrice   Float?
+  resultR     Float? // R i daljes: (exit - entry) / riskPerShare
+  mfeR        Float? // Maximum Favorable Excursion në R (deri në kyçje)
+  maeR        Float? // Maximum Adverse Excursion në R (deri në kyçje)
+  pnlPctNet   Float? // fitimi % pas kostos C
+
+  source String @default("live") // live | backfill
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([strategy, symbol, signalDate])
+  @@index([strategy, signalDate])
+  @@index([finalStatus])
+  @@index([entryDate])
+}

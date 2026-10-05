@@ -16,6 +16,7 @@ import { MarketTickerBar } from '@/components/financial-brain/market-ticker-bar'
 import { IBKRStrategy } from '@/components/financial-brain/ibkr-strategy';
 import { CAMSStrategy } from '@/components/financial-brain/cams-strategy';
 import { WeeklyJournal } from '@/components/financial-brain/weekly-journal';
+import SignalTracker from '@/components/financial-brain/signal-tracker';
 import { AIChat } from '@/components/financial-brain/ai-chat';
 import { GlobalSearch } from '@/components/financial-brain/global-search';
 import { MarketDashboard } from '@/components/financial-brain/market-dashboard';
@@ -57,6 +58,7 @@ import {
   FlaskConical,
   TrendingDown,
   TrendingUp,
+  Flag,
 } from 'lucide-react';
 import { REVStrategy } from '@/components/financial-brain/rev-strategy';
 import { CTCDelivery } from '@/components/financial-brain/ctc-v2-delivery';
@@ -362,6 +364,9 @@ export default function Home() {
                   <TabsTrigger value="journal" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" />Ditari Javor
                   </TabsTrigger>
+                  <TabsTrigger value="gjurmuesi" className="text-xs py-2 px-3 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                    <Flag className="w-3.5 h-3.5 mr-1.5" />Gjurmuesi
+                  </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-xs py-2 px-3 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Tregu
                   </TabsTrigger>
@@ -475,6 +480,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="journal" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BookOpen className="w-3 h-3 mr-1" />Ditari
+                  </TabsTrigger>
+                  <TabsTrigger value="gjurmuesi" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                    <Flag className="w-3 h-3 mr-1" />Gjurmuesi
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                     <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
@@ -627,6 +635,18 @@ export default function Home() {
               className="space-y-4"
             >
               <WeeklyJournal />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Gjurmuesi — Ditari i Sinjaleve (CTC & REV, kontroll d1..d5) */}
+          <TabsContent value="gjurmuesi" className="mt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              <SignalTracker />
             </motion.div>
           </TabsContent>
 

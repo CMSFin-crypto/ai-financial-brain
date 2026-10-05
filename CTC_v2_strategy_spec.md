@@ -149,3 +149,84 @@ saturim i trendit; banda fituese: 75–84).
 | Data | Version | Ndryshimi | Arsyetimi |
 |---|---|---|---|
 | 2026-09-30 | Univers core v2 | 400-lista e përzier → ~200 US-domestic/US-GAAP filers (`universe-core.ts`); top-kuintil percentile i dollar-vol aplikohet mbi bazën e pastër | Korrigjim cilësie të dhënash: EDGAR coverage + ADR filing mismatch (20-F/IFRS) + emra të vdekur/të përsëritur. I para-regjistruar para vlerësimit të rezultateve — jo tunim parametri (§2.2) |
+| 2026-09-30 | Ditari i Sinjaleve v1 | Job A/B idempotente (`signal-journal.ts`), tabela `SignalJournalEntry`, tab-i «Gjurmuesi», crons 22:00/22:45 UTC | Instrument deskriptiv (Seksioni 8) — mat ekzekutimin pas 1–5 ditësh; NUK tunon parametra. Rregullat = rregullat e Validation Lab, të papastra |
+
+## 8. Ditari i Sinjaleve (Gjurmuesi) — kontrolli pas 1–5 ditësh
+
+**Qëllimi:** çdo ditë ruhen sinjalet që nxjerr strategjia (Job A); pas 1, 2,
+3, 4 dhe 5 ditëve tregtare sistemi tregon për çdo sinjal a arriti target-in,
+a goditi stop-in, ku është çmimi, dhe llogarit statistika (Job B). Ky ditar
+është **DESKRIPTIV — mat çfarë ndodhi. NUK përdoret për të tunuar
+parametrat e strategjisë.** Vlen për CTC (ky spec) dhe REV (spec-i i vet),
+të ndara — tabela e Gjurmuesit i mban kurrë të përziera.
+
+### 8.1 Të dhënat për çdo sinjal (një rresht, tabela `SignalJournalEntry`)
+
+`id`, `strategy` (CTC | REV), `symbol`, `sector`; `signalDate`, `entryDate`,
+`entry`, `stop`, `target`, `score`, `regime` (TRENDING/TRANSITIONAL/CHOP —
+klasifikues deskriptiv mbi SPY, i para-regjistruar në `signal-journal.ts`);
+checkpoint-et `d1..d5` (close, high-deri-tani, low-deri-tani, R-në-close,
+statusi); `finalStatus`: `target | stop | gap_stop | time_stop | no_entry |
+open` — **kyçet kur ndodh e para dhe nuk ndryshon më**. Flag-u `noSlot`
+regjistron sinjalet e plota sipas rregullave që mbetën pa slot të lirë,
+që statistikat të mos varen nga rendi i hapjes. Çelës unik:
+`strategy + symbol + signalDate` — job-et janë idempotente, s'ka dyfishime.
+
+### 8.2 Job-et ditore pas mbylljes
+
+- **Job A — regjistrimi** (cron 22:00 UTC Mon–Fri ose piggyback në çdo
+  skanim): ruaj ÇDO sinjal READY delivery-eligible (CTC: `decision=READY` +
+  `setup=TREND_CONT`; REV: `HYRJE_TANI`) — **jo vetëm Top 10** — edhe kur
+  nuk ka slot të lirë (`noSlot=true`, arsyeja në `slotNote`).
+- **Job B — vlerësimi** (cron 22:45 UTC Mon–Fri, `/api/signal-journal/evaluate`):
+  për çdo sinjal të pakyçur me moshë ≤ 5 ditë tregtare merr OHLC ditor dhe
+  plotëson checkpoint-in e ditës N.
+
+### 8.3 Rregullat e vlerësimit (të njëjta me Validation Lab — NUK janë ndryshuar)
+
+- **Hyrja:** CTC hyn në **open** të ditës pas konfirmimit (`d1 = dita e
+  hyrjes`); REV hyn në **T+1** vetëm me konfirmim të kaluar (hyrja në
+  **close** të ditës së konfirmimit, `d1 = dita pas hyrjes`).
+- **Target hit:** high ≥ target. **Stop hit:** low ≤ stop.
+- **E njëjta qiri prek edhe stop edhe target → numërohet STOP** (supozim
+  konservativ — si `checkPositionBar` i Validation Lab).
+- **Gap:** hapja përtej stop-it → humbja te **çmimi i hapjes** (`GAP_STOP`),
+  jo te stop-i. Hapja mbi target → target te çmimi i hapjes.
+- **Time stop:** CTC dita 5, REV dita 3 — dalje te close i asaj dite
+  (REV ka edhe fund të fortë në ditën 5, si MAX_HOLD i backtest-it).
+- Pasi statusi kyçet, **nuk ndryshon më** — Job B s'e prek më rreshtin.
+- Dita tregtare = pa fundjava dhe pa festat e bursës (kalendari nga qiratë SPY).
+- Kosto **C = 0.20%** round-trip (kalibruar me `DEFAULT_COSTS` të
+  Validation Lab: komision + spread + slippage). Deskriptiv — jo parameter.
+
+### 8.4 Faqja "Gjurmuesi" (tab i ri)
+
+- **A. Lista** — filtra: Sot, 1–5 ditë më parë, sipas strategjisë. Çdo
+  sinjal: simboli, mosha, statusi, % e rrugës drejt target-it, R aktual,
+  shiriti stop → hyrje → target me çmimin aktual.
+- **B. Statistikat sipas horizontit** — një rresht për çdo ditë 1..5,
+  e ndarë CTC / REV: n (sinjale me ≥ N ditë moshë), % target kumulative,
+  % stop kumulative, % ende open, R mesatar dhe median në close të ditës N,
+  MFE/MAE mesatare, fitimi mesatar % pas kostos C.
+- **C. Ndarje shtesë** — sipas sektorit dhe sipas regjimit
+  (TRENDING / TRANSITIONAL / CHOP) — të shohësh ku strategjia punon e ku jo.
+
+### 8.5 Rregullat e leximit të statistikave (të detyrueshme)
+
+1. **Nën 30 sinjale** në një rresht → shënohet "kampion i vogël, mos nxirr
+   përfundime".
+2. **Mos e përdor këtë tabelë për të ndryshuar target, stop ose pragje.**
+   Nëse sheh një model interesant, regjistroje si **hipotezë të re (version
+   i ri)** dhe testoje në Validation Lab — e njëjta disiplinë anti-overfitting
+   si në Seksionin 2.2.
+3. **Krahaso gjithmonë** me paper trading dhe me OOS të Validation Lab.
+   Nëse ditari jep rezultate shumë ndryshe nga OOS, ka diçka të gabuar në
+   ekzekutim ose në të dhëna — heto para se të mendosh për strategjinë.
+
+### 8.6 Testi i konsistencës (detyrueshëm para përdorimit)
+
+Ekzekuto Job B mbi ~30 ditë historike (`scripts/journal-consistency-test.ts`)
+dhe krahaso me rezultatet e backtest-it për të njëjtat sinjale — statuset
+e daljes duhet të përputhen (dallimet e vetme të pranishme: GAP_STOP ku
+backtest-i i vjetër numëronte STOP te niveli i stop-it — ditari është më i
+saktë, pasi ndjek rregullin e gap-it të spec-it).
