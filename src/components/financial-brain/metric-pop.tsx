@@ -127,8 +127,8 @@ export const TERM_INFO: Record<string, MetricInfoSpec> = {
   pct_stop: {
     title: '% stop',
     what: 'Përqindja kumulative që kanë goditur stop deri në atë ditë. Nëse e njëjta qiri prek edhe stop edhe target, numërohet STOP (hipotezë konservatore). Përfshin edhe GAP_STOP.',
-    ideal: 'Nuk ka «ideal» absolut — e rëndësishme është sekuca me % target dhe R mesatare. Nëse % stop >> % target dhe R mesatare negative, rregullat nuk po punojnë në këto kushte.',
-    warn: 'Shiko edhe GAP_STOP veç: humbjet e hapjes së gabuar inflatojnë këtë kolonë.',
+    ideal: 'Nuk ka «ideal» absolut — e rëndësishme është ekuilibri me % target dhe R mesatare. Nëse % stop >> % target dhe R mesatare negative, rregullat nuk po punojnë në këto kushte.',
+    warn: 'Shiko edhe GAP_STOP veç: humbjet nga gap-et e hapjes e rrisin këtë kolonë.',
   },
   pct_open: {
     title: '% open',
@@ -150,7 +150,7 @@ export const TERM_INFO: Record<string, MetricInfoSpec> = {
     title: 'MFE mes. (Maximum Favorable Excursion)',
     what: 'Lëvizja maksimale FAVORABE (në R) që ka arritur trade-i deri në atë ditë, pavarësisht ku doli. Sa lart ka shkuar çmimi në të mirë të trade-it para daljes.',
     ideal: 'Më e lartë se R e realizuar = ka pasur hapësirë që daljet nuk e kapën. Nëse MFE është shumë më e lartë se % target, targetet po goditen — verifiko te kolona % target.',
-    warn: 'MFE i lartë NUK është arsye për të ngritur targetet — do të ishte tunim nga ditarja, që është e ndaluar.',
+    warn: 'MFE i lartë NUK është arsye për të ngritur targetet — do të ishte tunim nga ditari, që është e ndaluar.',
   },
   mae_mean: {
     title: 'MAE mes. (Maximum Adverse Excursion)',
@@ -194,11 +194,11 @@ export const TERM_INFO: Record<string, MetricInfoSpec> = {
   status_time_stop: {
     title: 'TIME_STOP',
     what: 'Dalje me kohë: trade-i nuk preku as target as stop brenda horizontit dhe doli te çmimi i mbylljes së ditës së fundit — CTC dita 5, REV dita 3.',
-    ideal: 'I pritshëm për një pjesë të sinjaleve. Nëse shumica dalin me time-stop me R negative, hype-i i strategjisë nuk po konfirmohet.',
+    ideal: 'I pritshëm për një pjesë të sinjaleve. Nëse shumica dalin me time-stop me R negative, thelbi i strategjisë nuk po konfirmohet.',
   },
   status_open: {
     title: 'OPEN',
-    what: 'Sinjali është ende i hapur — pa dalje deri tani. Rrathesti d1..d5 plotësohen ditë pas dite nga Job B (cron 22:00/22:45 UTC).',
+    what: 'Sinjali është ende i hapur — pa dalje deri tani. Rreshtat d1..d5 plotësohen ditë pas dite nga Job B (cron 22:00/22:45 UTC).',
     ideal: 'Normal gjatë ditëve të para; pas horizontit të plotë duhet të shndërrohet në status final.',
   },
   status_no_entry: {
@@ -310,7 +310,7 @@ export const TERM_INFO: Record<string, MetricInfoSpec> = {
   sizing_rev: {
     title: 'Sizing (0.5% rrezik)',
     what: 'Madhësia e pozicionit llogaritet që NËSE stopi goditet, humbja = 0.5% e kapitalit (referenca $25K). Aksione = rreziku $ / (hyrje − stop).',
-    ideal: 'Po humbet gjithnjë e njëjtë: 0.5% kapital për trade. Notionali rregullohet nga distanca e stopit — jo anasjelltas.',
+    ideal: 'Humbja është gjithnjë e njëjtë: 0.5% kapital për trade. Notionali rregullohet nga distanca e stopit — jo anasjelltas.',
   },
   slot_ok: {
     title: 'SLOT OK',
@@ -335,7 +335,7 @@ export const TERM_INFO: Record<string, MetricInfoSpec> = {
   edgar_gate: {
     title: 'Porta EDGAR',
     what: 'Verifikim fail-closed te SEC EDGAR: aksioni duhet të jetë filer i vlefshëm (10-K/10-Q aktual). Nëse EDGAR s\'përgjigjet ose statusi s\'verifikohet, sinjali REFUZOHET — jo «prit me shpresë».',
-    ideal: 'Kaluar në heshtje. Refuzim i shfaqur = siguria ka parasysh: pa verifikim, pa tregti.',
+    ideal: 'Kaluar në heshtje. Refuzim i shfaqur = rregulli fail-closed ka parasysh: pa verifikim, pa tregti.',
   },
   spy_regjim: {
     title: 'Regjimi SPY (porta e tregut)',
@@ -351,7 +351,7 @@ export const TERM_INFO: Record<string, MetricInfoSpec> = {
   },
   w_rs: {
     title: 'RS (Relative Strength) — 25%, pesha më e lartë',
-    what: 'Sa ka performuar aksioni krahas SPY-së (indeksit të tregut) në dritaren e matjes. Aksionet që rrëzojnë tregun preferohen — «udhëheqës».',
+    what: 'Sa ka performuar aksioni krahas SPY-së (indeksit të tregut) në dritaren e matjes. Aksionet që e tejkalojnë tregun preferohen — «udhëheqës».',
     ideal: 'RS pozitiv dhe i fortë (outperform i qëndrueshëm). Peshë 25% sepse RS është faktori më i qëndrueshëm i fitoreve në testet historike.',
   },
   w_momentum: {

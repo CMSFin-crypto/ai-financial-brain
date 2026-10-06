@@ -1,7 +1,7 @@
 {
  "version": 3,
  "createdAt": "2026-09-26T17:29:23.993Z",
- "lastScanAt": "2026-10-02T17:38:52.674Z",
+ "lastScanAt": "2026-10-06T13:08:53.495Z",
  "measurements": [
   {
    "observed_at": "2026-09-26",
@@ -1330,6 +1330,70 @@
    "event_risk": 0.35,
    "stock_price": 512.8,
    "index_price": 763.99
+  },
+  {
+   "observed_at": "2026-10-06",
+   "available_at": "2026-10-06",
+   "trend": "starbucks canada",
+   "source": "google_trends",
+   "region": "CA",
+   "interest": 50,
+   "ticker": "SBUX",
+   "product": "Starbucks (kafenetë)",
+   "company": "Starbucks",
+   "materiality": 0.55,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 94.43,
+   "index_price": 774.83
+  },
+  {
+   "observed_at": "2026-10-06",
+   "available_at": "2026-10-06",
+   "trend": "minecraft live",
+   "source": "google_trends",
+   "region": "CA",
+   "interest": 50,
+   "ticker": "MSFT",
+   "product": "Xbox / Activision Blizzard",
+   "company": "Microsoft",
+   "materiality": 0.03,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 525.18,
+   "index_price": 774.83
+  },
+  {
+   "observed_at": "2026-10-06",
+   "available_at": "2026-10-06",
+   "trend": "jim farley ford skilled trades ai",
+   "source": "google_trends",
+   "region": "US",
+   "interest": 50,
+   "ticker": "F",
+   "product": "Ford",
+   "company": "Ford Motor Company",
+   "materiality": 0.85,
+   "promo_risk": 0.1,
+   "event_risk": 0.45,
+   "stock_price": 12.15,
+   "index_price": 774.83
+  },
+  {
+   "observed_at": "2026-10-06",
+   "available_at": "2026-10-06",
+   "trend": "xbox disc to digital",
+   "source": "google_trends",
+   "region": "GB",
+   "interest": 50,
+   "ticker": "MSFT",
+   "product": "Xbox / Activision Blizzard",
+   "company": "Microsoft",
+   "materiality": 0.03,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 525.18,
+   "index_price": 774.83
   }
  ],
  "candidates": {
@@ -1358,7 +1422,7 @@
     "Shkaku i trendit: S'u verifikua dot këtë skanim (GDELT i padisponueshëm) — pa klasifikim, nuk ka ngritje.",
     "Prova e pavarur (GDELT): +58% 7 ditët e fundit kundrejt bazës 28-ditore (pragu +25%) — kërkesa ka konfirmim të jashtëm.",
     "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-24 → 2026-10-01 (të njëjtat data për aksionin dhe SPY): SBUX 93.65 → 94.88 (+1.3%), SPY 767.18 → 763.99 (-0.4%) → diferencë +1.7% ndaj indeksit.",
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): SBUX 95.27 → 94.43 (-0.9%), SPY 765.61 → 774.83 (+1.2%) → diferencë -2.1% ndaj indeksit.",
     "Në WATCH — lidhja me SBUX u verifikua, por mungon: shkaku i trendit s'është verifikuar dot."
    ],
    "history": [
@@ -1404,26 +1468,33 @@
     "confirmed": true
    },
    "price": {
-    "stockReturn": 0.013134009610250796,
-    "indexReturn": -0.004158085455825189,
-    "priceVsIndex": 0.017292095066075985,
-    "asOf": "2026-10-01",
-    "fromDate": "2026-09-24",
-    "stockPrice": 94.88,
-    "indexPrice": 763.99,
+    "stockReturn": -0.00881704628949287,
+    "indexReturn": 0.01204268491790872,
+    "priceVsIndex": -0.02085973120740159,
+    "asOf": "2026-10-05",
+    "fromDate": "2026-09-28",
+    "stockPrice": 94.43,
+    "indexPrice": 774.83,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-02T17:38:52.674Z"
+    "checkedAt": "2026-10-06T13:08:53.495Z"
    },
    "cause": null,
    "outcome": {
     "baseDate": "2026-09-25",
     "baseStock": 94.86,
     "baseIndex": 771.35,
-    "d5": null,
+    "d5": {
+     "date": "2026-10-02",
+     "stockPrice": 94.71,
+     "indexPrice": 769.64,
+     "stockRet": -0.0015812776723592714,
+     "indexRet": -0.0022168924612692154,
+     "relative": 0.0006356147889099439
+    },
     "d20": null,
-    "pendingNote": "prit edhe 1 ditë tregtimi për d5 · prit edhe 16 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-02T17:38:52.674Z"
+    "pendingNote": "prit edhe 14 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
    }
   },
   "minecraft live|MSFT|CA": {
@@ -1437,12 +1508,12 @@
    "firstSeenAt": "2026-09-26T18:46:46.017Z",
    "lastSeenAt": "2026-09-26T18:58:26.754Z",
    "lastChangedAt": "2026-09-26T18:46:46.017Z",
-   "score": 32,
+   "score": 39,
    "breakdown": {
     "demand": 4.90654205607477,
     "confirmation": 8,
     "materiality": 0.6,
-    "price": 8,
+    "price": 15,
     "quality": 4.25,
     "event": 6.5
    },
@@ -1450,8 +1521,9 @@
     "Zbuluar në Google Trends CA: «minecraft live» → marka i përket Microsoft (MSFT).",
     "Shkaku i trendit [E paqartë]: S'ka artikuj 24h për këtë term — shkaku s'mund të verifikohet pa materiale. (kontrolluar 2026-10-02)",
     "GDELT: 20% 7 ditë kundrejt bazës — NËN pragun e provës së pavarur (+25%).",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-24 → 2026-10-01 (të njëjtat data për aksionin dhe SPY): MSFT 497.93 → 512.80 (+3.0%), SPY 767.18 → 763.99 (-0.4%) → diferencë +3.4% ndaj indeksit.",
-    "Në WATCH — lidhja me MSFT u verifikua, por mungon: shkaku është «E paqartë» — duhet provë kërkece, jo thjesht lançim/lajm; prova e pavarur e kërkesës mungon (GDELT +19.6% < +25%); dritarja e çmimit nuk është e hapur (+3.4% > +3%); score 32 < 60 (kusht sekondar)."
+    "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): MSFT 509.22 → 525.18 (+3.1%), SPY 765.61 → 774.83 (+1.2%) → diferencë +1.9% ndaj indeksit.",
+    "Në WATCH — lidhja me MSFT u verifikua, por mungon: shkaku është «E paqartë» — duhet provë kërkece, jo thjesht lançim/lajm; prova e pavarur e kërkesës mungon (GDELT +19.6% < +25%); score 39 < 60 (kusht sekondar)."
    ],
    "history": [
     {
@@ -1472,16 +1544,16 @@
     "confirmed": false
    },
    "price": {
-    "stockReturn": 0.02986363545076598,
-    "indexReturn": -0.004158085455825189,
-    "priceVsIndex": 0.03402172090659117,
-    "asOf": "2026-10-01",
-    "fromDate": "2026-09-24",
-    "stockPrice": 512.8,
-    "indexPrice": 763.99,
+    "stockReturn": 0.03134205255096023,
+    "indexReturn": 0.01204268491790872,
+    "priceVsIndex": 0.019299367633051512,
+    "asOf": "2026-10-05",
+    "fromDate": "2026-09-28",
+    "stockPrice": 525.18,
+    "indexPrice": 774.83,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-02T17:38:52.674Z"
+    "checkedAt": "2026-10-06T13:08:53.495Z"
    },
    "cause": {
     "type": "unclear",
@@ -1496,10 +1568,17 @@
     "baseDate": "2026-09-25",
     "baseStock": 516.17,
     "baseIndex": 771.35,
-    "d5": null,
+    "d5": {
+     "date": "2026-10-02",
+     "stockPrice": 517.53,
+     "indexPrice": 769.64,
+     "stockRet": 0.002634790863475178,
+     "indexRet": -0.0022168924612692154,
+     "relative": 0.0048516833247443936
+    },
     "d20": null,
-    "pendingNote": "prit edhe 1 ditë tregtimi për d5 · prit edhe 16 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-02T17:38:52.674Z"
+    "pendingNote": "prit edhe 14 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
    }
   },
   "jim farley ford skilled trades ai|F|US": {
@@ -1509,13 +1588,13 @@
    "region": "US",
    "company": "Ford Motor Company",
    "product": "Ford",
-   "status": "DISCOVERED",
+   "status": "WATCH",
    "firstSeenAt": "2026-10-02T17:38:52.674Z",
    "lastSeenAt": "2026-10-02T17:38:52.674Z",
-   "lastChangedAt": "2026-10-02T17:38:52.674Z",
-   "score": 55,
+   "lastChangedAt": "2026-10-06T13:08:53.495Z",
+   "score": 42,
    "breakdown": {
-    "demand": 12.5,
+    "demand": 0,
     "confirmation": 0,
     "materiality": 17,
     "price": 15,
@@ -1523,11 +1602,12 @@
     "event": 5.5
    },
    "reasons": [
-    "Zbuluar në Google Trends US: «jim farley ford skilled trades ai» (trafik ~1000+) → marka i përket Ford Motor Company (F).",
+    "Zbuluar në Google Trends US: «jim farley ford skilled trades ai» → marka i përket Ford Motor Company (F).",
     "Shkaku i trendit: S'u verifikua dot këtë skanim (GDELT i padisponueshëm) — pa klasifikim, nuk ka ngritje.",
     "GDELT: pa histori të mjaftueshme për matjen e rritjes (duhen 2 pika të freskëta + 3 bazë).",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-24 → 2026-10-01 (të njëjtat data për aksionin dhe SPY): F 12.60 → 12.27 (-2.6%), SPY 767.18 → 763.99 (-0.4%) → diferencë -2.2% ndaj indeksit.",
-    "DISCOVERED: u gjet termi dhe marka — pritet verifikimi i lidhjes me kompaninë (GDELT) në skanimin e radhës."
+    "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): F 12.38 → 12.15 (-1.9%), SPY 765.61 → 774.83 (+1.2%) → diferencë -3.1% ndaj indeksit.",
+    "Në WATCH — lidhja me F u verifikua, por mungon: shkaku i trendit s'është verifikuar dot; prova e pavarur e kërkesës mungon (GDELT n/a < +25%); score 42 < 60 (kusht sekondar)."
    ],
    "history": [
     {
@@ -1535,12 +1615,18 @@
      "from": "NEW",
      "to": "DISCOVERED",
      "reason": "Zbuluar automatikisht në Google Trends US: «jim farley ford skilled trades ai» → F."
+    },
+    {
+     "at": "2026-10-06T13:08:53.495Z",
+     "from": "DISCOVERED",
+     "to": "WATCH",
+     "reason": "Statusi u përditësua në WATCH."
     }
    ],
    "google": {
-    "inFeedToday": true,
-    "approxTraffic": "1000+",
-    "traffic": 1000
+    "inFeedToday": false,
+    "approxTraffic": null,
+    "traffic": null
    },
    "gdelt": {
     "articles1d": null,
@@ -1549,16 +1635,16 @@
    },
    "cause": null,
    "price": {
-    "stockReturn": -0.02619047619047621,
-    "indexReturn": -0.004158085455825189,
-    "priceVsIndex": -0.02203239073465102,
-    "asOf": "2026-10-01",
-    "fromDate": "2026-09-24",
-    "stockPrice": 12.27,
-    "indexPrice": 763.99,
+    "stockReturn": -0.018578352180937063,
+    "indexReturn": 0.01204268491790872,
+    "priceVsIndex": -0.030621037098845783,
+    "asOf": "2026-10-05",
+    "fromDate": "2026-09-28",
+    "stockPrice": 12.15,
+    "indexPrice": 774.83,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-02T17:38:52.674Z"
+    "checkedAt": "2026-10-06T13:08:53.495Z"
    },
    "outcome": {
     "baseDate": "2026-10-01",
@@ -1566,8 +1652,8 @@
     "baseIndex": 763.99,
     "d5": null,
     "d20": null,
-    "pendingNote": "prit edhe 5 ditë tregtimi për d5 · prit edhe 20 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-02T17:38:52.674Z"
+    "pendingNote": "prit edhe 3 ditë tregtimi për d5 · prit edhe 18 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
    }
   },
   "xbox disc to digital|MSFT|GB": {
@@ -1581,21 +1667,22 @@
    "firstSeenAt": "2026-10-02T17:38:52.674Z",
    "lastSeenAt": "2026-10-02T17:38:52.674Z",
    "lastChangedAt": "2026-10-02T17:38:52.674Z",
-   "score": 40,
+   "score": 39,
    "breakdown": {
-    "demand": 12.5,
+    "demand": 4.90654205607477,
     "confirmation": 8,
     "materiality": 0.6,
-    "price": 8,
+    "price": 15,
     "quality": 4.25,
     "event": 6.5
    },
    "reasons": [
-    "Zbuluar në Google Trends GB: «xbox disc to digital» (trafik ~1000+) → marka i përket Microsoft (MSFT).",
+    "Zbuluar në Google Trends GB: «xbox disc to digital» → marka i përket Microsoft (MSFT).",
     "Shkaku i trendit [E paqartë]: Titujt (1) s'përmbajnë fjalë kyçesh të mjaftueshme as për kërkesë pozitive, as për lançim, as për ngjarje negative — shkaku mbetet i paqartë dhe kandidati nuk mund të ngjitet pa prova. (kontrolluar 2026-10-02)",
     "GDELT: 20% 7 ditë kundrejt bazës — NËN pragun e provës së pavarur (+25%).",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-24 → 2026-10-01 (të njëjtat data për aksionin dhe SPY): MSFT 497.93 → 512.80 (+3.0%), SPY 767.18 → 763.99 (-0.4%) → diferencë +3.4% ndaj indeksit.",
-    "Në WATCH — lidhja me MSFT u verifikua, por mungon: shkaku është «E paqartë» — duhet provë kërkece, jo thjesht lançim/lajm; prova e pavarur e kërkesës mungon (GDELT +19.6% < +25%); dritarja e çmimit nuk është e hapur (+3.4% > +3%); score 40 < 60 (kusht sekondar)."
+    "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): MSFT 509.22 → 525.18 (+3.1%), SPY 765.61 → 774.83 (+1.2%) → diferencë +1.9% ndaj indeksit.",
+    "Në WATCH — lidhja me MSFT u verifikua, por mungon: shkaku është «E paqartë» — duhet provë kërkece, jo thjesht lançim/lajm; prova e pavarur e kërkesës mungon (GDELT +19.6% < +25%); score 39 < 60 (kusht sekondar)."
    ],
    "history": [
     {
@@ -1606,9 +1693,9 @@
     }
    ],
    "google": {
-    "inFeedToday": true,
-    "approxTraffic": "1000+",
-    "traffic": 1000
+    "inFeedToday": false,
+    "approxTraffic": null,
+    "traffic": null
    },
    "gdelt": {
     "articles1d": null,
@@ -1625,16 +1712,16 @@
     "checkedAt": "2026-10-02T17:38:52.674Z"
    },
    "price": {
-    "stockReturn": 0.02986363545076598,
-    "indexReturn": -0.004158085455825189,
-    "priceVsIndex": 0.03402172090659117,
-    "asOf": "2026-10-01",
-    "fromDate": "2026-09-24",
-    "stockPrice": 512.8,
-    "indexPrice": 763.99,
+    "stockReturn": 0.03134205255096023,
+    "indexReturn": 0.01204268491790872,
+    "priceVsIndex": 0.019299367633051512,
+    "asOf": "2026-10-05",
+    "fromDate": "2026-09-28",
+    "stockPrice": 525.18,
+    "indexPrice": 774.83,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-02T17:38:52.674Z"
+    "checkedAt": "2026-10-06T13:08:53.495Z"
    },
    "outcome": {
     "baseDate": "2026-10-01",
@@ -1642,8 +1729,8 @@
     "baseIndex": 763.99,
     "d5": null,
     "d20": null,
-    "pendingNote": "prit edhe 5 ditë tregtimi për d5 · prit edhe 20 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-02T17:38:52.674Z"
+    "pendingNote": "prit edhe 3 ditë tregtimi për d5 · prit edhe 18 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
    }
   }
  },
@@ -1905,6 +1992,40 @@
     "GDELT artlist \"ford\": fetch failed",
     "GDELT artlist \"xbox\": fetch failed",
     "GDELT artlist \"starbucks\": fetch failed",
+    "GDELT artlist \"xbox\": fetch failed"
+   ]
+  },
+  {
+   "at": "2026-10-06T13:08:53.495Z",
+   "durationMs": 135380,
+   "regions": [
+    "US",
+    "GB",
+    "CA",
+    "AU"
+   ],
+   "termsScanned": 40,
+   "termsClassified": 0,
+   "candidatesActive": 4,
+   "promoted": 0,
+   "removed": 0,
+   "sources": {
+    "google_trends_US": "ok",
+    "google_trends_GB": "ok",
+    "google_trends_CA": "ok",
+    "google_trends_AU": "ok",
+    "google_trends": "ok",
+    "prices": "ok",
+    "gdelt": "throttled"
+   },
+   "errors": [
+    "GDELT \"starbucks\": GDELT: HTTP 429",
+    "GDELT \"xbox\": This operation was aborted",
+    "GDELT \"ford\": fetch failed",
+    "GDELT \"xbox\": fetch failed",
+    "GDELT artlist \"starbucks\": fetch failed",
+    "GDELT artlist \"xbox\": fetch failed",
+    "GDELT artlist \"ford\": fetch failed",
     "GDELT artlist \"xbox\": fetch failed"
    ]
   }
