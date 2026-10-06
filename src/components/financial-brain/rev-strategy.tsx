@@ -17,6 +17,7 @@ import {
   ArrowRight, GitCompareArrows, Activity, Layers, Eye, Snowflake,
 } from 'lucide-react';
 import { useState } from 'react';
+import { TermPop } from './metric-pop';
 
 // ── Tipet (pasqyrë e API response) ──
 
@@ -119,9 +120,9 @@ function CandidateCard({ c, kind }: { c: RevCandidate; kind: 'hyrje' | 'prit' | 
     c.status === 'INVALIDUAR_LOW_I_RI' ? 'INVALIDUAR — LOW I RI' :
     'KONFIRMIMI DËSHTOI';
   const slotBadge =
-    c.slot === 'OPEN_OK' ? <Badge className="bg-emerald-600 text-white text-[9px]">SLOT OK</Badge> :
-    c.slot === 'SEKTOR_PLOT' ? <Badge className="bg-amber-600 text-white text-[9px]">SEKTORI PLOT</Badge> :
-    c.slot === 'MAX_POZICIONE' ? <Badge className="bg-red-600 text-white text-[9px]">MAX 3 POZICIONE</Badge> : null;
+    c.slot === 'OPEN_OK' ? <TermPop term="slot_ok" iconClass="w-2.5 h-2.5"><Badge className="bg-emerald-600 text-white text-[9px]">SLOT OK</Badge></TermPop> :
+    c.slot === 'SEKTOR_PLOT' ? <TermPop term="sektori_plot" iconClass="w-2.5 h-2.5"><Badge className="bg-amber-600 text-white text-[9px]">SEKTORI PLOT</Badge></TermPop> :
+    c.slot === 'MAX_POZICIONE' ? <TermPop term="max_pozicione" iconClass="w-2.5 h-2.5"><Badge className="bg-red-600 text-white text-[9px]">MAX 3 POZICIONE</Badge></TermPop> : null;
 
   return (
     <div className={`rounded-lg border p-3 ${border}`}>
@@ -133,52 +134,66 @@ function CandidateCard({ c, kind }: { c: RevCandidate; kind: 'hyrje' | 'prit' | 
           {slotBadge}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className={`text-xs font-semibold ${c.ret3Pct <= -8 ? 'text-red-400' : 'text-amber-400'}`}>
-            ret3d {fmtPct(c.ret3Pct)}
-          </span>
-          <span className="text-xs text-muted-foreground">RSI2 {c.rsi2.toFixed(0)}</span>
+          <TermPop term="ret3d" iconClass="w-2.5 h-2.5">
+            <span className={`text-xs font-semibold ${c.ret3Pct <= -8 ? 'text-red-400' : 'text-amber-400'}`}>
+              ret3d {fmtPct(c.ret3Pct)}
+            </span>
+          </TermPop>
+          <TermPop term="rsi2" iconClass="w-2.5 h-2.5">
+            <span className="text-xs text-muted-foreground">RSI2 {c.rsi2.toFixed(0)}</span>
+          </TermPop>
         </div>
       </div>
 
       <div className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center">
         <div className="rounded bg-muted/10 p-1">
-          <p className="text-[9px] text-muted-foreground">Çmimi</p>
+          <TermPop term="cmimi" iconClass="w-2.5 h-2.5"><p className="text-[9px] text-muted-foreground">Çmimi</p></TermPop>
           <p className="text-xs font-bold">${c.price.toFixed(2)}</p>
         </div>
         <div className="rounded bg-muted/10 p-1">
-          <p className="text-[9px] text-muted-foreground">Idio vs SPY</p>
+          <TermPop term="idio_vs_spy" iconClass="w-2.5 h-2.5"><p className="text-[9px] text-muted-foreground">Idio vs SPY</p></TermPop>
           <p className={`text-xs font-bold ${c.idioSpreadPct < 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPct(c.idioSpreadPct)}</p>
         </div>
         <div className="rounded bg-muted/10 p-1">
-          <p className="text-[9px] text-muted-foreground">Stop (1.3×ATR)</p>
+          <TermPop term="stop_rev" iconClass="w-2.5 h-2.5"><p className="text-[9px] text-muted-foreground">Stop (1.3×ATR)</p></TermPop>
           <p className="text-xs font-bold text-red-400">${c.stop.toFixed(2)}</p>
         </div>
         <div className="rounded bg-muted/10 p-1">
-          <p className="text-[9px] text-muted-foreground">Target (1.2R)</p>
+          <TermPop term="target_rev" iconClass="w-2.5 h-2.5"><p className="text-[9px] text-muted-foreground">Target (1.2R)</p></TermPop>
           <p className="text-xs font-bold text-emerald-400">${c.target.toFixed(2)}</p>
         </div>
         <div className="rounded bg-muted/10 p-1">
-          <p className="text-[9px] text-muted-foreground">ATR%</p>
+          <TermPop term="atr_pct" iconClass="w-2.5 h-2.5"><p className="text-[9px] text-muted-foreground">ATR%</p></TermPop>
           <p className="text-xs font-bold">{c.atrPct.toFixed(1)}%</p>
         </div>
         <div className="rounded bg-muted/10 p-1">
-          <p className="text-[9px] text-muted-foreground">Likuid. pct</p>
+          <TermPop term="likuid_pct" iconClass="w-2.5 h-2.5"><p className="text-[9px] text-muted-foreground">Likuid. pct</p></TermPop>
           <p className="text-xs font-bold">{c.liquidityPctile}</p>
         </div>
       </div>
 
       {c.confirmation && (
         <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-          <span className={`px-1.5 py-0.5 rounded ${c.confirmation.greenCandle ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted/10 text-muted-foreground'}`}>
-            {c.confirmation.greenCandle ? '✓' : '✗'} Green candle
-          </span>
-          <span className={`px-1.5 py-0.5 rounded ${c.confirmation.higherLow ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted/10 text-muted-foreground'}`}>
-            {c.confirmation.higherLow ? '✓' : '✗'} Higher low
-          </span>
-          <span className={`px-1.5 py-0.5 rounded ${c.confirmation.volumeDeclining ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
-            {c.confirmation.volumeDeclining ? '✓' : '✗'} Volum në rënie
-          </span>
-          {c.confirmation.newLow && <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">✗ LOW I RI — invalide</span>}
+          <TermPop term="green_candle" iconClass="w-2.5 h-2.5">
+            <span className={`px-1.5 py-0.5 rounded ${c.confirmation.greenCandle ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted/10 text-muted-foreground'}`}>
+              {c.confirmation.greenCandle ? '✓' : '✗'} Green candle
+            </span>
+          </TermPop>
+          <TermPop term="higher_low" iconClass="w-2.5 h-2.5">
+            <span className={`px-1.5 py-0.5 rounded ${c.confirmation.higherLow ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted/10 text-muted-foreground'}`}>
+              {c.confirmation.higherLow ? '✓' : '✗'} Higher low
+            </span>
+          </TermPop>
+          <TermPop term="volum_renie" iconClass="w-2.5 h-2.5">
+            <span className={`px-1.5 py-0.5 rounded ${c.confirmation.volumeDeclining ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
+              {c.confirmation.volumeDeclining ? '✓' : '✗'} Volum në rënie
+            </span>
+          </TermPop>
+          {c.confirmation.newLow && (
+            <TermPop term="low_i_ri" iconClass="w-2.5 h-2.5">
+              <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">✗ LOW I RI — invalide</span>
+            </TermPop>
+          )}
         </div>
       )}
 
@@ -196,21 +211,27 @@ function CandidateCard({ c, kind }: { c: RevCandidate; kind: 'hyrje' | 'prit' | 
         {c.gate8k?.blocked && (
           <li className="text-[10px] text-red-400 flex items-start gap-1">
             <Ban className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" />
-            8-K material më {c.gate8k.lastFilingDate}{c.gate8k.items ? ` (items: ${c.gate8k.items})` : ''} — lajmi real, jo overreaction
+            <TermPop term="gate_8k" iconClass="w-2.5 h-2.5">
+              8-K material më {c.gate8k.lastFilingDate}{c.gate8k.items ? ` (items: ${c.gate8k.items})` : ''} — lajmi real, jo overreaction
+            </TermPop>
           </li>
         )}
         {c.edgarGate && !c.edgarGate.eligible && (
           <li className="text-[10px] text-red-400 flex items-start gap-1">
             <Ban className="w-2.5 h-2.5 mt-0.5 flex-shrink-0" />
-            {c.edgarGate.detail}
+            <TermPop term="edgar_gate" iconClass="w-2.5 h-2.5">
+              {c.edgarGate.detail}
+            </TermPop>
           </li>
         )}
       </ul>
 
       {kind === 'hyrje' && (
         <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-          <Layers className="w-3 h-3" />
-          Sizing (0.5% risk / $25K assum.): {c.position.shares} aksione · rrezik {fmtMoney(c.position.riskDollars)} · notional {fmtMoney(c.position.notional)}
+          <Layers className="w-3 h-3 flex-shrink-0" />
+          <TermPop term="sizing_rev" iconClass="w-2.5 h-2.5">
+            Sizing (0.5% risk / $25K assum.): {c.position.shares} aksione · rrezik {fmtMoney(c.position.riskDollars)} · notional {fmtMoney(c.position.notional)}
+          </TermPop>
         </div>
       )}
       <div className="mt-1 text-[9px] text-muted-foreground/60">{statusLabel} · sinjal më {c.signalDate}</div>
@@ -367,7 +388,10 @@ export function REVStrategy() {
               <div className={`rounded-md border p-2.5 text-xs flex items-start gap-2 ${scan.regime.spyCrash ? 'border-red-500/50 bg-red-500/10 text-red-300' : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'}`}>
                 <Gauge className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="font-semibold">SPY {fmtPct(scan.regime.spyLastMovePct, 2)} (3d: {fmtPct(scan.regime.spyRet3Pct)})</span> — {scan.regime.note}
+                  <TermPop term="spy_regjim" iconClass="w-2.5 h-2.5">
+                    <span className="font-semibold">SPY {fmtPct(scan.regime.spyLastMovePct, 2)} (3d: {fmtPct(scan.regime.spyRet3Pct)})</span>
+                  </TermPop>
+                  {' — '}{scan.regime.note}
                 </div>
               </div>
 

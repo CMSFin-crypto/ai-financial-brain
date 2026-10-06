@@ -21,6 +21,7 @@ import {
   TrendingUp, CheckCircle2, Eye, RefreshCw, AlertTriangle, Inbox, Activity,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
+import { TermPop } from './metric-pop';
 import { FunnelViz, SectorDonut, StockCard, RegimeBanner, Top10JournalCard } from './ibkr-strategy';
 import type { FunnelResponse } from '@/app/api/ibkr-scan/route';
 import type { FundamentalReport } from '@/lib/fundamentals/normalize';
@@ -94,24 +95,28 @@ export function CTCDelivery() {
             Swing trading i rregulluar nga trendi — çdo kandidat delivery kalon funnel-in:
             <strong className="text-foreground"> Bazë core (~200 US-domestic) → Top-kuintil likuiditet → Trend → Setup (vetëm TREND_CONT) → Risk+Gap Gate → Top 1–5</strong>.
             Komponimi i score-it:{' '}
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">15% Trend</Badge>+
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">25% RS</Badge>+
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">15% Momentum</Badge>+
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-cyan-500/30 text-cyan-400 bg-cyan-500/10">15% Volum</Badge>+
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-amber-500/30 text-amber-400 bg-amber-500/10">10% Setup</Badge>+
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-sky-500/30 text-sky-400 bg-sky-500/10">10% Likuiditet</Badge>+
-            <Badge variant="outline" className="mx-0.5 text-[11px] border-red-500/30 text-red-400 bg-red-500/10">10% Risk</Badge>
+            <TermPop term="w_trend" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-blue-500/30 text-blue-400 bg-blue-500/10">15% Trend</Badge></TermPop>+
+            <TermPop term="w_rs" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-violet-500/30 text-violet-400 bg-violet-500/10">25% RS</Badge></TermPop>+
+            <TermPop term="w_momentum" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">15% Momentum</Badge></TermPop>+
+            <TermPop term="w_volum" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-cyan-500/30 text-cyan-400 bg-cyan-500/10">15% Volum</Badge></TermPop>+
+            <TermPop term="w_setup" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-amber-500/30 text-amber-400 bg-amber-500/10">10% Setup</Badge></TermPop>+
+            <TermPop term="w_likuiditet" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-sky-500/30 text-sky-400 bg-sky-500/10">10% Likuiditet</Badge></TermPop>+
+            <TermPop term="w_risk" iconClass="w-2.5 h-2.5"><Badge variant="outline" className="mx-0.5 text-[11px] border-red-500/30 text-red-400 bg-red-500/10">10% Risk</Badge></TermPop>
           </p>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px]">
             <div className="rounded-lg bg-muted/20 border border-border/40 px-3 py-2">
-              <span className="text-muted-foreground">Politika e setup-it (10-vjeçar): </span>
-              <strong className="text-emerald-400">TREND_CONT i vetmi i tregtueshëm</strong>
-              <span className="text-muted-foreground"> (+$2.7K) — PULLBACK (-$12.3K) dhe BREAKOUT (-$2.2K) vetëm WATCHLIST</span>
+              <TermPop term="politika_setup" iconClass="w-2.5 h-2.5">
+                <span className="text-muted-foreground">Politika e setup-it (10-vjeçar): </span>
+                <strong className="text-emerald-400">TREND_CONT i vetmi i tregtueshëm</strong>
+                <span className="text-muted-foreground"> (+$2.7K) — PULLBACK (-$12.3K) dhe BREAKOUT (-$2.2K) vetëm WATCHLIST</span>
+              </TermPop>
             </div>
             <div className="rounded-lg bg-muted/20 border border-border/40 px-3 py-2">
-              <span className="text-muted-foreground">Frekuenca: </span>
-              <strong className="text-emerald-400">max 3 pozicione · 1/sektor · 10-ditë cooldown/simbol</strong>
-              <span className="text-muted-foreground"> — kundër kostove (hanin 149% të fitimit bruto)</span>
+              <TermPop term="frekuenca" iconClass="w-2.5 h-2.5">
+                <span className="text-muted-foreground">Frekuenca: </span>
+                <strong className="text-emerald-400">max 3 pozicione · 1/sektor · 10-ditë cooldown/simbol</strong>
+                <span className="text-muted-foreground"> — kundër kostove (hanin 149% të fitimit bruto)</span>
+              </TermPop>
             </div>
           </div>
         </CardContent>
@@ -159,7 +164,10 @@ export function CTCDelivery() {
           {/* READY — kandidatët delivery */}
           {readyStocks.length > 0 && (
             <div className="space-y-3">
-              <p className="text-[13px] text-emerald-400 font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> READY — Kandidate Delivery, Bracket Order gati ({readyStocks.length})</p>
+              <p className="text-[13px] text-emerald-400 font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                <TermPop term="ready" iconClass="w-3 h-3">READY — Kandidate Delivery, Bracket Order gati ({readyStocks.length})</TermPop>
+              </p>
               {readyStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={i + 1} fund={fundReports[s.symbol]} fundLoading={fundLoading} />)}
             </div>
           )}
@@ -167,7 +175,10 @@ export function CTCDelivery() {
           {/* WATCHLIST / EVENT RISK */}
           {otherStocks.length > 0 && (
             <div className="space-y-3">
-              <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2"><Eye className="w-4 h-4" /> WATCHLIST / EVENT RISK ({otherStocks.length})</p>
+              <p className="text-[13px] text-amber-400 font-medium flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                <TermPop term="watchlist" iconClass="w-3 h-3">WATCHLIST / EVENT RISK ({otherStocks.length})</TermPop>
+              </p>
               {otherStocks.map((s, i) => <StockCard key={s.symbol} stock={s} rank={readyStocks.length + i + 1} fund={fundReports[s.symbol]} fundLoading={fundLoading} />)}
             </div>
           )}

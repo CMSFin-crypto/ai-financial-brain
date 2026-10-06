@@ -30,6 +30,7 @@ import {
   TrendingUp, ListChecks, BarChart3, Layers, Ban, Flag,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { TermPop, ThInfoPop, TERM_INFO } from './metric-pop';
 
 // ── Tipet (pasqyrë e /api/signal-journal) ──
 
@@ -146,13 +147,22 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 function StatusBadge({ e }: { e: JournalEntry }) {
   const st = e.finalStatus ?? 'open';
   const meta = STATUS_META[st] ?? { label: st.toUpperCase(), cls: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30' };
+  const statusTerm = (`status_${st}` in TERM_INFO) ? `status_${st}` : null;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${meta.cls}`}>{meta.label}</span>
+      {statusTerm ? (
+        <TermPop term={statusTerm} iconClass="w-2.5 h-2.5">
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${meta.cls}`}>{meta.label}</span>
+        </TermPop>
+      ) : (
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${meta.cls}`}>{meta.label}</span>
+      )}
       {e.noSlot && (
-        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-orange-500/15 text-orange-400 border-orange-500/30" title={e.slotNote ?? 'pa slot të lirë'}>
-          pa_slot
-        </span>
+        <TermPop term="pa_slot" iconClass="w-2.5 h-2.5">
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-orange-500/15 text-orange-400 border-orange-500/30" title={e.slotNote ?? 'pa slot të lirë'}>
+            pa_slot
+          </span>
+        </TermPop>
       )}
     </div>
   );
@@ -238,7 +248,7 @@ export default function SignalTracker() {
               <p className="text-[12px] text-muted-foreground mt-0.5">
                 Deskriptiv — mat çfarë ndodhi. CTC: hyrje në open të ditës pas konfirmimit, time-stop dita 5 ·
                 REV: hyrje në close të T+1 me konfirmim kaluar, time-stop dita 3 · Stop i pari kur qiri i prek të dyja ·
-                Gap → GAP_STOP te hapja · Kosto C = {data ? data.costPct.toFixed(2) : '0.20'}%.
+                Gap → GAP_STOP te hapja · <TermPop term="kosto_c" iconClass="w-2.5 h-2.5">Kosto C = {data ? data.costPct.toFixed(2) : '0.20'}%</TermPop>.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -337,21 +347,32 @@ export default function SignalTracker() {
                           <StatusBadge e={e} />
                           <div className="text-[11px] text-muted-foreground">
                             <Clock className="h-3 w-3 inline mr-1 -mt-0.5" />
-                            sinjal {e.signalDate} · moshë {ageOf(e)}d
+                            <TermPop term="mosha" iconClass="w-2.5 h-2.5">sinjal {e.signalDate} · moshë {ageOf(e)}d</TermPop>
                           </div>
                           {pctToTarget != null && (
                             <div className="text-[11px]">
-                              <Target className="h-3 w-3 inline mr-1 -mt-0.5 text-emerald-400" />
-                              {pctToTarget >= 0 ? '+' : ''}{pctToTarget.toFixed(0)}% e rrugës
+                              <TermPop term="pct_to_target" iconClass="w-2.5 h-2.5">
+                                <Target className="h-3 w-3 inline mr-1 -mt-0.5 text-emerald-400" />
+                                {pctToTarget >= 0 ? '+' : ''}{pctToTarget.toFixed(0)}% e rrugës
+                              </TermPop>
                             </div>
                           )}
                           {rNow != null && (
                             <div className={`text-[11px] font-semibold ${rNow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              R: {rNow >= 0 ? '+' : ''}{rNow.toFixed(2)}
+                              <TermPop term="r_now" iconClass="w-2.5 h-2.5">
+                                R: {rNow >= 0 ? '+' : ''}{rNow.toFixed(2)}
+                              </TermPop>
                             </div>
                           )}
-                          {e.regime && <Badge variant="outline" className="text-[9.5px] px-1 py-0">{e.regime}</Badge>}
-                          <div className="ml-auto"><LevelBar e={e} /></div>
+                          {e.regime && (
+                            <TermPop term="regjim" iconClass="w-2.5 h-2.5">
+                              <Badge variant="outline" className="text-[9.5px] px-1 py-0">{e.regime}</Badge>
+                            </TermPop>
+                          )}
+                          <div className="ml-auto flex items-center gap-1">
+                            <LevelBar e={e} />
+                            <TermPop term="shiriti" iconClass="w-3 h-3"><span className="sr-only">shiriti</span></TermPop>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -411,16 +432,16 @@ function StatsTableCard({ title, table }: { title: string; table: StatTable | nu
             <table className="w-full text-[11.5px]">
               <thead>
                 <tr className="text-left text-muted-foreground border-b border-border">
-                  <th className="py-1.5 pr-2 font-medium">Horizonti</th>
-                  <th className="py-1.5 pr-2 font-medium">n</th>
-                  <th className="py-1.5 pr-2 font-medium">% target</th>
-                  <th className="py-1.5 pr-2 font-medium">% stop</th>
-                  <th className="py-1.5 pr-2 font-medium">% open</th>
-                  <th className="py-1.5 pr-2 font-medium">R mes.</th>
-                  <th className="py-1.5 pr-2 font-medium">R med.</th>
-                  <th className="py-1.5 pr-2 font-medium">MFE mes.</th>
-                  <th className="py-1.5 pr-2 font-medium">MAE mes.</th>
-                  <th className="py-1.5 font-medium">PnL net %</th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.horizont} label="Horizonti" /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.n} label="n" /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.pct_target} label="% target" /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.pct_stop} label="% stop" /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.pct_open} label="% open" /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.r_mean} label="R mes." /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.r_median} label="R med." /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.mfe_mean} label="MFE mes." /></th>
+                  <th className="py-1.5 pr-2 font-medium"><ThInfoPop info={TERM_INFO.mae_mean} label="MAE mes." /></th>
+                  <th className="py-1.5 font-medium"><ThInfoPop info={TERM_INFO.pnl_net} label="PnL net %" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -439,7 +460,11 @@ function StatsTableCard({ title, table }: { title: string; table: StatTable | nu
                       <td className="py-1.5 pr-2 text-rose-400/80">{r.meanMae != null ? `${r.meanMae.toFixed(2)}R` : '—'}</td>
                       <td className={`py-1.5 ${(r.meanPnlNet ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {r.meanPnlNet != null ? `${r.meanPnlNet >= 0 ? '+' : ''}${r.meanPnlNet.toFixed(2)}%` : '—'}
-                        {r.smallSample && r.n > 0 && <span className="ml-1 text-[9px] text-amber-400" title="nën 30 sinjale — kampion i vogël">⚠ kamp. i vogël</span>}
+                        {r.smallSample && r.n > 0 && (
+                          <TermPop term="kamp_i_vogel" iconClass="w-2.5 h-2.5">
+                            <span className="ml-1 text-[9px] text-amber-400">⚠ kamp. i vogël</span>
+                          </TermPop>
+                        )}
                       </td>
                     </tr>
                   );
