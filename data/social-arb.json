@@ -1,7 +1,7 @@
 {
- "version": 3,
+ "version": 4,
  "createdAt": "2026-09-26T17:29:23.993Z",
- "lastScanAt": "2026-10-06T13:08:53.495Z",
+ "lastScanAt": "2026-10-07T09:04:01.420Z",
  "measurements": [
   {
    "observed_at": "2026-09-26",
@@ -1394,6 +1394,86 @@
    "event_risk": 0.35,
    "stock_price": 525.18,
    "index_price": 774.83
+  },
+  {
+   "observed_at": "2026-10-07",
+   "available_at": "2026-10-07",
+   "trend": "ps5",
+   "source": "google_trends",
+   "region": "CA",
+   "interest": 50,
+   "ticker": "SONY",
+   "product": "PlayStation",
+   "company": "Sony Group",
+   "materiality": 0.3,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 23.85,
+   "index_price": 779.09
+  },
+  {
+   "observed_at": "2026-10-07",
+   "available_at": "2026-10-07",
+   "trend": "starbucks canada",
+   "source": "google_trends",
+   "region": "CA",
+   "interest": 50,
+   "ticker": "SBUX",
+   "product": "Starbucks (kafenetë)",
+   "company": "Starbucks",
+   "materiality": 0.55,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 96.11,
+   "index_price": 779.09
+  },
+  {
+   "observed_at": "2026-10-07",
+   "available_at": "2026-10-07",
+   "trend": "minecraft live",
+   "source": "google_trends",
+   "region": "CA",
+   "interest": 50,
+   "ticker": "MSFT",
+   "product": "Xbox / Activision Blizzard",
+   "company": "Microsoft",
+   "materiality": 0.03,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 529.3,
+   "index_price": 779.09
+  },
+  {
+   "observed_at": "2026-10-07",
+   "available_at": "2026-10-07",
+   "trend": "jim farley ford skilled trades ai",
+   "source": "google_trends",
+   "region": "US",
+   "interest": 50,
+   "ticker": "F",
+   "product": "Ford",
+   "company": "Ford Motor Company",
+   "materiality": 0.85,
+   "promo_risk": 0.1,
+   "event_risk": 0.45,
+   "stock_price": 12.28,
+   "index_price": 779.09
+  },
+  {
+   "observed_at": "2026-10-07",
+   "available_at": "2026-10-07",
+   "trend": "xbox disc to digital",
+   "source": "google_trends",
+   "region": "GB",
+   "interest": 50,
+   "ticker": "MSFT",
+   "product": "Xbox / Activision Blizzard",
+   "company": "Microsoft",
+   "materiality": 0.03,
+   "promo_risk": 0.15,
+   "event_risk": 0.35,
+   "stock_price": 529.3,
+   "index_price": 779.09
   }
  ],
  "candidates": {
@@ -1404,10 +1484,10 @@
    "region": "CA",
    "company": "Starbucks",
    "product": "Starbucks (kafenetë)",
-   "status": "WATCH",
+   "status": "REMOVED",
    "firstSeenAt": "2026-09-26T17:29:23.992Z",
    "lastSeenAt": "2026-09-26T17:30:37.474Z",
-   "lastChangedAt": "2026-09-27T16:13:36.474Z",
+   "lastChangedAt": "2026-10-07T08:59:10.559Z",
    "score": 75,
    "breakdown": {
     "demand": 14.391252955082745,
@@ -1422,8 +1502,9 @@
     "Shkaku i trendit: S'u verifikua dot këtë skanim (GDELT i padisponueshëm) — pa klasifikim, nuk ka ngritje.",
     "Prova e pavarur (GDELT): +58% 7 ditët e fundit kundrejt bazës 28-ditore (pragu +25%) — kërkesa ka konfirmim të jashtëm.",
     "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): SBUX 95.27 → 94.43 (-0.9%), SPY 765.61 → 774.83 (+1.2%) → diferencë -2.1% ndaj indeksit.",
-    "Në WATCH — lidhja me SBUX u verifikua, por mungon: shkaku i trendit s'është verifikuar dot."
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-29 → 2026-10-06 (të njëjtat data për aksionin dhe SPY): SBUX 95.43 → 96.11 (+0.7%), SPY 764.20 → 779.09 (+1.9%) → diferencë -1.2% ndaj indeksit.",
+    "Në WATCH — lidhja me SBUX u verifikua, por gate-t e RESEARCH s'janë të gjitha të kaluara: sources: e pamatshme — Wikipedia s'u mat dot (HTTP 403) — s'u mund të verifikohet numri i burimeve (fail-closed). Asnjë burim në rritje ende. · persistence: e pamatshme — Qëndrueshmëria s'u mat (HTTP 403) — moda e shkurtër s'mund të përjashtohet (fail-closed)..",
+    "DALJE: interesi u ftoh — pa matje të reja për më shumë se 10 ditë."
    ],
    "history": [
     {
@@ -1455,6 +1536,12 @@
      "from": "RESEARCH",
      "to": "WATCH",
      "reason": "Statusi u përditësua në WATCH."
+    },
+    {
+     "at": "2026-10-07T08:59:10.559Z",
+     "from": "WATCH",
+     "to": "REMOVED",
+     "reason": "DALJE: interesi u ftoh — pa matje të reja për më shumë se 10 ditë."
     }
    ],
    "google": {
@@ -1468,16 +1555,16 @@
     "confirmed": true
    },
    "price": {
-    "stockReturn": -0.00881704628949287,
-    "indexReturn": 0.01204268491790872,
-    "priceVsIndex": -0.02085973120740159,
-    "asOf": "2026-10-05",
-    "fromDate": "2026-09-28",
-    "stockPrice": 94.43,
-    "indexPrice": 774.83,
+    "stockReturn": 0.00712564183170894,
+    "indexReturn": 0.019484428160167377,
+    "priceVsIndex": -0.012358786328458438,
+    "asOf": "2026-10-06",
+    "fromDate": "2026-09-29",
+    "stockPrice": 96.11,
+    "indexPrice": 779.09,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-06T13:08:53.495Z"
+    "checkedAt": "2026-10-07T08:59:10.559Z"
    },
    "cause": null,
    "outcome": {
@@ -1493,9 +1580,72 @@
      "relative": 0.0006356147889099439
     },
     "d20": null,
-    "pendingNote": "prit edhe 14 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
-   }
+    "pendingNote": "prit edhe 13 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "wiki": {
+    "article": "Starbucks",
+    "growth": null,
+    "pageviews7dMedian": null,
+    "baselineMedian": null,
+    "risingWeeks": null,
+    "peakToAvg": null,
+    "error": "HTTP 403",
+    "checkedAt": "2026-10-07T08:59:10.559Z"
+   },
+   "liquidity": {
+    "avgDollarVolume": 669197538.365,
+    "error": null,
+    "checkedAt": "2026-10-07T08:59:10.559Z"
+   },
+   "sinceStart": {
+    "fromDate": "2026-09-28",
+    "asOf": "2026-10-06",
+    "tradingDays": 6,
+    "stockRet": 0.00881704628949298,
+    "indexRet": 0.017606875563276336,
+    "relative": -0.008789829273783356,
+    "checkedAt": "2026-10-07T08:59:10.559Z"
+   },
+   "materialityInfo": {
+    "exposurePct": 0.95,
+    "reason": "vlerësim manual i fjalorit: materiality 0.95 mbi kovën large → efektiv 0.55",
+    "capBucket": "large",
+    "linkType": "direct"
+   },
+   "gates": [
+    {
+     "gate": "sources",
+     "passed": null,
+     "detail": "Wikipedia s'u mat dot (HTTP 403) — s'u mund të verifikohet numri i burimeve (fail-closed). Asnjë burim në rritje ende.",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "materiality",
+     "passed": true,
+     "detail": "Materialiteti efektiv 55% ≥ pragu 15% — lidhja «direct», kova «large» (tavani i kap-it aplikuar).",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "not_priced",
+     "passed": true,
+     "detail": "Që nga fillimi i trendit (2026-09-28 → 2026-10-06, 6 ditë tregtimi): +0.9% kundrejt SPY +1.8% → diferencë -0.9% ≤ pragun +8% — pritja NUK është reflektuar në çmim.",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "liquidity",
+     "passed": true,
+     "detail": "Vëllami mesatar ditor $669.2M ≥ pragu $2.0M (20 ditët e fundit).",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "persistence",
+     "passed": null,
+     "detail": "Qëndrueshmëria s'u mat (HTTP 403) — moda e shkurtër s'mund të përjashtohet (fail-closed).",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    }
+   ],
+   "alreadyMoved": false
   },
   "minecraft live|MSFT|CA": {
    "key": "minecraft live|MSFT|CA",
@@ -1504,10 +1654,10 @@
    "region": "CA",
    "company": "Microsoft",
    "product": "Xbox / Activision Blizzard",
-   "status": "WATCH",
+   "status": "REMOVED",
    "firstSeenAt": "2026-09-26T18:46:46.017Z",
    "lastSeenAt": "2026-09-26T18:58:26.754Z",
-   "lastChangedAt": "2026-09-26T18:46:46.017Z",
+   "lastChangedAt": "2026-10-07T08:59:10.559Z",
    "score": 39,
    "breakdown": {
     "demand": 4.90654205607477,
@@ -1522,8 +1672,9 @@
     "Shkaku i trendit [E paqartë]: S'ka artikuj 24h për këtë term — shkaku s'mund të verifikohet pa materiale. (kontrolluar 2026-10-02)",
     "GDELT: 20% 7 ditë kundrejt bazës — NËN pragun e provës së pavarur (+25%).",
     "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): MSFT 509.22 → 525.18 (+3.1%), SPY 765.61 → 774.83 (+1.2%) → diferencë +1.9% ndaj indeksit.",
-    "Në WATCH — lidhja me MSFT u verifikua, por mungon: shkaku është «E paqartë» — duhet provë kërkece, jo thjesht lançim/lajm; prova e pavarur e kërkesës mungon (GDELT +19.6% < +25%); score 39 < 60 (kusht sekondar)."
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-29 → 2026-10-06 (të njëjtat data për aksionin dhe SPY): MSFT 508.96 → 529.30 (+4.0%), SPY 764.20 → 779.09 (+1.9%) → diferencë +2.0% ndaj indeksit.",
+    "Në WATCH — lidhja me MSFT u verifikua, por gate-t e RESEARCH s'janë të gjitha të kaluara: sources: e pamatshme — Wikipedia s'u mat dot (HTTP 403) — s'u mund të verifikohet numri i burimeve (fail-closed). Asnjë burim në rritje ende. · materiality: Materialiteti efektiv 3% < pragu 15% — trendi s'peshon mjaftueshëm në të ardhurat e mega-cap-it. vlerësim manual i fjalorit (materiality 0.03, kufizuar nga kova mega) · persistence: e pamatshme — Qëndrueshmëria s'u mat (HTTP 403) — moda e shkurtër s'mund të përjashtohet (fail-closed)..",
+    "DALJE: interesi u ftoh — pa matje të reja për më shumë se 10 ditë."
    ],
    "history": [
     {
@@ -1531,6 +1682,12 @@
      "from": "NEW",
      "to": "WATCH",
      "reason": "Zbuluar automatikisht në Google Trends CA: «minecraft live» → MSFT."
+    },
+    {
+     "at": "2026-10-07T08:59:10.559Z",
+     "from": "WATCH",
+     "to": "REMOVED",
+     "reason": "DALJE: interesi u ftoh — pa matje të reja për më shumë se 10 ditë."
     }
    ],
    "google": {
@@ -1544,16 +1701,16 @@
     "confirmed": false
    },
    "price": {
-    "stockReturn": 0.03134205255096023,
-    "indexReturn": 0.01204268491790872,
-    "priceVsIndex": 0.019299367633051512,
-    "asOf": "2026-10-05",
-    "fromDate": "2026-09-28",
-    "stockPrice": 525.18,
-    "indexPrice": 774.83,
+    "stockReturn": 0.03996384784658913,
+    "indexReturn": 0.019484428160167377,
+    "priceVsIndex": 0.02047941968642175,
+    "asOf": "2026-10-06",
+    "fromDate": "2026-09-29",
+    "stockPrice": 529.3,
+    "indexPrice": 779.09,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-06T13:08:53.495Z"
+    "checkedAt": "2026-10-07T08:59:10.559Z"
    },
    "cause": {
     "type": "unclear",
@@ -1577,9 +1734,72 @@
      "relative": 0.0048516833247443936
     },
     "d20": null,
-    "pendingNote": "prit edhe 14 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
-   }
+    "pendingNote": "prit edhe 13 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "wiki": {
+    "article": "Xbox",
+    "growth": null,
+    "pageviews7dMedian": null,
+    "baselineMedian": null,
+    "risingWeeks": null,
+    "peakToAvg": null,
+    "error": "HTTP 403",
+    "checkedAt": "2026-10-07T08:59:10.559Z"
+   },
+   "liquidity": {
+    "avgDollarVolume": 10056469483.59,
+    "error": null,
+    "checkedAt": "2026-10-07T08:59:10.559Z"
+   },
+   "sinceStart": {
+    "fromDate": "2026-09-28",
+    "asOf": "2026-10-06",
+    "tradingDays": 6,
+    "stockRet": 0.03943285809669672,
+    "indexRet": 0.017606875563276336,
+    "relative": 0.021825982533420385,
+    "checkedAt": "2026-10-07T08:59:10.559Z"
+   },
+   "materialityInfo": {
+    "exposurePct": 0.03,
+    "reason": "vlerësim manual i fjalorit: materiality 0.03 mbi kovën mega → efektiv 0.03",
+    "capBucket": "mega",
+    "linkType": "parent"
+   },
+   "gates": [
+    {
+     "gate": "sources",
+     "passed": null,
+     "detail": "Wikipedia s'u mat dot (HTTP 403) — s'u mund të verifikohet numri i burimeve (fail-closed). Asnjë burim në rritje ende.",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "materiality",
+     "passed": false,
+     "detail": "Materialiteti efektiv 3% < pragu 15% — trendi s'peshon mjaftueshëm në të ardhurat e mega-cap-it. vlerësim manual i fjalorit (materiality 0.03, kufizuar nga kova mega)",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "not_priced",
+     "passed": true,
+     "detail": "Që nga fillimi i trendit (2026-09-28 → 2026-10-06, 6 ditë tregtimi): +3.9% kundrejt SPY +1.8% → diferencë +2.2% ≤ pragun +8% — pritja NUK është reflektuar në çmim.",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "liquidity",
+     "passed": true,
+     "detail": "Vëllami mesatar ditor $10056.5M ≥ pragu $2.0M (20 ditët e fundit).",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    },
+    {
+     "gate": "persistence",
+     "passed": null,
+     "detail": "Qëndrueshmëria s'u mat (HTTP 403) — moda e shkurtër s'mund të përjashtohet (fail-closed).",
+     "checkedAt": "2026-10-07T08:59:10.559Z"
+    }
+   ],
+   "alreadyMoved": false
   },
   "jim farley ford skilled trades ai|F|US": {
    "key": "jim farley ford skilled trades ai|F|US",
@@ -1606,8 +1826,8 @@
     "Shkaku i trendit: S'u verifikua dot këtë skanim (GDELT i padisponueshëm) — pa klasifikim, nuk ka ngritje.",
     "GDELT: pa histori të mjaftueshme për matjen e rritjes (duhen 2 pika të freskëta + 3 bazë).",
     "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): F 12.38 → 12.15 (-1.9%), SPY 765.61 → 774.83 (+1.2%) → diferencë -3.1% ndaj indeksit.",
-    "Në WATCH — lidhja me F u verifikua, por mungon: shkaku i trendit s'është verifikuar dot; prova e pavarur e kërkesës mungon (GDELT n/a < +25%); score 42 < 60 (kusht sekondar)."
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-29 → 2026-10-06 (të njëjtat data për aksionin dhe SPY): F 12.30 → 12.28 (-0.2%), SPY 764.20 → 779.09 (+1.9%) → diferencë -2.1% ndaj indeksit.",
+    "Në WATCH — lidhja me F u verifikua, por gate-t e RESEARCH s'janë të gjitha të kaluara: sources: Vetëm 0 burim kërkese në rritje (duhen 2): asnjë. Wikipedia nën pragun (+25%): -2.3%. · persistence: Modë e mundshme e shkurtër — vetëm 2 javë rritje e njëpasnjëshme (duhen 3).."
    ],
    "history": [
     {
@@ -1635,16 +1855,16 @@
    },
    "cause": null,
    "price": {
-    "stockReturn": -0.018578352180937063,
-    "indexReturn": 0.01204268491790872,
-    "priceVsIndex": -0.030621037098845783,
-    "asOf": "2026-10-05",
-    "fromDate": "2026-09-28",
-    "stockPrice": 12.15,
-    "indexPrice": 774.83,
+    "stockReturn": -0.001626016260162677,
+    "indexReturn": 0.019484428160167377,
+    "priceVsIndex": -0.021110444420330055,
+    "asOf": "2026-10-06",
+    "fromDate": "2026-09-29",
+    "stockPrice": 12.28,
+    "indexPrice": 779.09,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-06T13:08:53.495Z"
+    "checkedAt": "2026-10-07T09:04:01.420Z"
    },
    "outcome": {
     "baseDate": "2026-10-01",
@@ -1652,9 +1872,72 @@
     "baseIndex": 763.99,
     "d5": null,
     "d20": null,
-    "pendingNote": "prit edhe 3 ditë tregtimi për d5 · prit edhe 18 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
-   }
+    "pendingNote": "prit edhe 2 ditë tregtimi për d5 · prit edhe 17 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "wiki": {
+    "article": "Ford Motor Company",
+    "growth": -0.02301520270270274,
+    "pageviews7dMedian": 2313.5,
+    "baselineMedian": 2368,
+    "risingWeeks": 2,
+    "peakToAvg": 1.1061191778238735,
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "liquidity": {
+    "avgDollarVolume": 581992760.9499999,
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "sinceStart": {
+    "fromDate": "2026-10-02",
+    "asOf": "2026-10-06",
+    "tradingDays": 2,
+    "stockRet": 0.014876033057851235,
+    "indexRet": 0.012278467855101116,
+    "relative": 0.0025975652027501184,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "materialityInfo": {
+    "exposurePct": 0.95,
+    "reason": "vlerësim manual i fjalorit: materiality 0.95 mbi kovën mid → efektiv 0.85",
+    "capBucket": "mid",
+    "linkType": "direct"
+   },
+   "gates": [
+    {
+     "gate": "sources",
+     "passed": false,
+     "detail": "Vetëm 0 burim kërkese në rritje (duhen 2): asnjë. Wikipedia nën pragun (+25%): -2.3%.",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "materiality",
+     "passed": true,
+     "detail": "Materialiteti efektiv 85% ≥ pragu 15% — lidhja «direct», kova «mid» (tavani i kap-it aplikuar).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "not_priced",
+     "passed": true,
+     "detail": "Që nga fillimi i trendit (2026-10-02 → 2026-10-06, 2 ditë tregtimi): +1.5% kundrejt SPY +1.2% → diferencë +0.3% ≤ pragun +8% — pritja NUK është reflektuar në çmim.",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "liquidity",
+     "passed": true,
+     "detail": "Vëllami mesatar ditor $582.0M ≥ pragu $2.0M (20 ditët e fundit).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "persistence",
+     "passed": false,
+     "detail": "Modë e mundshme e shkurtër — vetëm 2 javë rritje e njëpasnjëshme (duhen 3).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    }
+   ],
+   "alreadyMoved": false
   },
   "xbox disc to digital|MSFT|GB": {
    "key": "xbox disc to digital|MSFT|GB",
@@ -1681,8 +1964,8 @@
     "Shkaku i trendit [E paqartë]: Titujt (1) s'përmbajnë fjalë kyçesh të mjaftueshme as për kërkesë pozitive, as për lançim, as për ngjarje negative — shkaku mbetet i paqartë dhe kandidati nuk mund të ngjitet pa prova. (kontrolluar 2026-10-02)",
     "GDELT: 20% 7 ditë kundrejt bazës — NËN pragun e provës së pavarur (+25%).",
     "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
-    "Çmimet: burimi stockanalysis, dritarja 2026-09-28 → 2026-10-05 (të njëjtat data për aksionin dhe SPY): MSFT 509.22 → 525.18 (+3.1%), SPY 765.61 → 774.83 (+1.2%) → diferencë +1.9% ndaj indeksit.",
-    "Në WATCH — lidhja me MSFT u verifikua, por mungon: shkaku është «E paqartë» — duhet provë kërkece, jo thjesht lançim/lajm; prova e pavarur e kërkesës mungon (GDELT +19.6% < +25%); score 39 < 60 (kusht sekondar)."
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-29 → 2026-10-06 (të njëjtat data për aksionin dhe SPY): MSFT 508.96 → 529.30 (+4.0%), SPY 764.20 → 779.09 (+1.9%) → diferencë +2.0% ndaj indeksit.",
+    "Në WATCH — lidhja me MSFT u verifikua, por gate-t e RESEARCH s'janë të gjitha të kaluara: sources: Vetëm 0 burim kërkese në rritje (duhen 2): asnjë. Wikipedia nën pragun (+25%): -19.2%. · materiality: Materialiteti efektiv 3% < pragu 15% — trendi s'peshon mjaftueshëm në të ardhurat e mega-cap-it. vlerësim manual i fjalorit (materiality 0.03, kufizuar nga kova mega) · persistence: Modë e mundshme e shkurtër — vetëm 0 javë rritje e njëpasnjëshme (duhen 3).."
    ],
    "history": [
     {
@@ -1712,16 +1995,16 @@
     "checkedAt": "2026-10-02T17:38:52.674Z"
    },
    "price": {
-    "stockReturn": 0.03134205255096023,
-    "indexReturn": 0.01204268491790872,
-    "priceVsIndex": 0.019299367633051512,
-    "asOf": "2026-10-05",
-    "fromDate": "2026-09-28",
-    "stockPrice": 525.18,
-    "indexPrice": 774.83,
+    "stockReturn": 0.03996384784658913,
+    "indexReturn": 0.019484428160167377,
+    "priceVsIndex": 0.02047941968642175,
+    "asOf": "2026-10-06",
+    "fromDate": "2026-09-29",
+    "stockPrice": 529.3,
+    "indexPrice": 779.09,
     "source": "stockanalysis",
     "error": null,
-    "checkedAt": "2026-10-06T13:08:53.495Z"
+    "checkedAt": "2026-10-07T09:04:01.420Z"
    },
    "outcome": {
     "baseDate": "2026-10-01",
@@ -1729,9 +2012,210 @@
     "baseIndex": 763.99,
     "d5": null,
     "d20": null,
-    "pendingNote": "prit edhe 3 ditë tregtimi për d5 · prit edhe 18 ditë tregtimi për d20",
-    "lastCheckedAt": "2026-10-06T13:08:53.495Z"
-   }
+    "pendingNote": "prit edhe 2 ditë tregtimi për d5 · prit edhe 17 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "wiki": {
+    "article": "Xbox",
+    "growth": -0.19190922545633937,
+    "pageviews7dMedian": 1638,
+    "baselineMedian": 2027,
+    "risingWeeks": 0,
+    "peakToAvg": 1.3317857954976124,
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "liquidity": {
+    "avgDollarVolume": 10056469483.59,
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "sinceStart": {
+    "fromDate": "2026-10-02",
+    "asOf": "2026-10-06",
+    "tradingDays": 2,
+    "stockRet": 0.022742642938573532,
+    "indexRet": 0.012278467855101116,
+    "relative": 0.010464175083472416,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "materialityInfo": {
+    "exposurePct": 0.03,
+    "reason": "vlerësim manual i fjalorit: materiality 0.03 mbi kovën mega → efektiv 0.03",
+    "capBucket": "mega",
+    "linkType": "parent"
+   },
+   "gates": [
+    {
+     "gate": "sources",
+     "passed": false,
+     "detail": "Vetëm 0 burim kërkese në rritje (duhen 2): asnjë. Wikipedia nën pragun (+25%): -19.2%.",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "materiality",
+     "passed": false,
+     "detail": "Materialiteti efektiv 3% < pragu 15% — trendi s'peshon mjaftueshëm në të ardhurat e mega-cap-it. vlerësim manual i fjalorit (materiality 0.03, kufizuar nga kova mega)",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "not_priced",
+     "passed": true,
+     "detail": "Që nga fillimi i trendit (2026-10-02 → 2026-10-06, 2 ditë tregtimi): +2.3% kundrejt SPY +1.2% → diferencë +1.0% ≤ pragun +8% — pritja NUK është reflektuar në çmim.",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "liquidity",
+     "passed": true,
+     "detail": "Vëllami mesatar ditor $10056.5M ≥ pragu $2.0M (20 ditët e fundit).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "persistence",
+     "passed": false,
+     "detail": "Modë e mundshme e shkurtër — vetëm 0 javë rritje e njëpasnjëshme (duhen 3).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    }
+   ],
+   "alreadyMoved": false
+  },
+  "ps5|SONY|CA": {
+   "key": "ps5|SONY|CA",
+   "trend": "ps5",
+   "ticker": "SONY",
+   "region": "CA",
+   "company": "Sony Group",
+   "product": "PlayStation",
+   "status": "WATCH",
+   "firstSeenAt": "2026-10-07T08:59:10.559Z",
+   "lastSeenAt": "2026-10-07T08:59:10.559Z",
+   "lastChangedAt": "2026-10-07T09:04:01.420Z",
+   "score": 32,
+   "breakdown": {
+    "demand": 0,
+    "confirmation": 0,
+    "materiality": 6,
+    "price": 15,
+    "quality": 4.25,
+    "event": 6.5
+   },
+   "reasons": [
+    "Zbuluar në Google Trends CA: «ps5» → marka i përket Sony Group (SONY).",
+    "Shkaku i trendit: S'u verifikua dot këtë skanim (GDELT i padisponueshëm) — pa klasifikim, nuk ka ngritje.",
+    "GDELT: pa histori të mjaftueshme për matjen e rritjes (duhen 2 pika të freskëta + 3 bazë).",
+    "GDELT i padisponueshëm këtë skanim (429/rrjet) — u mbajt matja e fundit e vlefshme; statusi nuk u demotua për shkak të gabimit infrastrukture.",
+    "Çmimet: burimi stockanalysis, dritarja 2026-09-29 → 2026-10-06 (të njëjtat data për aksionin dhe SPY): SONY 23.37 → 23.85 (+2.1%), SPY 764.20 → 779.09 (+1.9%) → diferencë +0.1% ndaj indeksit.",
+    "Në WATCH — lidhja me SONY u verifikua, por gate-t e RESEARCH s'janë të gjitha të kaluara: sources: Vetëm 0 burim kërkese në rritje (duhen 2): asnjë. Wikipedia nën pragun (+25%): -21.1%. · persistence: Modë e mundshme e shkurtër — vetëm 0 javë rritje e njëpasnjëshme (duhen 3).."
+   ],
+   "history": [
+    {
+     "at": "2026-10-07T08:59:10.559Z",
+     "from": "NEW",
+     "to": "DISCOVERED",
+     "reason": "Zbuluar automatikisht në Google Trends CA: «ps5» → SONY."
+    },
+    {
+     "at": "2026-10-07T09:04:01.420Z",
+     "from": "DISCOVERED",
+     "to": "WATCH",
+     "reason": "Statusi u përditësua në WATCH."
+    }
+   ],
+   "google": {
+    "inFeedToday": false,
+    "approxTraffic": null,
+    "traffic": null
+   },
+   "gdelt": {
+    "articles1d": null,
+    "growth": null,
+    "confirmed": false
+   },
+   "cause": null,
+   "price": {
+    "stockReturn": 0.020539152759948776,
+    "indexReturn": 0.019484428160167377,
+    "priceVsIndex": 0.001054724599781398,
+    "asOf": "2026-10-06",
+    "fromDate": "2026-09-29",
+    "stockPrice": 23.85,
+    "indexPrice": 779.09,
+    "source": "stockanalysis",
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "outcome": {
+    "baseDate": "2026-10-06",
+    "baseStock": 23.85,
+    "baseIndex": 779.09,
+    "d5": null,
+    "d20": null,
+    "pendingNote": "prit edhe 5 ditë tregtimi për d5 · prit edhe 20 ditë tregtimi për d20",
+    "lastCheckedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "wiki": {
+    "article": "PlayStation",
+    "growth": -0.21126322339763537,
+    "pageviews7dMedian": 1267.5,
+    "baselineMedian": 1607,
+    "risingWeeks": 0,
+    "peakToAvg": 1.7789118090994034,
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "liquidity": {
+    "avgDollarVolume": 83755902.105,
+    "error": null,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "sinceStart": {
+    "fromDate": "2026-07-07",
+    "asOf": "2026-08-04",
+    "tradingDays": 20,
+    "stockRet": 0.04439252336448618,
+    "indexRet": 0.031590378891481086,
+    "relative": 0.012802144473005095,
+    "checkedAt": "2026-10-07T09:04:01.420Z"
+   },
+   "materialityInfo": {
+    "exposurePct": 0.3,
+    "reason": "vlerësim manual i fjalorit: materiality 0.30 mbi kovën large → efektiv 0.30",
+    "capBucket": "large",
+    "linkType": "direct"
+   },
+   "gates": [
+    {
+     "gate": "sources",
+     "passed": false,
+     "detail": "Vetëm 0 burim kërkese në rritje (duhen 2): asnjë. Wikipedia nën pragun (+25%): -21.1%.",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "materiality",
+     "passed": true,
+     "detail": "Materialiteti efektiv 30% ≥ pragu 15% — lidhja «direct», kova «large» (tavani i kap-it aplikuar).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "not_priced",
+     "passed": true,
+     "detail": "Që nga fillimi i trendit (2026-07-07 → 2026-08-04, 20 ditë tregtimi): +4.4% kundrejt SPY +3.2% → diferencë +1.3% ≤ pragun +8% — pritja NUK është reflektuar në çmim.",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "liquidity",
+     "passed": true,
+     "detail": "Vëllami mesatar ditor $83.8M ≥ pragu $2.0M (20 ditët e fundit).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    },
+    {
+     "gate": "persistence",
+     "passed": false,
+     "detail": "Modë e mundshme e shkurtër — vetëm 0 javë rritje e njëpasnjëshme (duhen 3).",
+     "checkedAt": "2026-10-07T09:04:01.420Z"
+    }
+   ],
+   "alreadyMoved": false
   }
  },
  "scans": [
@@ -2027,6 +2511,83 @@
     "GDELT artlist \"xbox\": fetch failed",
     "GDELT artlist \"ford\": fetch failed",
     "GDELT artlist \"xbox\": fetch failed"
+   ]
+  },
+  {
+   "at": "2026-10-07T08:59:10.559Z",
+   "durationMs": 150386,
+   "regions": [
+    "US",
+    "GB",
+    "CA",
+    "AU"
+   ],
+   "termsScanned": 40,
+   "termsClassified": 1,
+   "candidatesActive": 3,
+   "promoted": 0,
+   "removed": 2,
+   "sources": {
+    "google_trends_US": "ok",
+    "google_trends_GB": "ok",
+    "google_trends_CA": "ok",
+    "google_trends_AU": "ok",
+    "google_trends": "ok",
+    "prices": "ok",
+    "wikipedia": "error",
+    "gdelt": "throttled"
+   },
+   "errors": [
+    "Wikipedia \"PlayStation\": HTTP 403",
+    "Wikipedia \"Starbucks\": HTTP 403",
+    "Wikipedia \"Xbox\": HTTP 403",
+    "Wikipedia \"Ford Motor Company\": HTTP 403",
+    "Wikipedia \"Xbox\": HTTP 403",
+    "GDELT \"playstation\": GDELT: HTTP 429",
+    "GDELT \"starbucks\": fetch failed",
+    "GDELT \"xbox\": fetch failed",
+    "GDELT \"ford\": fetch failed",
+    "GDELT \"xbox\": fetch failed",
+    "GDELT artlist \"playstation\": fetch failed",
+    "GDELT artlist \"starbucks\": fetch failed",
+    "GDELT artlist \"xbox\": fetch failed",
+    "GDELT artlist \"ford\": fetch failed",
+    "GDELT artlist \"xbox\": fetch failed"
+   ]
+  },
+  {
+   "at": "2026-10-07T09:04:01.420Z",
+   "durationMs": 95301,
+   "regions": [
+    "US",
+    "GB",
+    "CA",
+    "AU"
+   ],
+   "termsScanned": 20,
+   "termsClassified": 0,
+   "candidatesActive": 3,
+   "promoted": 0,
+   "removed": 0,
+   "sources": {
+    "google_trends_US": "error",
+    "google_trends_GB": "ok",
+    "google_trends_CA": "error",
+    "google_trends_AU": "ok",
+    "google_trends": "ok",
+    "prices": "ok",
+    "wikipedia": "ok",
+    "gdelt": "error"
+   },
+   "errors": [
+    "Trends US: Google Trends US: HTTP 500",
+    "Trends CA: Google Trends CA: HTTP 500",
+    "GDELT \"ford\": fetch failed",
+    "GDELT \"xbox\": This operation was aborted",
+    "GDELT \"playstation\": This operation was aborted",
+    "GDELT artlist \"ford\": fetch failed",
+    "GDELT artlist \"xbox\": fetch failed",
+    "GDELT artlist \"playstation\": This operation was aborted"
    ]
   }
  ]

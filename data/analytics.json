@@ -506,6 +506,30 @@
       "visitorNumber": 10,
       "isNewVisitor": true,
       "visitCount": 1
+    },
+    {
+      "id": "1791363127491-yvih77",
+      "timestamp": "2026-10-07T08:52:07.491Z",
+      "ip": "21.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+      "fingerprint": "fp_9ilzed",
+      "page": "/",
+      "referrer": "https://preview-chat-87a10c40-c300-4775-a02e-06293e350d00.space-z.ai/",
+      "screenWidth": 1280,
+      "screenHeight": 720,
+      "colorDepth": 24,
+      "pixelRatio": 1.5,
+      "language": "en",
+      "timezone": "Europe/Budapest",
+      "os": "Windows 10/11",
+      "connectionType": "4g",
+      "isTouchDevice": false,
+      "country": "Unknown",
+      "device": "Desktop",
+      "browser": "Edge",
+      "visitorNumber": 11,
+      "isNewVisitor": true,
+      "visitCount": 1
     }
   ],
   "fingerprintMap": {
@@ -567,6 +591,12 @@
       "visitorNumber": 10,
       "firstSeen": "2026-10-02T17:40:41.772Z",
       "lastSeen": "2026-10-02T17:40:41.772Z",
+      "visitCount": 1
+    },
+    "fp_9ilzed": {
+      "visitorNumber": 11,
+      "firstSeen": "2026-10-07T08:52:07.491Z",
+      "lastSeen": "2026-10-07T08:52:07.491Z",
       "visitCount": 1
     }
   }

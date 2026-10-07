@@ -1,16 +1,20 @@
 // ═══════════════════════════════════════════════════════════════
-// SOCIAL ARB — llojet e dhënash (skema v3)
+// SOCIAL ARB — llojet e dhënash (skema v4)
 // Rrjedha: Google Trends "Trending now" RSS → klasifikim markë/produkt
-// → DISCOVERED → WATCH (lidhja e verifikuar) → RESEARCH (vetëm me
-// prova: shkak potencialisht pozitiv + provë e pavarur e kërkesës +
-// çmime të vlefshme + pa flamur bllokues).
+// → DISCOVERED → WATCH (lidhja e verifikuar) → RESEARCH (vetëm me 5
+// gate-t e provave: burime të pavarura, materialitet, s'është çmuar,
+// likuiditet, qëndrueshmëri — secili me arsye pse kaloi/dështoi).
+// GDELT shënohet veç si media_confirmation — s'numërohet si burim kërkese.
 // Skema e matjes mbetet identike me CSV-në e backtest-it që arkivohet
 // në prapavijë (data/social-arb-backtest/).
 // ═══════════════════════════════════════════════════════════════
 
-export type SourceKind = 'google_trends' | 'gdelt';
+export type SourceKind = 'google_trends' | 'gdelt' | 'wikipedia';
 export type Region = 'US' | 'GB' | 'CA' | 'AU';
 export type CandidateStatus = 'DISCOVERED' | 'WATCH' | 'RESEARCH' | 'REMOVED';
+
+/** Lloji i lidhjes markë → kompani e listuar. */
+export type LinkType = 'direct' | 'parent' | 'supplier' | 'retailer';
 
 /** Një matje e interesit — rresht i CSV-së së arkivit. */
 export interface Measurement {
@@ -107,6 +111,64 @@ export interface CandidateOutcome {
   lastCheckedAt: string | null;
 }
 
+// ── Gate-t për RESEARCH (skema v4) ───────────────────────────
+
+export type GateName = 'sources' | 'materiality' | 'not_priced' | 'liquidity' | 'persistence';
+
+/** Rezultati i një gate-i për një kandidat — pse kaloi ose dështoi. */
+export interface GateEval {
+  gate: GateName;
+  /** true = kaloi · false = dështoi · null = s'u mat dot (mungon data — bllokon ngritjen, fail-closed) */
+  passed: boolean | null;
+  /** Arsyja njerëzore — shfaqet në UI. */
+  detail: string;
+  checkedAt: string; // ISO
+}
+
+/** Materialiteti i detajuar i kandidatit (gate 2). */
+export interface MaterialityInfo {
+  /** Pjesa e të ardhurave të lidhura me markën/produktin (0-1) — null kur s'njihet. */
+  exposurePct: number | null;
+  /** Pse kjo vlerë (vlerësim manual i fjalorit / arsyeja e mungesës). */
+  reason: string;
+  /** Kova e kapitalizimit të kompanisë. */
+  capBucket: 'mega' | 'large' | 'mid' | 'small';
+  /** Lloji i lidhjes markë → kompani. */
+  linkType: LinkType;
+}
+
+/** Wikipedia pageviews — burimi i 2-të i kërkesë (jo-lajme). */
+export interface CandidateWiki {
+  article: string | null;        // artikulli i përdorur
+  growth: number | null;         // mediana 7d / mediana 8-35 − 1
+  pageviews7dMedian: number | null;
+  baselineMedian: number | null;
+  /** Javët e njëpasnjëshme në rritje (persistence). */
+  risingWeeks: number | null;
+  /** Raporti pik/mesatare 4-javor — modeli i spike-it. */
+  peakToAvg: number | null;
+  error: string | null;          // gabimi konkret kur API dështoi
+  checkedAt: string | null;       // ISO
+}
+
+/** Likuiditeti (gate 4) — vëllami mesatar në $. */
+export interface CandidateLiquidity {
+  avgDollarVolume: number | null;
+  error: string | null;          // p.sh. «burimi i çmimeve s'jon volumet»
+  checkedAt: string | null;
+}
+
+/** Kthimi që nga fillimi i trendit (gate 3). */
+export interface ReturnSinceStart {
+  fromDate: string | null;       // close-i bazë i përbashkët
+  asOf: string | null;
+  tradingDays: number | null;
+  stockRet: number | null;
+  indexRet: number | null;
+  relative: number | null;      // stockRet − indexRet
+  checkedAt: string | null;
+}
+
 export interface Candidate {
   key: string;            // trend|ticker|region
   trend: string;
@@ -134,6 +196,14 @@ export interface Candidate {
   cause: CauseInfo | null;         // verifikimi i shkakut (P2)
   price: CandidatePrice;
   outcome: CandidateOutcome;
+  // ── skema v4: provat e gate-ve ──
+  wiki: CandidateWiki;                       // burimi 2 i kërkesë (jo-lajme)
+  liquidity: CandidateLiquidity;             // vëllami $ për gate-in 4
+  sinceStart: ReturnSinceStart;              // kthimi që nga fillimi i trendit (gate 3)
+  materialityInfo: MaterialityInfo;          // materialiteti i detajuar (gate 2)
+  gates: GateEval[];                          // vlerësimi i fundit i 5 gate-ve
+  /** Flamuri «tashmë i çmuar» — kthimi që nga fillimi > +8% vs SPY. */
+  alreadyMoved: boolean;
   history: StatusEvent[];
 }
 
@@ -151,7 +221,7 @@ export interface ScanRecord {
 }
 
 export interface SocialArbStore {
-  version: 3;
+  version: 4;
   createdAt: string;
   lastScanAt: string | null;
   measurements: Measurement[];

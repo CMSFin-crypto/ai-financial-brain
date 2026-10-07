@@ -1071,3 +1071,30 @@ Stage Summary:
 - Bug root cause: page-level horizontal overflow → invisible sideways pan on phone → left tab strips off-screen; rotation reset scrollX.
 - Deliverable: commit 7cda8a4 on CMSFin-crypto/ai-financial-brain (globals.css + ibkr-strategy.tsx).
 - Note: token ghp_2vYs... remains exposed in chat; user should rotate it on GitHub.
+
+---
+Task ID: 51
+Agent: main
+Task: Social Arb — P0 (siguria e scan route) + P1 (5 gate-t për RESEARCH sipas Camillo-s)
+
+Work Log:
+- RIPARIM PARAPRAK: sandbox-i ishte restauruar në snapshot të vjetër (Task 32, 24 Sht) — repo u kthye në remote 55a3539 (punimet 33-50 + 8 commit-e paralele CTC v2/REV/InfoPop të paprekura); u fshi degëza stale origin/main (ambiguiteti)
+- P0: route.ts zëvendësuar me versionin e dhënë nga useri — timingSafeEqual për CRON_SECRET, fail-closed në Vercel (pa sekret → 401), butoni same-origin → 'manual' me cooldown 10 min në Upstash (SET NX EX), GET vetëm me sekret në prodkim; lokalisht pa VERCEL/sekret sjellja e vjetër
+- P0 UI: scanNow trajton 429 (Retry-After → minuta të mbetura), 409 (skanim në ekzekutim), 503 (Upstash i pamërvitshëm me mesazhin e serverit), 401
+- P0 VERCEL_SETUP.md: CRON_SECRET i detyrueshëm (fail-closed) + cooldown 10 min i dokumentuar; mospërputhja 45s/35s e buxhetit rregulluar në 35s; konfirmuar se CRON_SECRET ekziston në Vercel (u verifikua herët: 401)
+- P1 config.ts (i ri): të gjitha pragjet në një skedar — min 2 burime, wiki ≥+25%, materialitet ≥15%, not_priced ≤+8% (20 ditë), likuiditet ≥$2M/ditë, 3 javë rritje + spike ≤4× — KOMENT i dukshëm: vlera fillestare me gjykim, JO të provuara, do të korrigjohen nga backtest-i P3
+- P1 skema v4 + migrim: Candidate merr wiki/liquidity/sinceStart/materialityInfo (exposurePct+capBucket+linkType direct|parent|supplier|retailer)/gates[]/alreadyMoved; normalizeStore pranon v2/v3/v4 → v4 pa humbje (test: 42/42 përfshin migrimin v3→v4 me ruajtje të plotë)
+- P1 sources.ts: fetchWikiPageviews (Wikimedia REST, agjenti user pa botë, 90 ditë) me UA PËRSHKRUES (SocialArbLab/1.0 — UA-shfletues → 403, u gjet live dhe u rregullua); PricePoint merr volume (stockanalysis v + yahoo volume) për gate-in e likuiditetit
+- P1 brands.ts: BrandEntry merr wikiArticle + linkType; 89 hyrje të kuruara me tituj kanonikë Wikipedia (vetëm të sigurt — pa disambiguime si «Celsius» shkalla/«Cava» vera/«Target» dab); wikiArticleFor VETËM me artikull të eksplicituar (s'derivohet i verbër — e pamatshme > e maturit keq); linkType: parent (Taco Bell→YUM, Oreo→MDLZ...), retailer (WMT/TGT/COST/AMZN...), direct
+- P1 gates.ts (i ri, funksione të pastra): wikiStats (growth 7d/28d, risingWeeks si nivele — 3 javë = 3 nivele, peakToAvg 4-javor), gateSources (Trends+Wiki; GDELT s'numërohet — media_confirmation), gateMateriality, computeReturnSinceStart (ankorë firstSeenAt, kap 20 ditë tregtimi), gateNotPriced (already_moved >+8%), computeAvgDollarVolume (mediana close×volume), gateLiquidity, gatePersistence, evaluateGates; null = e pamatshme → bllokon (fail-closed) pa fshirë asgjë
+- P1 engine.ts: faza 4-b Wikipedia PARA GDELT-t (çmimet → wiki → GDELT); gate-t e vlerësuara për çdo kandidat me arsye përse kaloi/dështoi (gates[] i ruajtur); RESEARCH = 5 gate-t të gjitha + pa flamuj bllokues (promo/event/shkak negativ/mainstream); score-i hequr si gate (vetëm renditje); rregulli i vjetër «>+10% 7d → REMOVED» zëvendësuar me flamurin already_moved (WATCH, jo fshirje — çmimi si filtër); carry-over për wiki/sinceStart/liquidity kur API dështon (pa democione infrastrukture)
+- P1 UI: karta e kandidatit me 5 badge-t e gate-ve (✓/✗/—) + flamuri already_moved; dosja me panelin «Gate-t për RESEARCH — 5 provat» (detaj + Wikipedia/vëllami/lidhja/kova); paneli GDELT riemërtuar «Konfirmimi mediatik» me shënim se s'numërohet si burim; tekstet e rregullave/empty-state/intro të përditësuara + ⚠️ pragjet e pazbatuara nga backtest-i; Wikipedia te burimet në shirit + tabelën e skanimeve
+- Teste: scripts/test-social-arb-gates.ts — 42/42 (wikiStats, gate-t, sinceStart me kufirin 20-ditor, likuiditeti, spike-i, evaluateGates, migrimi v3→v4); v4 25/25 + v5 15/15 vazhdojnë
+- Verifikim live (server dev i freskët): skanimi real 95s — version 4, wikipedia: ok, F: growth -2.3%/2 javë/peak 1.1×, Xbox -19.2%, PlayStation -21.1% — të dhëna reale; gate-t: materiality MSFT-Xbox 3% <15% → dështon saktë (mega+parent), likuiditeti $582M-$10B mbi prag, sinceStart me ditët reale tregtimi, 0 RESEARCH (sinqerisht — s'ka kandidat që i meriton)
+- Diagnoza e rrugës së testimit: serverë të ndërlikuar dev nga 08:51/08:56 me kod të vjetër shërbenin portin 3000 — u vranë të gjithë, u nis një i vetëm i pastër; `npx tsc` ishte fake-package në sandbox → ./node_modules/.bin/tsc
+
+Stage Summary:
+- Asnjë kandidat s'hyn më në RESEARCH pa kaluar 5 gate-t me prova të pavarura jo-lajne; çdo kandidat shfaq në UI cilat kaloi/dështoi me arsye
+- Migrimi v3→v4 i provuar (42/42) — të dhënat e prodhimit (Upstash) migrojnë automatikisht në skanimin e parë pas deploy-it
+- Pragjet e pjesshme (+8%, 3 javë, $2M) janë të shënuara qartë si të pazbatuara — korrigjimi vjen nga P3 (backtest)
+- MBETET PAZBATUAR (sipas planit të userit — një prioritet çdo herë): P2 (features e formës së trendit + score i ri 25/25/20/15/15), P3 (backtest point-in-time me grup kontrolli, LLM term→ticker, hyrje manuale /api/social-arb/ideas), OPERACIONALE (202+after() për cron me timeout të shkurtër)

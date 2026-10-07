@@ -19,7 +19,7 @@
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
-import type { Measurement, SocialArbStore } from './types';
+import type { Candidate, Measurement, SocialArbStore } from './types';
 import {
   upstashEnabled, upstashGet, upstashSet, upstashHashGetAll, upstashHashSet, upstashLock,
   STORE_KEY, CSV_KEY, LOCK_KEY,
@@ -59,7 +59,7 @@ export function backtestDir(): string {
 // ── Store ───────────────────────────────────────────────────────
 
 const EMPTY_STORE: SocialArbStore = {
-  version: 3,
+  version: 4,
   createdAt: new Date().toISOString(),
   lastScanAt: null,
   measurements: [],
@@ -71,15 +71,39 @@ export function emptyStore(): SocialArbStore {
   return { ...EMPTY_STORE, createdAt: new Date().toISOString(), measurements: [], candidates: {}, scans: [] };
 }
 
-/** Normalizon JSON-in e lexuar (çdo burim) në skemën v3. Pranon edhe v2 dhe e zgjeron. */
+/** Fushat e skemës v4 për një kandidat të vjetër (v2/v3) — të gjitha «s'u matën ende».
+ *  S'prek asgjë ekzististe: matjet, historia, rezultatet 5/20 ditësh mbeten. */
+function migrateCandidateToV4(c: Partial<Candidate>): Candidate {
+  return {
+    ...(c as Candidate),
+    wiki: c.wiki ?? {
+      article: null, growth: null, pageviews7dMedian: null, baselineMedian: null,
+      risingWeeks: null, peakToAvg: null, error: null, checkedAt: null,
+    },
+    liquidity: c.liquidity ?? { avgDollarVolume: null, error: null, checkedAt: null },
+    sinceStart: c.sinceStart ?? {
+      fromDate: null, asOf: null, tradingDays: null,
+      stockRet: null, indexRet: null, relative: null, checkedAt: null,
+    },
+    materialityInfo: c.materialityInfo ?? {
+      exposurePct: null, reason: 'materialiteti vlerësohet në skanimin e radhës (migrim v3→v4)',
+      capBucket: 'mid', linkType: 'direct',
+    },
+    gates: c.gates ?? [],
+    alreadyMoved: c.alreadyMoved ?? false,
+  };
+}
+
+/** Normalizon JSON-in e lexuar (çdo burim) në skemën v4. Pranon v2, v3 dhe v4.
+ *  Migrimi s'humb asgjë: kandidatët, matjet, historia dhe skanimet mbeten. */
 function normalizeStore(s: unknown): SocialArbStore {
   const st = s as Partial<SocialArbStore> & { version?: number } | null;
   if (!st) return emptyStore();
   const version = st.version as number | undefined;
-  if (version !== 2 && version !== 3) return emptyStore();
+  if (version !== 2 && version !== 3 && version !== 4) return emptyStore();
   const candidates: SocialArbStore['candidates'] = {};
   for (const [key, c] of Object.entries(st.candidates ?? {})) {
-    candidates[key] = {
+    const migrated = migrateCandidateToV4({
       ...c,
       status: c.status ?? 'WATCH',
       cause: c.cause ?? null,
@@ -96,10 +120,11 @@ function normalizeStore(s: unknown): SocialArbStore {
         checkedAt: c.price?.checkedAt ?? null,
       },
       outcome: c.outcome ?? { baseDate: null, baseStock: null, baseIndex: null, d5: null, d20: null, pendingNote: null, lastCheckedAt: null },
-    };
+    });
+    candidates[key] = migrated;
   }
   return {
-    version: 3,
+    version: 4,
     createdAt: st.createdAt ?? new Date().toISOString(),
     lastScanAt: st.lastScanAt ?? null,
     measurements: Array.isArray(st.measurements) ? st.measurements : [],

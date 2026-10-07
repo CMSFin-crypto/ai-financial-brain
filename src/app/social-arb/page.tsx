@@ -87,6 +87,16 @@ const BREAKDOWN_ROWS: { key: keyof Candidate['breakdown']; label: string; max: n
   { key: 'quality', label: 'Cilësia / risku i promocionit (10)', max: 10 },
   { key: 'event', label: 'Risku i eventit (10)', max: 10 },
 ];
+// ── Gate-t e RESEARCH (v4) ──────────────────────────────
+const GATE_LABELS: Record<string, string> = {
+  sources: 'Burimet e pavarura',
+  materiality: 'Materialiteti',
+  not_priced: 'S\'është çmuar ende',
+  liquidity: 'Likuiditeti',
+  persistence: 'Jo modë e shkurtër',
+};
+const GATE_ORDER = ['sources', 'materiality', 'not_priced', 'liquidity', 'persistence'] as const;
+
 const statusTone: Record<CandidateStatus, string> = {
   RESEARCH: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400',
   WATCH: 'bg-amber-500/15 border-amber-500/40 text-amber-400',
@@ -147,9 +157,28 @@ export default function SocialArbPage() {
   }, [scanning, loadState]);
 
   async function scanNow() {
-    setScanning(true); setScanErr(''); setScanMsg('Skanimi po ekzekutohet — merren termat trending, klasifikohen markat, kontrollohen GDELT dhe çmimet (deri ~1 min)...');
+    setScanning(true); setScanErr(''); setScanMsg('Skanimi po ekzekutohet — merren termat trending, klasifikohen markat, kontrollohen GDELT, Wikipedia dhe çmimet (deri ~1 min)...');
     try {
       const r = await fetch('/api/social-arb/scan', { method: 'POST' });
+      // Trajtim i saktë i kodit të statusit — 429/409/503 kanë kuptime të veçanta.
+      if (r.status === 429) {
+        const retryAfter = Number(r.headers.get('Retry-After') ?? '0');
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        const minLeft = retryAfter > 0 ? Math.max(1, Math.ceil(retryAfter / 60)) : null;
+        throw new Error(
+          `${j.error ?? 'Shumë kërkesa.'}${minLeft ? ` Provo sërish pas ~${minLeft} minutash.` : ' Provo më vonë.'}`
+        );
+      }
+      if (r.status === 409) {
+        throw new Error('Një skanim tjetër po ekzekutohet tashmë (nga cron-i ose një përdorues tjetër) — prit që të përfundojë dhe rifreskohet vetë.');
+      }
+      if (r.status === 503) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? 'Skanimi i bllokuar nga konfigurimi i serverit (mungon ruajtja e përhershme Upstash në këtë ambient).');
+      }
+      if (r.status === 401) {
+        throw new Error('E paautorizuar — sesioni mund të jetë skaduar. Rifresko faqen dhe provo sërish.');
+      }
       const j = await r.json() as {
         ok: boolean; error?: string; termsScanned?: number; termsClassified?: number;
         promoted?: string[]; removed?: string[]; activeCount?: number; archived?: number;
@@ -199,10 +228,11 @@ export default function SocialArbPage() {
             <div>
               <h1 className="text-lg font-semibold text-foreground">Social Arb — zbulim automatik</h1>
               <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-                Skaneri merr periodikisht termat në rritje nga Google Trends «Trending now», i klasifikon si produkt/markë,
-                i lidh me kompaninë dhe i vendos në <b>WATCH</b>. Ngritja në <b>RESEARCH</b> kërkon konfirmim nga një burim
-                i pavarur (GDELT) dhe kontrollin e reagimit të çmimit ndaj SPY. Kandidatët këtu vijnë vetëm nga matjet e
-                ruajtura — jo nga ndonjë listë e fiksuar.
+                Skaneri merr periodikisht termat në rritje nga Google Trends «Trending now», i klasifikon si produkt/markë
+                dhe i lidh me kompaninë. Ngritja në <b>RESEARCH</b> kërkon kalimin e 5 gate-ve: 2+ burime kërkese të
+                pavarura në rritje (Trends + Wikipedia) · materialitet · s’është çmuar ende · likuiditet · qëndrueshmëri
+                3+ javë. GDELT-të i mbeten vetëm konfirmim mediatik (i vonë) dhe testit mainstream. Kandidatët këtu vijnë
+                vetëm nga matjet e ruajtura — jo nga ndonjë listë e fiksuar.
               </p>
             </div>
           </div>
@@ -233,11 +263,11 @@ export default function SocialArbPage() {
             {lastScan && (
               <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 Burimet:
-                {(['google_trends', 'gdelt', 'prices'] as const).map(s => {
+                {(['google_trends', 'wikipedia', 'gdelt', 'prices'] as const).map(s => {
                   const st = lastScan.sources?.[s];
                   const tone = st === 'ok' ? 'text-emerald-400' : st === 'throttled' ? 'text-amber-400' : 'text-red-400';
-                  const name = s === 'google_trends' ? 'Trends RSS' : s === 'gdelt' ? 'GDELT' : 'Çmimet';
-                  return <span key={s} className={tone}>{name}: {st === 'ok' ? 'ok' : st === 'throttled' ? 'kufizuar' : 'gabim'}</span>;
+                  const name = s === 'google_trends' ? 'Trends RSS' : s === 'wikipedia' ? 'Wikipedia' : s === 'gdelt' ? 'GDELT' : 'Çmimet';
+                  return <span key={s} className={tone}>{name}: {st === 'ok' ? 'ok' : st === 'throttled' ? 'kufizuar' : st ? 'gabim' : '—'}</span>;
                 })}
               </span>
             )}
@@ -305,6 +335,30 @@ export default function SocialArbPage() {
                       <TrendingUp className="w-3 h-3" /> në trending sot{c.google.approxTraffic ? ` (~${c.google.approxTraffic})` : ''}
                     </p>
                   )}
+                  {c.alreadyMoved && (
+                    <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-orange-400">
+                      <AlertTriangle className="w-3 h-3" /> already_moved — çmimi ka reaguar që nga fillimi i trendit
+                    </p>
+                  )}
+                  {c.gates && c.gates.length > 0 && (
+                    <p className="mt-1.5 flex flex-wrap items-center gap-1">
+                      {GATE_ORDER.map(gn => {
+                        const g = c.gates.find(x => x.gate === gn);
+                        if (!g) return null;
+                        const tone = g.passed === true
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                          : g.passed === false
+                            ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                            : 'border-slate-500/40 bg-slate-500/10 text-slate-400';
+                        const mark = g.passed === true ? '✓' : g.passed === false ? '✗' : '—';
+                        return (
+                          <span key={gn} title={g.detail} className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${tone}`}>
+                            {mark} {GATE_LABELS[gn]}
+                          </span>
+                        );
+                      })}
+                    </p>
+                  )}
                   <div className="mt-2 flex items-center gap-2">
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/70">
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, c.score))}%`, background: barColor[c.status] }} />
@@ -335,9 +389,9 @@ export default function SocialArbPage() {
               <div className="mx-auto mt-4 grid max-w-2xl gap-2 text-left sm:grid-cols-2">
                 {[
                   ['1. Zbulimi', 'Google Trends «Trending now» RSS — 4 rajone (US/GB/CA/AU). Termi + marka → DISCOVERED.'],
-                  ['2. WATCH', 'Lidhja me ticker-in verifikohet nga GDELT; kërkesa reale ose reagimi i tregut mungon ende.'],
-                  ['3. RESEARCH (me prova)', 'Vetëm kur: shkak potencialisht pozitiv + provë e pavarur e kërkesës (GDELT ≥+25%) + çmime të vlefshme (dritare ≤+3% vs SPY) + pa flamur bllokues. Score-i nuk zëvendëson provat.'],
-                  ['4. REJECT/REMOVED', 'Shkak negativ, lidhje e gabuar, mainstream (≥200 artikuj/24h), çmimi ka reaguar >+10%, ose interesi u ftoh — refuzuarit gjurmohen ende 5/20 ditë për sinqeritet statistikor.'],
+                  ['2. WATCH', 'Lidhja me ticker-in u verifikua; gate-t e RESEARCH ende s’janë të gjitha të kaluara.'],
+                  ['3. RESEARCH (5 gate-t)', 'Vetëm kur KALOJNË TË GJITHA: 2+ burime kërkese të pavarura (Trends + Wikipedia) · materialitet i mjaftueshëm · s’është çmuar ende (≤+8% vs SPY që nga fillimi) · likuiditet · 3+ javë qëndrueshmëri pa spike. Score-i vetëm rendit.'],
+                  ['4. REJECT/REMOVED', 'Shkak negativ, mainstream (≥200 artikuj/24h), flamuj bllokues, ose interesi u ftoh — refuzuarit gjurmohen ende 5/20 ditë për sinqeritet statistikor. Kur çmimi ka reaguar, kandidati mbetet në WATCH me flamurin already_moved (s’fshihet).'],
                 ].map(([t, d]) => (
                   <div key={t} className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
                     <p className="text-xs font-semibold text-foreground">{t}</p>
@@ -411,11 +465,14 @@ export default function SocialArbPage() {
                 )}
               </div>
               <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5 text-rose-400" /> Prova e pavarur (GDELT)</p>
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5 text-rose-400" /> Konfirmimi mediatik (GDELT)</p>
                 <p className="mt-1.5 text-xs text-foreground/90">
                   Rritja 7d vs baza 28d: <b className={active.gdelt.confirmed ? 'text-emerald-400' : 'text-foreground'}>{pct(active.gdelt.growth)}</b>
                   {' '}· artikuj 24h: <b className="text-foreground">{active.gdelt.articles1d ?? 'n/a'}</b>
                   {active.gdelt.confirmed && <span className="text-emerald-400"> — konfirmuar</span>}
+                </p>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  GDELT s'numërohet si burim kërkese — është konfirmim i vonë mediatik; numri i artikujve teston edhe pragun mainstream (≥200 → dil).
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {active.google.inFeedToday
@@ -443,6 +500,39 @@ export default function SocialArbPage() {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* GATE-T E RESEARCH (v4) — 5 provat, secila me arsye */}
+            <div className="mt-2 rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <CheckCircle2 className="w-3.5 h-3.5 text-rose-400" /> Gate-t për RESEARCH — 5 provat (të gjitha duhet të kalojnë)
+              </p>
+              {active.gates && active.gates.length > 0 ? (
+                <ul className="mt-1.5 space-y-1.5">
+                  {GATE_ORDER.map(gn => {
+                    const g = active.gates.find(x => x.gate === gn);
+                    if (!g) return null;
+                    const tone = g.passed === true ? 'text-emerald-400' : g.passed === false ? 'text-red-400' : 'text-slate-400';
+                    const mark = g.passed === true ? '✓ KALOI' : g.passed === false ? '✗ DËSHTOI' : '— E PAMATSHME';
+                    return (
+                      <li key={gn} className="flex flex-col gap-0.5 rounded border border-slate-700/50 px-2 py-1.5">
+                        <span className={`text-[11px] font-bold ${tone}`}>{mark} — {GATE_LABELS[gn]}</span>
+                        <span className="text-[11px] text-foreground/85">{g.detail}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-1.5 text-xs text-muted-foreground">Gate-t vlerësohen në skanimin e radhës (kandidati i migruar nga skema e vjetër).</p>
+              )}
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Wikipedia (kërkesa, jo-lajme): {active.wiki?.article ? <>artikulli «{active.wiki.article}» · rritja 7d vs baza 28d: <b className="text-foreground/85">{pct(active.wiki.growth)}</b></> : <>{active.wiki?.error ?? 'e pakuruar'}</>}
+                {active.wiki?.risingWeeks != null && <> · javë rritjeje: <b className="text-foreground/85">{active.wiki.risingWeeks}</b></>}
+                {active.wiki?.peakToAvg != null && <> · pik/mesatare: <b className="text-foreground/85">{active.wiki.peakToAvg.toFixed(1)}×</b></>}
+                {' '}· Vëllami: <b className="text-foreground/85">{active.liquidity?.avgDollarVolume != null ? `$${(active.liquidity.avgDollarVolume / 1_000_000).toFixed(1)}M/ditë` : (active.liquidity?.error ?? 'n/a')}</b>
+                {' '}· Lidhja: <b className="text-foreground/85">{active.materialityInfo?.linkType ?? 'direct'}</b> (kova {active.materialityInfo?.capBucket ?? '?'})
+                {active.gates?.[0]?.checkedAt && <> · kontrolluar {new Date(active.gates[0].checkedAt).toLocaleDateString('sq-AL')}</>}
+              </p>
             </div>
 
             {/* P2 — titujt e ruajtur për kontroll manual */}
@@ -507,9 +597,10 @@ export default function SocialArbPage() {
                 </ul>
               </div>
               <small style={{ display: 'block', marginTop: 8 }}>
-                Rregullat e statusit (i varur nga provat): DISCOVERED — u gjet termi dhe marka. WATCH — lidhja me ticker-in u verifikua, por mungon kërkesa reale ose reagimi i tregut.
-                RESEARCH kërkon të GJITHA: shkak potencialisht pozitiv + provë të pavarur të kërkesës (GDELT ≥+25%) + çmime të vlefshme e të freskëta me dritare ≤+3% vs SPY + pa flamur bllokues — score ≥60 mbetet kusht sekondar dhe s'zëvendëson asnjë provë.
-                REMOVED/REJECT: shkak negativ, lidhje e gabuar, mainstream (≥200 artikuj/24h), çmimi ka reaguar &gt;+10%, ose interesi u ftoh (10+ ditë). Çdo kandidat gjurmohet për rezultatin 5/20 ditë vs SPY — përfshirë refuzuarit.
+                Rregullat e statusit (gate-t v4): DISCOVERED — u gjet termi dhe marka. WATCH — lidhja me ticker-in u verifikua, por 5 gate-t e RESEARCH s'janë të gjitha të kaluara.
+                RESEARCH kërkon TË GJITHA: 2+ burime kërkese jo-lajne në rritje (Google Trends + Wikipedia; GDELT = vetëm konfirmim mediatik i vonë, s'numërohet) · materialitet efektiv të mjaftueshëm · kthimi që nga fillimi i trendit ≤ +8% vs SPY (s'është çmuar) · vëllami ≥ pragun minimal · 3+ javë rritje e qëndrueshme pa model spike-i. Mbi +8% → WATCH me flamurin already_moved (çmimi si filtër, jo si provë).
+                REMOVED/REJECT: shkak negativ, mainstream (≥200 artikuj/24h), flamuj bllokues, ose ftohje (10+ ditë). Çdo kandidat gjurmohet për rezultatin 5/20 ditë vs SPY — përfshirë refuzuarit.
+                ⚠️ Pragjet (+8%, 3 javë, 2M$/ditë) janë vlera fillestare të pazbatuara nga backtest-i — mos i trajto si të provuara.
               </small>
             </div>
 
@@ -573,8 +664,8 @@ export default function SocialArbPage() {
                       <td className="py-1.5 pr-4 tabular-nums text-foreground/90">{s.termsClassified}</td>
                       <td className="py-1.5 pr-4 tabular-nums text-foreground/90">{s.candidatesActive}</td>
                       <td className="py-1.5 pr-4 text-muted-foreground">
-                        {Object.entries(s.sources).filter(([k]) => ['google_trends', 'gdelt', 'prices'].includes(k))
-                          .map(([k, v]) => `${k === 'google_trends' ? 'Trends' : k === 'gdelt' ? 'GDELT' : 'Çmimet'}: ${v === 'ok' ? 'ok' : v === 'throttled' ? 'kufizuar' : 'gabim'}`).join(' · ')}
+                        {Object.entries(s.sources).filter(([k]) => ['google_trends', 'wikipedia', 'gdelt', 'prices'].includes(k))
+                          .map(([k, v]) => `${k === 'google_trends' ? 'Trends' : k === 'wikipedia' ? 'Wiki' : k === 'gdelt' ? 'GDELT' : 'Çmimet'}: ${v === 'ok' ? 'ok' : v === 'throttled' ? 'kufizuar' : 'gabim'}`).join(' · ')}
                       </td>
                       <td className="py-1.5 tabular-nums text-muted-foreground">{(s.durationMs / 1000).toFixed(0)}s</td>
                     </tr>

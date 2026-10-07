@@ -2,9 +2,15 @@
 // SOCIAL ARB — burimet e dhënave
 //
 // 1. Google Trends "Trending now" RSS — zbulimi (termi + trafiku).
-// 2. GDELT DOC API — konfirmimi (seri 30-ditore + numërim artikujsh
-//    24h për pragun mainstream). Kufizohet 1 kërkesë / 6 sekonda.
-// 3. Yahoo Finance chart API — çmimet (aksioni + SPY si indeks).
+// 2. GDELT DOC API — konfirmimi mediatik (seri 30-ditore + numërim
+//    artikujsh 24h për pragun mainstream). Kufizohet 1 kërkesë / 6 sekonda.
+//    ⚠️ GDELT = media_confirmation (konfirmim i vonë), NUK numërohet si
+//    burim kërkese për gate-in e burimeve.
+// 3. Wikipedia Pageviews (Wikimedia REST) — burimi i 2-të i kërkesës
+//    jo-lajme: seri ditore 90-ditore e artikullit të markës, agjenti
+//    «user» (pa botë), normalizuar ndaj historisë së vet.
+// 4. Yahoo Finance / stockanalysis.com — çmimet (aksioni + SPY si indeks)
+//    + vëllimet (për gate-in e likuiditetit).
 // ═══════════════════════════════════════════════════════════════
 
 import type { Region } from './types';
@@ -124,6 +130,52 @@ export async function gdeltArticleCount(query: string): Promise<number> {
   return data.articles?.length ?? 0;
 }
 
+// ── Wikipedia Pageviews (Wikimedia REST) ───────────────────────
+// Burimi i 2-të i kërkesës jo-lajme. Agjenti «user» përjashton botët;
+// seri 90-ditore normale ndaj historisë së vet (kërkesa e politikës së
+// Wikimedia-s: UA i identifikueshëm + kërkesa të përhapura).
+
+export interface WikiPoint { date: string; views: number } // YYYY-MM-DD
+
+// ⚠️ Wikimedia kërkon UA PËRSHKRUES me kontakt (UA-shfletues → HTTP 403).
+const WIKI_UA = 'SocialArbLab/1.0 (research lab; https://ai-financial-brainzai.vercel.app/social-arb)';
+
+async function wikiFetch(url: string, ms = 12000): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': WIKI_UA, Accept: 'application/json' },
+      cache: 'no-store',
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Historia ditore e faqeve të artikullit (agjenti user, të gjitha akseset).
+ *  Hedh gabim me statusin konkret kur API refuzon (404 = pa artikull). */
+export async function fetchWikiPageviews(article: string, days = 90): Promise<WikiPoint[]> {
+  const end = new Date();
+  const start = new Date(end.getTime() - days * 86400000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const url =
+    `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/${encodeURIComponent(article)}/daily/${fmt(start)}/${fmt(end)}`;
+  const res = await wikiFetch(url);
+  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { httpStatus: res.status });
+  const j = (await res.json()) as { items?: { timestamp: string; views: number }[] };
+  const pts = (j.items ?? [])
+    .map(it => ({
+      date: `${it.timestamp.slice(0, 4)}-${it.timestamp.slice(4, 6)}-${it.timestamp.slice(6, 8)}`,
+      views: it.views ?? 0,
+    }))
+    .filter(p => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && Number.isFinite(p.views))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!pts.length) throw Object.assign(new Error('përgjigje bosh (pa artikuj)'), { httpStatus: res.status });
+  return pts;
+}
+
 // ── Çmimet (multi-burim, me gabime të eksplicite) ────────────────
 //
 // Rendit i provave: stockanalysis.com (pa çelës, i qëndrueshëm — close të
@@ -133,7 +185,7 @@ export async function gdeltArticleCount(query: string): Promise<number> {
 // me burimin + statusin konkrete, që gabimi të shfaqet në panelin teknik
 // e jo si «0%» ose «pa të dhëna» misterioze.
 
-export interface PricePoint { date: string; close: number } // YYYY-MM-DD
+export interface PricePoint { date: string; close: number; volume?: number | null } // YYYY-MM-DD
 
 /** Historia e një gabimi të çmimit — shfaqet në panelin teknik. */
 export interface PriceFetchError {
@@ -159,7 +211,7 @@ export class PriceFeedError extends Error {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-/** stockanalysis.com — histori ditore (t=datë, c=close, a=close i ajustuar). */
+/** stockanalysis.com — histori ditore (t=datë, c=close, a=close i ajustuar, v=vëllimi). */
 async function fetchStockAnalysis(ticker: string, range: string): Promise<PricePoint[]> {
   const sym = encodeURIComponent(ticker.toUpperCase());
   const res = await fetchWithTimeout(
@@ -167,12 +219,16 @@ async function fetchStockAnalysis(ticker: string, range: string): Promise<PriceP
     12000,
   );
   if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { httpStatus: res.status });
-  const j = (await res.json()) as { status?: number; data?: { t: string; c: number; a?: number }[] };
+  const j = (await res.json()) as { status?: number; data?: { t: string; c: number; a?: number; v?: number }[] };
   const rows = j.data ?? [];
   if (!rows.length) throw Object.assign(new Error(`përgjigje bosh (${rows.length} rreshta)`), { httpStatus: res.status });
   // rreshtat vijnë zbritëse (më e reja e para) → ktheji ngjitëse
   return rows
-    .map(r => ({ date: r.t, close: typeof r.a === 'number' && Number.isFinite(r.a) ? r.a : r.c }))
+    .map(r => ({
+      date: r.t,
+      close: typeof r.a === 'number' && Number.isFinite(r.a) ? r.a : r.c,
+      volume: typeof r.v === 'number' && Number.isFinite(r.v) ? r.v : null,
+    }))
     .filter(p => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && Number.isFinite(p.close))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -186,16 +242,22 @@ async function fetchYahoo(ticker: string, range: string, host: 'query1' | 'query
   );
   if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { httpStatus: res.status });
   const j = (await res.json()) as {
-    chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
+    chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[]; volume?: (number | null)[] }[] } }[] };
   };
   const r = j.chart?.result?.[0];
   const ts = r?.timestamp ?? [];
   const closes = r?.indicators?.quote?.[0]?.close ?? [];
+  const volumes = r?.indicators?.quote?.[0]?.volume ?? [];
   const out: PricePoint[] = [];
   for (let i = 0; i < ts.length; i++) {
     const c = closes[i];
     if (typeof c !== 'number' || !Number.isFinite(c)) continue;
-    out.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), close: c });
+    const v = volumes[i];
+    out.push({
+      date: new Date(ts[i] * 1000).toISOString().slice(0, 10),
+      close: c,
+      volume: typeof v === 'number' && Number.isFinite(v) ? v : null,
+    });
   }
   if (!out.length) throw Object.assign(new Error('përgjigje pa close të vlefshme'), { httpStatus: res.status });
   return out;

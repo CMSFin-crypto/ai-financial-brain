@@ -21,8 +21,8 @@ të punojë siç është (skedar JSON) — asgjë nuk ndryshon aty.
 
 - Store dy-backend: skedar JSON (lokal) / Upstash Redis (serverless)
 - Lock ndër-procesesh në Redis — sandbox-i dhe Vercel-i s'përplasin skanime
-- Buxhet kohor i skanimit (45s në Vercel; plani Hobby ndalon funksionet në 60s)
-- Rruga `/api/social-arb/scan` pranon GET + `Authorization: Bearer <CRON_SECRET>` (për cron të jashtëm)
+- Buxhet kohor i skanimit (35s në Vercel; plani Hobby ndalon funksionet në 60s)
+- Rruga `/api/social-arb/scan`: **fail-closed** — në Vercel kërkon `Authorization: Bearer <CRON_SECRET>` (GET ose POST). Butoni në faqe (POST same-origin) lejohet pa sekret, por me **cooldown 10 minuta** (429 + Retry-After) — kokat Origin/Sec-Fetch-Site s'janë autentikim, vetëm shenjë se thirrja vjen nga një shfletues
 - `vercel.json` ka 2 crons ekzistuese (parashikimet) — mbeten të paprekura
 
 ---
@@ -122,17 +122,19 @@ në git — asgjë s'humbet.
 
 ## Siguria
 
-- `CRON_SECRET` mbetet i panjohur publikisht — pa të, skanimet nga jashtë refuzohen (401).
+- `CRON_SECRET` është **i detyrueshëm në Vercel** (fail-closed): pa të, çdo thirrje e jashtme refuzohet me 401 — përfshirë cron-in. S'ka më modalitetin «pa sekret» në prodkim.
+- Butoni «Skano tani» në faqe punon pa sekret (POST same-origin), por lejohet vetëm një herë në 10 minuta — kthimi është 429 me `Retry-After` dhe koha e mbetur shfaqet në faqe.
+- Krahasimi i sekretit bëhet me `timingSafeEqual` — i paprekshëm nga timing-attack.
 - Token-i i Upstash jep akses në Redis — mos e vendos kurrë në kod të commit-uar,
   vetëm në Environment Variables.
-- Nëse dikush e merr sekretin, rrotulloje te Upstash (Transit Encryption → tokens)
-  dhe përditëso env në Vercel + cron-job.
+- Nëse dikush e merr sekretin, rrotulo `CRON_SECRET` te Vercel (Settings → Environment
+  Variables) dhe te sekretet e GitHub Actions (nëse përdor workflow-in e skanimit) — pastaj Redeploy.
 
 ## Kufijtë e planit Hobby (për t'u ditur)
 
 | Kufi | Vlera | Efekti |
 |---|---|---|
-| Kohëzgjatja e funksionit | 60s | Skanimi mbyllet brenda 45s (buxheti kohor); pjesa e mbetur vijon në skanimin tjetër |
+| Kohëzgjatja e funksionit | 60s | Skanimi mbyllet brenda 35s (buxheti kohor); pjesa e mbetur vijon në skanimin tjetër |
 | Crons | 2, ditore | Cikli 2-orësh vjen nga cron-job.org (sipas Hapit 4) |
 | Bandwidth | 100GB/muaj | Faqja është e lehtë — s'ka problem |
 

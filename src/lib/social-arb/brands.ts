@@ -21,6 +21,11 @@ export interface BrandEntry {
   eventRisk: number;   // 0–1 — rrezik se trendi është event i pambaruar
   cap: CapBucket;
   gdeltQuery?: string; // pyetja GDELT (default: alias-i kryesor)
+  /** Artikulli Wikipedia për markën (titulli kanonik) — ushqen gate-in e burimeve
+   *  dhe atë të qëndrueshmërisë. Kur mungon, provohet alias-i kryesor i kapitalizuar. */
+  wikiArticle?: string;
+  /** Lloji i lidhjes markë → kompani e listuar (default: direct). */
+  linkType?: 'direct' | 'parent' | 'supplier' | 'retailer';
   dossier?: { confirm: string; kill: string; risk: string };
 }
 
@@ -44,6 +49,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['celsius', 'celsius drink', 'celsius energy', 'celsius energy drink', 'celsius vibe', 'celsius stock'],
     ticker: 'CELH', company: 'Celsius Holdings', product: 'CELSIUS (pije energjike)',
+    wikiArticle: 'Celsius (brand)',
     materiality: 0.95, promoRisk: 0.5, eventRisk: 0.3, cap: 'small', gdeltQuery: 'celsius drink',
     dossier: {
       confirm: 'Interesi për CELSIUS rritet me të paktën 25% në dy burime (Google Trends + GDELT këtu) ndërsa aksioni nuk ka reaguar më shumë se +3% ndaj indeksit — divergjenca interes-vs-çmim është thelbi i Social Arb.',
@@ -54,11 +60,13 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['monster energy', 'monster drink', 'monster ultra', 'monster beverage'],
     ticker: 'MNST', company: 'Monster Beverage', product: 'Monster Energy',
+    wikiArticle: 'Monster Energy',
     materiality: 0.85, promoRisk: 0.3, eventRisk: 0.2, cap: 'mid',
   },
   {
     aliases: ['gatorade', 'powerade'],
     ticker: 'PEP', company: 'PepsiCo', product: 'Gatorade / Powerade',
+    wikiArticle: 'Gatorade', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.2, eventRisk: 0.2, cap: 'mega',
   },
   {
@@ -69,6 +77,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['sprite', 'fanta', 'coca cola', 'coca-cola', 'coke zero', 'coke', 'smartwater', 'fairlife'],
     ticker: 'KO', company: 'The Coca-Cola Company', product: 'Pije Coca-Cola',
+    wikiArticle: 'Coca-Cola',
     materiality: 0.9, promoRisk: 0.1, eventRisk: 0.2, cap: 'mega', gdeltQuery: 'coca-cola',
   },
   {
@@ -79,11 +88,13 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['starbucks', 'starbucks drink', 'starbucks menu'],
     ticker: 'SBUX', company: 'Starbucks', product: 'Starbucks (kafenetë)',
+    wikiArticle: 'Starbucks',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.35, cap: 'large',
   },
   {
     aliases: ['dutch bros', 'dutch brothers'],
     ticker: 'BROS', company: 'Dutch Bros', product: 'Dutch Bros (kafenetë)',
+    wikiArticle: 'Dutch Bros',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.25, cap: 'small',
   },
 
@@ -91,16 +102,19 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['mcdonalds', "mcdonald's", 'mc donalds', 'big mac', 'mcflurry', 'mcdonalds menu'],
     ticker: 'MCD', company: "McDonald's", product: "McDonald's (restorante)",
+    wikiArticle: "McDonald's",
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.4, cap: 'mega', gdeltQuery: 'mcdonalds',
   },
   {
     aliases: ['wendys', "wendy's", 'wendy burger'],
     ticker: 'WEN', company: "The Wendy's Company", product: "Wendy's (restorante)",
+    wikiArticle: "Wendy's",
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.35, cap: 'small',
   },
   {
     aliases: ['chipotle', 'chipotle menu', 'chipotle bowl'],
     ticker: 'CMG', company: 'Chipotle Mexican Grill', product: 'Chipotle (restorante)',
+    wikiArticle: 'Chipotle Mexican Grill',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.3, cap: 'large',
   },
   {
@@ -116,21 +130,25 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['sweetgreen', 'sweet green'],
     ticker: 'SG', company: 'Sweetgreen', product: 'Sweetgreen (sallata)',
+    wikiArticle: 'Sweetgreen',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.3, cap: 'small',
   },
   {
     aliases: ['wingstop', 'wing stop', 'wingstop fries'],
     ticker: 'WING', company: 'Wingstop', product: 'Wingstop (krahë pule)',
+    wikiArticle: 'Wingstop',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.25, cap: 'small',
   },
   {
     aliases: ['shake shack', 'shack burger'],
     ticker: 'SHAK', company: 'Shake Shack', product: 'Shake Shack (restorante)',
+    wikiArticle: 'Shake Shack',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.3, cap: 'small',
   },
   {
     aliases: ['dominos', "domino's pizza", 'dominos pizza'],
     ticker: 'DPZ', company: "Domino's Pizza", product: "Domino's (pizza)",
+    wikiArticle: "Domino's Pizza",
     materiality: 0.9, promoRisk: 0.15, eventRisk: 0.3, cap: 'mid', gdeltQuery: 'dominos pizza',
   },
   {
@@ -141,36 +159,43 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['popeyes', 'popeyes chicken'],
     ticker: 'QSR', company: 'Restaurant Brands Int.', product: 'Popeyes (restorante)',
+    wikiArticle: 'Popeyes', linkType: 'parent',
     materiality: 0.15, promoRisk: 0.15, eventRisk: 0.3, cap: 'large',
   },
   {
     aliases: ['burger king'],
     ticker: 'QSR', company: 'Restaurant Brands Int.', product: 'Burger King',
+    wikiArticle: 'Burger King', linkType: 'parent',
     materiality: 0.2, promoRisk: 0.15, eventRisk: 0.3, cap: 'large',
   },
   {
     aliases: ['taco bell', 'kfc'],
     ticker: 'YUM', company: 'Yum! Brands', product: 'Taco Bell / KFC',
+    wikiArticle: 'Taco Bell', linkType: 'parent',
     materiality: 0.2, promoRisk: 0.15, eventRisk: 0.3, cap: 'large',
   },
   {
     aliases: ['krispy kreme', 'krispy kreme donuts'],
     ticker: 'DNUT', company: 'Krispy Kreme', product: 'Krispy Kreme (donuts)',
+    wikiArticle: 'Krispy Kreme',
     materiality: 0.9, promoRisk: 0.2, eventRisk: 0.3, cap: 'small',
   },
   {
     aliases: ['oreo', 'oreos'],
     ticker: 'MDLZ', company: 'Mondelez International', product: 'Oreo',
+    wikiArticle: 'Oreo', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.15, eventRisk: 0.2, cap: 'large',
   },
   {
     aliases: ['lays', 'lay chips', 'doritos', 'cheetos', 'flamin hot', 'flamin hot cheetos'],
     ticker: 'PEP', company: 'PepsiCo', product: 'Snacks Frito-Lay',
+    wikiArticle: 'Frito-Lay', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.2, eventRisk: 0.2, cap: 'mega', gdeltQuery: 'doritos',
   },
   {
     aliases: ['kit kat', 'kitkat'],
     ticker: 'HSY', company: 'The Hershey Company', product: 'Kit Kat',
+    wikiArticle: 'Kit Kat', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.15, eventRisk: 0.2, cap: 'large',
   },
   {
@@ -183,6 +208,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['elf cosmetics', 'e.l.f.', 'elf makeup', 'elf beauty', 'elf skin', 'elf cosmetics dupe', 'elf dupe'],
     ticker: 'ELF', company: 'e.l.f. Beauty', product: 'e.l.f. (kozmetikë)',
+    wikiArticle: 'E.l.f. Beauty',
     materiality: 0.95, promoRisk: 0.4, eventRisk: 0.25, cap: 'mid', gdeltQuery: 'elf cosmetics',
     dossier: {
       confirm: 'Përmbajtja «dupe» (alternativa e lirë e produkteve të shtrenjta) rritet njëkohësisht në kërkime dhe lajme, ndërsa aksioni mbetet pa reagim të madh.',
@@ -193,31 +219,37 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['rhode skin', 'rhode beauty', 'rhode peptide', 'rhode lipstick'],
     ticker: 'ELF', company: 'e.l.f. Beauty', product: 'rhode (kozmetikë, blerë 2025)',
+    wikiArticle: 'Rhode (brand)', linkType: 'parent',
     materiality: 0.06, promoRisk: 0.55, eventRisk: 0.3, cap: 'mid', gdeltQuery: 'rhode skin',
   },
   {
     aliases: ['olaplex'],
     ticker: 'OLPX', company: 'Olaplex', product: 'Olaplex (kujdesi i flokëve)',
+    wikiArticle: 'Olaplex',
     materiality: 0.9, promoRisk: 0.45, eventRisk: 0.3, cap: 'small',
   },
   {
     aliases: ['maybelline', 'garnier'],
     ticker: 'LRLCY', company: "L'Oréal (ADR)", product: 'Maybelline / Garnier',
+    wikiArticle: 'Maybelline', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.25, eventRisk: 0.2, cap: 'large',
   },
   {
     aliases: ['mac cosmetics'],
     ticker: 'EL', company: 'Estée Lauder', product: 'MAC Cosmetics',
+    wikiArticle: 'MAC Cosmetics', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.25, eventRisk: 0.25, cap: 'mid',
   },
   {
     aliases: ['bath and body works', 'bath & body works'],
     ticker: 'BBWI', company: 'Bath & Body Works', product: 'Bath & Body Works',
+    wikiArticle: 'Bath & Body Works',
     materiality: 0.9, promoRisk: 0.3, eventRisk: 0.25, cap: 'mid', gdeltQuery: 'bath and body works',
   },
   {
     aliases: ['ulta', 'ulta beauty'],
     ticker: 'ULTA', company: 'Ulta Beauty', product: 'Ulta (dyqane bukurie)',
+    wikiArticle: 'Ulta Beauty', linkType: 'retailer',
     materiality: 0.9, promoRisk: 0.2, eventRisk: 0.25, cap: 'mid',
   },
 
@@ -225,6 +257,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['crocs', 'crocs shoes', 'crocs sale'],
     ticker: 'CROX', company: 'Crocs Inc', product: 'Crocs / HEYDUDE',
+    wikiArticle: 'Crocs',
     materiality: 0.9, promoRisk: 0.25, eventRisk: 0.3, cap: 'small',
     dossier: {
       confirm: 'Të dyja markat (Crocs dhe HEYDUDE) tregojnë rritje interesi njëkohësisht, ndërsa çmimi i aksionit nuk ka reaguar ende.',
@@ -250,21 +283,25 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['ugg', 'uggs', 'ugg boots', 'ugg slippers'],
     ticker: 'DECK', company: 'Deckers Outdoor', product: 'UGG (këpucë)',
+    wikiArticle: 'UGG (brand)', linkType: 'parent',
     materiality: 0.35, promoRisk: 0.2, eventRisk: 0.3, cap: 'mid',
   },
   {
     aliases: ['nike', 'air jordan', 'jordans', 'jordan shoes', 'nike air force', 'air max', 'nike dunks', 'dunks'],
     ticker: 'NKE', company: 'Nike Inc', product: 'Nike / Air Jordan',
+    wikiArticle: 'Nike, Inc.',
     materiality: 0.9, promoRisk: 0.35, eventRisk: 0.35, cap: 'large',
   },
   {
     aliases: ['converse', 'chuck taylor'],
     ticker: 'NKE', company: 'Nike Inc', product: 'Converse',
+    wikiArticle: 'Converse (brand)', linkType: 'parent',
     materiality: 0.08, promoRisk: 0.25, eventRisk: 0.25, cap: 'large',
   },
   {
     aliases: ['lululemon', 'lulu lemon', 'define jacket', 'lululemon leggings', 'lulu leggings'],
     ticker: 'LULU', company: 'Lululemon Athletica', product: 'Lululemon (athleisure)',
+    wikiArticle: 'Lululemon Athletica',
     materiality: 0.9, promoRisk: 0.3, eventRisk: 0.3, cap: 'mid',
     dossier: {
       confirm: 'Rritje interesi për një produkt specifik (jo vetëm markën), me çmim aksioni pa reaguar dhe pa probleme furnizimi.',
@@ -275,6 +312,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['birkenstock', 'birkenstocks', 'birkenstock boston', 'birk'],
     ticker: 'BIRK', company: 'Birkenstock', product: 'Birkenstock (sandale)',
+    wikiArticle: 'Birkenstock',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.3, cap: 'mid',
     dossier: {
       confirm: 'Rritje interesi në pranverë, para sezonit të sandaleve, e verifikuar me krahasim vit-më-viti e jo javë-më-javë.',
@@ -285,6 +323,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['on cloud shoes', 'on running', 'on running shoes', 'on clouds'],
     ticker: 'ONON', company: 'On Holding', product: 'On / Cloud (këpucë vrapimi)',
+    wikiArticle: 'On Holding',
     materiality: 0.95, promoRisk: 0.25, eventRisk: 0.25, cap: 'mid', gdeltQuery: 'on running shoes',
     dossier: {
       confirm: 'Rritje interesi që përputhet me hapje dyqanesh të reja dhe rritje shitjesh me pakicë, me çmim aksioni ende pa reaguar.',
@@ -295,11 +334,13 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['vans', 'vans shoes', 'vans sneakers'],
     ticker: 'VFC', company: 'VF Corporation', product: 'Vans',
+    wikiArticle: 'Vans', linkType: 'parent',
     materiality: 0.25, promoRisk: 0.25, eventRisk: 0.3, cap: 'small',
   },
   {
     aliases: ['the north face', 'north face jacket', 'north face puffer'],
     ticker: 'VFC', company: 'VF Corporation', product: 'The North Face',
+    wikiArticle: 'The North Face', linkType: 'parent',
     materiality: 0.25, promoRisk: 0.2, eventRisk: 0.3, cap: 'small', gdeltQuery: 'north face',
   },
   {
@@ -310,21 +351,25 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['american eagle', 'american eagle jeans', 'aerie'],
     ticker: 'AEO', company: 'American Eagle Outfitters', product: 'American Eagle / Aerie',
+    wikiArticle: 'American Eagle Outfitters',
     materiality: 0.9, promoRisk: 0.2, eventRisk: 0.25, cap: 'small',
   },
   {
     aliases: ['abercrombie', 'abercrombie and fitch', 'abercrombie & fitch', 'hollister'],
     ticker: 'ANF', company: 'Abercrombie & Fitch', product: 'Abercrombie / Hollister',
+    wikiArticle: 'Abercrombie & Fitch',
     materiality: 0.9, promoRisk: 0.2, eventRisk: 0.25, cap: 'small', gdeltQuery: 'abercrombie',
   },
   {
     aliases: ['old navy', 'gap inc', 'banana republic'],
     ticker: 'GAP', company: 'Gap Inc', product: 'Old Navy / Gap',
+    wikiArticle: 'Old Navy', linkType: 'parent',
     materiality: 0.6, promoRisk: 0.15, eventRisk: 0.25, cap: 'small',
   },
   {
     aliases: ['urban outfitters', 'free people', 'anthropologie'],
     ticker: 'URBN', company: 'Urban Outfitters Inc', product: 'URBN (dyqane)',
+    wikiArticle: 'Urban Outfitters',
     materiality: 0.9, promoRisk: 0.2, eventRisk: 0.25, cap: 'small', gdeltQuery: 'urban outfitters',
   },
   {
@@ -335,6 +380,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['louis vuitton', 'lvmh'],
     ticker: 'LVMUY', company: 'LVMH (ADR)', product: 'Louis Vuitton',
+    wikiArticle: 'Louis Vuitton', linkType: 'parent',
     materiality: 0.15, promoRisk: 0.2, eventRisk: 0.25, cap: 'large', gdeltQuery: 'louis vuitton',
   },
   {
@@ -352,26 +398,31 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['amazon', 'amazon prime day', 'prime day', 'amazon sale', 'prime big deal days'],
     ticker: 'AMZN', company: 'Amazon.com', product: 'Amazon / Prime',
+    wikiArticle: 'Amazon (company)', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.3, cap: 'mega', gdeltQuery: 'amazon',
   },
   {
     aliases: ['walmart', 'walmart sale'],
     ticker: 'WMT', company: 'Walmart Inc', product: 'Walmart',
+    wikiArticle: 'Walmart', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.25, cap: 'mega',
   },
   {
     aliases: ['target', 'target sale', 'target circle'],
     ticker: 'TGT', company: 'Target Corporation', product: 'Target (dyqane)',
+    wikiArticle: 'Target Corporation', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.45, cap: 'large',
   },
   {
     aliases: ['costco', 'costco sale'],
     ticker: 'COST', company: 'Costco Wholesale', product: 'Costco',
+    wikiArticle: 'Costco', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.25, cap: 'mega',
   },
   {
     aliases: ['temu'],
     ticker: 'PDD', company: 'PDD Holdings', product: 'Temu',
+    wikiArticle: 'Temu', linkType: 'retailer',
     materiality: 0.3, promoRisk: 0.3, eventRisk: 0.55, cap: 'large',
   },
   {
@@ -382,26 +433,31 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['five below', '5 below'],
     ticker: 'FIVE', company: 'Five Below', product: 'Five Below (dyqane)',
+    wikiArticle: 'Five Below', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.3, cap: 'small',
   },
   {
     aliases: ['dollar tree', 'dollar general'],
     ticker: 'DLTR', company: 'Dollar Tree', product: 'Dollar Tree',
+    wikiArticle: 'Dollar Tree', linkType: 'retailer',
     materiality: 0.8, promoRisk: 0.1, eventRisk: 0.3, cap: 'small', gdeltQuery: 'dollar tree',
   },
   {
     aliases: ['best buy'],
     ticker: 'BBY', company: 'Best Buy', product: 'Best Buy (elektronikë)',
+    wikiArticle: 'Best Buy', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.3, cap: 'mid',
   },
   {
     aliases: ['home depot', 'lowes'],
     ticker: 'HD', company: "The Home Depot", product: 'Home Depot',
+    wikiArticle: 'The Home Depot', linkType: 'retailer',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.25, cap: 'mega', gdeltQuery: 'home depot',
   },
   {
     aliases: ['wayfair'],
     ticker: 'W', company: 'Wayfair', product: 'Wayfair (e-commerce shtëpie)',
+    wikiArticle: 'Wayfair',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.3, cap: 'small',
   },
 
@@ -409,6 +465,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['roblox', 'roblox game', 'new roblox game', 'roblox update'],
     ticker: 'RBLX', company: 'Roblox Corporation', product: 'Roblox (platformë lojërash)',
+    wikiArticle: 'Roblox',
     materiality: 0.95, promoRisk: 0.3, eventRisk: 0.35, cap: 'large',
     dossier: {
       confirm: 'Rritje interesi e shoqëruar me përvoja (experiences) të reja virale brenda platformës që mbajnë përdoruesit, ndërsa çmimi nuk ka reaguar.',
@@ -419,21 +476,25 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['playstation', 'ps5', 'playstation 5', 'ps5 pro'],
     ticker: 'SONY', company: 'Sony Group', product: 'PlayStation',
+    wikiArticle: 'PlayStation',
     materiality: 0.3, promoRisk: 0.15, eventRisk: 0.35, cap: 'large', gdeltQuery: 'playstation',
   },
   {
     aliases: ['nintendo', 'nintendo switch', 'switch 2', 'mario kart', 'super mario', 'zelda', 'legend of zelda'],
     ticker: 'NTDOY', company: 'Nintendo (ADR)', product: 'Nintendo Switch / lojëra',
+    wikiArticle: 'Nintendo Switch',
     materiality: 0.6, promoRisk: 0.15, eventRisk: 0.35, cap: 'large', gdeltQuery: 'nintendo',
   },
   {
     aliases: ['xbox', 'call of duty', 'minecraft'],
     ticker: 'MSFT', company: 'Microsoft', product: 'Xbox / Activision Blizzard',
+    wikiArticle: 'Xbox', linkType: 'parent',
     materiality: 0.03, promoRisk: 0.15, eventRisk: 0.35, cap: 'mega', gdeltQuery: 'xbox',
   },
   {
     aliases: ['gta 6', 'gta vi', 'grand theft auto 6', 'gta 5', 'grand theft auto'],
     ticker: 'TTWO', company: 'Take-Two Interactive', product: 'Grand Theft Auto',
+    wikiArticle: 'Grand Theft Auto', linkType: 'parent',
     materiality: 0.5, promoRisk: 0.2, eventRisk: 0.4, cap: 'large', gdeltQuery: 'gta 6',
   },
   {
@@ -444,6 +505,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['duolingo', 'duolingo streak', 'duolingo owl'],
     ticker: 'DUOL', company: 'Duolingo', product: 'Duolingo (aplikacion gjuhësh)',
+    wikiArticle: 'Duolingo',
     materiality: 0.95, promoRisk: 0.5, eventRisk: 0.3, cap: 'mid',
     dossier: {
       confirm: 'Rritje e qëndrueshme e interesit për dy javë e më shumë (jo një spike i vetëm meme), e shoqëruar me rritje shkarkimesh të aplikacionit.',
@@ -454,21 +516,25 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['peloton', 'peloton bike', 'peloton tread'],
     ticker: 'PTON', company: 'Peloton Interactive', product: 'Peloton (fitnes)',
+    wikiArticle: 'Peloton Interactive',
     materiality: 0.95, promoRisk: 0.3, eventRisk: 0.35, cap: 'small',
   },
   {
     aliases: ['planet fitness'],
     ticker: 'PLNT', company: 'Planet Fitness', product: 'Planet Fitness (palestra)',
+    wikiArticle: 'Planet Fitness',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.25, cap: 'mid',
   },
   {
     aliases: ['coinbase'],
     ticker: 'COIN', company: 'Coinbase Global', product: 'Coinbase (kripto)',
+    wikiArticle: 'Coinbase',
     materiality: 0.9, promoRisk: 0.3, eventRisk: 0.6, cap: 'large',
   },
   {
     aliases: ['paypal', 'venmo'],
     ticker: 'PYPL', company: 'PayPal Holdings', product: 'PayPal / Venmo',
+    wikiArticle: 'PayPal',
     materiality: 0.85, promoRisk: 0.15, eventRisk: 0.3, cap: 'large', gdeltQuery: 'paypal',
   },
 
@@ -476,6 +542,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['iphone', 'iphone 17', 'iphone 18', 'ipad', 'macbook', 'airpods', 'apple watch', 'vision pro', 'apple vision pro', 'app store', 'apple music', 'apple tv', 'icloud'],
     ticker: 'AAPL', company: 'Apple Inc', product: 'Produkte Apple',
+    wikiArticle: 'Apple Inc.',
     materiality: 0.4, promoRisk: 0.1, eventRisk: 0.4, cap: 'mega', gdeltQuery: 'iphone',
   },
   {
@@ -486,56 +553,67 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['instagram', 'whatsapp', 'threads app', 'meta quest', 'facebook'],
     ticker: 'META', company: 'Meta Platforms', product: 'Instagram / WhatsApp / Threads',
+    wikiArticle: 'Instagram', linkType: 'parent',
     materiality: 0.35, promoRisk: 0.15, eventRisk: 0.35, cap: 'mega', gdeltQuery: 'instagram',
   },
   {
     aliases: ['snapchat', 'snap map', 'snap inc'],
     ticker: 'SNAP', company: 'Snap Inc', product: 'Snapchat',
+    wikiArticle: 'Snapchat',
     materiality: 0.95, promoRisk: 0.25, eventRisk: 0.35, cap: 'mid', gdeltQuery: 'snapchat',
   },
   {
     aliases: ['netflix', 'netflix series', 'netflix show', 'netflix movie'],
     ticker: 'NFLX', company: 'Netflix Inc', product: 'Netflix',
+    wikiArticle: 'Netflix',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.45, cap: 'mega', gdeltQuery: 'netflix',
   },
   {
     aliases: ['disney plus', 'disney+', 'hulu', 'espn', 'disney', 'disney movie'],
     ticker: 'DIS', company: 'The Walt Disney Company', product: 'Disney+ / ESPN',
+    wikiArticle: 'Disney+', linkType: 'parent',
     materiality: 0.35, promoRisk: 0.15, eventRisk: 0.4, cap: 'large', gdeltQuery: 'disney',
   },
   {
     aliases: ['hbo max', 'hbo', 'max streaming'],
     ticker: 'WBD', company: 'Warner Bros. Discovery', product: 'HBO Max',
+    wikiArticle: 'HBO Max', linkType: 'parent',
     materiality: 0.35, promoRisk: 0.15, eventRisk: 0.4, cap: 'mid', gdeltQuery: 'hbo max',
   },
   {
     aliases: ['paramount plus', 'paramount+'],
     ticker: 'PARA', company: 'Paramount Global', product: 'Paramount+',
+    wikiArticle: 'Paramount+',
     materiality: 0.3, promoRisk: 0.15, eventRisk: 0.4, cap: 'small', gdeltQuery: 'paramount plus',
   },
   {
     aliases: ['peacock', 'peacock streaming'],
     ticker: 'CMCSA', company: 'Comcast', product: 'Peacock',
+    wikiArticle: 'Peacock (streaming service)', linkType: 'parent',
     materiality: 0.1, promoRisk: 0.15, eventRisk: 0.4, cap: 'large', gdeltQuery: 'peacock streaming',
   },
   {
     aliases: ['spotify', 'spotify wrapped', 'spotify podcast'],
     ticker: 'SPOT', company: 'Spotify Technology', product: 'Spotify',
+    wikiArticle: 'Spotify',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.3, cap: 'large', gdeltQuery: 'spotify',
   },
   {
     aliases: ['twitch', 'prime video', 'alexa'],
     ticker: 'AMZN', company: 'Amazon.com', product: 'Twitch / Prime Video',
+    wikiArticle: 'Twitch (service)', linkType: 'parent',
     materiality: 0.05, promoRisk: 0.15, eventRisk: 0.35, cap: 'mega', gdeltQuery: 'twitch',
   },
   {
     aliases: ['tesla', 'cybertruck', 'model y', 'model 3', 'tesla robotaxi'],
     ticker: 'TSLA', company: 'Tesla Inc', product: 'Tesla (automjete/robotaxi)',
+    wikiArticle: 'Tesla, Inc.',
     materiality: 0.95, promoRisk: 0.4, eventRisk: 0.55, cap: 'mega', gdeltQuery: 'tesla',
   },
   {
     aliases: ['rivian', 'rivian truck'],
     ticker: 'RIVN', company: 'Rivian Automotive', product: 'Rivian (automjete)',
+    wikiArticle: 'Rivian',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.55, cap: 'small',
   },
   {
@@ -548,6 +626,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['ozempic', 'wegovy'],
     ticker: 'NVO', company: 'Novo Nordisk (ADR)', product: 'Ozempic / Wegovy',
+    wikiArticle: 'Ozempic',
     materiality: 0.35, promoRisk: 0.2, eventRisk: 0.5, cap: 'large', gdeltQuery: 'ozempic',
   },
   {
@@ -558,6 +637,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['weight watchers', 'ww weight watchers'],
     ticker: 'WW', company: 'WW International', product: 'Weight Watchers',
+    wikiArticle: 'Weight Watchers',
     materiality: 0.9, promoRisk: 0.3, eventRisk: 0.4, cap: 'small',
   },
 
@@ -565,6 +645,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['barbie', 'barbie movie', 'hot wheels', 'american girl'],
     ticker: 'MAT', company: 'Mattel Inc', product: 'Barbie / Hot Wheels',
+    wikiArticle: 'Barbie', linkType: 'parent',
     materiality: 0.3, promoRisk: 0.2, eventRisk: 0.35, cap: 'small', gdeltQuery: 'barbie',
   },
   {
@@ -575,6 +656,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['pokemon', 'pokemon cards', 'pokemon go', 'pokemon tcg'],
     ticker: 'NTDOY', company: 'Nintendo (ADR)', product: 'Pokémon (~32% Nintendo)',
+    wikiArticle: 'Pokémon', linkType: 'parent',
     materiality: 0.3, promoRisk: 0.3, eventRisk: 0.35, cap: 'large', gdeltQuery: 'pokemon',
   },
 
@@ -582,6 +664,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['ford', 'ford bronco', 'ford f-150', 'ford mustang'],
     ticker: 'F', company: 'Ford Motor Company', product: 'Ford',
+    wikiArticle: 'Ford Motor Company',
     materiality: 0.95, promoRisk: 0.1, eventRisk: 0.45, cap: 'mid', gdeltQuery: 'ford',
   },
   {
@@ -597,16 +680,19 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['toyota', 'toyota tacoma', 'toyota camry'],
     ticker: 'TM', company: 'Toyota Motor (ADR)', product: 'Toyota',
+    wikiArticle: 'Toyota',
     materiality: 0.9, promoRisk: 0.1, eventRisk: 0.4, cap: 'large', gdeltQuery: 'toyota',
   },
   {
     aliases: ['honda', 'honda civic', 'honda accord'],
     ticker: 'HMC', company: 'Honda Motor (ADR)', product: 'Honda',
+    wikiArticle: 'Honda',
     materiality: 0.9, promoRisk: 0.1, eventRisk: 0.4, cap: 'mid', gdeltQuery: 'honda',
   },
   {
     aliases: ['ferrari', 'lamborghini', 'porsche'],
     ticker: 'RACE', company: 'Ferrari N.V.', product: 'Ferrari',
+    wikiArticle: 'Ferrari',
     materiality: 0.95, promoRisk: 0.2, eventRisk: 0.4, cap: 'large', gdeltQuery: 'ferrari',
   },
 
@@ -614,31 +700,37 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['southwest airlines', 'southwest flights'],
     ticker: 'LUV', company: 'Southwest Airlines', product: 'Southwest (fluturime)',
+    wikiArticle: 'Southwest Airlines',
     materiality: 0.95, promoRisk: 0.05, eventRisk: 0.75, cap: 'mid', gdeltQuery: 'southwest airlines',
   },
   {
     aliases: ['delta airlines', 'delta flights'],
     ticker: 'DAL', company: 'Delta Air Lines', product: 'Delta (fluturime)',
+    wikiArticle: 'Delta Air Lines',
     materiality: 0.95, promoRisk: 0.05, eventRisk: 0.75, cap: 'mid', gdeltQuery: 'delta airlines',
   },
   {
     aliases: ['united airlines', 'united flights'],
     ticker: 'UAL', company: 'United Airlines', product: 'United (fluturime)',
+    wikiArticle: 'United Airlines',
     materiality: 0.95, promoRisk: 0.05, eventRisk: 0.75, cap: 'mid', gdeltQuery: 'united airlines',
   },
   {
     aliases: ['jetblue'],
     ticker: 'JBLU', company: 'JetBlue Airways', product: 'JetBlue (fluturime)',
+    wikiArticle: 'JetBlue',
     materiality: 0.95, promoRisk: 0.05, eventRisk: 0.75, cap: 'small',
   },
   {
     aliases: ['airbnb'],
     ticker: 'ABNB', company: 'Airbnb Inc', product: 'Airbnb',
+    wikiArticle: 'Airbnb',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.4, cap: 'large',
   },
   {
     aliases: ['expedia'],
     ticker: 'EXPE', company: 'Expedia Group', product: 'Expedia',
+    wikiArticle: 'Expedia',
     materiality: 0.95, promoRisk: 0.15, eventRisk: 0.35, cap: 'mid',
   },
 
@@ -646,6 +738,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['tylenol'],
     ticker: 'KVUE', company: 'Kenvue Inc', product: 'Tylenol',
+    wikiArticle: 'Tylenol',
     materiality: 0.15, promoRisk: 0.1, eventRisk: 0.4, cap: 'large',
   },
   {
@@ -656,6 +749,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['dove', 'axe'],
     ticker: 'UL', company: 'Unilever (ADR)', product: 'Dove / Axe',
+    wikiArticle: 'Dove (toiletries)', linkType: 'parent',
     materiality: 0.05, promoRisk: 0.2, eventRisk: 0.25, cap: 'large',
   },
 ];
@@ -723,4 +817,16 @@ function entryLongestAlias(b: BrandEntry): number {
 /** Hyrjet e markave sipas ticker-it (për dosje në UI). */
 export function brandsByTicker(ticker: string): BrandEntry[] {
   return BRANDS.filter(b => b.ticker === ticker.toUpperCase());
+}
+
+/**
+ * Artikulli Wikipedia i kuruar për hyrjen — VETËM titujt e eksplicituar.
+ * S'bahet derivim i verbër nga alias-i: API i pageviews është case-sensitive
+ * dhe s'njek redirect-et — një «Celsius» do të ngjitej te artikulli i
+ * shkallës së temperaturës, «Cava» te vera, «Target» te faqja e
+ * disambiguimit. Të pamatshmen > të maturit keq. Hyrjet pa wikiArticle
+ * mbeten me gate null (fail-closed) deri në kurimin manual.
+ */
+export function wikiArticleFor(b: BrandEntry): string | null {
+  return b.wikiArticle ?? null;
 }

@@ -25,28 +25,32 @@
 // kthehet kurrë në 0% apo «pa reagim».
 // ═══════════════════════════════════════════════════════════════
 
-import { classifyTerm, effectiveMateriality, type BrandEntry } from './brands';
+import { classifyTerm, effectiveMateriality, wikiArticleFor, type BrandEntry } from './brands';
 import {
-  fetchTrendingNow, gdeltDailySeries, gdeltArticleList, fetchPriceSeries, fetchIndexCloses,
-  type GdeltDailyPoint, type GdeltArticle, type PricePoint, type TrendingTerm,
+  fetchTrendingNow, gdeltDailySeries, gdeltArticleList, fetchPriceSeries, fetchIndexCloses, fetchWikiPageviews,
+  type GdeltDailyPoint, type GdeltArticle, type PricePoint, type TrendingTerm, type WikiPoint,
 } from './sources';
 import { readStore, writeStore, mergeMeasurements, archiveToCsv, acquireScanLock } from './store';
+import { SOCIAL_ARB_CONFIG as CFG } from './config';
+import {
+  wikiStats, computeReturnSinceStart, computeAvgDollarVolume, evaluateGates, allGatesPassed, isAlreadyMoved,
+} from './gates';
 import type {
-  Candidate, CandidateStatus, CauseArticle, CauseInfo, CauseType, Measurement, OutcomePoint, Region,
-  ScanRecord, ScanResultSummary, ScoreBreakdown, SocialArbStore,
+  Candidate, CandidateStatus, CauseArticle, CauseInfo, CauseType, GateEval, GateName, Measurement,
+  OutcomePoint, Region, ScanRecord, ScanResultSummary, ScoreBreakdown, SocialArbStore,
 } from './types';
 
 const REGIONS: Region[] = ['US', 'GB', 'CA', 'AU'];
-const MAINSTREAM_ARTICLES = 200;   // Camillo: dil kur bëhet mainstream
-const CONFIRM_GROWTH = 0.25;       // provë e pavarur: +25% 7d kundrejt bazës 28d
-const PRICE_WINDOW_OPEN = 0.03;     // ≤ +3% vs SPY — dritarja e hyrjes e hapur
-const PRICE_WINDOW_CLOSED = 0.10;   // > +10% vs SPY — e mbyllur
-const PRICE_WINDOW_DAYS = 7;       // dritarja kalendarike e reagimit
-const STALE_DAYS = 10;             // pa matje të reja → ftohje
-const RESEARCH_SCORE = 60;         // kusht SEKONDAR — kurrë zëvendës i provave
-const MAX_GDELT_CANDIDATES = 10;   // kufi kohor: 2 thirrje GDELT × 6s secila
-const MAX_OUTCOME_TRACKED = 12;    // kufi gjurmimesh rezultatesh për skanim
-const MEASUREMENTS_CAP = 6000;     // kufizi i store-it (arkivi CSV mbetet i plotë)
+const MAINSTREAM_ARTICLES = CFG.scan.mainstreamArticles;   // Camillo: dil kur bëhet mainstream
+const CONFIRM_GROWTH = 0.25;       // referencë mediatike: GDELT +25% 7d (media_confirmation, jo burim kërkese)
+const PRICE_WINDOW_OPEN = CFG.score.priceWindowOpen;     // ≤ +3% vs SPY — vetëm për panelin informativ
+const PRICE_WINDOW_CLOSED = CFG.score.priceWindowClosed; // > +10% — vetëm për panelin informativ
+const PRICE_WINDOW_DAYS = CFG.scan.priceWindowDays;       // dritarja kalendarike e reagimit (panel)
+const STALE_DAYS = CFG.scan.staleDays;             // pa matje të reja → ftohje
+const RESEARCH_SCORE = CFG.score.researchScore;     // VETËM renditje — s'është më gate (v4)
+const MAX_GDELT_CANDIDATES = CFG.scan.maxGdeltCandidates;   // kufi kohor: 2 thirrje GDELT × 6s secila
+const MAX_OUTCOME_TRACKED = CFG.scan.maxOutcomeTracked;    // kufi gjurmimesh rezultatesh për skanim
+const MEASUREMENTS_CAP = CFG.scan.measurementsCap;     // kufizi i store-it (arkivi CSV mbetet i plotë)
 
 // Buxheti kohor i skanimit: në Vercel Hobby funksionet ndalen në 60s —
 // skanimi duhet ta mbyllë veten me nder përpara. 0 = pa limit (lokal/sandbox).
@@ -459,6 +463,30 @@ async function doScan(): Promise<ScanResultSummary> {
     }
   }
 
+  // 4-b) Wikipedia pageviews — burimi i 2-të i kërkesës (jo-lajne), i shpejtë
+  //      (pa throttle si GDELT-u). Merr radhën PARA GDELT-t: është provë kryesore,
+  //      ndërsa GDELT mbetet konfirmim mediatik. Vetëm artikujt e kuruar —
+  //      pa artikull të njohur, kandidati mbetet me gate null (fail-closed).
+  const wikiBudget = [...matched.values()].slice(0, MAX_GDELT_CANDIDATES);
+  const wikiCache = new Map<string, WikiPoint[]>();   // artikull → seri
+  const wikiErrors = new Map<string, string>();       // artikull → gabimi konkret
+  for (const w of wikiBudget) {
+    const article = wikiArticleFor(w.entry);
+    if (!article || wikiCache.has(article)) continue;
+    if (!withinBudget()) break;
+    try {
+      wikiCache.set(article, await fetchWikiPageviews(article, CFG.gates.sources.wikiSeriesDays));
+    } catch (e) {
+      const msg = (e as Error).message;
+      wikiErrors.set(article, msg);
+      errors.push(`Wikipedia "${article}": ${msg}`);
+    }
+  }
+  const wikiOkCount = [...new Set(wikiBudget.map(w => wikiArticleFor(w.entry)).filter(Boolean))].length;
+  sources.wikipedia = wikiOkCount === 0
+    ? 'ok' // s'ka artikuj të kuruar — s'ka çfarë të dështojë
+    : wikiCache.size > 0 ? 'ok' : 'error';
+
   // 5) GDELT — seri 30-ditore + lista e artikujve (numri DHE titujt për shkakun).
   //    Me buxhetin e MBBETUR: kur është 429, thirrjet e ngadalta e shterojnë —
   //    në atë rast matjet e fundit të vlefshme mbahen (carry-over, hapi 6).
@@ -618,14 +646,77 @@ async function doScan(): Promise<ScanResultSummary> {
       reasons.push(`Çmimet: s'ka ≥2 close të përbashkët aksion/SPY për dritaren ${PRICE_WINDOW_DAYS}-ditore — kontrolli i reagimit nuk u krye (e pamatshme, jo 0%).`);
     }
 
-    // flamujt bllokues + provat për RESEARCH
+    // ── gate-t (v4): 5 provat e RESEARCH — secila me arsye pse kaloi/dështoi ──
+    const article = wikiArticleFor(b);
+    const noArticle = article === null;
+    const wikiFailed = article !== null && wikiErrors.has(article);
+    const wikiSeries = article !== null ? wikiCache.get(article) ?? null : null;
+    let wstats = wikiSeries ? wikiStats(wikiSeries, today) : null;
+    const wikiErr = noArticle
+      ? "artikulli Wikipedia i pakuruar për këtë markë — s'matet dot"
+      : wikiFailed ? (wikiErrors.get(article as string) ?? 'fetch-i dështoi') : null;
+    // carry-over: kur API dështoi, mbaj matjen e fundit të vlefshme (të datuar) —
+    // pa democione për gabime infrastrukture (e njëjta filozofi si GDELT-u).
+    let carriedWiki = false;
+    if (!wstats && wikiFailed && prev?.wiki && (prev.wiki.growth !== null || prev.wiki.risingWeeks !== null)) {
+      wstats = {
+        growth: prev.wiki.growth, pageviews7dMedian: prev.wiki.pageviews7dMedian,
+        baselineMedian: prev.wiki.baselineMedian, risingWeeks: prev.wiki.risingWeeks, peakToAvg: prev.wiki.peakToAvg,
+      };
+      carriedWiki = true;
+    }
+
+    const firstSeenDate = prev?.firstSeenAt ?? now;
+    let retSince = stockCloses && spyCloses ? computeReturnSinceStart(stockCloses, spyCloses, firstSeenDate) : null;
+    let carriedSince = false;
+    const ps = !retSince && !stockCloses ? prev?.sinceStart : undefined;
+    if (ps && ps.relative !== null && ps.stockRet !== null && ps.indexRet !== null
+      && ps.fromDate !== null && ps.asOf !== null && ps.tradingDays !== null) {
+      retSince = {
+        stockRet: ps.stockRet, indexRet: ps.indexRet, relative: ps.relative,
+        fromDate: ps.fromDate, asOf: ps.asOf, tradingDays: ps.tradingDays,
+      };
+      carriedSince = true;
+    }
+    const avgDollarVol = stockCloses
+      ? computeAvgDollarVolume(stockCloses)
+      : prev?.liquidity.avgDollarVolume ?? null;
+
+    const gateResults = evaluateGates({
+      googleInFeed: w.google.inFeed,
+      wiki: wstats,
+      wikiError: wikiErr,
+      effectiveMateriality: mat,
+      exposurePct: b.materiality,
+      capBucket: b.cap,
+      linkType: b.linkType ?? 'direct',
+      materialityReason: `vlerësim manual i fjalorit (materiality ${b.materiality.toFixed(2)}, kufizuar nga kova ${b.cap})`,
+      returnSinceStart: retSince,
+      returnError: stockCloses && spyCloses ? null : "seritë e çmimeve mungojnë ose s'kanë close të përbashkët",
+      avgDollarVolume: avgDollarVol,
+      volumeError: avgDollarVol === null ? (stockCloses ? "burimi i çmimeve s'jon volumet për këtë seri" : undefined) : undefined,
+    });
+    const gatesList: GateEval[] = [
+      { gate: 'sources', passed: gateResults.sources.passed, detail: gateResults.sources.detail, checkedAt: now },
+      { gate: 'materiality', passed: gateResults.materiality.passed, detail: gateResults.materiality.detail, checkedAt: now },
+      { gate: 'not_priced', passed: gateResults.not_priced.passed, detail: gateResults.not_priced.detail, checkedAt: now },
+      { gate: 'liquidity', passed: gateResults.liquidity.passed, detail: gateResults.liquidity.detail, checkedAt: now },
+      { gate: 'persistence', passed: gateResults.persistence.passed, detail: gateResults.persistence.detail, checkedAt: now },
+    ];
+    const gatesOk = allGatesPassed(gateResults);
+    const alreadyMovedFlag = isAlreadyMoved(retSince);
+    if (carriedWiki) {
+      reasons.push(`Wikipedia e padisponueshme këtë skanim (${wikiErr}) — u mbajt matja e fundit e vlefshme për gate-t; s'ka democion për gabim infrastrukture.`);
+    }
+    if (carriedSince) {
+      reasons.push("Kthimi që nga fillimi i trendit: çmimet s'u morën këtë skanim — u mbajt matja e fundit (e datuar).");
+    }
+
+    // flamujt bllokues + makina e statusit (e varur nga gate-t)
     const promoBlock = b.promoRisk >= 0.7;
     const eventBlock = b.eventRisk >= 0.8;
     const mainstream = carriedArticlesN !== null && carriedArticlesN >= MAINSTREAM_ARTICLES;
-    const causeOk = cause?.type === 'positive_demand_possible';
     const causeBad = cause?.type === 'negative_event';
-    const windowOpen = priceVsIndex !== null && priceVsIndex <= PRICE_WINDOW_OPEN;
-    const windowClosed = priceVsIndex !== null && priceVsIndex > PRICE_WINDOW_CLOSED;
 
     let status: CandidateStatus;
     if (promoBlock || eventBlock) {
@@ -638,24 +729,23 @@ async function doScan(): Promise<ScanResultSummary> {
     } else if (mainstream) {
       status = 'REMOVED';
       reasons.push(`DALJE: trendi u bë mainstream — ${carriedArticlesN} artikuj në 24h (pragu ${MAINSTREAM_ARTICLES}); sipas Camillo, lajmi tashmë është i çmimit.`);
-    } else if (windowClosed) {
-      status = 'REMOVED';
-      reasons.push(`DALJE: aksioni ka tejkaluar indeksin me ${pct(priceVsIndex)} (>+10%) — lëvizja e çmimit ka zënë vend, pritja e reflektuar.`);
-    } else if (causeOk && confirmed && priceFresh && windowOpen && score >= RESEARCH_SCORE) {
+    } else if (gatesOk) {
       status = 'RESEARCH';
-      reasons.push(`NGJITJE në RESEARCH: të gjitha provat plotësohen — shkak potencialisht pozitiv + provë e pavarur e kërkesës (GDELT ≥+25%) + çmime të vlefshme e të freskëta me dritare të hapur (≤+3%) + pa flamur bllokues + score ${score} ≥ ${RESEARCH_SCORE}. Kandidat për hulumtim thelbësor — jo rekomandim tregtimi.`);
+      reasons.push(`NGJITJE në RESEARCH: të 5 gate-t kaluan — 2+ burime kërkese të pavarura në rritje (Google Trends + Wikipedia; GDELT vetëm si konfirmim mediatik) · materialitet i mjaftueshëm · s'është çmuar ende · likuiditet i mjaftueshëm · 3+ javë qëndrueshmëri pa model spike-i. Score ${score} = vetëm renditje. Kandidat për hulumtim thelbësor — jo rekomandim tregtimi.`);
     } else if (w.isNew && !series && !articles && !cause) {
       status = 'DISCOVERED';
       reasons.push('DISCOVERED: u gjet termi dhe marka — pritet verifikimi i lidhjes me kompaninë (GDELT) në skanimin e radhës.');
     } else {
       status = 'WATCH';
       const missing: string[] = [];
-      if (!causeOk) missing.push(cause ? `shkaku është «${CAUSE_LABELS[cause.type]}» — duhet provë kërkece, jo thjesht lançim/lajm` : 'shkaku i trendit s\'është verifikuar dot');
-      if (!confirmed) missing.push(`prova e pavarur e kërkesës mungon (GDELT ${growth !== null ? pct(growth) : 'n/a'} < +25%)`);
-      if (!priceFresh) missing.push(win ? 'çmimet e këtij skanimi nuk janë të freskëta/të plota' : `çmimet janë të pamatshme${feedError ? ` — feed-i dështoi: ${feedError}` : ''}`);
-      else if (!windowOpen) missing.push(`dritarja e çmimit nuk është e hapur (${pct(priceVsIndex)} > +3%)`);
-      if (score < RESEARCH_SCORE) missing.push(`score ${score} < ${RESEARCH_SCORE} (kusht sekondar)`);
-      reasons.push(`Në WATCH — lidhja me ${b.ticker} u verifikua, por mungon: ${missing.join('; ')}.`);
+      for (const g of gatesList) {
+        if (g.passed === false) missing.push(`${g.gate}: ${g.detail}`);
+        else if (g.passed === null) missing.push(`${g.gate}: e pamatshme — ${g.detail}`);
+      }
+      reasons.push(`Në WATCH — lidhja me ${b.ticker} u verifikua, por gate-t e RESEARCH s'janë të gjitha të kaluara: ${missing.length ? missing.join(' · ') : 'pa detaje'}.`);
+      if (alreadyMovedFlag) {
+        reasons.push('Flamuri ALREADY_MOVED: çmimi ka reaguar që nga fillimi i trendit — teza e «hendekut të paçmuar» s\'qëndron më; rikthehet në kërkim vetëm kur të ketë hendek të re me kërkesë të re.');
+      }
     }
 
     // ftohja: kandidat aktiv pa matje të reja
@@ -678,6 +768,12 @@ async function doScan(): Promise<ScanResultSummary> {
       cause: null,
       price: { stockReturn: null, indexReturn: null, priceVsIndex: null, asOf: null, fromDate: null, stockPrice: null, indexPrice: null, source: null, error: null, checkedAt: null },
       outcome: { baseDate: null, baseStock: null, baseIndex: null, d5: null, d20: null, pendingNote: null, lastCheckedAt: null },
+      wiki: { article: null, growth: null, pageviews7dMedian: null, baselineMedian: null, risingWeeks: null, peakToAvg: null, error: null, checkedAt: null },
+      liquidity: { avgDollarVolume: null, error: null, checkedAt: null },
+      sinceStart: { fromDate: null, asOf: null, tradingDays: null, stockRet: null, indexRet: null, relative: null, checkedAt: null },
+      materialityInfo: { exposurePct: null, reason: 'vlerësohet në këtë skanim', capBucket: b.cap, linkType: b.linkType ?? 'direct' },
+      gates: [],
+      alreadyMoved: false,
     };
     if (!prev) newCandidates.push(w.key);
 
@@ -728,6 +824,39 @@ async function doScan(): Promise<ScanResultSummary> {
 
     // rezultati 5/20 ditë — përfshi refuzuarit (në këtë hap: aktivët)
     updateOutcome(cand, stockCloses, spyCloses, now);
+
+    // fushat e gate-ve (v4): matjet e reja ose gabimi konkret, kurrë të fabrikuara
+    cand.wiki = wstats && wikiSeries
+      ? {
+          article, growth: wstats.growth, pageviews7dMedian: wstats.pageviews7dMedian,
+          baselineMedian: wstats.baselineMedian, risingWeeks: wstats.risingWeeks, peakToAvg: wstats.peakToAvg,
+          error: wikiErr, checkedAt: now,
+        }
+      : carriedWiki && prev
+        ? { ...prev.wiki, error: wikiErr } // matja e fundit e vlefshme (checkedAt i saj = data e matjes)
+        : {
+            article, growth: null, pageviews7dMedian: null, baselineMedian: null,
+            risingWeeks: null, peakToAvg: null, error: wikiErr, checkedAt: now,
+          };
+    cand.liquidity = {
+      avgDollarVolume: avgDollarVol,
+      error: avgDollarVol === null
+        ? (stockCloses ? "burimi i çmimeve s'jon volumet për këtë seri" : 'çmimet s\u2019u morën këtë skanim')
+        : null,
+      checkedAt: now,
+    };
+    cand.sinceStart = retSince
+      ? { fromDate: retSince.fromDate, asOf: retSince.asOf, tradingDays: retSince.tradingDays, stockRet: retSince.stockRet, indexRet: retSince.indexRet, relative: retSince.relative, checkedAt: now }
+      : { fromDate: null, asOf: null, tradingDays: null, stockRet: null, indexRet: null, relative: null, checkedAt: now };
+    cand.materialityInfo = {
+      exposurePct: b.materiality,
+      reason: `vlerësim manual i fjalorit: materiality ${b.materiality.toFixed(2)} mbi kovën ${b.cap} → efektiv ${mat.toFixed(2)}`,
+      capBucket: b.cap,
+      linkType: b.linkType ?? 'direct',
+    };
+    cand.gates = gatesList;
+    cand.alreadyMoved = alreadyMovedFlag;
+
     store.candidates[w.key] = cand;
   }
 
