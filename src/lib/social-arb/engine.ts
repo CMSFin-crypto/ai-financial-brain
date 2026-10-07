@@ -468,6 +468,7 @@ async function doScan(): Promise<ScanResultSummary> {
   //      ndërsa GDELT mbetet konfirmim mediatik. Vetëm artikujt e kuruar —
   //      pa artikull të njohur, kandidati mbetet me gate null (fail-closed).
   const wikiBudget = [...matched.values()].slice(0, MAX_GDELT_CANDIDATES);
+  const wikiBudgetKeys = new Set(wikiBudget.map(w => w.key)); // për arsyen e sinqertë jashtë buxhetit
   const wikiCache = new Map<string, WikiPoint[]>();   // artikull → seri
   const wikiErrors = new Map<string, string>();       // artikull → gabimi konkret
   for (const w of wikiBudget) {
@@ -650,11 +651,16 @@ async function doScan(): Promise<ScanResultSummary> {
     const article = wikiArticleFor(b);
     const noArticle = article === null;
     const wikiFailed = article !== null && wikiErrors.has(article);
+    const wikiExcluded = !wikiBudgetKeys.has(w.key); // jashtë 10 kandidatëve të prioritizuar (buxheti kohor)
     const wikiSeries = article !== null ? wikiCache.get(article) ?? null : null;
     let wstats = wikiSeries ? wikiStats(wikiSeries, today) : null;
     const wikiErr = noArticle
       ? "artikulli Wikipedia i pakuruar për këtë markë — s'matet dot"
-      : wikiFailed ? (wikiErrors.get(article as string) ?? 'fetch-i dështoi') : null;
+      : wikiFailed
+        ? (wikiErrors.get(article as string) ?? 'fetch-i dështoi')
+        : wikiExcluded && !wikiSeries
+          ? "jashtë buxhetit kohor të skanimit (10 kandidatët e parë të prioritizuar maten me Wikipedia/GDELT — radha rrotullohet me skanimet)"
+          : null;
     // carry-over: kur API dështoi, mbaj matjen e fundit të vlefshme (të datuar) —
     // pa democione për gabime infrastrukture (e njëjta filozofi si GDELT-u).
     let carriedWiki = false;

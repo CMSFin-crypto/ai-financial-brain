@@ -1098,3 +1098,5 @@ Stage Summary:
 - Migrimi v3→v4 i provuar (42/42) — të dhënat e prodhimit (Upstash) migrojnë automatikisht në skanimin e parë pas deploy-it
 - Pragjet e pjesshme (+8%, 3 javë, $2M) janë të shënuara qartë si të pazbatuara — korrigjimi vjen nga P3 (backtest)
 - MBETET PAZBATUAR (sipas planit të userit — një prioritet çdo herë): P2 (features e formës së trendit + score i ri 25/25/20/15/15), P3 (backtest point-in-time me grup kontrolli, LLM term→ticker, hyrje manuale /api/social-arb/ideas), OPERACIONALE (202+after() për cron me timeout të shkurtër)
+- Fix sinqeriteti pas verifikimit live: kandidatët jashtë top-10 (buxheti kohor) mbanin wiki.error bosh — tani arsyeja e eksplicite «jashtë buxhetit kohor të skanimit»; kandidatët që ndajnë artikull me një të buxhetuar marrin të dhënat nga cache-i (pa kosto shtesë)
+- PRODHIMI verifikuar end-to-end në b0003b1: skanim manual same-origin 35.5s — wikipedia: ok, 36 kandidatë migruan v3→v4 pa humbje (36/36 me gate, 34 me artikull), likuiditeti real ($26M-$10B), 0 RESEARCH (sinqerisht)
