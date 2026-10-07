@@ -1100,3 +1100,16 @@ Stage Summary:
 - MBETET PAZBATUAR (sipas planit të userit — një prioritet çdo herë): P2 (features e formës së trendit + score i ri 25/25/20/15/15), P3 (backtest point-in-time me grup kontrolli, LLM term→ticker, hyrje manuale /api/social-arb/ideas), OPERACIONALE (202+after() për cron me timeout të shkurtër)
 - Fix sinqeriteti pas verifikimit live: kandidatët jashtë top-10 (buxheti kohor) mbanin wiki.error bosh — tani arsyeja e eksplicite «jashtë buxhetit kohor të skanimit»; kandidatët që ndajnë artikull me një të buxhetuar marrin të dhënat nga cache-i (pa kosto shtesë)
 - PRODHIMI verifikuar end-to-end në b0003b1: skanim manual same-origin 35.5s — wikipedia: ok, 36 kandidatë migruan v3→v4 pa humbje (36/36 me gate, 34 me artikull), likuiditeti real ($26M-$10B), 0 RESEARCH (sinqerisht)
+
+---
+Task ID: 52
+Agent: main
+Task: Konfirmimi i paprekjes së CTC v2 dhe REV v1 (kërkesa e userit: «mos bëj asnjë ndryshim»)
+
+Work Log:
+- Commit-et e mia Social Arb (b0003b1, f02b485) verifikuar skedar-për-skedar: prekën VETËM social-arb/* (lib, api, faqja, config, gates, teste) + worklog + VERCEL_SETUP.md + data/social-arb* — asnjë skedar CTC/REV
+- Kontroll i importeve në të dy drejtimet: social-arb s'importon asgjë nga ctc-v2-delivery / rev-scan / rev-validate / rev-strategy / lib/rev/*; CTC/REV s'importojnë asgjë nga social-arb — ndarje 100%
+- Skedarët e CTC v2 / REV v1 (spec-et, validatori, motorët, UI-të) mbeten të ngrira ashtu si i la sesioni që i ndërtoi
+
+Stage Summary:
+- RREGULL I MBARTUR: CTC v2, REV v1 dhe Gjurmuesi janë module të ngrira — çdo punë e ardhshme (përfshirë Social Arb P2/P3, IBKR) s'i prek fare
