@@ -1142,3 +1142,22 @@ Stage Summary:
 - Pragjet e reja fillestare (JO të provuara): discovery.wikiGrowth 0.5, trendStart.minLift 0.15, batchSize 12, concurrency 5, catalyst.lookaheadDays 90, staleDays 28
 - MBETET (sipas planit): P2 (features e formës + score i ri), P3 (backtest point-in-time me groupKey/dedupeByGroupKey gati, LLM term→ticker, hyrje manuale), OPERACIONALE (cron 202+after())
 - PUSH NË PRITJE: commit-i d4bfbaf është LOKAL — s'ka kredenciale GitHub në ambient (token-i i vjetër ishte i ekspozuar në chat dhe duhej rrotulluar). Useri e bën push vetë ose jep token të re.
+
+---
+Task ID: 54
+Agent: main
+Task: «bëje push» — tentativa e push-it të 4 commit-eve të mbeturë (kërkesa e userit)
+
+Work Log:
+- Verifikuar gjendja: main është 4 commit përpara origin/main (b0003b1 → ff7044f); pema e punës e pastër
+- Kontroll i plothëm i kredencialeve: pa gh CLI, pa GH_TOKEN/GITHUB_TOKEN, pa credential helper, pa ~/.git-credentials, pa ~/.ssh, pa tokene në .env — konfirmohet shënimi i Task 53 (token-i i vjetër i ekspozuar në chat, i rrotulluar, i vdekur)
+- `git push origin main` dështoi si pritej: «could not read Username for 'https://github.com'»
+- Zgjidhja e përgatitur për userin: bundle + patch i 4 commit-eve në /home/z/my-project/download/:
+  - social-arb-pending-push.bundle (40K, i verifikuar me `git bundle verify` — përmban refs/heads/main ff7044f, kërkon bazën b0003b1) — ruan saktësisht historikun (SHA, autor, data)
+  - social-arb-pending-push.patch (220K, format-patch) — alternativë me `git am`, më tolerues ndaj bazës së ndryshme
+- Alternativa e mbetur: useri jep token të re PAT (fine-grained, vetëm ky repo, contents:write, skadencë e shkurtër) → push bëhet menjëherë; këshillohet fshirja e token-it pas push-it
+
+Stage Summary:
+- Push-i s'u bë dot nga ambienti (asnjë kredencial) — konfirmuar përfundimisht
+- 4 commit-et janë të paketuara dhe gati për push manual: bundle (ekzakt) + patch (fallback) në download/
+- Push-i mbetet pritje: ose token i re në chat, ose useri e bën vetë nga bundle-i
