@@ -15,6 +15,7 @@ import {
   Activity,
   Loader2,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -276,9 +277,9 @@ export default function FearGreedIndex() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-primary" />
-            <h3 className="text-base font-semibold tracking-tight">
+            <TermPop term="fg_cnn"><span className="text-base font-semibold tracking-tight">
               Indeksi i Frikës &amp; Grykesisë
-            </h3>
+            </span></TermPop>
           </div>
           <Button
             size="sm"
@@ -342,9 +343,9 @@ export default function FearGreedIndex() {
                 transition={{ duration: 0.3 }}
                 className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center space-y-1"
               >
-                <p className="text-[11px] text-muted-foreground leading-tight">
+                <TermPop term="fg_krahasimet"><span className="block text-[11px] text-muted-foreground leading-tight">
                   {comp.label}
-                </p>
+                </span></TermPop>
                 <div className="flex items-center justify-center gap-1.5">
                   <ChangeArrow current={data.value} previous={comp.value} />
                   <span

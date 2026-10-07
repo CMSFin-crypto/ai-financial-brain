@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Lightbulb, AlertTriangle, BarChart3, Target } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 interface MarketOverviewProps {
   overview: string;
@@ -17,7 +18,7 @@ export function MarketOverview({ overview, keyInsights, riskFactors }: MarketOve
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-emerald-500" />
-            Përmbledhje e Tregut
+            <TermPop term="mo_permbledhje">Përmbledhje e Tregut</TermPop>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -31,7 +32,7 @@ export function MarketOverview({ overview, keyInsights, riskFactors }: MarketOve
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Lightbulb className="w-4 h-4 text-amber-500" />
-              Vëzhgime Kryesore
+              <TermPop term="mo_vezhgime">Vëzhgime Kryesore</TermPop>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -53,7 +54,7 @@ export function MarketOverview({ overview, keyInsights, riskFactors }: MarketOve
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-500" />
-              Faktorët e Riskut
+              <TermPop term="mo_risku">Faktorët e Riskut</TermPop>
             </CardTitle>
           </CardHeader>
           <CardContent>

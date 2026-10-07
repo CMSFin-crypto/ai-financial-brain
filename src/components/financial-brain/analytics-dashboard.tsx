@@ -35,6 +35,7 @@ import {
   ArrowUpDown,
   Filter,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 import {
   BarChart,
   Bar,
@@ -350,6 +351,7 @@ export function AnalyticsDashboard() {
   const stats = [
     {
       label: 'Vizitor\u00EB Total',
+      term: 'an_total',
       value: data.totalVisits,
       icon: Users,
       gradient: 'from-emerald-500/20 to-teal-500/10',
@@ -359,6 +361,7 @@ export function AnalyticsDashboard() {
     },
     {
       label: 'Vizitor\u00EB Sot',
+      term: 'an_sot',
       value: data.todayVisits,
       icon: Eye,
       gradient: 'from-violet-500/20 to-purple-500/10',
@@ -368,6 +371,7 @@ export function AnalyticsDashboard() {
     },
     {
       label: 'Vizitor\u00EB Unik\u00EB',
+      term: 'an_unike',
       value: data.totalUniqueVisitors,
       icon: UserCheck,
       gradient: 'from-teal-500/20 to-cyan-500/10',
@@ -377,6 +381,7 @@ export function AnalyticsDashboard() {
     },
     {
       label: 'Online Tani',
+      term: 'an_online',
       value: data.onlineNow,
       icon: Wifi,
       gradient: 'from-emerald-500/20 to-violet-500/10',
@@ -386,6 +391,7 @@ export function AnalyticsDashboard() {
     },
     {
       label: 'IP Unike (30d)',
+      term: 'an_ip',
       value: data.uniqueVisitors,
       icon: Fingerprint,
       gradient: 'from-blue-500/20 to-indigo-500/10',
@@ -472,7 +478,7 @@ export function AnalyticsDashboard() {
               <CardContent className="pt-3.5 pb-3 px-3.5">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="text-[10px] text-muted-foreground font-medium">{s.label}</p>
+                    {s.term ? <TermPop term={s.term}><span className="block text-[10px] text-muted-foreground font-medium">{s.label}</span></TermPop> : <p className="text-[10px] text-muted-foreground font-medium">{s.label}</p>}
                   </div>
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${s.iconBg}`}>
                     <s.icon className={`w-4 h-4 ${s.iconColor}`} />

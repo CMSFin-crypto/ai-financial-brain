@@ -21,6 +21,7 @@ import {
   BarChart3,
   AlertTriangle,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 interface DailyPick {
   ticker: string;
@@ -153,7 +154,7 @@ export function DailyPicks() {
                 )}
                 <div>
                   <p className="text-sm font-semibold capitalize">
-                    Tregu: {picks.marketCondition === 'bullish' ? 'Bullish' : picks.marketCondition === 'bearish' ? 'Bearish' : 'Neutral'}
+                    <TermPop term="gjendja_ai">Tregu:</TermPop> {picks.marketCondition === 'bullish' ? 'Bullish' : picks.marketCondition === 'bearish' ? 'Bearish' : 'Neutral'}
                   </p>
                   <p className="text-xs text-muted-foreground">{picks.marketSummary}</p>
                 </div>
@@ -230,10 +231,10 @@ export function DailyPicks() {
                         <div className="text-right">
                           <div className="flex items-center gap-1">
                             <Zap className="w-3 h-3 text-amber-500" />
-                            <span className="text-sm font-bold">{pick.confidence}%</span>
+                            <TermPop term="konfid_enca"><span className="text-sm font-bold">{pick.confidence}%</span></TermPop>
                           </div>
                           <Badge variant="outline" className="text-xs">
-                            {pick.timeframe}
+                            <TermPop term="afati_pick">{pick.timeframe}</TermPop>
                           </Badge>
                         </div>
                       </div>
@@ -245,11 +246,11 @@ export function DailyPicks() {
                           <p className="text-base font-bold">${pick.currentPrice}</p>
                         </div>
                         <div className="bg-emerald-500/10 rounded-lg p-2">
-                          <p className="text-xs text-emerald-500">Objektivi</p>
+                          <p className="text-xs text-emerald-500"><TermPop term="objektivi_pick">Objektivi</TermPop></p>
                           <p className="text-base font-bold text-emerald-500">${pick.targetPrice}</p>
                         </div>
                         <div className="bg-red-500/10 rounded-lg p-2">
-                          <p className="text-xs text-red-500">Stop Loss</p>
+                          <p className="text-xs text-red-500"><TermPop term="stop_loss_pick">Stop Loss</TermPop></p>
                           <p className="text-base font-bold text-red-500">${pick.stopLoss}</p>
                         </div>
                       </div>
@@ -258,27 +259,27 @@ export function DailyPicks() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
                           <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="text-xs font-medium text-emerald-500">
+                          <TermPop term="potenciali_pick"><span className="text-xs font-medium text-emerald-500">
                             Potenciali: +{potentialReturn}%
-                          </span>
+                          </span></TermPop>
                         </div>
                         <Badge variant="outline" className="text-xs">
-                          R/R: {pick.riskReward}
+                          <TermPop term="rr_ratio">R/R: {pick.riskReward}</TermPop>
                         </Badge>
                       </div>
 
                       {/* Key Levels */}
                       <div className="flex gap-2 text-xs">
-                        <span className="bg-muted/50 px-2 py-0.5 rounded">Suport: ${pick.keyLevels?.support || '—'}</span>
-                        <span className="bg-muted/50 px-2 py-0.5 rounded">Pivot: ${pick.keyLevels?.pivot || '—'}</span>
-                        <span className="bg-muted/50 px-2 py-0.5 rounded">Rezistencë: ${pick.keyLevels?.resistance || '—'}</span>
+                        <TermPop term="nivelet_kryesore"><span className="bg-muted/50 px-2 py-0.5 rounded">Suport: ${pick.keyLevels?.support || '—'}</span></TermPop>
+                        <TermPop term="nivelet_kryesore"><span className="bg-muted/50 px-2 py-0.5 rounded">Pivot: ${pick.keyLevels?.pivot || '—'}</span></TermPop>
+                        <TermPop term="nivelet_kryesore"><span className="bg-muted/50 px-2 py-0.5 rounded">Rezistencë: ${pick.keyLevels?.resistance || '—'}</span></TermPop>
                       </div>
 
                       {/* Catalyst */}
                       {pick.catalyst && (
                         <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-2">
                           <p className="text-xs text-amber-500 font-medium flex items-center gap-1">
-                            <Zap className="w-3 h-3" /> Katalizatori
+                            <Zap className="w-3 h-3" /> <TermPop term="katalizatori_pick">Katalizatori</TermPop>
                           </p>
                           <p className="text-xs text-muted-foreground leading-relaxed">{pick.catalyst}</p>
                         </div>

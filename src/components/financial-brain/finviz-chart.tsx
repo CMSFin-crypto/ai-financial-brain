@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, Search, RefreshCw, ArrowRight, CandlestickChart as CandleIcon } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 // ═══════════════════════════════════════════════════════════════
 // GRAFIK FINVIZ — grafik interaktiv në stil finviz.com/charts
@@ -515,7 +516,7 @@ export function FinvizChart({ initialTicker = 'EXPE', onAnalyze }: FinvizChartPr
             )}
           </div>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Grafik interaktiv në stil Finviz — qirinj, volum dhe mesatare lëvizëse
+            <TermPop term="fv_grafiku">Grafik interaktiv në stil Finviz — qirinj, volum dhe mesatare lëvizëse</TermPop>
           </p>
         </div>
         <div className="flex items-end gap-4">
@@ -755,11 +756,11 @@ export function FinvizChart({ initialTicker = 'EXPE', onAnalyze }: FinvizChartPr
         <span className="ml-auto flex items-center gap-3">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: UP }} />
-            në rritje
+            <TermPop term="fv_ngjyra">në rritje</TermPop>
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: DOWN }} />
-            në rënie
+            <TermPop term="fv_ngjyra">në rënie</TermPop>
           </span>
         </span>
       </div>

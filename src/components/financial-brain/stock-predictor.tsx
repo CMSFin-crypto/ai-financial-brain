@@ -18,6 +18,7 @@ import {
   Target, Clock, Search, RefreshCw, ChevronDown, ChevronUp,
   Sparkles, GraduationCap, BookOpen, CheckCircle2, XCircle, Activity, Trophy, PieChart,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -325,7 +326,7 @@ function PredictionScoreGauge({ score, direction }: { score: number; direction: 
           <span className={`text-3xl font-bold ${scoreColor(score)}`}>
             {score > 0 ? '+' : ''}{score}
           </span>
-          <span className="text-[10px] text-muted-foreground">-100 — +100</span>
+          <TermPop term="pred_score" className="text-[10px] text-muted-foreground">-100 — +100</TermPop>
         </div>
       </div>
       <Badge
@@ -348,7 +349,7 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
   return (
     <div className="w-full space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Besimi</span>
+        <TermPop term="besim_modeli"><span className="text-xs text-muted-foreground">Besimi</span></TermPop>
         <span className={`text-xs font-bold ${confidenceColor(confidence)}`}>
           {confidence.toFixed(1)}%
         </span>
@@ -367,9 +368,11 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
 
 function TermCard({
   label,
+  term,
   data,
 }: {
   label: string;
+  term?: string;
   data: TermPrediction;
 }) {
   return (
@@ -377,7 +380,7 @@ function TermCard({
       <CardContent className="p-3 space-y-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
           <Clock className="w-3 h-3" />
-          {label}
+          {term ? <TermPop term={term}>{label}</TermPop> : label}
         </div>
         <div className="flex items-center gap-2">
           {predictionIcon(data.prediction)}
@@ -386,11 +389,11 @@ function TermCard({
           </span>
         </div>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Probabiliteti</span>
+          <TermPop term="probabilitet_modeli">Probabiliteti</TermPop>
           <span className="font-semibold text-foreground">{data.probability.toFixed(1)}%</span>
         </div>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Lëvizja e pritur</span>
+          <TermPop term="pred_levizja">Lëvizja e pritur</TermPop>
           <span className={`font-semibold ${data.expectedMove >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {data.expectedMove >= 0 ? '+' : ''}{data.expectedMove.toFixed(2)}%
           </span>
@@ -719,11 +722,11 @@ export function StockPredictor() {
                         <div className="flex gap-2 flex-wrap">
                           <Badge variant={riskVariant(singleResult.riskLevel)} className="text-[10px]">
                             <Shield className="w-3 h-3 mr-1" />
-                            Rreziku: {riskLabel(singleResult.riskLevel)}
+                            <TermPop term="pred_rreziku">Rreziku:</TermPop> {riskLabel(singleResult.riskLevel)}
                           </Badge>
                           <Badge variant="outline" className="text-[10px]">
                             <BarChart3 className="w-3 h-3 mr-1" />
-                            Volatiliteti: {volatilityLabel(singleResult.volatility)}
+                            <TermPop term="pred_volatiliteti">Volatiliteti:</TermPop> {volatilityLabel(singleResult.volatility)}
                           </Badge>
                         </div>
                       </div>
@@ -733,10 +736,12 @@ export function StockPredictor() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <TermCard
                         label="Afati i Shkurtër (1-3 ditë)"
+                        term="pred_afati_shkurt"
                         data={singleResult.shortTerm}
                       />
                       <TermCard
                         label="Afati i Gjatë (1-2 javë)"
+                        term="pred_afati_gjate"
                         data={singleResult.mediumTerm}
                       />
                     </div>
@@ -1108,7 +1113,7 @@ export function StockPredictor() {
                             onClick={() => handleSort('score')}
                           >
                             <div className="flex items-center gap-1">
-                              Pikët
+                              <TermPop term="pred_score">Pikët</TermPop>
                               {sortField === 'score' && (
                                 sortDir === 'desc'
                                   ? <ChevronDown className="w-3 h-3" />
@@ -1122,7 +1127,7 @@ export function StockPredictor() {
                             onClick={() => handleSort('confidence')}
                           >
                             <div className="flex items-center gap-1">
-                              Besimi %
+                              <TermPop term="besim_modeli">Besimi %</TermPop>
                               {sortField === 'confidence' && (
                                 sortDir === 'desc'
                                   ? <ChevronDown className="w-3 h-3" />
@@ -1130,10 +1135,10 @@ export function StockPredictor() {
                               )}
                             </div>
                           </TableHead>
-                          <TableHead className="text-[10px]">Afatshkurtër</TableHead>
-                          <TableHead className="text-[10px]">Afatgjatë</TableHead>
-                          <TableHead className="text-[10px]">Rreziku</TableHead>
-                          <TableHead className="text-[10px]">Volatiliteti</TableHead>
+                          <TableHead className="text-[10px]"><TermPop term="pred_afati_shkurt">Afatshkurtër</TermPop></TableHead>
+                          <TableHead className="text-[10px]"><TermPop term="pred_afati_gjate">Afatgjatë</TermPop></TableHead>
+                          <TableHead className="text-[10px]"><TermPop term="pred_rreziku">Rreziku</TermPop></TableHead>
+                          <TableHead className="text-[10px]"><TermPop term="pred_volatiliteti">Volatiliteti</TermPop></TableHead>
                           <TableHead className="text-[10px]">Teknik</TableHead>
                           <TableHead className="text-[10px]">Fond.</TableHead>
                         </TableRow>
@@ -1461,21 +1466,21 @@ export function StockPredictor() {
                             onClick={() => handleHybridSort('totalScore')}
                           >
                             <div className="flex items-center gap-1">
-                              Total
+                              <TermPop term="pred_total_hybrid">Total</TermPop>
                               {hybridSortField === 'totalScore' && (
                                 hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
                               )}
                             </div>
                           </TableHead>
-                          <TableHead className="text-[10px]">Teknik</TableHead>
-                          <TableHead className="text-[10px]">Fundamentet</TableHead>
+                          <TableHead className="text-[10px]"><TermPop term="pred_teknik_fund">Teknik</TermPop></TableHead>
+                          <TableHead className="text-[10px]"><TermPop term="pred_teknik_fund">Fundamentet</TermPop></TableHead>
                           <TableHead className="text-[10px]">Sinjali</TableHead>
                           <TableHead
                             className="text-[10px] cursor-pointer select-none hover:text-foreground transition-colors"
                             onClick={() => handleHybridSort('hybridConfidence')}
                           >
                             <div className="flex items-center gap-1">
-                              Besim H.
+                              <TermPop term="besim_modeli">Besim H.</TermPop>
                               {hybridSortField === 'hybridConfidence' && (
                                 hybridSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />
                               )}

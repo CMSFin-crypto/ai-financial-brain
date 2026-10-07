@@ -38,6 +38,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { TermPop } from './metric-pop';
 
 // ═══════════════════════════════════════════
 // TYPES
@@ -157,7 +158,7 @@ function StockRatingBadge({ rating, className = '' }: { rating?: string; classNa
   return (
     <Badge className={`${config.bg} ${config.text} text-[10px] font-bold px-2 py-0.5 flex items-center gap-1 ${className}`}>
       {config.icon}
-      {config.label}
+      {<TermPop term="rating_sektor">{config.label}</TermPop>}
     </Badge>
   );
 }
@@ -180,7 +181,7 @@ function ScoreBar({ score, size = 'sm' }: { score: number; size?: 'sm' | 'md' })
         />
       </div>
       <span className={`font-bold ${size === 'sm' ? 'text-[10px]' : 'text-xs'}`}>
-        {score}
+        <TermPop term="quick_score">{score}</TermPop>
       </span>
     </div>
   );
@@ -224,7 +225,7 @@ function StockRow({ stock, onClickStock }: { stock: SectorStock; onClickStock: (
         <div className="text-right shrink-0 w-[52px]">
           <span className={`text-[10px] font-bold flex items-center gap-0.5 justify-end ${upsideVal >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
             {upsideVal >= 0 ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-            {upsideVal >= 0 ? '+' : ''}{upsideVal}%
+            <TermPop term="upside_sektor">{upsideVal >= 0 ? '+' : ''}{upsideVal}%</TermPop>
           </span>
         </div>
 
@@ -257,25 +258,25 @@ function StockRow({ stock, onClickStock }: { stock: SectorStock; onClickStock: (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {stock.entryPrice && (
                   <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-2 py-1.5">
-                    <p className="text-[9px] text-blue-400 font-medium mb-0.5">Entry</p>
+                    <p className="text-[9px] text-blue-400 font-medium mb-0.5"><TermPop term="hyrja_entry">Entry</TermPop></p>
                     <p className="text-xs font-bold text-blue-300">${stock.entryPrice}</p>
                   </div>
                 )}
                 {stock.targetPrice && (
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2 py-1.5">
-                    <p className="text-[9px] text-emerald-400 font-medium mb-0.5">Target</p>
+                    <p className="text-[9px] text-emerald-400 font-medium mb-0.5"><TermPop term="objektivi_pick">Target</TermPop></p>
                     <p className="text-xs font-bold text-emerald-300">${stock.targetPrice}</p>
                   </div>
                 )}
                 {stock.stopLoss && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-1.5">
-                    <p className="text-[9px] text-red-400 font-medium mb-0.5">Stop Loss</p>
+                    <p className="text-[9px] text-red-400 font-medium mb-0.5"><TermPop term="stop_loss_pick">Stop Loss</TermPop></p>
                     <p className="text-xs font-bold text-red-300">${stock.stopLoss}</p>
                   </div>
                 )}
                 {stock.riskReward && (
                   <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg px-2 py-1.5">
-                    <p className="text-[9px] text-cyan-400 font-medium mb-0.5">Risk/Reward</p>
+                    <p className="text-[9px] text-cyan-400 font-medium mb-0.5"><TermPop term="rr_ratio">Risk/Reward</TermPop></p>
                     <p className="text-xs font-bold text-cyan-300">{stock.riskReward}</p>
                   </div>
                 )}
@@ -353,12 +354,12 @@ function StockRow({ stock, onClickStock }: { stock: SectorStock; onClickStock: (
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <Gauge className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">Besueshmëria:</span>
+                  <span className="text-[10px] text-muted-foreground"><TermPop term="besueshmeria_sektor">Besueshmëria:</TermPop></span>
                   <span className="text-[10px] font-bold">{stock.confidence}%</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Crosshair className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">Pikët:</span>
+                  <span className="text-[10px] text-muted-foreground"><TermPop term="quick_score">Pikët:</TermPop></span>
                   <ScoreBar score={stock.quickScore} size="md" />
                 </div>
               </div>

@@ -16,6 +16,7 @@ import {
   ArrowDownRight,
   Minus,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 interface IndexCard {
   ticker: string;
@@ -60,7 +61,7 @@ function FearGreedGauge({ score }: { score: number }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground">Indeksi Frikë & Lakmi</span>
+        <TermPop term="fg_local"><span className="text-xs font-semibold text-muted-foreground">Indeksi Frikë & Lakmi</span></TermPop>
         <span className={`text-xs font-bold ${labelColor}`}>{label}</span>
       </div>
       {/* Gauge bar */}
@@ -242,7 +243,7 @@ export function MarketDashboard() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-emerald-500" />
-          <span className="text-xs text-muted-foreground">Përmbledhje e tregut në kohë reale</span>
+        <TermPop term="indekset_baze"><span className="text-xs text-muted-foreground">Përmbledhje e tregut në kohë reale</span></TermPop>
         </div>
         <button
           onClick={fetchData}
@@ -271,7 +272,9 @@ export function MarketDashboard() {
                 <CardContent className="pt-3.5 pb-3 px-3.5">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="text-[10px] text-muted-foreground font-medium">{index.name}</p>
+                      <p className="text-[10px] text-muted-foreground font-medium">
+                        {isVix ? <TermPop term="vix">{index.name}</TermPop> : index.name}
+                      </p>
                       <p className="text-xs text-muted-foreground/60">{index.ticker}</p>
                     </div>
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -313,7 +316,7 @@ export function MarketDashboard() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 mb-3">
               <BarChart3 className="w-4 h-4 text-emerald-500" />
-              <h3 className="text-sm font-semibold">Hartë e Sektoreve</h3>
+              <TermPop term="harta_sektoreve"><span className="text-sm font-semibold">Hartë e Sektoreve</span></TermPop>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-1 gap-2">
               {data.sectors.map((sector) => {
@@ -378,7 +381,7 @@ export function MarketDashboard() {
               </div>
               <div>
                 <p className="text-sm font-bold">
-                  Tregu tani: <span className={
+                  <TermPop term="gjendja_tregut">Tregu tani:</TermPop> <span className={
                     sentiment.label === 'Bullish' || sentiment.label === 'Lehtë Bullish'
                       ? 'text-emerald-500'
                       : sentiment.label === 'Bearish' || sentiment.label === 'Lehtë Bearish'

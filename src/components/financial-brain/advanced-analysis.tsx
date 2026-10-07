@@ -32,6 +32,7 @@ import {
   Play,
   Loader2,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -278,7 +279,7 @@ export function AdvancedAnalysis() {
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center gap-2">
               <Target className="w-4 h-4 text-violet-500" />
-              <h4 className="text-sm font-semibold">Confidence Score</h4>
+              <h4 className="text-sm font-semibold"><TermPop term="aa_confidence_score">Confidence Score</TermPop></h4>
             </div>
 
             <div className="flex gap-2">
@@ -317,7 +318,7 @@ export function AdvancedAnalysis() {
                   {/* RSI Card */}
                   <Card className={`border ${signalBg(csResult.indicators.RSI.signal)}`}>
                     <CardContent className="p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-1">RSI</p>
+                      <p className="text-xs text-muted-foreground mb-1"><TermPop term="ta_rsi">RSI</TermPop></p>
                       <p className={`text-lg font-bold ${signalColor(csResult.indicators.RSI.signal)}`}>
                         {csResult.indicators.RSI.value.toFixed(1)}
                       </p>
@@ -330,7 +331,7 @@ export function AdvancedAnalysis() {
                   {/* MACD Card */}
                   <Card className={`border ${signalBg(csResult.indicators.MACD.signal)}`}>
                     <CardContent className="p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-1">MACD</p>
+                      <p className="text-xs text-muted-foreground mb-1"><TermPop term="ta_macd">MACD</TermPop></p>
                       <p className={`text-lg font-bold ${signalColor(csResult.indicators.MACD.signal)}`}>
                         {csResult.indicators.MACD.value.toFixed(4)}
                       </p>
@@ -343,7 +344,7 @@ export function AdvancedAnalysis() {
                   {/* Bollinger Card */}
                   <Card className={`border ${signalBg(csResult.indicators.Bollinger.signal)}`}>
                     <CardContent className="p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-1">Bollinger</p>
+                      <p className="text-xs text-muted-foreground mb-1"><TermPop term="ta_bb">Bollinger</TermPop></p>
                       <p className={`text-lg font-bold ${signalColor(csResult.indicators.Bollinger.signal)}`}>
                         {csResult.indicators.Bollinger.position}
                       </p>
@@ -356,7 +357,7 @@ export function AdvancedAnalysis() {
                   {/* Volume Card */}
                   <Card className={`border ${signalBg(csResult.indicators.Volume.signal)}`}>
                     <CardContent className="p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-1">Volumi</p>
+                      <p className="text-xs text-muted-foreground mb-1"><TermPop term="ta_volum">Volumi</TermPop></p>
                       <p className={`text-lg font-bold ${signalColor(csResult.indicators.Volume.signal)}`}>
                         {csResult.indicators.Volume.ratio.toFixed(2)}x
                       </p>
@@ -382,7 +383,7 @@ export function AdvancedAnalysis() {
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-violet-500" />
-              <h4 className="text-sm font-semibold">Backtesting</h4>
+              <h4 className="text-sm font-semibold"><TermPop term="aa_win_rate">Backtesting</TermPop></h4>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
@@ -451,16 +452,16 @@ export function AdvancedAnalysis() {
                 {/* Metrics cards */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                   {[
-                    { label: 'Win Rate', value: `${btResult.winRate.toFixed(1)}%`, positive: btResult.winRate > 50 },
-                    { label: 'Total Return', value: `${btResult.totalReturn >= 0 ? '+' : ''}${btResult.totalReturn.toFixed(2)}%`, positive: btResult.totalReturn >= 0 },
-                    { label: 'Max Drawdown', value: `${btResult.maxDrawdown.toFixed(2)}%`, positive: btResult.maxDrawdown < 10 },
-                    { label: 'Sharpe Ratio', value: btResult.sharpeRatio.toFixed(2), positive: btResult.sharpeRatio > 1 },
-                    { label: 'Profit Factor', value: btResult.profitFactor.toFixed(2), positive: btResult.profitFactor > 1 },
-                    { label: 'Final Equity', value: `$${btResult.finalEquity.toLocaleString()}`, positive: btResult.finalEquity > 10000 },
+                    { label: 'Win Rate', term: 'aa_win_rate', value: `${btResult.winRate.toFixed(1)}%`, positive: btResult.winRate > 50 },
+                    { label: 'Total Return', term: 'aa_total_return', value: `${btResult.totalReturn >= 0 ? '+' : ''}${btResult.totalReturn.toFixed(2)}%`, positive: btResult.totalReturn >= 0 },
+                    { label: 'Max Drawdown', term: 'aa_max_dd', value: `${btResult.maxDrawdown.toFixed(2)}%`, positive: btResult.maxDrawdown < 10 },
+                    { label: 'Sharpe Ratio', term: 'aa_sharpe', value: btResult.sharpeRatio.toFixed(2), positive: btResult.sharpeRatio > 1 },
+                    { label: 'Profit Factor', term: 'aa_profit_factor', value: btResult.profitFactor.toFixed(2), positive: btResult.profitFactor > 1 },
+                    { label: 'Final Equity', term: 'aa_final_equity', value: `$${btResult.finalEquity.toLocaleString()}`, positive: btResult.finalEquity > 10000 },
                   ].map((metric) => (
                     <Card key={metric.label} className={`border ${metric.positive ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
                       <CardContent className="p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground">{metric.label}</p>
+                        <p className="text-[10px] text-muted-foreground"><TermPop term={metric.term}>{metric.label}</TermPop></p>
                         <p className={`text-sm font-bold ${metric.positive ? 'text-emerald-500' : 'text-red-500'}`}>
                           {metric.value}
                         </p>
@@ -525,7 +526,7 @@ export function AdvancedAnalysis() {
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center gap-2">
               <Brain className="w-4 h-4 text-violet-500" />
-              <h4 className="text-sm font-semibold">Analizë e Sentimentit me AI</h4>
+              <h4 className="text-sm font-semibold"><TermPop term="aa_sentiment">Analizë e Sentimentit me AI</TermPop></h4>
             </div>
 
             <div className="flex gap-2">
@@ -591,7 +592,7 @@ export function AdvancedAnalysis() {
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center gap-2">
               <Grid3X3 className="w-4 h-4 text-violet-500" />
-              <h4 className="text-sm font-semibold">Matrica e Korrelacionit</h4>
+              <h4 className="text-sm font-semibold"><TermPop term="aa_korrelacion">Matrica e Korrelacionit</TermPop></h4>
             </div>
 
             <div className="flex gap-2">

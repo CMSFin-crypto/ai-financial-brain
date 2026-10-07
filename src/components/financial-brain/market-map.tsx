@@ -13,6 +13,7 @@ import {
   Minus,
   Newspaper,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 // ═══════════════════════════════════════════════════════════════
 // MAP E TREGUT — heatmap stil Finviz
@@ -660,7 +661,7 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
                 <LayoutGrid className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-foreground">Map e Tregut (stil Finviz)</h3>
+                <h3 className="text-sm font-semibold text-foreground"><TermPop term="mm_harta">Map e Tregut (stil Finviz)</TermPop></h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Kompanitë më të mëdha sipas sektorëve · madhësia = kapitalizimi · ngjyra = ndryshimi ditor · hover mbi pllakë shfaq "Pse lëviz" (lajmet e fundit)
                 </p>
@@ -699,16 +700,16 @@ export function MarketMap({ onSelectStock }: MarketMapProps) {
           {stocks.length > 0 && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
               <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
-                <TrendingUp className="w-3.5 h-3.5" /> {stats.adv} në majtje
+                <TrendingUp className="w-3.5 h-3.5" /> {stats.adv} <TermPop term="mm_adv">në majtje</TermPop>
               </span>
               <span className="inline-flex items-center gap-1 text-red-400 font-medium">
-                <TrendingDown className="w-3.5 h-3.5" /> {stats.dec} në rënie
+                <TrendingDown className="w-3.5 h-3.5" /> {stats.dec} <TermPop term="mm_dec">në rënie</TermPop>
               </span>
               <span className="inline-flex items-center gap-1 text-muted-foreground">
                 <Minus className="w-3.5 h-3.5" /> {stocks.length - stats.adv - stats.dec} pa ndryshim
               </span>
               <span className="text-muted-foreground">
-                Mesatarja e ponderuar: <span className={`font-semibold ${stats.avg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPct(stats.avg)}</span>
+                <TermPop term="mm_mesatarja">Mesatarja e ponderuar:</TermPop> <span className={`font-semibold ${stats.avg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPct(stats.avg)}</span>
               </span>
               {updatedAt && <span className="text-muted-foreground">· Përditësuar: {fmtTime(updatedAt)}</span>}
             </div>

@@ -21,6 +21,7 @@ import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Responsi
 import { IBKRValidationLab } from './ibkr-validation-lab';
 // Task 26: Fundamental Context — popup për çdo kandidat (FAZA 1: vetëm informues)
 import { FundamentalPopup } from './FundamentalPopup';
+import { TermPop } from './metric-pop';
 import type { FundamentalReport } from '@/lib/fundamentals/normalize';
 
 // ── Types ──
@@ -590,7 +591,7 @@ function NewsImpactBlock({ symbol }: { symbol: string }) {
       <div className="flex items-center gap-1.5 mb-2">
         <FileText className="w-3.5 h-3.5 text-orange-400" />
         <p className="text-[12px] font-semibold text-orange-400">News Impact Signal</p>
-        <Badge variant="outline" className="ml-auto text-[10px] border-orange-500/30 text-orange-300">{Math.round(signal.confidence * 100)}% konfidencë</Badge>
+        <Badge variant="outline" className="ml-auto text-[10px] border-orange-500/30 text-orange-300"><TermPop term="ib_konfid_lajme">{Math.round(signal.confidence * 100)}% konfidencë</TermPop></Badge>
       </div>
       <div className="grid grid-cols-4 gap-x-3 gap-y-1.5 text-[12px]">
         <div className="flex justify-between"><span className="text-muted-foreground">Impakt Prob.</span><span className={signal.impactProbability > 0.5 ? 'text-orange-300 font-medium' : 'text-foreground/80'}>{Math.round(signal.impactProbability * 100)}%</span></div>
@@ -779,7 +780,7 @@ export function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: Funne
             <div className="rounded-lg border border-border/40 bg-muted/10 px-1.5 pt-1.5 pb-0.5 flex flex-col min-w-0">
               <div className="flex items-center justify-center gap-1.5">
                 <Sparkles className="w-3 h-3 text-violet-400/80" />
-                <span className="text-[9.5px] uppercase tracking-wider text-muted-foreground font-medium">Score Radar</span>
+                <span className="text-[9.5px] uppercase tracking-wider text-muted-foreground font-medium"><TermPop term="ib_radar">Score Radar</TermPop></span>
               </div>
               <ScoreRadar stock={stock} />
             </div>
@@ -906,9 +907,9 @@ export function StockCard({ stock, rank, vp, fund, fundLoading }: { stock: Funne
 
         {/* EMA / SMA values */}
         <div className="mt-1.5 flex items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
-          <span>EMA10 <span className="text-cyan-300 font-medium">${(stock.ema10Val ?? 0).toFixed(2)}</span></span>
-          <span>EMA20 <span className="text-cyan-300 font-medium">${(stock.ema20Val ?? 0).toFixed(2)}</span></span>
-          <span>SMA50 <span className="text-foreground/70 font-medium">${(stock.sma50Val ?? 0).toFixed(2)}</span></span>
+          <span><TermPop term="ib_mesataret">EMA10</TermPop> <span className="text-cyan-300 font-medium">${(stock.ema10Val ?? 0).toFixed(2)}</span></span>
+          <span><TermPop term="ib_mesataret">EMA20</TermPop> <span className="text-cyan-300 font-medium">${(stock.ema20Val ?? 0).toFixed(2)}</span></span>
+          <span><TermPop term="ib_mesataret">SMA50</TermPop> <span className="text-foreground/70 font-medium">${(stock.sma50Val ?? 0).toFixed(2)}</span></span>
         </div>
 
         {/* Liquidity Metrics */}

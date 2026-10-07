@@ -16,6 +16,7 @@ import {
   Moon,
   Clock,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 interface EarningEntry {
   ticker: string;
@@ -287,11 +288,11 @@ export function EarningsCalendar() {
             <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border/50">
               <div className="flex items-center gap-1.5">
                 <Sun className="w-3 h-3 text-emerald-500" />
-                <span className="text-[10px] text-muted-foreground">Përpara hapjes (BMO)</span>
+                <TermPop term="bmo_amc"><span className="text-[10px] text-muted-foreground">Përpara hapjes (BMO)</span></TermPop>
               </div>
               <div className="flex items-center gap-1.5">
                 <Moon className="w-3 h-3 text-violet-500" />
-                <span className="text-[10px] text-muted-foreground">Pas mbylljes (AMC)</span>
+                <TermPop term="bmo_amc"><span className="text-[10px] text-muted-foreground">Pas mbylljes (AMC)</span></TermPop>
               </div>
             </div>
           </CardContent>
@@ -376,7 +377,7 @@ export function EarningsCalendar() {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0 ml-2">
-                        <p className="text-[9px] text-muted-foreground">EPS Est.</p>
+                        <p className="text-[9px] text-muted-foreground"><TermPop term="eps_est">EPS Est.</TermPop></p>
                         <p className={`text-xs font-bold tabular-nums ${
                           entry.epsEstimate < 0 ? 'text-red-500' : 'text-foreground'
                         }`}>

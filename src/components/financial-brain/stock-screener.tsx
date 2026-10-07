@@ -1,5 +1,18 @@
 'use client';
 
+// Termet shpjeguese për rreshtat e detajit të screener-it (label → term i TERM_INFO)
+const DETAIL_TERMS: Record<string, string> = {
+  'P/E': 'pe_ratio',
+  'Fwd P/E': 'fwd_pe',
+  'PEG': 'peg',
+  'P/S': 'ps_ratio',
+  'Marzh Net': 'marzh_net',
+  'Rritja Rev': 'rritja_rev',
+  'Rritja EPS': 'rritja_eps',
+  'FCF': 'fcf',
+  'Objektivi': 'objektivi_pick',
+};
+
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { TermPop } from './metric-pop';
 import {
   Filter,
   AlertTriangle,
@@ -264,7 +278,7 @@ export function StockScreener() {
 
             {/* Market Cap */}
             <div>
-              <label className="text-[10px] text-muted-foreground mb-1 block">Kapitalizimi</label>
+              <label className="text-[10px] text-muted-foreground mb-1 block"><TermPop term="kap_tregut">Kapitalizimi</TermPop></label>
               <Select value={marketCapFilter} onValueChange={setMarketCapFilter}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
@@ -281,7 +295,7 @@ export function StockScreener() {
 
             {/* P/E Ratio */}
             <div>
-              <label className="text-[10px] text-muted-foreground mb-1 block">P/E Raporti</label>
+              <label className="text-[10px] text-muted-foreground mb-1 block"><TermPop term="pe_ratio">P/E Raporti</TermPop></label>
               <Select value={peFilter} onValueChange={setPeFilter}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
@@ -315,7 +329,7 @@ export function StockScreener() {
 
             {/* Signal */}
             <div>
-              <label className="text-[10px] text-muted-foreground mb-1 block">Sinjali</label>
+              <label className="text-[10px] text-muted-foreground mb-1 block"><TermPop term="sinjali_screener">Sinjali</TermPop></label>
               <Select value={signalFilter} onValueChange={setSignalFilter}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
@@ -388,11 +402,11 @@ export function StockScreener() {
                   { key: 'sector', label: 'Sektori' },
                   { key: 'price', label: 'Çmimi' },
                   { key: 'change', label: 'Ndryshimi' },
-                  { key: '_rvol', label: data?.isPreMarket ? 'RVol' : 'Volumi' },
-                  { key: 'pe', label: 'P/E' },
-                  { key: 'marketCapNum', label: 'Kap. Tregut' },
-                  { key: 'signal', label: 'Sinjali' },
-                  { key: 'score', label: 'Pikët' },
+                  { key: '_rvol', label: <TermPop term="rvol">{data?.isPreMarket ? 'RVol' : 'Volumi'}</TermPop> },
+                  { key: 'pe', label: <TermPop term="pe_ratio">P/E</TermPop> },
+                  { key: 'marketCapNum', label: <TermPop term="kap_tregut">Kap. Tregut</TermPop> },
+                  { key: 'signal', label: <TermPop term="sinjali_screener">Sinjali</TermPop> },
+                  { key: 'score', label: <TermPop term="piket_screener">Pikët</TermPop> },
                 ].map(col => (
                   <th
                     key={col.key}
@@ -560,7 +574,7 @@ export function StockScreener() {
                       { label: 'Vëllimi', value: stock.volume, color: '' },
                     ].map(item => (
                       <div key={item.label} className="bg-muted/30 rounded-lg p-2 text-center">
-                        <p className="text-[8px] text-muted-foreground">{item.label}</p>
+                        <p className="text-[8px] text-muted-foreground"><TermPop term={DETAIL_TERMS[item.label] || ''}>{item.label}</TermPop></p>
                         <p className={`text-xs font-bold ${item.color}`}>{item.value}</p>
                       </div>
                     ))}

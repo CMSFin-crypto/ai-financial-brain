@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { TermPop } from './metric-pop';
 import {
   Select,
   SelectContent,
@@ -444,10 +445,10 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
                   )}
                 </div>
                 <div className="text-right space-y-1">
-                  <p className="text-xs text-muted-foreground">Besueshmëria</p>
+                  <TermPop term="besim_modeli"><span className="block text-xs text-muted-foreground">Besueshmëria</span></TermPop>
                   <p className="text-3xl font-bold">{analysis.final?.confidence}%</p>
                   <p className="text-xs text-muted-foreground">
-                    Score: {safeNum(analysis.scoring?.totalScore).toFixed(1)}
+                    <TermPop term="qd_total_score">Score:</TermPop> {safeNum(analysis.scoring?.totalScore).toFixed(1)}
                   </p>
                 </div>
               </div>
@@ -455,33 +456,33 @@ export function QuantDashboard({ initialTicker }: { initialTicker?: string }) {
               {/* Entry / Stop / Targets */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
                 <div className="bg-card/80 rounded-lg p-3 border border-border/50">
-                  <p className="text-[10px] text-muted-foreground">Hyrja (Entry)</p>
+                  <p className="text-[10px] text-muted-foreground"><TermPop term="hyrja_entry">Hyrja (Entry)</TermPop></p>
                   <p className="text-lg font-bold">{analysis.final?.entry}</p>
                 </div>
                 <div className="bg-red-500/10 rounded-lg p-3 border border-red-500/30">
-                  <p className="text-[10px] text-red-500">Stop Loss</p>
+                  <p className="text-[10px] text-red-500"><TermPop term="qd_stop_loss">Stop Loss</TermPop></p>
                   <p className="text-lg font-bold text-red-500">{analysis.final?.stop}</p>
                 </div>
                 <div className="bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/30">
-                  <p className="text-[10px] text-emerald-500">Target 1</p>
+                  <p className="text-[10px] text-emerald-500"><TermPop term="qd_target1">Target 1</TermPop></p>
                   <p className="text-lg font-bold text-emerald-500">{analysis.final?.targets?.tp1}</p>
                 </div>
                 <div className="bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/30">
-                  <p className="text-[10px] text-emerald-500">Target 2</p>
+                  <p className="text-[10px] text-emerald-500"><TermPop term="qd_target2">Target 2</TermPop></p>
                   <p className="text-lg font-bold text-emerald-500">{analysis.final?.targets?.tp2}</p>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div className="bg-muted/50 rounded-lg p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">Probabiliteti</p>
+                  <p className="text-[10px] text-muted-foreground"><TermPop term="probabilitet_modeli">Probabiliteti</TermPop></p>
                   <p className="text-sm font-bold">{analysis.final?.probability}</p>
                 </div>
                 <div className="bg-muted/50 rounded-lg p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">Risk/Reward</p>
+                  <p className="text-[10px] text-muted-foreground"><TermPop term="rr_ratio">Risk/Reward</TermPop></p>
                   <p className="text-sm font-bold">{analysis.final?.riskReward}</p>
                 </div>
                 <div className="bg-muted/50 rounded-lg p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">Pozicioni</p>
+                  <p className="text-[10px] text-muted-foreground"><TermPop term="qd_pozicioni">Pozicioni</TermPop></p>
                   <p className="text-xs font-bold">{analysis.final?.positionSize || '—'}</p>
                 </div>
               </div>

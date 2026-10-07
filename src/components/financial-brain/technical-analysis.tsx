@@ -21,6 +21,7 @@ import {
   BrainCircuit,
 } from 'lucide-react';
 import { StockSearch } from './stock-search';
+import { TermPop } from './metric-pop';
 
 interface CandleData {
   date: string;
@@ -2256,7 +2257,7 @@ export function TechnicalAnalysis() {
               <Card className="border-border/50 bg-card/50">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">RSI (14)</span>
+                    <TermPop term="ta_rsi"><span className="text-xs font-bold">RSI (14)</span></TermPop>
                     <div className="flex items-center gap-1.5">
                       {getSignalIcon(analysis.indicators.rsi.signal)}
                       <span className={`text-sm font-bold ${getSignalColor(analysis.indicators.rsi.signal)}`}>
@@ -2294,7 +2295,7 @@ export function TechnicalAnalysis() {
               <Card className="border-border/50 bg-card/50">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">MACD</span>
+                    <TermPop term="ta_macd"><span className="text-xs font-bold">MACD</span></TermPop>
                     <div className="flex items-center gap-1.5">
                       {getSignalIcon(analysis.indicators.macd.signal)}
                       <span className={`text-xs font-semibold uppercase ${getSignalColor(analysis.indicators.macd.signal)}`}>
@@ -2315,7 +2316,7 @@ export function TechnicalAnalysis() {
               <Card className="border-border/50 bg-card/50">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Moving Averages</span>
+                    <TermPop term="ta_ma"><span className="text-xs font-bold">Moving Averages</span></TermPop>
                     <div className="flex items-center gap-1.5">
                       {getSignalIcon(analysis.indicators.movingAverage.signal)}
                       <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.movingAverage.signal)}`}>
@@ -2341,7 +2342,7 @@ export function TechnicalAnalysis() {
               <Card className="border-border/50 bg-card/50">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Bollinger Bands</span>
+                    <TermPop term="ta_bb"><span className="text-xs font-bold">Bollinger Bands</span></TermPop>
                     <div className="flex items-center gap-1.5">
                       {getSignalIcon(analysis.indicators.bollingerBands.signal)}
                       <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.bollingerBands.signal)}`}>
@@ -2373,7 +2374,7 @@ export function TechnicalAnalysis() {
               <Card className="border-border/50 bg-card/50">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Volumi</span>
+                    <TermPop term="ta_volum"><span className="text-xs font-bold">Volumi</span></TermPop>
                     <div className="flex items-center gap-1.5">
                       {getSignalIcon(analysis.indicators.volume.signal)}
                       <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.volume.signal)}`}>
@@ -2396,7 +2397,7 @@ export function TechnicalAnalysis() {
               <Card className="border-border/50 bg-card/50">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Stochastic</span>
+                    <TermPop term="ta_stoch"><span className="text-xs font-bold">Stochastic</span></TermPop>
                     <div className="flex items-center gap-1.5">
                       {getSignalIcon(analysis.indicators.stochastic.signal)}
                       <span className={`text-[10px] font-semibold uppercase ${getSignalColor(analysis.indicators.stochastic.signal)}`}>
@@ -2438,7 +2439,7 @@ export function TechnicalAnalysis() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div>
-                    <p className="text-xs text-emerald-500 font-medium mb-1.5">Suporte (nivele blerjeje)</p>
+                    <TermPop term="ta_suporte"><span className="block text-xs text-emerald-500 font-medium mb-1.5">Suporte (nivele blerjeje)</span></TermPop>
                     <div className="flex flex-wrap gap-1">
                       {analysis.supportResistance.supports.map((s, i) => (
                         <Badge key={i} variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 font-mono px-2 py-0.5">
@@ -2448,7 +2449,7 @@ export function TechnicalAnalysis() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs text-red-500 font-medium mb-1.5">Rezistencë (nivele shitjeje)</p>
+                    <TermPop term="ta_rezistenca"><span className="block text-xs text-red-500 font-medium mb-1.5">Rezistencë (nivele shitjeje)</span></TermPop>
                     <div className="flex flex-wrap gap-1">
                       {analysis.supportResistance.resistances.map((r, i) => (
                         <Badge key={i} variant="outline" className="text-[10px] border-red-500/30 text-red-500 font-mono px-2 py-0.5">
@@ -2484,7 +2485,7 @@ export function TechnicalAnalysis() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#f0b323' }}></span>
-                        <span className="text-xs">POC (Point of Control)</span>
+                        <TermPop term="ta_poc"><span className="text-xs">POC (Point of Control)</span></TermPop>
                       </div>
                       <span className="text-sm font-mono font-bold text-amber-400">${fmt(vp.poc, 2)}</span>
                     </div>
@@ -2492,7 +2493,7 @@ export function TechnicalAnalysis() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#2962ff' }}></span>
-                        <span className="text-xs">VAH (Value Area High)</span>
+                        <TermPop term="ta_value_area"><span className="text-xs">VAH (Value Area High)</span></TermPop>
                       </div>
                       <span className="text-sm font-mono font-bold text-blue-400">${fmt(vp.vah, 2)}</span>
                     </div>
@@ -2500,7 +2501,7 @@ export function TechnicalAnalysis() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block w-2 h-2 rounded-sm" style={{ background: '#2962ff' }}></span>
-                        <span className="text-xs">VAL (Value Area Low)</span>
+                        <TermPop term="ta_value_area"><span className="text-xs">VAL (Value Area Low)</span></TermPop>
                       </div>
                       <span className="text-sm font-mono font-bold text-blue-400">${fmt(vp.val, 2)}</span>
                     </div>

@@ -19,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { TermPop } from './metric-pop';
 
 interface StockPrediction {
   ticker: string;
@@ -120,7 +121,7 @@ export function StockPredictionCard({ prediction }: StockPredictionCardProps) {
         {/* Confidence Bar */}
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-muted-foreground">Besueshmëria</span>
+            <TermPop term="besim_modeli"><span className="text-xs text-muted-foreground">Besueshmëria</span></TermPop>
             <span className={`text-xs font-semibold ${getConfidenceColor(prediction.confidence)}`}>
               {prediction.confidence}%
             </span>

@@ -8,6 +8,7 @@ import {
   Loader2, AlertTriangle, Check, Lightbulb, PenLine, Info, Trophy,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
+import { TermPop } from './metric-pop';
 
 // ── Tipet (pasqyrë e API /api/cams-journal) ──
 
@@ -70,17 +71,17 @@ const TIER_STYLE: Record<string, { bg: string; text: string; border: string; lab
 };
 
 function VerdictBadge({ v }: { v: WeeklyStock['verdict'] }) {
-  if (v === 'ROSE') return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"><TrendingUp className="w-2.5 h-2.5" />U RIT</span>;
-  if (v === 'FELL') return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30"><TrendingDown className="w-2.5 h-2.5" />RA</span>;
-  if (v === 'FLAT') return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground border border-muted/40"><Minus className="w-2.5 h-2.5" />PA QEJE</span>;
-  return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/25"><Loader2 className="w-2.5 h-2.5 animate-spin" />PA DATA</span>;
+  if (v === 'ROSE') return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"><TrendingUp className="w-2.5 h-2.5" /><TermPop term="verdict_week">U RIT</TermPop></span>;
+  if (v === 'FELL') return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30"><TrendingDown className="w-2.5 h-2.5" /><TermPop term="verdict_week">RA</TermPop></span>;
+  if (v === 'FLAT') return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground border border-muted/40"><Minus className="w-2.5 h-2.5" /><TermPop term="verdict_week">PA QEJE</TermPop></span>;
+  return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/25"><Loader2 className="w-2.5 h-2.5 animate-spin" /><TermPop term="verdict_week">PA DATA</TermPop></span>;
 }
 
 function RetCell({ label, v }: { label: string; v: number | null }) {
   const c = v == null ? 'text-muted-foreground/50' : v >= 2 ? 'text-emerald-400' : v <= -2 ? 'text-red-400' : 'text-muted-foreground';
   return (
     <div className="text-center">
-      <p className="text-[9px] text-muted-foreground/70">{label}</p>
+      <p className="text-[9px] text-muted-foreground/70"><TermPop term="ret_nd"><span className="block">{label}</span></TermPop></p>
       <p className={`text-[12px] font-bold font-mono ${c}`}>{v == null ? '—' : `${v > 0 ? '+' : ''}${v}%`}</p>
     </div>
   );
@@ -122,8 +123,8 @@ function StockRow({ stock, weekStart, strategy, noteSaved }: {
       >
         <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${stock.rank <= 3 ? 'bg-violet-500/20 text-violet-400' : 'bg-muted/30 text-muted-foreground'}`}>{stock.rank}</span>
         <span className="font-bold text-[13px] text-foreground w-14 flex-shrink-0">{stock.ticker}</span>
-        <Badge variant="outline" className={`text-[9px] px-1 py-0 flex-shrink-0 ${tier.bg} ${tier.text} ${tier.border}`}>{tier.label}</Badge>
-        <span className="text-[11px] text-muted-foreground hidden sm:inline flex-shrink-0">CAMS {stock.score ?? '—'}</span>
+        <Badge variant="outline" className={`text-[9px] px-1 py-0 flex-shrink-0 ${tier.bg} ${tier.text} ${tier.border}`}><TermPop term="tier_week">{tier.label}</TermPop></Badge>
+        <span className="text-[11px] text-muted-foreground hidden sm:inline flex-shrink-0"><TermPop term="cams_score_journal">CAMS {stock.score ?? '—'}</TermPop></span>
         <span className="text-[11px] text-muted-foreground/70 hidden md:inline flex-shrink-0">${stock.priceAtScan?.toFixed(2) ?? '—'} → ${stock.lastClose?.toFixed(2) ?? '—'}</span>
         <div className="ml-auto flex items-center gap-3 flex-shrink-0">
           <RetCell label="5d" v={stock.ret5d} />
@@ -154,14 +155,14 @@ function StockRow({ stock, weekStart, strategy, noteSaved }: {
           {/* Sub-score-t në momentin e sinjalit (CAMS) */}
           {stock.context?.sub && (
             <div className="flex flex-wrap gap-1.5 text-[10px]">
-              <span className="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">Katalizatori {stock.context.sub.catalyst}</span>
-              <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Accelerimi {stock.context.sub.acceleration}</span>
-              <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Struktura {stock.context.sub.structure}</span>
+              <span className="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20"><TermPop term="sub_cams">Katalizatori {stock.context.sub.catalyst}</TermPop></span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"><TermPop term="sub_cams">Accelerimi {stock.context.sub.acceleration}</TermPop></span>
+              <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20"><TermPop term="sub_cams">Struktura {stock.context.sub.structure}</TermPop></span>
               {stock.context.setup && <span className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground border border-muted/30">{stock.context.setup}</span>}
-              {stock.entryHit === true && <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Hyrja u aktivizua</span>}
-              {stock.entryHit === false && <span className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground border border-muted/30">Hyrja nuk u aktivizua</span>}
-              {stock.targetHit && <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">3R u kap</span>}
-              {stock.stopHit && !stock.targetHit && <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">Stop u godit</span>}
+              {stock.entryHit === true && <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><TermPop term="entry_target_stop_week">Hyrja u aktivizua</TermPop></span>}
+              {stock.entryHit === false && <span className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground border border-muted/30"><TermPop term="entry_target_stop_week">Hyrja nuk u aktivizua</TermPop></span>}
+              {stock.targetHit && <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"><TermPop term="entry_target_stop_week">3R u kap</TermPop></span>}
+              {stock.stopHit && !stock.targetHit && <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30"><TermPop term="entry_target_stop_week">Stop u godit</TermPop></span>}
               {stock.tags.filter((t) => t.startsWith('SETUP_') || t === 'NO_RVOL' || t === 'EXTENDED' || t === 'EARNINGS_SOON').slice(0, 3).map((t) => (
                 <span key={t} className="px-1.5 py-0.5 rounded bg-muted/20 text-muted-foreground/80 border border-muted/25">{t}</span>
               ))}

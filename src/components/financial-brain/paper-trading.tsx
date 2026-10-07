@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { TermPop } from './metric-pop';
 import {
   Dialog,
   DialogContent,
@@ -373,7 +374,7 @@ export function PaperTrading() {
                 <Wallet className="w-4 h-4 text-emerald-500" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground">Balanca</p>
+                <TermPop term="pt_balanca"><span className="block text-[10px] text-muted-foreground">Balanca</span></TermPop>
                 <p className="text-base font-bold text-emerald-500 truncate">
                   ${portfolio.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
@@ -390,7 +391,7 @@ export function PaperTrading() {
                 <DollarSign className="w-4 h-4 text-teal-500" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground">Vlera e Portfolios</p>
+                <TermPop term="pt_vlera"><span className="block text-[10px] text-muted-foreground">Vlera e Portfolios</span></TermPop>
                 <p className="text-base font-bold truncate">
                   ${totalPortfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
@@ -411,7 +412,7 @@ export function PaperTrading() {
                 )}
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground">P&L Total</p>
+                <TermPop term="pt_pnl_total"><span className="block text-[10px] text-muted-foreground">P&L Total</span></TermPop>
                 <p className={`text-base font-bold truncate ${totalPnL >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                   {totalPnL >= 0 ? '+' : ''}${totalPnL.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
@@ -430,7 +431,7 @@ export function PaperTrading() {
                 <Target className="w-4 h-4 text-amber-500" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground">Win Rate</p>
+                <TermPop term="pt_win_rate"><span className="block text-[10px] text-muted-foreground">Win Rate</span></TermPop>
                 <p className="text-base font-bold text-amber-500 truncate">
                   {winRate.toFixed(1)}%
                 </p>
@@ -801,22 +802,22 @@ export function PaperTrading() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
               {/* Win Rate */}
               <div className="text-center p-2 rounded-lg bg-muted/30">
-                <p className="text-[10px] text-muted-foreground">Win Rate</p>
+                <TermPop term="pt_win_rate"><span className="block text-[10px] text-muted-foreground">Win Rate</span></TermPop>
                 <p className={`text-sm font-bold ${winRate >= 50 ? 'text-emerald-500' : 'text-red-500'}`}>{winRate.toFixed(1)}%</p>
               </div>
               {/* Total Trades */}
               <div className="text-center p-2 rounded-lg bg-muted/30">
-                <p className="text-[10px] text-muted-foreground">Total Trades</p>
+                <TermPop term="pt_trades"><span className="block text-[10px] text-muted-foreground">Total Trades</span></TermPop>
                 <p className="text-sm font-bold">{totalClosedTrades}</p>
               </div>
               {/* Avg Win */}
               <div className="text-center p-2 rounded-lg bg-muted/30">
-                <p className="text-[10px] text-muted-foreground">Mesatarja Fitimit</p>
+                <TermPop term="pt_avg_fitim"><span className="block text-[10px] text-muted-foreground">Mesatarja Fitimit</span></TermPop>
                 <p className="text-sm font-bold text-emerald-500">+{avgWin.toFixed(1)}%</p>
               </div>
               {/* Avg Loss */}
               <div className="text-center p-2 rounded-lg bg-muted/30">
-                <p className="text-[10px] text-muted-foreground">Mesatarja Zbritjes</p>
+                <TermPop term="pt_avg_humbje"><span className="block text-[10px] text-muted-foreground">Mesatarja Zbritjes</span></TermPop>
                 <p className="text-sm font-bold text-red-500">-{avgLoss.toFixed(1)}%</p>
               </div>
             </div>
@@ -824,11 +825,11 @@ export function PaperTrading() {
             {/* Best / Worst */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="text-center p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
-                <p className="text-[10px] text-muted-foreground">Tregtimi më i mirë</p>
+                <TermPop term="pt_best"><span className="block text-[10px] text-muted-foreground">Tregtimi më i mirë</span></TermPop>
                 <p className="text-sm font-bold text-emerald-500">+{bestTrade.toFixed(1)}%</p>
               </div>
               <div className="text-center p-2 rounded-lg bg-red-500/5 border border-red-500/10">
-                <p className="text-[10px] text-muted-foreground">Tregtimi më i keq</p>
+                <TermPop term="pt_worst"><span className="block text-[10px] text-muted-foreground">Tregtimi më i keq</span></TermPop>
                 <p className="text-sm font-bold text-red-500">-{worstTrade.toFixed(1)}%</p>
               </div>
             </div>
@@ -838,7 +839,7 @@ export function PaperTrading() {
               <div>
                 <p className="text-[10px] text-muted-foreground mb-2 flex items-center gap-1">
                   <Activity className="w-3 h-3" />
-                  Lakore e Ekuitetit (Cash Flow)
+                  <TermPop term="pt_equity">Lakore e Ekuitetit (Cash Flow)</TermPop>
                 </p>
                 <div className="h-[150px]">
                   <ResponsiveContainer width="100%" height="100%">

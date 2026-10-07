@@ -43,6 +43,7 @@ import {
   CircleX,
   Hash,
 } from 'lucide-react';
+import { TermPop } from './metric-pop';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -330,11 +331,11 @@ export function FivePillars() {
 
   // ─── Pillar Pass Rate Cards ───
   const pillarStats = summary ? [
-    { label: 'Rel Volume ≥5x', rate: summary.pillarPassRates.rvol, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-    { label: 'Change ≥10%', rate: summary.pillarPassRates.momentum, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-    { label: 'Catalyst ≥15%', rate: summary.pillarPassRates.catalyst, color: 'text-orange-400', bg: 'bg-orange-500/10' },
-    { label: 'Price $2-20', rate: summary.pillarPassRates.price, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-    { label: 'Float <20M', rate: summary.pillarPassRates.float, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+    { label: 'Rel Volume ≥5x', term: 'p_rvol', rate: summary.pillarPassRates.rvol, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+    { label: 'Change ≥10%', term: 'p_momentum', rate: summary.pillarPassRates.momentum, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    { label: 'Catalyst ≥15%', term: 'p_catalyst', rate: summary.pillarPassRates.catalyst, color: 'text-orange-400', bg: 'bg-orange-500/10' },
+    { label: 'Price $2-20', term: 'p_price', rate: summary.pillarPassRates.price, color: 'text-purple-400', bg: 'bg-purple-500/10' },
+    { label: 'Float <20M', term: 'p_float', rate: summary.pillarPassRates.float, color: 'text-amber-400', bg: 'bg-amber-500/10' },
   ] : [];
 
   const filterOptions: Array<{ key: StatusFilter; label: string; count: number }> = [
@@ -353,7 +354,7 @@ export function FivePillars() {
           {pillarStats.map((ps, i) => (
             <div key={i} className={`${ps.bg} border border-border/50 rounded-lg p-2.5 text-center`}>
               <div className={`text-sm font-bold ${ps.color}`}>{ps.rate.toFixed(0)}%</div>
-              <div className="text-[10px] text-muted-foreground">{ps.label}</div>
+              <div className="text-[10px] text-muted-foreground"><TermPop term={ps.term}>{ps.label}</TermPop></div>
             </div>
           ))}
         </div>
@@ -638,7 +639,7 @@ function WinRateCard({ label, value, ret }: { label: string; value: number; ret:
   return (
     <div className={"rounded-lg p-2 text-center border " + bgClass}>
       <div className={"text-sm font-bold " + textClass}>{value}%</div>
-      <div className="text-[9px] text-muted-foreground">{label}</div>
+      <div className="text-[9px] text-muted-foreground"><TermPop term="p_winrate_hist">{label}</TermPop></div>
       <div className={"text-[10px] font-medium " + retClass}>
         avg {ret >= 0 ? '+' : ''}{ret}%
       </div>
@@ -1068,19 +1069,19 @@ function CandidateCard({ candidate: c, expanded, onToggle }: { candidate: Candid
         {/* ─── INFO ROW: Price, Change, RVol, Float, Catalyst ─── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2.5 text-[11px]">
           <div className="flex justify-between sm:block">
-            <span className="text-muted-foreground">Price:</span>
+            <span className="text-muted-foreground"><TermPop term="p_price">Price:</TermPop></span>
             <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}> ${c.price.toFixed(2)}</span>
           </div>
           <div className="flex justify-between sm:block">
-            <span className="text-muted-foreground">Daily change:</span>
+            <span className="text-muted-foreground"><TermPop term="p_momentum">Daily change:</TermPop></span>
             <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}> {isPositive ? '+' : ''}{c.dailyChangePct.toFixed(2)}%</span>
           </div>
           <div className="flex justify-between sm:block">
-            <span className="text-muted-foreground">Relative volume:</span>
+            <span className="text-muted-foreground"><TermPop term="p_rvol">Relative volume:</TermPop></span>
             <span className={`font-medium ${c.passesRvol ? 'text-blue-400' : 'text-muted-foreground'}`}> {c.relativeVolume}x</span>
           </div>
           <div className="flex justify-between sm:block">
-            <span className="text-muted-foreground">Float:</span>
+            <span className="text-muted-foreground"><TermPop term="p_float">Float:</TermPop></span>
             <span className={"font-medium " + (c.passesFloat ? 'text-amber-400' : c.floatShares === null ? 'text-blue-400' : 'text-muted-foreground')}>
               {c.floatShares !== null ? `${c.floatShares.toFixed(1)}M` : 'Unknown'}
               {c.floatVerified && <span className={"inline-flex items-center gap-0.5 ml-1 text-[9px] " + (c.floatSource === 'stockanalysis' ? 'text-purple-400' : 'text-emerald-400')}><CircleCheck className="w-2.5 h-2.5" />{c.floatSource === 'stockanalysis' ? 'SA' : 'Finviz'}</span>}
