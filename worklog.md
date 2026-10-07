@@ -1141,3 +1141,4 @@ Stage Summary:
 - Njohje e re e implementimit: HAPI 8-javor (step) saturon bazën me lag 14-ditore → s'ka lift aktiv → bie te fallback firstSeen — sjellje e dëshiruar (rampa e vazhdueshme zbulohet); computeTrendStart ecën prapa derisa dritarja e bazës hollësohet (<4 pika)
 - Pragjet e reja fillestare (JO të provuara): discovery.wikiGrowth 0.5, trendStart.minLift 0.15, batchSize 12, concurrency 5, catalyst.lookaheadDays 90, staleDays 28
 - MBETET (sipas planit): P2 (features e formës + score i ri), P3 (backtest point-in-time me groupKey/dedupeByGroupKey gati, LLM term→ticker, hyrje manuale), OPERACIONALE (cron 202+after())
+- PUSH NË PRITJE: commit-i d4bfbaf është LOKAL — s'ka kredenciale GitHub në ambient (token-i i vjetër ishte i ekspozuar në chat dhe duhej rrotulluar). Useri e bën push vetë ose jep token të re.
