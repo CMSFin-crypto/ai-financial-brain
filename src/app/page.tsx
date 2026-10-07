@@ -460,119 +460,119 @@ export default function Home() {
                 </TabsList>
               </div>
             </div>
-          {/* Mobile/Tablet: tabs per kategori — flex-wrap që të dukën të gjithë pa scroll horizontal */}
+          {/* Mobile/Tablet: tabs per kategori — vetëm ikona (pa tekst) që çdo kategori të mbetet në NJË rresht të vetëm; emrat mbeten te title/aria-label dhe te titulli i panelit */}
           <div className="lg:hidden space-y-2">
-              {/* Tregu */}
+              {/* Tregu — 11 taba ikona në një rresht */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Tregu</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
-                  <TabsTrigger value="ctc-v2" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <TrendingUp className="w-3 h-3 mr-1" />CTC v2
+                <TabsList className="flex justify-start items-center gap-0 h-auto p-0.5 flex-nowrap overflow-x-auto scrollbar-none w-full">
+                  <TabsTrigger value="ctc-v2" title="CTC v2 — Delivery" aria-label="CTC v2 — Delivery" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <TrendingUp className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="ibkr" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Briefcase className="w-3 h-3 mr-1" />IBKR
+                  <TabsTrigger value="ibkr" title="IBKR" aria-label="IBKR" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Briefcase className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="cams" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <Crosshair className="w-3 h-3 mr-1" />CAMS
+                  <TabsTrigger value="cams" title="CAMS" aria-label="CAMS" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Crosshair className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="rev" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-cyan-600 data-[state=active]:text-white">
-                    <TrendingDown className="w-3 h-3 mr-1" />REV
+                  <TabsTrigger value="rev" title="REV" aria-label="REV" className="p-1 flex-none rounded-md data-[state=active]:bg-cyan-600 data-[state=active]:text-white">
+                    <TrendingDown className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="journal" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <BookOpen className="w-3 h-3 mr-1" />Ditari
+                  <TabsTrigger value="journal" title="Ditari Javor" aria-label="Ditari Javor" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BookOpen className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="gjurmuesi" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <Flag className="w-3 h-3 mr-1" />Gjurmuesi
+                  <TabsTrigger value="gjurmuesi" title="Gjurmuesi" aria-label="Gjurmuesi" className="p-1 flex-none rounded-md data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                    <Flag className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="dashboard" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <LayoutDashboard className="w-3 h-3 mr-1" />Tregu
+                  <TabsTrigger value="dashboard" title="Tregu" aria-label="Tregu" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <LayoutDashboard className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="sector" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Radar className="w-3 h-3 mr-1" />Sektoret
+                  <TabsTrigger value="sector" title="Sektoret" aria-label="Sektoret" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Radar className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="market-map" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <LayoutGrid className="w-3 h-3 mr-1" />Map e Tregut
+                  <TabsTrigger value="market-map" title="Map e Tregut" aria-label="Map e Tregut" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <LayoutGrid className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="finviz" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <CandlestickChart className="w-3 h-3 mr-1" />Grafik Finviz
+                  <TabsTrigger value="finviz" title="Grafik Finviz" aria-label="Grafik Finviz" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <CandlestickChart className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="fear-greed" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                    <Gauge className="w-3 h-3 mr-1" />F&G
+                  <TabsTrigger value="fear-greed" title="Fear & Greed" aria-label="Fear & Greed" className="p-1 flex-none rounded-md data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                    <Gauge className="size-3.5" />
                   </TabsTrigger>
                 </TabsList>
               </div>
-              {/* Analizë */}
+              {/* Analizë — 7 taba ikona në një rresht */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Analiz</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
-                  <TabsTrigger value="sec-filings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-                    <FileText className="w-3 h-3 mr-1" />10-Q
+                <TabsList className="flex justify-start items-center gap-0 h-auto p-0.5 flex-nowrap overflow-x-auto scrollbar-none w-full">
+                  <TabsTrigger value="sec-filings" title="10-Q SEC Filings" aria-label="10-Q SEC Filings" className="p-1 flex-none rounded-md bg-amber-600/20 border border-amber-500/40 text-amber-400 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                    <FileText className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="daily-picks" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                    <Target className="w-3 h-3 mr-1" />Pikat
+                  <TabsTrigger value="daily-picks" title="Pikat Ditore" aria-label="Pikat Ditore" className="p-1 flex-none rounded-md data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Target className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="quant" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                    <Crosshair className="w-3 h-3 mr-1" />Quant
+                  <TabsTrigger value="quant" title="Quant" aria-label="Quant" className="p-1 flex-none rounded-md data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Crosshair className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="technical" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                    <LineChart className="w-3 h-3 mr-1" />Teknike
+                  <TabsTrigger value="technical" title="Teknike" aria-label="Teknike" className="p-1 flex-none rounded-md data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <LineChart className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="fundamental" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                    <Building2 className="w-3 h-3 mr-1" />Fund.
+                  <TabsTrigger value="fundamental" title="Fundamentale" aria-label="Fundamentale" className="p-1 flex-none rounded-md data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Building2 className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="earnings" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                    <CalendarDays className="w-3 h-3 mr-1" />Fitimet
+                  <TabsTrigger value="earnings" title="Fitimet" aria-label="Fitimet" className="p-1 flex-none rounded-md data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <CalendarDays className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="screener" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                    <Filter className="w-3 h-3 mr-1" />Screener
+                  <TabsTrigger value="screener" title="Screener" aria-label="Screener" className="p-1 flex-none rounded-md data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                    <Filter className="size-3.5" />
                   </TabsTrigger>
                 </TabsList>
               </div>
-              {/* AI & Trading */}
+              {/* AI & Trading — 5 taba ikona në një rresht */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">AI &</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
-                  <TabsTrigger value="trading" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <ShoppingCart className="w-3 h-3 mr-1" />Trading
+                <TabsList className="flex justify-start items-center gap-0 h-auto p-0.5 flex-nowrap overflow-x-auto scrollbar-none w-full">
+                  <TabsTrigger value="trading" title="Trading" aria-label="Trading" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <ShoppingCart className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="chat" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <MessageSquare className="w-3 h-3 mr-1" />AI Chat
+                  <TabsTrigger value="chat" title="AI Chat" aria-label="AI Chat" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <MessageSquare className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="analytics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <BarChart3 className="w-3 h-3 mr-1" />Statistikat
+                  <TabsTrigger value="analytics" title="Statistikat" aria-label="Statistikat" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BarChart3 className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="advanced" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <Brain className="w-3 h-3 mr-1" />Analiza
+                  <TabsTrigger value="advanced" title="Analiza" aria-label="Analiza" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Brain className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="predictor" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                    <BrainCircuit className="w-3 h-3 mr-1" />Predikues
+                  <TabsTrigger value="predictor" title="Predikues" aria-label="Predikues" className="p-1 flex-none rounded-md data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <BrainCircuit className="size-3.5" />
                   </TabsTrigger>
                 </TabsList>
               </div>
-              {/* Kontrol */}
+              {/* Kontrol — 4 taba ikona në një rresht */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Kontrol</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
-                  <TabsTrigger value="drift" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                    <Activity className="w-3 h-3 mr-1" />Drift
+                <TabsList className="flex justify-start items-center gap-0 h-auto p-0.5 flex-nowrap overflow-x-auto scrollbar-none w-full">
+                  <TabsTrigger value="drift" title="Drift" aria-label="Drift" className="p-1 flex-none rounded-md data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Activity className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="overrides" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                    <Shield className="w-3 h-3 mr-1" />Override
+                  <TabsTrigger value="overrides" title="Override" aria-label="Override" className="p-1 flex-none rounded-md data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Shield className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="edge" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                    <Trophy className="w-3 h-3 mr-1" />Edge
+                  <TabsTrigger value="edge" title="Edge" aria-label="Edge" className="p-1 flex-none rounded-md data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <Trophy className="size-3.5" />
                   </TabsTrigger>
-                  <TabsTrigger value="metrics" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                    <BarChart3 className="w-3 h-3 mr-1" />Metrics
+                  <TabsTrigger value="metrics" title="Metrics" aria-label="Metrics" className="p-1 flex-none rounded-md data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    <BarChart3 className="size-3.5" />
                   </TabsTrigger>
                 </TabsList>
               </div>
-              {/* Lab — Social Arb (faqe e veçuar /social-arb) */}
+              {/* Lab — Social Arb (faqe e veçuar /social-arb) — ikonë në një rresht */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground w-10 flex-shrink-0">Lab</span>
-                <TabsList className="flex justify-start gap-0.5 h-auto p-0.5 flex-wrap w-full">
-                  <TabsTrigger value="social-arb" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-rose-600 data-[state=active]:text-white">
-                    <FlaskConical className="w-3 h-3 mr-1" />Social Arb
+                <TabsList className="flex justify-start items-center gap-0 h-auto p-0.5 flex-nowrap overflow-x-auto scrollbar-none w-full">
+                  <TabsTrigger value="social-arb" title="Social Arb" aria-label="Social Arb" className="p-1 flex-none rounded-md data-[state=active]:bg-rose-600 data-[state=active]:text-white">
+                    <FlaskConical className="size-3.5" />
                   </TabsTrigger>
                 </TabsList>
               </div>
