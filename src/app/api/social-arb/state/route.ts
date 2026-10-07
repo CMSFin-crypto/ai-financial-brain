@@ -14,11 +14,14 @@ export async function GET(): Promise<Response> {
     // arkivi CSV në prapavijë — vetëm numërimi, jo përmbajtja
     // (funksionon si për backend-in file ashtu edhe për Upstash)
     const csv = await csvArchiveStats();
+    // Renditja: score (renditje) → katalizatori më i afërt (vetëm shfaqje, JO gate)
+    const byCatalyst = (a: typeof candidates[number], b: typeof candidates[number]) =>
+      (a.catalyst?.daysToEarnings ?? 9999) - (b.catalyst?.daysToEarnings ?? 9999);
     return Response.json({
       ok: true,
       lastScanAt: store.lastScanAt,
       scanning: scanInProgress(),
-      candidates: candidates.sort((a, b) => b.score - a.score),
+      candidates: candidates.sort((a, b) => (b.score - a.score) || byCatalyst(a, b)),
       counts: {
         DISCOVERED: candidates.filter(c => c.status === 'DISCOVERED').length,
         WATCH: candidates.filter(c => c.status === 'WATCH').length,

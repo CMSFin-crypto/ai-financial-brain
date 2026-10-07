@@ -1,9 +1,10 @@
 // ═══════════════════════════════════════════════════════════════
-// SOCIAL ARB — llojet e dhënash (skema v4)
-// Rrjedha: Google Trends "Trending now" RSS → klasifikim markë/produkt
-// → DISCOVERED → WATCH (lidhja e verifikuar) → RESEARCH (vetëm me 5
-// gate-t e provave: burime të pavarura, materialitet, s'është çmuar,
-// likuiditet, qëndrueshmëri — secili me arsye pse kaloi/dështoi).
+// SOCIAL ARB — llojet e dhënash (skema v5)
+// Rrjedha: Google Trends "Trending now" RSS + skanim proaktiv i fjalorit
+// me Wikipedia → klasifikim markë/produkt → DISCOVERED → WATCH (lidhja e
+// verifikuar) → RESEARCH (vetëm me 5 gate-t e provave: burime të pavarura,
+// materialitet, s'është çmuar, likuiditet, qëndrueshmëri — secili me arsye
+// pse kaloi/dështoi).
 // GDELT shënohet veç si media_confirmation — s'numërohet si burim kërkese.
 // Skema e matjes mbetet identike me CSV-në e backtest-it që arkivohet
 // në prapavijë (data/social-arb-backtest/).
@@ -101,14 +102,24 @@ export interface OutcomePoint {
   relative: number;           // stockRet − indexRet
 }
 
-export interface CandidateOutcome {
-  baseDate: string | null;    // close i përbashkët më i afërt me zbulimin
+/** Baza e përbashkët e gjurmimit të rezultatit + pikat d5/d20. */
+export interface OutcomeBase {
+  baseDate: string | null;    // close-i i ditës së TREGTIMIT PAS ankorës
   baseStock: number | null;
   baseIndex: number | null;
   d5: OutcomePoint | null;    // mbushet kur ka ≥5 ditë tregtimi pas bazës
   d20: OutcomePoint | null;  // mbushet kur ka ≥20 ditë tregtimi pas bazës
   pendingNote: string | null; // p.sh. «prit edhe 3 ditë tregtimi»
   lastCheckedAt: string | null;
+}
+
+/** Rezultati nga zbulimi (ankora = firstSeenAt). */
+export type CandidateOutcome = OutcomeBase;
+
+/** Rezultati nga NGJITJA NË RESEARCH (ankora = promotedAt) — mas tezën
+ *  e «hendekut të paçmuar» edhe kur promovimi vjen ditë pas zbulimit. */
+export interface PromotionOutcome extends OutcomeBase {
+  promotedAt: string | null;  // ISO — kur u ngjit në RESEARCH (hera e parë)
 }
 
 // ── Gate-t për RESEARCH (skema v4) ───────────────────────────
@@ -169,18 +180,47 @@ export interface ReturnSinceStart {
   checkedAt: string | null;
 }
 
+/** Fillimi i trendit — ankora e gate-it not_priced. */
+export interface TrendStart {
+  at: string;                   // YYYY-MM-DD
+  /** wiki = dita e parë e rritjes së vazhdueshme në serinë Wikipedia;
+   *  firstSeen = fallback (kur seria s'mjafton) — i mangët, i shënuar si i tillë. */
+  source: 'wiki' | 'firstSeen';
+}
+
+/** Katalizatori i ardhshëm i fitimeve — VETËM shfaqje/renditje, JO gate.
+ *  Null kur s'ka FINNHUB_API_KEY ose kur fetch-i dështoi (shiko error). */
+export interface CandidateCatalyst {
+  nextEarningsDate: string | null;  // YYYY-MM-DD
+  daysToEarnings: number | null;   // ditë kalendarike nga sot
+  error: string | null;
+  checkedAt: string | null;
+}
+
 export interface Candidate {
-  key: string;            // trend|ticker|region
+  key: string;            // trend|ticker|region (regioni i vëzhgimit — US/GB/CA/AU/WW)
+  /** term|ticker i normalizuar (pa rajon) — njësia statistikore e pavarur:
+   *  e njëjta tezë në US, GB, CA, AU është NJË rast, jo katër. */
+  groupKey: string;
   trend: string;
   ticker: string;
   region: string;
   company: string;
   product: string;
   status: CandidateStatus;
+  /** Si u zbulua: nga feed-i «Trending now» ose proaktivisht nga Wikipedia. */
+  discoveredVia: 'google_trends' | 'wikipedia';
   firstSeenAt: string;
   lastSeenAt: string;
   lastChangedAt: string;
+  /** Skanimi i fundit ku kandidati mori radhën e matjes (wiki/GDELT) —
+   *  motori i rotacionit rendit sipas kësaj (më e vjetra → e para). */
+  lastMeasuredAt: string | null;
+  /** Fillimi i trendit — ankora e gate-it not_priced (v5). */
+  trendStart: TrendStart | null;
   score: number;
+  /** Sa komponentë të score-it kishin data reale (nga 6) — p.sh. 4/6. */
+  componentsAvailable: number;
   breakdown: ScoreBreakdown;
   reasons: string[];
   google: {
@@ -196,6 +236,8 @@ export interface Candidate {
   cause: CauseInfo | null;         // verifikimi i shkakut (P2)
   price: CandidatePrice;
   outcome: CandidateOutcome;
+  /** Rezultati 5/20 ditë i matur nga NGJITJA në RESEARCH (v5). */
+  outcomeFromPromotion: PromotionOutcome;
   // ── skema v4: provat e gate-ve ──
   wiki: CandidateWiki;                       // burimi 2 i kërkesë (jo-lajme)
   liquidity: CandidateLiquidity;             // vëllami $ për gate-in 4
@@ -204,6 +246,8 @@ export interface Candidate {
   gates: GateEval[];                          // vlerësimi i fundit i 5 gate-ve
   /** Flamuri «tashmë i çmuar» — kthimi që nga fillimi > +8% vs SPY. */
   alreadyMoved: boolean;
+  /** Katalizatori i fitimeve — vetëm shfaqje/renditje, JO gate (v5). */
+  catalyst: CandidateCatalyst;
   history: StatusEvent[];
 }
 
@@ -213,6 +257,8 @@ export interface ScanRecord {
   regions: string[];
   termsScanned: number;
   termsClassified: number;
+  /** Kandidatë të rinj nga zbulimi proaktiv i Wikipedia-s (rrotullimi i fjalorit). */
+  discoveredWiki: number;
   candidatesActive: number;
   promoted: number;
   removed: number;
@@ -221,12 +267,14 @@ export interface ScanRecord {
 }
 
 export interface SocialArbStore {
-  version: 4;
+  version: 5;
   createdAt: string;
   lastScanAt: string | null;
   measurements: Measurement[];
   candidates: Record<string, Candidate>;
   scans: ScanRecord[];
+  /** Meta për skanimet e rrotullueshme (kursori i fjalorit Wikipedia). */
+  meta: { wikiScanCursor: number };
 }
 
 export interface ScanResultSummary {
@@ -236,6 +284,8 @@ export interface ScanResultSummary {
   regions: string[];
   termsScanned: number;
   termsClassified: number;
+  /** Kandidatë të rinj nga zbulimi proaktiv i Wikipedia-s. */
+  discoveredWiki: number;
   newCandidates: string[];
   promoted: string[];
   removed: string[];

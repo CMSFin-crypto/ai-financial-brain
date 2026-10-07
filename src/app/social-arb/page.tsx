@@ -30,6 +30,7 @@ interface ScanRec {
   durationMs: number;
   termsScanned: number;
   termsClassified: number;
+  discoveredWiki?: number;
   candidatesActive: number;
   sources: Record<string, 'ok' | 'error' | 'throttled'>;
 }
@@ -80,7 +81,7 @@ const FILTERS: { key: FilterKind; label: string }[] = [
   { key: 'REMOVED', label: 'Removed' },
 ];
 const BREAKDOWN_ROWS: { key: keyof Candidate['breakdown']; label: string; max: number }[] = [
-  { key: 'demand', label: 'Rritja e kërkesës (25)', max: 25 },
+  { key: 'demand', label: 'Kërkesa — Wikipedia (25)', max: 25 },
   { key: 'confirmation', label: 'Konfirmimi shumë-burim (20)', max: 20 },
   { key: 'materiality', label: 'Rëndësia ekonomike (20)', max: 20 },
   { key: 'price', label: 'Reagimi relativ i çmimit (15)', max: 15 },
@@ -330,6 +331,21 @@ export default function SocialArbPage() {
                     <span className={`inline-flex flex-shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusTone[c.status]}`}>{c.status}</span>
                   </div>
                   <p className="mt-1.5 truncate text-xs text-muted-foreground">trend: <span className="text-foreground/80">«{c.trend}»</span></p>
+                  {c.discoveredVia === 'wikipedia' && (
+                    <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-sky-400">
+                      <Radar className="w-3 h-3" /> zbuluar proaktivisht nga Wikipedia
+                    </p>
+                  )}
+                  {c.trendStart?.at && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      trendi nisi <b className="text-foreground/80">{c.trendStart.at}</b>{c.trendStart.source === 'firstSeen' ? ' (fallback i mangët)' : ''}
+                    </p>
+                  )}
+                  {c.catalyst?.nextEarningsDate && (
+                    <p className="mt-1 text-[11px] text-amber-300/90">
+                      fitimet: {c.catalyst.nextEarningsDate}{c.catalyst.daysToEarnings != null ? ` (pas ${c.catalyst.daysToEarnings} ditësh)` : ''} — vetëm renditje
+                    </p>
+                  )}
                   {c.google.inFeedToday && (
                     <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-400">
                       <TrendingUp className="w-3 h-3" /> në trending sot{c.google.approxTraffic ? ` (~${c.google.approxTraffic})` : ''}
@@ -363,7 +379,7 @@ export default function SocialArbPage() {
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/70">
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, c.score))}%`, background: barColor[c.status] }} />
                     </div>
-                    <span className="flex-shrink-0 text-sm font-semibold tabular-nums text-foreground">{c.score}/100</span>
+                    <span className="flex-shrink-0 text-sm font-semibold tabular-nums text-foreground">{c.score}/100{c.componentsAvailable != null ? <span className="ml-1 text-[10px] font-normal text-muted-foreground">({c.componentsAvailable}/6 me data)</span> : null}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                     <span>GDELT 7d: <b className={c.gdelt.confirmed ? 'text-emerald-400' : 'text-foreground'}>{c.gdelt.growth !== null ? pct(c.gdelt.growth) : 'n/a'}</b></span>
@@ -388,10 +404,10 @@ export default function SocialArbPage() {
               </p>
               <div className="mx-auto mt-4 grid max-w-2xl gap-2 text-left sm:grid-cols-2">
                 {[
-                  ['1. Zbulimi', 'Google Trends «Trending now» RSS — 4 rajone (US/GB/CA/AU). Termi + marka → DISCOVERED.'],
-                  ['2. WATCH', 'Lidhja me ticker-in u verifikua; gate-t e RESEARCH ende s’janë të gjitha të kaluara.'],
-                  ['3. RESEARCH (5 gate-t)', 'Vetëm kur KALOJNË TË GJITHA: 2+ burime kërkese të pavarura (Trends + Wikipedia) · materialitet i mjaftueshëm · s’është çmuar ende (≤+8% vs SPY që nga fillimi) · likuiditet · 3+ javë qëndrueshmëri pa spike. Score-i vetëm rendit.'],
-                  ['4. REJECT/REMOVED', 'Shkak negativ, mainstream (≥200 artikuj/24h), flamuj bllokues, ose interesi u ftoh — refuzuarit gjurmohen ende 5/20 ditë për sinqeritet statistikor. Kur çmimi ka reaguar, kandidati mbetet në WATCH me flamurin already_moved (s’fshihet).'],
+                  ['1. Zbulimi (dy rrugë)', 'A) Google Trends «Trending now» — 4 rajone (US/GB/CA/AU); B) PROAKTIV: fjalori skanohet me Wikipedia në grupe rrotulluese — trendet e ngadalta (pa spike) zbulohen pa pasur nevojë për zhurmë.'],
+                  ['2. WATCH', 'Lidhja me ticker-in u verifikua; gate-t e RESEARCH ende s’janë të gjitha të kaluara. Radha e matjeve rrotullohet — asnjë kandidat s’urie.'],
+                  ['3. RESEARCH (5 gate-t)', 'Vetëm kur KALOJNË TË GJITHA: 2+ burime kërkese të pavarura (Trends + Wikipedia) · materialitet i mjaftueshëm · s’është çmuar ende (≤+8% vs SPY që nga FILLIMI I TRENDIT) · likuiditet · 3+ javë qëndrueshmëri pa spike. Score-i vetëm rendit (s’ka pikë falas).'],
+                  ['4. REJECT/REMOVED', 'Shkak negativ, mainstream (≥200 artikuj/24h), flamuj bllokues, ose ftohja (28+ ditë PA asnjë rritje Wikipedia) — refuzuarit gjurmohen ende 5/20 ditë për sinqeritet statistikor. Kur çmimi ka reaguar, kandidati mbetet në WATCH me flamurin already_moved (s’fshihet).'],
                 ].map(([t, d]) => (
                   <div key={t} className="rounded-lg border border-slate-700/70 bg-slate-900/50 p-3">
                     <p className="text-xs font-semibold text-foreground">{t}</p>
@@ -423,6 +439,8 @@ export default function SocialArbPage() {
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               trend «{active.trend}» · rajoni {active.region} · produkti: {active.product} · parë së pari {fmtAgo(active.firstSeenAt)}
+              {' '}· zbulimi: <b className="text-foreground/80">{active.discoveredVia === 'wikipedia' ? 'proaktiv (Wikipedia)' : 'Google Trends'}</b>
+              {' '}· grupi statistikor: <b className="text-foreground/80">{active.groupKey ?? `${active.trend.toLowerCase()}|${active.ticker}`}</b> <span title="Mostrat e pavarura numërohen sipas këtij çelësi (pa rajon) — e njëjta tezë në US/GB/CA/AU është NJË rast">(i pavarur)</span>
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <a
@@ -533,6 +551,15 @@ export default function SocialArbPage() {
                 {' '}· Lidhja: <b className="text-foreground/85">{active.materialityInfo?.linkType ?? 'direct'}</b> (kova {active.materialityInfo?.capBucket ?? '?'})
                 {active.gates?.[0]?.checkedAt && <> · kontrolluar {new Date(active.gates[0].checkedAt).toLocaleDateString('sq-AL')}</>}
               </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Fillimi i trendit (ankora e «s\'është çmuar»): <b className="text-foreground/85">{active.trendStart?.at ?? 'n/a'}</b>
+                {active.trendStart && <> — {active.trendStart.source === 'wiki'
+                  ? 'dita e parë e rritjes së vazhdueshme në serinë Wikipedia'
+                  : <span className="text-amber-500/90">fallback i mangët: dita kur e pa sistemi (seria Wikipedia s\'mjafton)</span>}</>}
+                {active.catalyst && (active.catalyst.nextEarningsDate || active.catalyst.error) && <> · Katalizatori: {active.catalyst.nextEarningsDate
+                  ? <><b className="text-foreground/85">{active.catalyst.nextEarningsDate}</b>{active.catalyst.daysToEarnings != null ? ` (pas ${active.catalyst.daysToEarnings} ditësh)` : ''} — vetëm renditje, JO gate</>
+                  : <span className="text-red-400">{active.catalyst.error}</span>}</>}
+              </p>
             </div>
 
             {/* P2 — titujt e ruajtur për kontroll manual */}
@@ -560,7 +587,7 @@ export default function SocialArbPage() {
               <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><HistoryIcon className="w-3.5 h-3.5 text-violet-400" /> Rezultati: çmimi pas 5 dhe 20 ditësh (vs SPY)</p>
               {active.outcome?.baseDate ? (
                 <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
-                  <p className="text-[11px] text-muted-foreground">Baza: <b className="text-foreground">{active.outcome.baseDate}</b> — {active.ticker} {active.outcome.baseStock?.toFixed(2)} · SPY {active.outcome.baseIndex?.toFixed(2)}</p>
+                  <p className="text-[11px] text-muted-foreground">Baza (ditë tregtimi PAS zbulimit): <b className="text-foreground">{active.outcome.baseDate}</b> — {active.ticker} {active.outcome.baseStock?.toFixed(2)} · SPY {active.outcome.baseIndex?.toFixed(2)}</p>
                   <p className="text-[11px] text-muted-foreground">Pas 5 ditësh tregtimi: {active.outcome.d5
                     ? <><b className="text-foreground">{active.outcome.d5.date}</b> · {active.ticker} {pct(active.outcome.d5.stockRet)} vs SPY {pct(active.outcome.d5.indexRet)} → <b className={active.outcome.d5.relative >= 0 ? 'text-emerald-400' : 'text-red-400'}>{pct(active.outcome.d5.relative)}</b></>
                     : <span className="text-amber-400">{active.outcome.pendingNote ?? 'prit'}</span>}</p>
@@ -569,7 +596,21 @@ export default function SocialArbPage() {
                     : <span className="text-amber-400">{active.outcome.pendingNote ?? 'prit'}</span>}</p>
                 </div>
               ) : (
-                <p className="mt-1.5 text-xs text-muted-foreground">{active.outcome?.pendingNote ?? 'baza e gjurmimit vendoset në skanimin e radhës…'}</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">{active.outcome?.pendingNote ?? 'baza e gjurmimit (dita e parë e tregtimit PAS zbulimit) vendoset në skanimin e radhës…'}</p>
+              )}
+              {active.outcomeFromPromotion?.promotedAt && (
+                <p className="mt-1.5 border-t border-slate-700/50 pt-1.5 text-[11px] text-muted-foreground">
+                  Nga NGJITJA në RESEARCH ({active.outcomeFromPromotion.promotedAt.slice(0, 10)}):
+                  {active.outcomeFromPromotion.baseDate
+                    ? <> baza <b className="text-foreground">{active.outcomeFromPromotion.baseDate}</b> · d5 {active.outcomeFromPromotion.d5
+                      ? <b className={active.outcomeFromPromotion.d5.relative >= 0 ? 'text-emerald-400' : 'text-red-400'}>{pct(active.outcomeFromPromotion.d5.relative)}</b>
+                      : <span className="text-amber-400">{active.outcomeFromPromotion.pendingNote ?? 'prit'}</span>}
+                      {' '}· d20 {active.outcomeFromPromotion.d20
+                      ? <b className={active.outcomeFromPromotion.d20.relative >= 0 ? 'text-emerald-400' : 'text-red-400'}>{pct(active.outcomeFromPromotion.d20.relative)}</b>
+                      : <span className="text-amber-400">{active.outcomeFromPromotion.pendingNote ?? 'prit'}</span>}</>
+                    : <span className="text-amber-400"> {active.outcomeFromPromotion.pendingNote ?? 'prit ditën e parë të tregtimit pas ngjitjes'}</span>}
+                  {' '}— mas tezën e «hendekut të paçmuar» nga momenti i vendimit.
+                </p>
               )}
             </div>
 
@@ -597,10 +638,11 @@ export default function SocialArbPage() {
                 </ul>
               </div>
               <small style={{ display: 'block', marginTop: 8 }}>
-                Rregullat e statusit (gate-t v4): DISCOVERED — u gjet termi dhe marka. WATCH — lidhja me ticker-in u verifikua, por 5 gate-t e RESEARCH s'janë të gjitha të kaluara.
-                RESEARCH kërkon TË GJITHA: 2+ burime kërkese jo-lajne në rritje (Google Trends + Wikipedia; GDELT = vetëm konfirmim mediatik i vonë, s'numërohet) · materialitet efektiv të mjaftueshëm · kthimi që nga fillimi i trendit ≤ +8% vs SPY (s'është çmuar) · vëllami ≥ pragun minimal · 3+ javë rritje e qëndrueshme pa model spike-i. Mbi +8% → WATCH me flamurin already_moved (çmimi si filtër, jo si provë).
-                REMOVED/REJECT: shkak negativ, mainstream (≥200 artikuj/24h), flamuj bllokues, ose ftohje (10+ ditë). Çdo kandidat gjurmohet për rezultatin 5/20 ditë vs SPY — përfshirë refuzuarit.
-                ⚠️ Pragjet (+8%, 3 javë, 2M$/ditë) janë vlera fillestare të pazbatuara nga backtest-i — mos i trajto si të provuara.
+                Rregullat e statusit (gate-t, skema v5): DISCOVERED — u gjet termi dhe marka (nga Trends ose proaktivisht nga Wikipedia). WATCH — lidhja me ticker-in u verifikua, por 5 gate-t e RESEARCH s'janë të gjitha të kaluara.
+                RESEARCH kërkon TË GJITHA: 2+ burime kërkese jo-lajne në rritje (Google Trends + Wikipedia; GDELT = vetëm konfirmim mediatik i vonë, s'numërohet) · materialitet efektiv të mjaftueshëm · kthimi që nga FILLIMI I TRENDIT (dita e parë e rritjes Wikipedia; fallback firstSeen) ≤ +8% vs SPY (s'është çmuar) · vëllami ≥ pragun minimal · 3+ javë rritje e qëndrueshme pa model spike-i. Mbi +8% → WATCH me flamurin already_moved (çmimi si filtër, jo si provë).
+                REMOVED/REJECT: shkak negativ, mainstream (≥200 artikuj/24h), flamuj bllokues, ose ftohja (28+ ditë pa asnjë rritje Wikipedia — jo më 10, që trendet e ngadalta të mos ftohen para se të matet qëndrueshmëria 3-javore). Çdo kandidat gjurmohet për rezultatin 5/20 ditë vs SPY nga dita e tregtimit PAS zbulimit — përfshirë refuzuarit; të promovuarit gjurmohen edhe nga dita e ngjitjes.
+                Score-i: demand = Wikipedia (prova e kërkesës) — qenia në feed s'jep më pikë; komponentët pa data s'numërohen ({active.componentsAvailable ?? '?'}/6 me data).
+                ⚠️ Pragjet (+8%, 3 javë, 2M$/ditë, +50% wiki-discovery, 15% lift-i i trendStart) janë vlera fillestare të pazbatuara nga backtest-i — mos i trajto si të provuara.
               </small>
             </div>
 
@@ -651,6 +693,7 @@ export default function SocialArbPage() {
                     <th className="py-1 pr-4 font-medium">Koha</th>
                     <th className="py-1 pr-4 font-medium">Termа</th>
                     <th className="py-1 pr-4 font-medium">Marka</th>
+                    <th className="py-1 pr-4 font-medium" title="Kandidatë të rinj nga zbulimi proaktiv i fjalorit me Wikipedia">Wiki-zbulime</th>
                     <th className="py-1 pr-4 font-medium">Aktivë</th>
                     <th className="py-1 pr-4 font-medium">Burimet</th>
                     <th className="py-1 font-medium">Kohëzgjatja</th>
@@ -662,10 +705,11 @@ export default function SocialArbPage() {
                       <td className="py-1.5 pr-4 text-foreground/90">{new Date(s.at).toLocaleString('sq-AL')}</td>
                       <td className="py-1.5 pr-4 tabular-nums text-foreground/90">{s.termsScanned}</td>
                       <td className="py-1.5 pr-4 tabular-nums text-foreground/90">{s.termsClassified}</td>
+                      <td className="py-1.5 pr-4 tabular-nums text-foreground/90">{s.discoveredWiki != null ? s.discoveredWiki : '—'}</td>
                       <td className="py-1.5 pr-4 tabular-nums text-foreground/90">{s.candidatesActive}</td>
                       <td className="py-1.5 pr-4 text-muted-foreground">
-                        {Object.entries(s.sources).filter(([k]) => ['google_trends', 'wikipedia', 'gdelt', 'prices'].includes(k))
-                          .map(([k, v]) => `${k === 'google_trends' ? 'Trends' : k === 'wikipedia' ? 'Wiki' : k === 'gdelt' ? 'GDELT' : 'Çmimet'}: ${v === 'ok' ? 'ok' : v === 'throttled' ? 'kufizuar' : 'gabim'}`).join(' · ')}
+                        {Object.entries(s.sources).filter(([k]) => ['google_trends', 'wikipedia', 'gdelt', 'prices', 'finnhub'].includes(k))
+                          .map(([k, v]) => `${k === 'google_trends' ? 'Trends' : k === 'wikipedia' ? 'Wiki' : k === 'gdelt' ? 'GDELT' : k === 'finnhub' ? 'Finnhub' : 'Çmimet'}: ${v === 'ok' ? 'ok' : v === 'throttled' ? 'kufizuar' : 'gabim'}`).join(' · ')}
                       </td>
                       <td className="py-1.5 tabular-nums text-muted-foreground">{(s.durationMs / 1000).toFixed(0)}s</td>
                     </tr>
@@ -680,7 +724,7 @@ export default function SocialArbPage() {
         <section style={box} className="!py-4">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><Database className="w-4 h-4 text-rose-400" /> Prapavija</h2>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            Çdo matje (Google Trends + GDELT + çmimet) arkivohet automatikisht si CSV në prapavijë për backtest —
+            Çdo matje (Google Trends + Wikipedia + GDELT + çmimet) arkivohet automatikisht si CSV në prapavijë për backtest —
             {' '}<code className="rounded bg-slate-800 px-1 py-0.5 text-[11px] text-slate-300">data/social-arb-backtest/social-arb-YYYY-MM.csv</code> —
             {' '}pa buton ngarkimi në këtë ekran. Aktualisht: {state?.csvArchive.rows ?? 0} rreshta në {state?.csvArchive.files ?? 0} skedarë.
             {state?.storage.backend === 'upstash' && ' Ruajtja: Redis (Upstash) — e qëndrueshme në serverless.'}

@@ -312,8 +312,10 @@ export interface GdeltArticle {
   seenAt: string; // ISO
 }
 
-/** Artikujt e fundit (deri 50): numri + titujt/URL-t — ushqen klasifikimin e shkakut. */
-export async function gdeltArticleList(query: string, maxRecords = 50): Promise<{ count: number; articles: GdeltArticle[] }> {
+/** Artikujt e fundit (deri 250 — mbi pragun mainstream 200, ndryshe
+ *  numërimi s'arrin kurrë pragun dhe rregulli s'aktivizohet): numri +
+ *  titujt/URL-t — ushqen klasifikimin e shkakut dhe pragun mainstream. */
+export async function gdeltArticleList(query: string, maxRecords = 250): Promise<{ count: number; articles: GdeltArticle[] }> {
   const data = (await gdeltFetch(
     `query=${encodeURIComponent(query)}&mode=artlist&maxrecords=${maxRecords}&timespan=1d&sort=datedesc`,
   )) as { articles?: { title?: string; url?: string; domain?: string; seendate?: string }[] };
@@ -328,4 +330,28 @@ export async function gdeltArticleList(query: string, maxRecords = 50): Promise<
     articles.push({ title: a.title, url: a.url, domain: a.domain ?? '', seenAt: iso });
   }
   return { count: articles.length, articles };
+}
+
+// ── Finnhub: katalizatori i fitimeve (opsional) ─────────────
+
+/** Data e ardhshme e fitimeve nga Finnhub — VETËM për shfaqje/renditje,
+ *  JO për gate. Kthen null kur s'ka event brenda dritares; hedh gabim
+ *  me statusin konkret kur API refuzon (thirrësi vendos si e shfaq).
+ *  Kërkon FINNHUB_API_KEY — pa çelës, thirrësi s'e thërret fare. */
+export async function fetchNextEarningsDate(ticker: string, lookaheadDays = 90): Promise<string | null> {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) return null; // pa çelës — katalizatori mbetet null (JO gate)
+  const from = new Date().toISOString().slice(0, 10);
+  const to = new Date(Date.now() + lookaheadDays * 86400000).toISOString().slice(0, 10);
+  const res = await fetchWithTimeout(
+    `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&symbol=${encodeURIComponent(ticker.toUpperCase())}&token=${encodeURIComponent(key)}`,
+    10000,
+  );
+  if (!res.ok) throw Object.assign(new Error(`Finnhub: HTTP ${res.status}`), { httpStatus: res.status });
+  const j = (await res.json()) as { earnings?: { date?: string }[] };
+  const dates = (j.earnings ?? [])
+    .map(e => e.date ?? '')
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= from)
+    .sort();
+  return dates.length ? dates[0] : null;
 }

@@ -153,10 +153,12 @@ console.log('\n── 4) Gjurmimi i rezultatit 5/20 ditë ──');
     outcome: { baseDate: null, baseStock: null, baseIndex: null, d5: null, d20: null, pendingNote: null, lastCheckedAt: null },
   } as unknown as Candidate;
   updateOutcome(cand, stock, spy, new Date().toISOString());
-  check('baza = close-i i zbulimit', cand.outcome.baseDate === '2026-09-01', `${cand.outcome.baseDate} (100/${cand.outcome.baseStock?.toFixed(2)})`);
+  // rregulli v5 (F): baza = close-i i ditës së PARË të tregtimit PAS zbulimit —
+  // jo close-i i ditës së skanimit (mund të mos kishte qenë i tregtueshëm ende)
+  check('baza = close-i i ditës PAS zbulimit (v5)', cand.outcome.baseDate === '2026-09-02', `${cand.outcome.baseDate} (100/${cand.outcome.baseStock?.toFixed(2)})`);
   check('d5 e mbushur', !!cand.outcome.d5, cand.outcome.d5?.date);
   check('d20 e mbushur', !!cand.outcome.d20, cand.outcome.d20?.date);
-  check('relative d5 = 5% − 1% = +4% (seri lineare sintetike)', cand.outcome.d5 ? Math.abs(cand.outcome.d5.relative - 0.04) < 1e-9 : false);
+  check('relative d5 ≈ 106/101 − 506/501 (baza +1 ditë)', cand.outcome.d5 ? Math.abs(cand.outcome.d5.relative - (106 / 101 - 506 / 501)) < 1e-9 : false);
   check('REMOVED gjurmohet njësoj (pavarësisht statusit)', true);
 }
 {
@@ -169,7 +171,7 @@ console.log('\n── 4) Gjurmimi i rezultatit 5/20 ditë ──');
   } as unknown as Candidate;
   updateOutcome(cand, mk(100, 0), mk(500, 0), new Date().toISOString());
   check('d5 e mbushur me 8 ditë', !!cand.outcome.d5);
-  check('d20 pending me shënim të qartë', !cand.outcome.d20 && /13 ditë/.test(cand.outcome.pendingNote ?? ''), cand.outcome.pendingNote ?? '');
+  check('d20 pending me shënim të qartë', !cand.outcome.d20 && /14 ditë/.test(cand.outcome.pendingNote ?? ''), cand.outcome.pendingNote ?? '');
 }
 
 console.log(`\n═══ REZULTATI: ${pass} kaluan · ${fail} dështuan ═══`);

@@ -20,6 +20,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import type { Candidate, Measurement, SocialArbStore } from './types';
+import { groupKeyOf } from './gates';
 import {
   upstashEnabled, upstashGet, upstashSet, upstashHashGetAll, upstashHashSet, upstashLock,
   STORE_KEY, CSV_KEY, LOCK_KEY,
@@ -59,23 +60,38 @@ export function backtestDir(): string {
 // ── Store ───────────────────────────────────────────────────────
 
 const EMPTY_STORE: SocialArbStore = {
-  version: 4,
+  version: 5,
   createdAt: new Date().toISOString(),
   lastScanAt: null,
   measurements: [],
   candidates: {},
   scans: [],
+  meta: { wikiScanCursor: 0 },
 };
 
 export function emptyStore(): SocialArbStore {
   return { ...EMPTY_STORE, createdAt: new Date().toISOString(), measurements: [], candidates: {}, scans: [] };
 }
 
-/** Fushat e skemës v4 për një kandidat të vjetër (v2/v3) — të gjitha «s'u matën ende».
+/** Fushat e skemës v5 për një kandidat të vjetër (v2/v3/v4) — të gjitha «s'u matën ende».
  *  S'prek asgjë ekzististe: matjet, historia, rezultatet 5/20 ditësh mbeten. */
-function migrateCandidateToV4(c: Partial<Candidate>): Candidate {
+function migrateCandidateToV5(c: Partial<Candidate>): Candidate {
+  const trend = c.trend ?? '';
+  const ticker = c.ticker ?? '';
+  // promovimi i vjetër mund të rikonstruktohet nga historia (ngjitja e parë në RESEARCH)
+  const promotedFromHistory = c.history?.find(h => h.to === 'RESEARCH')?.at ?? null;
   return {
     ...(c as Candidate),
+    groupKey: c.groupKey ?? groupKeyOf(trend, ticker),
+    discoveredVia: c.discoveredVia ?? 'google_trends',
+    lastMeasuredAt: c.lastMeasuredAt ?? null,
+    trendStart: c.trendStart ?? null,
+    componentsAvailable: c.componentsAvailable ?? 6,
+    outcomeFromPromotion: c.outcomeFromPromotion ?? {
+      promotedAt: promotedFromHistory, baseDate: null, baseStock: null, baseIndex: null,
+      d5: null, d20: null, pendingNote: null, lastCheckedAt: null,
+    },
+    catalyst: c.catalyst ?? { nextEarningsDate: null, daysToEarnings: null, error: null, checkedAt: null },
     wiki: c.wiki ?? {
       article: null, growth: null, pageviews7dMedian: null, baselineMedian: null,
       risingWeeks: null, peakToAvg: null, error: null, checkedAt: null,
@@ -86,24 +102,24 @@ function migrateCandidateToV4(c: Partial<Candidate>): Candidate {
       stockRet: null, indexRet: null, relative: null, checkedAt: null,
     },
     materialityInfo: c.materialityInfo ?? {
-      exposurePct: null, reason: 'materialiteti vlerësohet në skanimin e radhës (migrim v3→v4)',
+      exposurePct: null, reason: 'materialiteti vlerësohet në skanimin e radhës (migrim v4→v5)',
       capBucket: 'mid', linkType: 'direct',
     },
     gates: c.gates ?? [],
     alreadyMoved: c.alreadyMoved ?? false,
-  };
+  } as Candidate;
 }
 
-/** Normalizon JSON-in e lexuar (çdo burim) në skemën v4. Pranon v2, v3 dhe v4.
+/** Normalizon JSON-in e lexuar (çdo burim) në skemën v5. Pranon v2, v3, v4 dhe v5.
  *  Migrimi s'humb asgjë: kandidatët, matjet, historia dhe skanimet mbeten. */
 function normalizeStore(s: unknown): SocialArbStore {
   const st = s as Partial<SocialArbStore> & { version?: number } | null;
   if (!st) return emptyStore();
   const version = st.version as number | undefined;
-  if (version !== 2 && version !== 3 && version !== 4) return emptyStore();
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5) return emptyStore();
   const candidates: SocialArbStore['candidates'] = {};
   for (const [key, c] of Object.entries(st.candidates ?? {})) {
-    const migrated = migrateCandidateToV4({
+    const migrated = migrateCandidateToV5({
       ...c,
       status: c.status ?? 'WATCH',
       cause: c.cause ?? null,
@@ -124,12 +140,13 @@ function normalizeStore(s: unknown): SocialArbStore {
     candidates[key] = migrated;
   }
   return {
-    version: 4,
+    version: 5,
     createdAt: st.createdAt ?? new Date().toISOString(),
     lastScanAt: st.lastScanAt ?? null,
     measurements: Array.isArray(st.measurements) ? st.measurements : [],
     candidates,
     scans: Array.isArray(st.scans) ? st.scans : [],
+    meta: { wikiScanCursor: typeof st.meta?.wikiScanCursor === 'number' ? st.meta.wikiScanCursor : 0 },
   };
 }
 

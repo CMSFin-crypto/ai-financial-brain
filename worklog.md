@@ -1113,3 +1113,31 @@ Work Log:
 
 Stage Summary:
 - RREGULL I MBARTUR: CTC v2, REV v1 dhe Gjurmuesi janë module të ngrira — çdo punë e ardhshme (përfshirë Social Arb P2/P3, IBKR) s'i prek fare
+
+---
+Task ID: 53
+Agent: main
+Task: Social Arb — Pjesa 3 (raportimi i userit mbi engine.ts v4): rregullimi i classifyCause + pikat A-I
+
+Work Log:
+- Rregullimi i classifyCause (kodi i dhënë nga useri): kwRe me kufij fjalësh (cache Regex) + countKeywordHits numëron TITUJT me ≥1 fjalë kyçe (jo çifte fjalë-titull); refuzimi kërkon ≥2 tituj të fortë (≥20%) ose ≥3 të dobët (≥30%); fjalët e shumënuançuara hequr ('crash', 'strike', 'cut', 'cuts', 'fell', 'falls', 'drops', 'upgrade') → zëvendësuar me fraza ('workers strike', 'stock falls', 'shares fall', 'price cut', …); zero artikuj → unclear herët; shtuar 'recalls'/'lawsuits'/'plunges' (pluralet e paqartë)
+- A) ROTACIONI: orderCandidatesForMeasurement (e pastër) — ekzistuesit sipas lastMeasuredAt ASC (kurrë të matur → në krye), pastaj termat e rinj; measuredBatch = të parët MAX; kandidatët e radhës marrin lastMeasuredAt=now; test rrotullimi: 30 aktivë/MAX 10 → 3 skanine (asnjë uri)
+- B) FILLIMI I TRENDIT: computeTrendStart (gates.ts) — dita e parë e zinxherit të vazhdueshëm ku mediana 7d ≥ baza 28d (e matur 14 ditë më parë) +15%; fallback firstSeen me source:'firstSeen' të shënuar; gate-i not_priced + isAlreadyMoved matin nga trendStart.at; SPY 6M + upgrade i titujve në 6M kur ankora bie pas serisë 3M; trendStart ruhet në kandidat dhe shfaqet në UI
+- C) ZBULIMI PROAKTIV: hap 3-b — çdo skanim lexon 12 artikuj të fjalorit (89 unikë) me pMap concurrency 5, kursori te store.meta.wikiScanCursor; growth ≥ 0.5 DHE risingWeeks ≥ 2 → kandidat DISCOVERED region 'WW', discoveredVia 'wikipedia'; ASNJË gate e anashkaluar (hyjnë në WATCH si të tjerë — duhet të dalin edhe në Trends për 2 burimet); Wikipedia për kandidatët ekzistues tani PARALELE; rreshtat e serisë Wikipedia (30 ditë) shtuar në matjet CSV
+- D) FTOHJA: lastSeenAt freskohet edhe kur Wikipedia tregon rritje (wikiAlive: growth>0 DHE risingWeeks≥1 — e freshme a e ruajtur); STALE_DAYS 10 → 28 (= minRisingWeeks×7+7) me paralajmërim kohë-ngarkimi nëse prishet; ftohja s'e heq dot një trend të ngadaltë para se të matej qëndrueshmëria
+- E) MOSTRAT E PAVARURA: groupKey = term|ticker pa rajon (ruhet në kandidat, derivohet në migrim); dedupeByGroupKey (e pastër) — një rast për groupKey, firstSeenAt më i hershëm — gati për P3-backtest; UI mban rajonet si etiketa
+- F) REZULTATI: fillOutcomeFromAnchor — baza = close-i i ditës së PARË të tregtimit PAS ankorës (jo e njëjta ditë e papritshme); updateOutcome (nga zbulimi) + updatePromotionOutcome (nga promotedAt — rikondensuar nga historia në migrim); UI i dy rezultateve
+- G) SCORE: demand = 25×clamp01(wiki.growth) — inFeed s'jep më 12.5 pikë falas; GDELT vetëm te konfirmimi; componentsAvailable (nga 6) ruhet + shfaqet (komponentët null s'numërohen)
+- H) KATALIZATORI: fetchNextEarningsDate (Finnhub /calendar/earnings, lookahead 90 ditë) — VETËM shfaqje/renditje, JO gate; pa FINNHUB_API_KEY s'kërkohet fare (null); state route rendit score→daysToEarnings
+- I) PASTRIMI: koka e engine.ts e rishkruar sipas v4-real; RESEARCH_SCORE + config.score.researchScore hequr; arsyeja e çmimeve kur buxheti i ndal → «kapërcyer nga buxheti kohor» (jo «s'ka ≥2 close»); gdeltArticleList maxrecords 50 → 250 — rregulli mainstream (200) tani mundësisht aktivizohet (konfirmohet pika 8 e userit: me 50 s'aktivizohej KURRAJ)
+- SKEMA v5 (store version 5, migrim v2/v3/v4/v5 pa humbje): Candidate +groupKey/discoveredVia/lastMeasuredAt/trendStart/componentsAvailable/outcomeFromPromotion/catalyst; SocialArbStore +meta.wikiScanCursor; ScanRecord/Summary +discoveredWiki
+- UI: karta (badge zbulimi wiki, trendStart, katalizatori, komponentët e score-it), dosja (rruga e zbulimit, groupKey, ankora, katalizatori), rezultati nga promovimi, tabela e skanimeve me Wiki-zbulime, tekstet e rregullave v5, finnhub te burimet
+- Tituj Wikipedia të këqij (404) në fjalor: 'Celsius (brand)'→'Celsius (energy drink)', 'E.l.f. Beauty'→'E.l.f. Cosmetics', 'On Holding'→'On (company)' — të 89 verifikuar me API (86 ok para, 3 fix)
+- Teste: scripts/test-social-arb-p3.ts 33/33 (classifyCause: Crash Bandicoot/executes/Niagara Falls/1-mes-100/25-nga-100/workers strike; computeTrendStart: hapi 21-ditor, rampa 8-javore Camillo, e sheshtë, e shkurtër, spike-i; rotacioni 3-skanime; baza ditës PAS; promotedAt nga historia; groupKey/dedupe; migrimi v4→v5); gates 42/42 (pritja v5); v4 25/25 (pritjet e bazës përditësuar sipas rregullit F); v5 15/15; tsc 0 gabime; lint 0 gabime; build kalon
+- Verifikim live (server dev, pa buxhet): 2 skanime reale 181-185s — versioni 5, kursori 0→24, 4 aktivë me fushat e reja (trendStart me fallback firstSeen sepse wiki growth negativ — sinqerisht), lastMeasuredAt i vulosur, ftohja e re s'i fshiu kandidatët e vjetër të 5 tetorit (28 ditë në vend të 10), GDELT 429 me carry-over, 0 wiki-zbulime (asnjë artikull i grupit të parë me growth ≥ +50% — sinqerisht), 0 RESEARCH
+
+Stage Summary:
+- Të 9 pikat e userit (A-I) + rregullimi i classifyCause të zbatuara; konfirmuar live se disa prej tyre ishin reale: mainstream-i s'aktivohej KURRAJ me maxrecords 50 < prag 200; STALE_DAYS 10 ftohte përpara 21 ditësh të qëndrueshmërisë; kandidatët ekzistues uriheshin nga termat e ditës
+- Njohje e re e implementimit: HAPI 8-javor (step) saturon bazën me lag 14-ditore → s'ka lift aktiv → bie te fallback firstSeen — sjellje e dëshiruar (rampa e vazhdueshme zbulohet); computeTrendStart ecën prapa derisa dritarja e bazës hollësohet (<4 pika)
+- Pragjet e reja fillestare (JO të provuara): discovery.wikiGrowth 0.5, trendStart.minLift 0.15, batchSize 12, concurrency 5, catalyst.lookaheadDays 90, staleDays 28
+- MBETET (sipas planit): P2 (features e formës + score i ri), P3 (backtest point-in-time me groupKey/dedupeByGroupKey gati, LLM term→ticker, hyrje manuale), OPERACIONALE (cron 202+after())

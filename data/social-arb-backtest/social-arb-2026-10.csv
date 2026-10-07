@@ -16,3 +16,28 @@ observed_at,available_at,trend,source,region,interest,ticker,product,company,mat
 2026-10-07,2026-10-07,minecraft live,google_trends,CA,50,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,529.3,779.09
 2026-10-07,2026-10-07,jim farley ford skilled trades ai,google_trends,US,50,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.28,779.09
 2026-10-07,2026-10-07,xbox disc to digital,google_trends,GB,50,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,529.3,779.09
+2026-10-07,2026-10-07,valor mortis playstation plus premium,google_trends,US,200,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.85,779.09
+2026-10-01,2026-10-01,valor mortis playstation plus premium,wikipedia,US,1341,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.49,763.99
+2026-10-02,2026-10-02,valor mortis playstation plus premium,wikipedia,US,1246,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.82,769.64
+2026-10-03,2026-10-03,valor mortis playstation plus premium,wikipedia,US,1193,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.82,769.64
+2026-10-04,2026-10-04,valor mortis playstation plus premium,wikipedia,US,1165,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.82,769.64
+2026-10-05,2026-10-05,valor mortis playstation plus premium,wikipedia,US,1289,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.54,774.83
+2026-10-06,2026-10-06,valor mortis playstation plus premium,wikipedia,US,1311,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.85,779.09
+2026-10-01,2026-10-01,jim farley ford skilled trades ai,wikipedia,US,2278,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.27,763.99
+2026-10-02,2026-10-02,jim farley ford skilled trades ai,wikipedia,US,2312,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.1,769.64
+2026-10-03,2026-10-03,jim farley ford skilled trades ai,wikipedia,US,2217,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.1,769.64
+2026-10-04,2026-10-04,jim farley ford skilled trades ai,wikipedia,US,2411,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.1,769.64
+2026-10-05,2026-10-05,jim farley ford skilled trades ai,wikipedia,US,2396,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.15,774.83
+2026-10-06,2026-10-06,jim farley ford skilled trades ai,wikipedia,US,2315,F,Ford,Ford Motor Company,0.85,0.1,0.45,12.28,779.09
+2026-10-01,2026-10-01,xbox disc to digital,wikipedia,GB,1743,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,512.8,763.99
+2026-10-02,2026-10-02,xbox disc to digital,wikipedia,GB,1708,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,517.53,769.64
+2026-10-03,2026-10-03,xbox disc to digital,wikipedia,GB,1601,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,517.53,769.64
+2026-10-04,2026-10-04,xbox disc to digital,wikipedia,GB,1601,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,517.53,769.64
+2026-10-05,2026-10-05,xbox disc to digital,wikipedia,GB,1675,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,525.18,774.83
+2026-10-06,2026-10-06,xbox disc to digital,wikipedia,GB,1589,MSFT,Xbox / Activision Blizzard,Microsoft,0.03,0.15,0.35,529.3,779.09
+2026-10-01,2026-10-01,ps5,wikipedia,CA,1341,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.49,763.99
+2026-10-02,2026-10-02,ps5,wikipedia,CA,1246,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.82,769.64
+2026-10-03,2026-10-03,ps5,wikipedia,CA,1193,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.82,769.64
+2026-10-04,2026-10-04,ps5,wikipedia,CA,1165,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.82,769.64
+2026-10-05,2026-10-05,ps5,wikipedia,CA,1289,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.54,774.83
+2026-10-06,2026-10-06,ps5,wikipedia,CA,1311,SONY,PlayStation,Sony Group,0.3,0.15,0.35,23.85,779.09

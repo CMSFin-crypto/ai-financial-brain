@@ -13,6 +13,7 @@
 
 import { SOCIAL_ARB_CONFIG as CFG } from './config';
 import type { WikiPoint, PricePoint } from './sources';
+import type { Candidate } from './types';
 
 const dayMs = (s: string) => Date.parse(`${s}T00:00:00Z`);
 
@@ -77,6 +78,69 @@ export function wikiStats(series: WikiPoint[], today: string): WikiStats {
   const peakToAvg = peak !== null && avg28 !== null && avg28 > 0 ? peak / avg28 : null;
 
   return { growth, pageviews7dMedian: med7, baselineMedian: medBase, risingWeeks, peakToAvg };
+}
+
+// ── Fillimi i trendit (ankora e gate-it not_priced) ──────────
+
+/** Dita e parë e rritjes së vazhdueshme: dita më e vjetër nga e cila
+ *  mediana 7-ditore tejkalon bazën (mediana 28d e matur 14 ditë më herët)
+ *  me ≥ minLift (15%) dhe KËRCE VAZHIMISHT deri në fund të serisë.
+ *  Një trend Camillo-style (rritje e ngadaltë 8-javore, pa spike) ka
+ *  saktësisht këtë formë — «Trending now» s'e sheh kurrë, Wikipedia po.
+ *  Kthen null kur seria s'mjafton për bazën e pare (duhen ≥42 ditë). */
+export function computeTrendStart(series: WikiPoint[], today: string): string | null {
+  const asOf = dayMs(today);
+  const pts = series.filter(p => dayMs(p.date) <= asOf).sort((a, b) => a.date.localeCompare(b.date));
+  // ditët e vlerësueshme: duhen ≥ (lag 14 + dritarja 28) ditë histori para ditës
+  const minHistory = CFG.trendStart.baselineLagDays + CFG.trendStart.baselineWindowDays;
+  if (pts.length < minHistory + 7) return null;
+
+  const dayTs = (i: number) => dayMs(pts[i].date);
+  const medianOf = (from: number, to: number): number | null => { // [from, to) sipas datave
+    const xs = pts.filter((_, i) => dayTs(i) >= from && dayTs(i) < to).map(p => p.views);
+    return xs.length >= 4 ? median(xs) : null;
+  };
+  const liftHolds = (i: number): boolean => {
+    // mediana 7-ditore e ditës i kundrejt bazës 28d të matur 14 ditë më herët
+    const t = dayTs(i);
+    const cur = medianOf(t - CFG.trendStart.currentWindowDays * 86400000, t + 86400000);
+    const base = medianOf(
+      t - (CFG.trendStart.baselineLagDays + CFG.trendStart.baselineWindowDays) * 86400000,
+      t - CFG.trendStart.baselineLagDays * 86400000,
+    );
+    return cur !== null && base !== null && base > 0 && cur >= base * (1 + CFG.trendStart.minLift);
+  };
+
+  // kalo prapa nga fundi për sa kohë rritja mban — dita e parë e zinxherit = fillimi.
+  // Zinxhiri thyhet NATYRALISHT kur dritarja e bazës hollësohet (<4 pika në
+  // fillim të serisë) ose kur lift-i bie nën prag — kufiri i poshëm është data.
+  let start = -1;
+  for (let i = pts.length - 1; i >= 0; i--) {
+    if (!liftHolds(i)) break;
+    start = i;
+  }
+  if (start === -1) return null;
+  return pts[start].date;
+}
+
+// ── Mostrat e pavarura (grupi statistikor) ──────────────
+
+/** Çelësi statistikor i pavarur: term|ticker pa rajon — e njëjta tezë në
+ *  US/GB/CA/AU/WW është NJË rast për backtest, jo pesë. */
+export function groupKeyOf(trend: string, ticker: string): string {
+  return `${trend.toLowerCase()}|${ticker.toUpperCase()}`;
+}
+
+/** Një rast për groupKey (firstSeenAt më i hershëm) — rajonet mbeten vetëm
+ *  si etiketa në UI. Përdoret nga statistikat e backtest-it (P3). */
+export function dedupeByGroupKey(candidates: Candidate[]): Candidate[] {
+  const best = new Map<string, Candidate>();
+  for (const c of candidates) {
+    const gk = c.groupKey || groupKeyOf(c.trend, c.ticker);
+    const prev = best.get(gk);
+    if (!prev || Date.parse(c.firstSeenAt) < Date.parse(prev.firstSeenAt)) best.set(gk, c);
+  }
+  return [...best.values()];
 }
 
 // ── Gate 1: BURIME TË PAVARURA ─────────────────────────────────
@@ -145,17 +209,19 @@ export function gateMateriality(input: {
 
 // ── Gate 3: NUK ËSHTË ÇMUAR (filtër negativ) ───────────────────
 
-/** Kthimi i aksionit minus SPY që nga fillimi i trendit (deri në 20 ditë tregtimi). */
+/** Kthimi i aksionit minus SPY që nga fillimi i trendit (deri në 20 ditë tregtimi).
+ *  Ankora = trendStartAt (nga seria Wikipedia; fallback firstSeenAt) — jo kur
+ *  e pa SISTEMI termin, por kur filloi TRENDI. */
 export function computeReturnSinceStart(
   stock: PricePoint[],
   spy: PricePoint[],
-  firstSeenDate: string,
+  anchorDate: string,
 ): { stockRet: number; indexRet: number; relative: number; fromDate: string; asOf: string; tradingDays: number } | null {
   const spyMap = new Map(spy.map(p => [p.date, p.close]));
   const common = stock.filter(p => spyMap.has(p.date)).sort((a, b) => a.date.localeCompare(b.date));
   if (common.length < 2) return null;
-  // baza: close-i i përbashkët më i afërt me zbulimin (preferon të njëjtën ditë/pas)
-  const seen = firstSeenDate.slice(0, 10);
+  // baza: close-i i përbashkët më i afërt me ankorën (preferon të njëjtën ditë/pas)
+  const seen = anchorDate.slice(0, 10);
   let baseIdx = common.findIndex(p => p.date >= seen);
   if (baseIdx === -1) baseIdx = 0;
   if (baseIdx > 0 && dayMs(common[baseIdx].date) - dayMs(seen) > 3 * 86400000) baseIdx -= 1;

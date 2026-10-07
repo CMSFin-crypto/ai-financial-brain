@@ -13,11 +13,17 @@
 export const SOCIAL_ARB_CONFIG = {
   // ── Makina e statusit (kufijtë e skanimit) ──
   scan: {
-    /** Artikuj GDELT në 24h që e shpallin trendin «mainstream» (rregulli i dilutimit të Camillo). */
+    /** Artikuj GDELT në 24h që e shpallin trendin «mainstream» (rregulli i dilutimit të Camillo).
+     *  DUHET të jetë < maxRecords (250) i gdeltArticleList — nëse kërkojmë më pak artikuj
+     *  se pragu, numërimi s'arrin kurrë pragun dhe rregulli s'aktivizohet kurrë. */
     mainstreamArticles: 200,
-    /** Ditë pa matje të reja para ftohjes (REMOVED me arsye). */
-    staleDays: 10,
-    /** Maks. kandidatë me pyetje GDELT për skanim (2 thirrje × 6s secila). */
+    /** Ditë pa matje të reja para ftohjes (REMOVED me arsye).
+     *  DUHET ≥ dritarja e qëndrueshmërisë + 7 ditë (3 javë × 7 + 7 = 28): një trend
+     *  i ngadaltë Camillo-style kërkon ≥3 javë vetëm për gate-in e qëndrueshmërisë —
+     *  ftohja para 28 ditësh e heq para se ta matë. (Vlera e vjetër: 10 — gabim.) */
+    staleDays: 28,
+    /** Maks. kandidatë me pyetje GDELT/wiki për skanim (2 thirrje GDELT × 6s secila).
+     *  Radha rrotullohet me skanime sipas lastMeasuredAt — shih orderCandidatesForMeasurement. */
     maxGdeltCandidates: 10,
     /** Maks. gjurmime rezultatesh 5/20-ditore për skanim. */
     maxOutcomeTracked: 12,
@@ -29,7 +35,7 @@ export const SOCIAL_ARB_CONFIG = {
 
   // ── GATE-T PËR NGRITJE NË RESEARCH (të gjitha duhet të kalojnë) ──
   gates: {
-    /** Gate 1 — BURIME TË PAVARURA: së paku 2 burime kërkese jo-lajme në rritje.
+    /** Gate 1 — BURIME TË PAVARURA: së paku 2 burime kërkese jo-lajne në rritje.
      *  Google Trends = 1; Wikipedia pageviews = 1. GDELT = media_confirmation
      *  (konfirmim i vonë), NUK numërohet si burim kërkese. */
     sources: {
@@ -47,8 +53,9 @@ export const SOCIAL_ARB_CONFIG = {
       minEffective: 0.15,
     },
 
-    /** Gate 3 — NUK ËSHTË ÇMUAR: kthimi i aksionit minus SPY që nga fillimi
-     *  i trendit (deri në 20 ditë tregtimi). Filtër negativ — jo provë. */
+    /** Gate 3 — NUK ËSHTË ÇMUAR: kthimi i aksionit minus SPY që nga FILLIMI I
+     *  TRENDIT (trendStartAt nga seria Wikipedia; fallback firstSeenAt), deri
+     *  20 ditë tregtimi. Filtër negativ — jo provë. */
     notPriced: {
       /** Pragu i «tashmë i çmuar» — mbi këtë: WATCH + flamuri already_moved. */
       maxReturnVsIndex: 0.08,
@@ -74,12 +81,39 @@ export const SOCIAL_ARB_CONFIG = {
     },
   },
 
-  // ── Score-i (i vjetër, v4) — vetëm për RENDITJE, jo më gate ──
-  // Komponentët ekzistues mbeten deri në P2 (score-i i ri me acceleration/
-  // catalyst/gap). S'pengon më ngritjen në RESEARCH.
+  // ── Fillimi i trendit (ankora e gate-it not_priced) ──
+  trendStart: {
+    /** Mediana 7-ditore tejkalon bazën e matur me ≥15% (0.15). */
+    minLift: 0.15,
+    /** Baza = mediana e dritares 28-ditore, e matur 14 ditë më parë (kundrejt ditës së vlerësimit). */
+    baselineLagDays: 14,
+    baselineWindowDays: 28,
+    /** Dritarja e dukshme e ditës (ditë kalendarike). */
+    currentWindowDays: 7,
+  },
+
+  // ── Zbulimi proaktiv nga Wikipedia (skanimi i fjalorit, jo vetëm «Trending now») ──
+  discovery: {
+    /** Rritja minimale e Wikipedia-s për të krijuar kandidat DISCOVERED (0.5 = +50%). */
+    wikiGrowth: 0.5,
+    /** Javët minimale të njëpasnjëshme rritje për kandidat të ri. */
+    minRisingWeeks: 2,
+    /** Sa artikuj të fjalorit skanohen për skanim (rrotullim me kursorin store.meta.wikiScanCursor). */
+    batchSize: 12,
+    /** Kërkesa njëkohëse ndaj API-së së Wikipedia-s (i përhapur, brenda udhëzimeve të Wikimedia-s). */
+    concurrency: 5,
+  },
+
+  // ── Katalizatori i fitimeve (opsional — vetëm shfaqje/renditje, JO gate) ──
+  catalyst: {
+    /** Sa ditë përpara shikohen fitimet e ardhshme (kërkesa Finnhub /calendar/earnings). */
+    lookaheadDays: 90,
+  },
+
+  // ── Score-i (renditje; komponentët pa data s'numërohen) ──
+  // demand = 25 × clamp01(wiki.growth) — Wikipedia është prova e kërkesës;
+  // GDELT vetëm te komponenti i konfirmimit mediatik. Në feed-i s'jep më pikë falas.
   score: {
-    /** Pragu i vjetër — tani vetëm referencë historike. */
-    researchScore: 60,
     /** Dritarja e hapur e çmimit për panel (≤ +3% vs SPY). */
     priceWindowOpen: 0.03,
     /** Dritarja e mbyllur për panel (> +10% vs SPY). */

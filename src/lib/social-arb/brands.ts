@@ -49,7 +49,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['celsius', 'celsius drink', 'celsius energy', 'celsius energy drink', 'celsius vibe', 'celsius stock'],
     ticker: 'CELH', company: 'Celsius Holdings', product: 'CELSIUS (pije energjike)',
-    wikiArticle: 'Celsius (brand)',
+    wikiArticle: 'Celsius (energy drink)',
     materiality: 0.95, promoRisk: 0.5, eventRisk: 0.3, cap: 'small', gdeltQuery: 'celsius drink',
     dossier: {
       confirm: 'Interesi për CELSIUS rritet me të paktën 25% në dy burime (Google Trends + GDELT këtu) ndërsa aksioni nuk ka reaguar më shumë se +3% ndaj indeksit — divergjenca interes-vs-çmim është thelbi i Social Arb.',
@@ -208,7 +208,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['elf cosmetics', 'e.l.f.', 'elf makeup', 'elf beauty', 'elf skin', 'elf cosmetics dupe', 'elf dupe'],
     ticker: 'ELF', company: 'e.l.f. Beauty', product: 'e.l.f. (kozmetikë)',
-    wikiArticle: 'E.l.f. Beauty',
+    wikiArticle: 'E.l.f. Cosmetics',
     materiality: 0.95, promoRisk: 0.4, eventRisk: 0.25, cap: 'mid', gdeltQuery: 'elf cosmetics',
     dossier: {
       confirm: 'Përmbajtja «dupe» (alternativa e lirë e produkteve të shtrenjta) rritet njëkohësisht në kërkime dhe lajme, ndërsa aksioni mbetet pa reagim të madh.',
@@ -323,7 +323,7 @@ export const BRANDS: BrandEntry[] = [
   {
     aliases: ['on cloud shoes', 'on running', 'on running shoes', 'on clouds'],
     ticker: 'ONON', company: 'On Holding', product: 'On / Cloud (këpucë vrapimi)',
-    wikiArticle: 'On Holding',
+    wikiArticle: 'On (company)',
     materiality: 0.95, promoRisk: 0.25, eventRisk: 0.25, cap: 'mid', gdeltQuery: 'on running shoes',
     dossier: {
       confirm: 'Rritje interesi që përputhet me hapje dyqanesh të reja dhe rritje shitjesh me pakicë, me çmim aksioni ende pa reaguar.',

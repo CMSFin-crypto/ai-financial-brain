@@ -1,56 +1,90 @@
 // ═══════════════════════════════════════════════════════════════
-// SOCIAL ARB — motori i zbulimit automatik (v4 — i varur nga provat)
+// SOCIAL ARB — motori i zbulimit automatik (v5 — Pjesa 3)
 //
-// 1. Merr termat në rritje nga Google Trends "Trending now" (US/GB/CA/AU)
-//    → DISCOVERED: u gjet termi dhe marka.
-// 2. WATCH: lidhja me ticker-in u verifikua (GDELT u lexua me sukses),
-//    por kërkesa reale ose reagimi i tregut mungon.
-// 3. RESEARCH — VETËM me të GJITHA provat:
-//    (a) shkaku i trendit klasifikohet potencialisht pozitiv (tituj
-//        me provë kërkece — jo thjesht lançim/lajm),
-//    (b) provë e pavarur e kërkesës (GDELT ≥ +25% 7d kundrejt bazës 28d),
-//    (c) çmimet e vlefshme DHE të freskëta (dritarja e balancuar me
-//        të NJËJTAT data për aksionin dhe SPY; feed-i s'dështoi),
-//    (d) pa flamur bllokues (promo/event/mainstream).
-//    Score-i ≥ 60 mbetet kusht SEKONDAR — 75 pa prova s'anashkalon asgjë.
-// 4. REMOVED (REJECT): shkak negativ, lidhja e gabuar, mainstream
-//    (≥200 artikuj/24h — rregulli i Camillo), çmimi ka reaguar >+10%
-//    ndaj indeksit, ose interesi u ftoh.
-// 5. Çdo kandidat — PËRFSHI refuzuarit — gjurmohet për rezultatin e
-//    çmimit pas 5 dhe 20 ditësh tregtimi, kundrejt SPY.
-// 6. Çdo matje arkivohet në CSV (prapavijë) për backtest.
+// ZBULIMI ka dy rrugë:
+//   A) Google Trends "Trending now" (US/GB/CA/AU) → termi përputhet me
+//      fjalorin → DISCOVERED (rruga e vjetër — kërkon zhurmë që tashmë ekziston).
+//   B) PROAKTIV: çdo skanim lexon një grup artikujsh të fjalorit me
+//      Wikipedia (rrotullim me kursor) — kur seria tregon rritje të
+//      vazhdueshme (growth ≥ prag + risingWeeks ≥ 2) krijohet kandidat
+//      DISCOVERED me region WW. Trendi Camillo-style (rritje 8-javore pa
+//      spike) S'shfaqet kurrë në «Trending now» — por Wikipedia e sheh.
+//      Kandidatët nga Wikipedia NUK anashkalojnë asnjë gate.
+//
+// RESEARCH — VETËM me të GJITHA 5 provat:
+//    1. burime të pavarura kërkese jo-lajne (Trends + Wikipedia ≥ +25%),
+//    2. materialiteti efektiv ≥ 15%,
+//    3. S'ËSHTË ÇMUAR: kthimi aksion−SPY që nga FILLIMI I TRENDIT
+//       (trendStartAt nga seria Wikipedia; fallback firstSeenAt) ≤ +8%,
+//    4. likuiditeti ≥ $2M/ditë,
+//    5. qëndrueshmëria: 3+ javë rritje pa model spike-i.
+//    Score-i vetëm renditje — s'ka më pikë falas për inFeed.
+//
+// REMOVED (REJECT): shkak negativ, lidhja e gabuar, mainstream
+// (≥200 artikuj/24h — rregulli i Camillo), flamuj bllokues, ose
+// ftohja — por jo sa kohë Wikipedia tregon rritje të vazhdueshme.
+//
+// MATJET RROTOOLLOHEN: kandidatët ekzistues me matjet më të vjetra
+// marrin radhën e parë (lastMeasuredAt ASC), pastaj termat e rinj —
+// asnjë kandidat aktiv s'mbetet i uritur për shkak të buxhetit kohor.
+//
+// Çdo kandidat — PËRFSHI refuzuarit — gjurmohet për rezultatin 5/20
+// ditë tregtimi kundrejt SPY, nga baza = close-i i ditës së tregtimit
+// PAS zbulimit; të promovuarit gjurmohen edhe nga ngjitja në RESEARCH.
+// Çdo matje arkivohet në CSV (prapavijë) për backtest.
 //
 // Çmimet: kur feed-i dështon, gabimi konkret (burimi + statusi HTTP)
 // ruhet në kandidat dhe shfaqet në panel — mungesa e të dhënave NUK
 // kthehet kurrë në 0% apo «pa reagim».
 // ═══════════════════════════════════════════════════════════════
 
-import { classifyTerm, effectiveMateriality, wikiArticleFor, type BrandEntry } from './brands';
+import { BRANDS, classifyTerm, effectiveMateriality, wikiArticleFor, type BrandEntry } from './brands';
 import {
   fetchTrendingNow, gdeltDailySeries, gdeltArticleList, fetchPriceSeries, fetchIndexCloses, fetchWikiPageviews,
+  fetchNextEarningsDate,
   type GdeltDailyPoint, type GdeltArticle, type PricePoint, type TrendingTerm, type WikiPoint,
 } from './sources';
 import { readStore, writeStore, mergeMeasurements, archiveToCsv, acquireScanLock } from './store';
 import { SOCIAL_ARB_CONFIG as CFG } from './config';
 import {
-  wikiStats, computeReturnSinceStart, computeAvgDollarVolume, evaluateGates, allGatesPassed, isAlreadyMoved,
+  wikiStats, computeTrendStart, computeReturnSinceStart, computeAvgDollarVolume, evaluateGates,
+  allGatesPassed, isAlreadyMoved, groupKeyOf, type WikiStats,
 } from './gates';
 import type {
   Candidate, CandidateStatus, CauseArticle, CauseInfo, CauseType, GateEval, GateName, Measurement,
-  OutcomePoint, Region, ScanRecord, ScanResultSummary, ScoreBreakdown, SocialArbStore,
+  OutcomeBase, OutcomePoint, Region, ScanRecord, ScanResultSummary, ScoreBreakdown, SocialArbStore, TrendStart,
 } from './types';
 
 const REGIONS: Region[] = ['US', 'GB', 'CA', 'AU'];
-const MAINSTREAM_ARTICLES = CFG.scan.mainstreamArticles;   // Camillo: dil kur bëhet mainstream
+const MAINSTREAM_ARTICLES = CFG.scan.mainstreamArticles;   // Camillo: dil kur bëhet mainstream (< maxRecords 250)
 const CONFIRM_GROWTH = 0.25;       // referencë mediatike: GDELT +25% 7d (media_confirmation, jo burim kërkese)
 const PRICE_WINDOW_OPEN = CFG.score.priceWindowOpen;     // ≤ +3% vs SPY — vetëm për panelin informativ
 const PRICE_WINDOW_CLOSED = CFG.score.priceWindowClosed; // > +10% — vetëm për panelin informativ
 const PRICE_WINDOW_DAYS = CFG.scan.priceWindowDays;       // dritarja kalendarike e reagimit (panel)
-const STALE_DAYS = CFG.scan.staleDays;             // pa matje të reja → ftohje
-const RESEARCH_SCORE = CFG.score.researchScore;     // VETËM renditje — s'është më gate (v4)
+const STALE_DAYS = CFG.scan.staleDays;             // pa matje të reja → ftohje (jo kur Wikipedia rritet)
 const MAX_GDELT_CANDIDATES = CFG.scan.maxGdeltCandidates;   // kufi kohor: 2 thirrje GDELT × 6s secila
 const MAX_OUTCOME_TRACKED = CFG.scan.maxOutcomeTracked;    // kufi gjurmimesh rezultatesh për skanim
 const MEASUREMENTS_CAP = CFG.scan.measurementsCap;     // kufizi i store-it (arkivi CSV mbetet i plotë)
+const WIKI_PARALLEL = CFG.discovery.concurrency;    // kërkesa njëkohëse ndaj Wikipedia-s
+
+// ftohja s'mund të trokasë deri sa qëndrueshmëria të matet — përndryshe një
+// trend i ngadaltë ftohet PARA se të mund të kalojë gate-in e 5-të.
+if (STALE_DAYS < CFG.gates.persistence.minRisingWeeks * 7 + 7) {
+  console.warn(`[social-arb config] ⚠️ staleDays=${STALE_DAYS} < minRisingWeeks×7+7 — një trend i ngadaltë do të ftohej para se të matej qëndrueshmëria. Rrite në ≥ ${CFG.gates.persistence.minRisingWeeks * 7 + 7}.`);
+}
+
+// fjalori i artikujve Wikipedia të kuruar (unike) — për zbulimin proaktiv
+const WIKI_DICTIONARY: [article: string, entry: BrandEntry][] = (() => {
+  const seen = new Set<string>();
+  const out: [string, BrandEntry][] = [];
+  for (const b of BRANDS) {
+    const a = b.wikiArticle;
+    if (!a || seen.has(a)) continue;
+    seen.add(a);
+    out.push([a, b]);
+  }
+  return out;
+})();
 
 // Buxheti kohor i skanimit: në Vercel Hobby funksionet ndalen në 60s —
 // skanimi duhet ta mbyllë veten me nder përpara. 0 = pa limit (lokal/sandbox).
@@ -70,6 +104,25 @@ const median = (xs: number[]) => {
 };
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 const pct = (n: number | null) => (n === null ? 'n/a' : `${n >= 0 ? '+' : ''}${(n * 100).toFixed(1)}%`);
+
+/** Map me kufizim njëkohësie — pa bibliotekë të jashtme. Funksioni e kap
+ *  vetë gabimin e fetch-it (pattern .catch) — pMap s'ka çfarë të propagojë. */
+async function pMap<T>(items: T[], fn: (item: T, idx: number) => Promise<unknown>, concurrency: number): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+}
+
+/** Wikipedia tregon rritje të vazhdueshme? (për freskimin e lastSeenAt —
+ *  një trend i ngadaltë s'ftohet vetëm se s'është më «i nxehtë» sot). */
+function wikiAlive(w: { growth: number | null; risingWeeks: number | null } | null | undefined): boolean {
+  return !!w && (w.growth ?? -1) > 0 && (w.risingWeeks ?? 0) >= 1;
+}
 
 // ── mutex — një skanim në akt ────────────────────────────────────
 
@@ -171,20 +224,26 @@ export function lastCloseOnOrBefore(closes: PricePoint[] | undefined, date: stri
 // P2 — klasifikimi i shkakut të trendit (i pastër, i testueshëm)
 // ═══════════════════════════════════════════════════════════════
 
+// ⚠️ FJALËT E SHUMËNUANÇUARA JANË HEQUR (v5): 'crash' përputhej me «Crash
+// Bandicoot», 'cut' me «execute», 'falls' me «Niagara Falls», 'strike' me
+// «strike zone»… Zëvendësuar me fraza specifike + kufij fjalësh + pragje
+// raporti: një titull me «investigation» mes 100 s'refuzon dot kërkimin.
 const CAUSE_NEGATIVE_STRONG = [
   'lawsuit', 'sued', 'sues', 'recall', 'recalled', 'layoffs', 'layoff', 'bankruptcy', 'fraud',
   'scandal', 'outage', 'data breach', 'shooting', 'explosion', 'arrested', 'investigation',
-  'plunge', 'plunged', 'crash', 'collaps', 'resigns', 'resignation', 'strike',
+  'plunge', 'plunged', 'collaps', 'resigns', 'resignation',
+  'workers strike', 'stock falls', 'stock plunges', 'shares fall', 'shares plunge',
 ];
 const CAUSE_NEGATIVE_WEAK = [
-  'cut', 'cuts', 'dropped', 'drops', 'fell', 'falls', 'slump', 'slides', 'missed', 'misses',
+  'dropped', 'slump', 'slides', 'missed', 'misses',
   'warns', 'warning', 'downgrade', 'probe', 'halts', 'slashed',
+  'price cut', 'price cuts',
 ];
 const CAUSE_POSITIVE = [
   'sales surge', 'surge in demand', 'demand rises', 'demand jumps', 'sold out', 'sells out',
   'record sales', 'beats estimates', 'strong sales', 'subscribers add', 'added subscribers',
   'bestseller', 'best-seller', 'waitlist', 'waiting list', 'backlog', 'orders jump', 'orders surge',
-  'revenue rises', 'revenue jumps', 'profit jumps', 'raises guidance', 'raised guidance', 'upgrade',
+  'revenue rises', 'revenue jumps', 'profit jumps', 'raises guidance', 'raised guidance',
 ];
 const CAUSE_LAUNCH = [
   'launch', 'launches', 'launched', 'announces', 'announced', 'release', 'releases', 'released',
@@ -193,18 +252,31 @@ const CAUSE_LAUNCH = [
   'what\'s new', 'whats new', 'coming to', 'set to release', 'drops on',
 ];
 
-function countKeywordHits(texts: string[], keywords: string[]): { total: number; hits: string[] } {
-  const lower = texts.map(t => t.toLowerCase());
-  const hits: string[] = [];
-  let total = 0;
-  for (const kw of keywords) {
-    let n = 0;
-    for (const t of lower) {
-      if (t.includes(kw)) n++;
-    }
-    if (n > 0) { total += n; hits.push(kw); }
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const kwCache = new Map<string, RegExp>();
+function kwRe(kw: string): RegExp {
+  let r = kwCache.get(kw);
+  if (!r) {
+    r = new RegExp(`(?:^|[^a-z0-9])${escapeRe(kw)}(?:$|[^a-z0-9])`, 'i');
+    kwCache.set(kw, r);
   }
-  return { total, hits };
+  return r;
+}
+
+/** total = numri i TITUJVE me të paktën një fjalë kyçe (jo çifte fjalë-titull).
+ *  Kufijtë e fjalëve: «cut» s'përputhet më me «execute», «falls» jo me
+ *  «Niagara Falls», «crash» as me «Crash Bandicoot» (fjalë e hequr nga listat). */
+function countKeywordHits(texts: string[], keywords: string[]): { total: number; hits: string[] } {
+  const hits = new Set<string>();
+  let titlesHit = 0;
+  for (const t of texts) {
+    let any = false;
+    for (const kw of keywords) {
+      if (kwRe(kw).test(t)) { hits.add(kw); any = true; }
+    }
+    if (any) titlesHit++;
+  }
+  return { total: titlesHit, hits: [...hits] };
 }
 
 /**
@@ -225,14 +297,30 @@ export function classifyCause(
   const pos = countKeywordHits(texts, CAUSE_POSITIVE);
   const launch = countKeywordHits(texts, CAUSE_LAUNCH);
 
+  if (!texts.length) {
+    return {
+      type: 'unclear',
+      reason: 'S\'ka artikuj 24h për këtë term — shkaku s\'mund të verifikohet pa materiale.',
+      keywords: [],
+      articles: [],
+      newsTitle, newsSource, checkedAt,
+    };
+  }
+
+  // pragjet raportuale: një titull «recall» mes 100 s'refuzon; refuzimi
+  // kërkon ≥2 tituj të FORTË (≥20% e titujve) ose ≥3 të dobët (≥30%).
+  const n = Math.max(texts.length, 1);
+  const strongNeg = neg.total >= Math.min(2, n) && neg.total / n >= 0.2;
+  const weakNeg = negWeak.total >= Math.min(3, n) && negWeak.total / n >= 0.3;
+
   let type: CauseType;
   let reason: string;
   let keywords: string[];
 
-  if (neg.total >= 1 || negWeak.total >= 2) {
+  if (strongNeg || weakNeg) {
     type = 'negative_event';
     keywords = neg.hits.length ? neg.hits : negWeak.hits;
-    reason = `Titujt e lajmeve flasin për zhvillime negative (${[...neg.hits, ...negWeak.hits].slice(0, 5).join(', ')} në ${neg.total + negWeak.total} përmendje) — kjo S'është kërkesë pozitive për produktin; kandidati refuzohet sipas rregullit të provave.`;
+    reason = `Titujt e lajmeve flasin për zhvillime negative (${[...neg.hits, ...negWeak.hits].slice(0, 5).join(', ')} — ${neg.total}/${n} tituj të fortë + ${negWeak.total}/${n} të dobët) — kjo S'është kërkesë pozitive për produktin; kandidati refuzohet sipas rregullit të provave.`;
   } else if (pos.total >= 2) {
     type = 'positive_demand_possible';
     keywords = pos.hits;
@@ -276,17 +364,20 @@ export const CAUSE_LABELS: Record<CauseType, string> = {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Përditëson rezultatin e kandidatit: baza = close-i i përbashkët më i
- * afërt me zbulimin; d5/d20 = pas 5/20 ditësh TREGTIMI, aksioni kundrejt
- * SPY në të njëjtat data. Faqet e mbushura nuk ridekzistojnë kurrë.
+ * Mbush gjurmimin e rezultatit nga një ankora (zbulimi ose ngjitja në
+ * RESEARCH): baza = close-i i ditës së TREGTIMIT PAS ankorës — e pasme,
+ * jo e njëjta ditë (close-i i ditës së skanimit mund të mos kishte
+ * qenë i tregtueshëm ende kur u zbulua); d5/d20 = pas 5/20 ditësh
+ * TREGTIMI, aksioni kundrejt SPY në të njëjtat data. Faqet e mbushura
+ * nuk ridekzistojnë kurrë.
  */
-export function updateOutcome(
-  cand: Candidate,
+export function fillOutcomeFromAnchor(
+  o: OutcomeBase,
   stock: PricePoint[] | null,
   spy: PricePoint[] | null,
+  anchorDate: string,
   now: string,
 ): void {
-  const o = cand.outcome;
   o.lastCheckedAt = now;
   if (!stock || !stock.length || !spy || !spy.length) {
     o.pendingNote = 'çmimet për gjurmimin e rezultatit s\'u morën këtë kontroll — provohet sërish herën tjetër';
@@ -296,21 +387,17 @@ export function updateOutcome(
   const common = stock.filter(p => spyMap.has(p.date)).sort((a, b) => a.date.localeCompare(b.date));
   if (common.length < 2) { o.pendingNote = 's\'ka close të përbashkët aksion/SPY për gjurmim'; return; }
 
-  // baza: close-i i përbashkët më i afërt me datën e zbulimit (preferon të njëjtën ditë/pas)
+  // baza: close-i i përbashkët i ditës së PARË të tregtimit PAS ankorës
   if (!o.baseDate || !o.baseStock || !o.baseIndex) {
-    const seen = cand.firstSeenAt.slice(0, 10);
-    let baseIdx = common.findIndex(p => p.date >= seen);
-    if (baseIdx === -1) baseIdx = common.length - 1;
-    if (baseIdx > 0 && dayMs(common[baseIdx].date) - dayMs(seen) > 3 * 86400000) baseIdx -= 1;
-    const base = common[baseIdx];
-    if (dayMs(base.date) < dayMs(seen) - 3 * 86400000) {
-      o.baseDate = null; o.baseStock = null; o.baseIndex = null;
-      o.pendingNote = `historia e çmimeve s'shkon prapa ${common[0].date} — baza e zbulimit (${seen}) s'mund të rikthehet`;
+    const anchor = anchorDate.slice(0, 10);
+    const idx = common.findIndex(p => dayMs(p.date) > dayMs(anchor));
+    if (idx === -1) {
+      o.pendingNote = `prit mbylljen e ditës së parë të tregtimit pas ${anchor}`;
       return;
     }
-    o.baseDate = base.date;
-    o.baseStock = base.close;
-    o.baseIndex = spyMap.get(base.date) as number;
+    o.baseDate = common[idx].date;
+    o.baseStock = common[idx].close;
+    o.baseIndex = spyMap.get(common[idx].date) as number;
   }
 
   const baseIdx = common.findIndex(p => p.date === o.baseDate);
@@ -341,6 +428,34 @@ export function updateOutcome(
     : null;
 }
 
+/** Rezultati 5/20 ditë nga ZBULIMI (ankora = firstSeenAt) — për të gjithë. */
+export function updateOutcome(
+  cand: Candidate,
+  stock: PricePoint[] | null,
+  spy: PricePoint[] | null,
+  now: string,
+): void {
+  fillOutcomeFromAnchor(cand.outcome, stock, spy, cand.firstSeenAt, now);
+}
+
+/** Rezultati 5/20 ditë nga NGJITJA në RESEARCH (ankora = promotedAt) — mas
+ *  tezën e «hendekut të paçmuar» edhe kur promovimi vjen ditë pas zbulimit. */
+export function updatePromotionOutcome(
+  cand: Candidate,
+  stock: PricePoint[] | null,
+  spy: PricePoint[] | null,
+  now: string,
+): void {
+  const o = cand.outcomeFromPromotion;
+  if (!o) return;
+  if (!o.promotedAt) {
+    // rikonztruktohet nga historia kur mungon (migrim i vjetër)
+    o.promotedAt = cand.history?.find(h => h.to === 'RESEARCH')?.at ?? null;
+  }
+  if (!o.promotedAt) return;
+  fillOutcomeFromAnchor(o, stock, spy, o.promotedAt, now);
+}
+
 // ── struktura pune e skanimit ────────────────────────────────────
 
 interface WorkCandidate {
@@ -349,12 +464,35 @@ interface WorkCandidate {
   term: string;
   region: string;
   isNew: boolean;
+  discoveredVia: 'google_trends' | 'wikipedia';
   google: { inFeed: boolean; approxTraffic: string | null; traffic: number | null; newsTitle: string | null; newsSource: string | null };
   gdeltQuery: string;
 }
 
 function candidateKey(term: string, ticker: string, region: string): string {
   return `${term.toLowerCase()}|${ticker}|${region}`;
+}
+
+/**
+ * RADHA e matjeve (anti-urie): kandidatët ekzistues sipas lastMeasuredAt
+ * ASC (kurrë të matur → në krye), pastaj termat e rinj të feed-it. Pa
+ * këtë, termat e ditës zinin gjithmonë MAX_GDELT_CANDIDATES radhët dhe
+ * kandidatët ekzistues uriheshin përjetësisht — i njëjti lloj livelock-u
+ * i çmimeve që u rregullua më parë. Garancia: çdo kandidat aktiv merr
+ * radhën brenda ⌈aktivë/MAX⌉ skanimesh (testohet me rrotullim).
+ */
+export function orderCandidatesForMeasurement<T extends { key: string; isNew: boolean }>(
+  items: T[],
+  lastMeasuredAtOf: (key: string) => string | null,
+): T[] {
+  return [...items].sort((a, b) => {
+    if (a.isNew !== b.isNew) return a.isNew ? 1 : -1; // ekzistuesit (jo të rinj) të parët
+    const av = Date.parse(lastMeasuredAtOf(a.key) ?? '');
+    const bv = Date.parse(lastMeasuredAtOf(b.key) ?? '');
+    const an = Number.isFinite(av) ? av : 0;
+    const bn = Number.isFinite(bv) ? bv : 0;
+    return an - bn; // më e vjetra → radha e parë; kurrë e matur (0) → në krye
+  });
 }
 
 // ── skanimi kryesor ──────────────────────────────────────────────
@@ -411,6 +549,7 @@ async function doScan(): Promise<ScanResultSummary> {
       term: t.term,
       region: t.region,
       isNew: !store.candidates[key],
+      discoveredVia: 'google_trends' as const,
       google: { inFeed: true, approxTraffic: t.approxTraffic, traffic: t.traffic, newsTitle: t.newsTitle, newsSource: t.newsSource },
       gdeltQuery: hit.entry.gdeltQuery ?? hit.entry.aliases[0],
     });
@@ -428,19 +567,82 @@ async function doScan(): Promise<ScanResultSummary> {
       term: c.trend,
       region: c.region,
       isNew: false,
+      discoveredVia: c.discoveredVia ?? 'google_trends',
       google: { inFeed: false, approxTraffic: null, traffic: null, newsTitle: null, newsSource: null },
       gdeltQuery: entry.gdeltQuery ?? entry.aliases[0],
     });
   }
+
+  // 3-b) ZBULIMI PROAKTIV — skanimi i fjalorit me Wikipedia, jo vetëm
+  //      «Trending now». Trendi Camillo-style (rritje e ngadaltë javësh,
+  //      pa spike) s'shfaqet KURRAJ në feed — por seria e pageviews e sheh.
+  //      Grupi rrotullohet me kursorin (store.meta.wikiScanCursor) brenda
+  //      buxhetit kohor. Kandidatët e krijuar NUK anashkalojnë asnjë gate:
+  //      hyjnë në WATCH/DISCOVERED si të tjerë dhe duhet të kalojnë të 5.
+  const wikiCache = new Map<string, WikiPoint[]>();   // artikull → seri (e ndarë me hapin 4-b)
+  const wikiErrors = new Map<string, string>();       // artikull → gabimi konkret
+  let wikiDiscovered = 0;
+  if (WIKI_DICTIONARY.length) {
+    const cursor = ((store.meta?.wikiScanCursor ?? 0) % WIKI_DICTIONARY.length + WIKI_DICTIONARY.length) % WIKI_DICTIONARY.length;
+    const batch: typeof WIKI_DICTIONARY = [];
+    for (let i = 0; i < Math.min(CFG.discovery.batchSize, WIKI_DICTIONARY.length); i++) {
+      batch.push(WIKI_DICTIONARY[(cursor + i) % WIKI_DICTIONARY.length]);
+    }
+    store.meta = { wikiScanCursor: (cursor + batch.length) % WIKI_DICTIONARY.length };
+    await pMap(batch, ([article]) => {
+      if (!withinBudget() || wikiCache.has(article)) return Promise.resolve();
+      return fetchWikiPageviews(article, CFG.gates.sources.wikiSeriesDays)
+        .then(pts => { wikiCache.set(article, pts); })
+        .catch(e => {
+          wikiErrors.set(article, (e as Error).message);
+          errors.push(`Wikipedia (fjalori) "${article}": ${(e as Error).message}`);
+        });
+    }, WIKI_PARALLEL);
+    // kandidatë të rinj nga rritja e vazhdueshme e serisë — asnjë gate e anashkaluar
+    for (const [article, entry] of batch) {
+      const pts = wikiCache.get(article);
+      if (!pts) continue;
+      const st = wikiStats(pts, today);
+      if (st.growth === null || st.risingWeeks === null) continue;
+      if (st.growth < CFG.discovery.wikiGrowth || st.risingWeeks < CFG.discovery.minRisingWeeks) continue;
+      const term = entry.aliases[0];
+      const key = candidateKey(term, entry.ticker, 'WW');
+      if (matched.has(key)) continue; // tashmë i pranishëm (p.sh. i krijuar në skanimin e kaluar)
+      matched.set(key, {
+        key,
+        entry,
+        term,
+        region: 'WW',
+        isNew: !store.candidates[key],
+        discoveredVia: 'wikipedia' as const,
+        google: { inFeed: false, approxTraffic: null, traffic: null, newsTitle: null, newsSource: null },
+        gdeltQuery: entry.gdeltQuery ?? entry.aliases[0],
+      });
+      if (!store.candidates[key]) wikiDiscovered++;
+    }
+  }
+
+  // 3-c) RADHA e matjeve — kandidatët ekzistues me matjen më të vjetër marrin
+  //      radhën e parë (lastMeasuredAt ASC), pastaj termat e rinj të feed-it.
+  //      Pa këtë, termat e ditës zinin gjithmonë MAX radhët dhe kandidatët
+  //      ekzistues uriheshin përjetësisht — i njëjti lloj livelock-u i çmimeve.
+  const orderedWork = orderCandidatesForMeasurement(
+    [...matched.values()],
+    k => store.candidates[k]?.lastMeasuredAt ?? null,
+  );
+  const measuredBatch = orderedWork.slice(0, MAX_GDELT_CANDIDATES);
+  const measuredBatchKeys = new Set(measuredBatch.map(w => w.key));
 
   // 4) çmimet — PRIMARE ndaj GDELT-t. Dikur ekzekutoheshin PAS GDELT-t dhe,
   //    sa herë GDELT-i ishte 429 (timeout 12s + 3×gap 6s ≈ gjithë buxheti 35s),
   //    rruga e çmimeve pritej me `withinBudget()` ÇDO skanim — çmimet për
   //    ticker-a nuk morën kurrë radhën (livelock i provuar live 2 skanime).
   //    Tani çmimet (shpejt, ~5s via stockanalysis.com) marrin radhën e parë.
+  //      SPY merret 6M: ankora e gate-it not_priced (fillimi i trendit nga
+  //      Wikipedia) mund të bie mbrapa dritares 3M — indeksi duhet ta mbulojë.
   let spySeries: { source: string; closes: PricePoint[] } | null = null;
   try {
-    const spy = await fetchPriceSeries('SPY', '3M');
+    const spy = await fetchPriceSeries('SPY', '6M');
     spySeries = { source: spy.source, closes: spy.closes };
     sources.prices = 'ok';
   } catch (e) {
@@ -450,9 +652,10 @@ async function doScan(): Promise<ScanResultSummary> {
   const priceErrors = new Map<string, string>();
   const priceCache = new Map<string, PricePoint[]>();
   const priceSource = new Map<string, string>();
-  for (const w of matched.values()) {
+  const priceSkipped = new Set<string>(); // ticker-at e kapërcyer nga buxheti — arsye e sinqertë
+  for (const w of orderedWork) {
     if (priceCache.has(w.entry.ticker)) continue;
-    if (!withinBudget()) break;
+    if (!withinBudget()) { priceSkipped.add(w.entry.ticker); continue; }
     try {
       const s = await fetchPriceSeries(w.entry.ticker, '3M');
       priceCache.set(w.entry.ticker, s.closes);
@@ -463,27 +666,25 @@ async function doScan(): Promise<ScanResultSummary> {
     }
   }
 
-  // 4-b) Wikipedia pageviews — burimi i 2-të i kërkesës (jo-lajne), i shpejtë
-  //      (pa throttle si GDELT-u). Merr radhën PARA GDELT-t: është provë kryesore,
-  //      ndërsa GDELT mbetet konfirmim mediatik. Vetëm artikujt e kuruar —
-  //      pa artikull të njohur, kandidati mbetet me gate null (fail-closed).
-  const wikiBudget = [...matched.values()].slice(0, MAX_GDELT_CANDIDATES);
-  const wikiBudgetKeys = new Set(wikiBudget.map(w => w.key)); // për arsyen e sinqertë jashtë buxhetit
-  const wikiCache = new Map<string, WikiPoint[]>();   // artikull → seri
-  const wikiErrors = new Map<string, string>();       // artikull → gabimi konkret
-  for (const w of wikiBudget) {
+  // 4-b) Wikipedia pageviews për radhën e matjes — PARALELE (5 kërkesa
+  //      njëkohësisht; seritë e fjalorit prej hapit 3-b janë tashmë në
+  //      cache, pa kosto shtesë). Merr radhën PARA GDELT-t: është provë
+  //      kryesore e kërkesës, ndërsa GDELT mbetet konfirmim mediatik.
+  //      Vetëm artikujt e kuruar — pa artikull të njohur, kandidati
+  //      mbetet me gate null (fail-closed).
+  await pMap(measuredBatch, w => {
     const article = wikiArticleFor(w.entry);
-    if (!article || wikiCache.has(article)) continue;
-    if (!withinBudget()) break;
-    try {
-      wikiCache.set(article, await fetchWikiPageviews(article, CFG.gates.sources.wikiSeriesDays));
-    } catch (e) {
-      const msg = (e as Error).message;
-      wikiErrors.set(article, msg);
-      errors.push(`Wikipedia "${article}": ${msg}`);
-    }
-  }
-  const wikiOkCount = [...new Set(wikiBudget.map(w => wikiArticleFor(w.entry)).filter(Boolean))].length;
+    if (!article || wikiCache.has(article)) return Promise.resolve();
+    if (!withinBudget()) return Promise.resolve();
+    return fetchWikiPageviews(article, CFG.gates.sources.wikiSeriesDays)
+      .then(pts => { wikiCache.set(article, pts); })
+      .catch(e => {
+        const msg = (e as Error).message;
+        wikiErrors.set(article, msg);
+        errors.push(`Wikipedia "${article}": ${msg}`);
+      });
+  }, WIKI_PARALLEL);
+  const wikiOkCount = [...new Set(measuredBatch.map(w => wikiArticleFor(w.entry)).filter(Boolean))].length;
   sources.wikipedia = wikiOkCount === 0
     ? 'ok' // s'ka artikuj të kuruar — s'ka çfarë të dështojë
     : wikiCache.size > 0 ? 'ok' : 'error';
@@ -491,7 +692,7 @@ async function doScan(): Promise<ScanResultSummary> {
   // 5) GDELT — seri 30-ditore + lista e artikujve (numri DHE titujt për shkakun).
   //    Me buxhetin e MBBETUR: kur është 429, thirrjet e ngadalta e shterojnë —
   //    në atë rast matjet e fundit të vlefshme mbahen (carry-over, hapi 6).
-  const gdeltBudget = [...matched.values()].slice(0, MAX_GDELT_CANDIDATES);
+  const gdeltBudget = measuredBatch; // radha e rrotulluar e matjeve (3-c)
   const seriesCache = new Map<string, GdeltDailyPoint[]>();
   const articlesCache = new Map<string, GdeltArticle[]>();
   const gdeltErrored = new Set<string>();
@@ -522,9 +723,30 @@ async function doScan(): Promise<ScanResultSummary> {
   }
   sources.gdelt = gdeltThrottled ? 'throttled' : errors.some(e => e.startsWith('GDELT')) ? 'error' : 'ok';
 
+  // 5-b) katalizatori i fitimeve (opsional — VETËM renditje, JO gate):
+  //      me FINNHUB_API_KEY merr datën e ardhshme të fitimeve për radhën e
+  //      matjes. Pa çelës s'kërkohet fare — catalyst mbetet null (e sinqertë).
+  const earningsMap = new Map<string, { date: string | null; error: string | null }>();
+  const finnhubEnabled = !!process.env.FINNHUB_API_KEY;
+  if (finnhubEnabled) {
+    await pMap(measuredBatch, w => {
+      if (!withinBudget() || earningsMap.has(w.entry.ticker)) return Promise.resolve();
+      return fetchNextEarningsDate(w.entry.ticker, CFG.catalyst.lookaheadDays)
+        .then(d => earningsMap.set(w.entry.ticker, { date: d, error: null }))
+        .catch(e => earningsMap.set(w.entry.ticker, { date: null, error: (e as Error).message }));
+    }, WIKI_PARALLEL);
+    sources.finnhub = [...earningsMap.values()].some(v => v.error) ? 'error' : 'ok';
+  }
+
   if (budgetHit) {
     errors.push(`Buxheti kohor i skanimit (${Math.round(SCAN_BUDGET_MS / 1000)}s) u plotësua — disa pyetje GDELT u kapërcyen; matja e fundit e vlefshme mbahet (carry-over) dhe vijon në skanimin tjetër.`);
   }
+
+  // ndihmës lokal: seria Wikipedia e kandidatit (nga cache e 3-b/4-b) ose null
+  const wikiSeriesFor = (w: WorkCandidate): WikiPoint[] | null => {
+    const article = wikiArticleFor(w.entry);
+    return article !== null ? wikiCache.get(article) ?? null : null;
+  };
 
   // 6) ndërto matjet dhe përditëso kandidatët
   const newRows: Measurement[] = [];
@@ -540,16 +762,19 @@ async function doScan(): Promise<ScanResultSummary> {
     const articles = articlesCache.get(w.gdeltQuery) ?? null;
     const gdeltError = gdeltErrored.has(w.gdeltQuery);
 
-    // rreshti i Google Trends (sot) — me close-in e fundit të vlefshëm
-    newRows.push({
-      observed_at: today, available_at: today,
-      trend: w.term, source: 'google_trends', region: w.region,
-      interest: w.google.traffic ?? 50,
-      ticker: b.ticker, product: b.product, company: b.company,
-      materiality: mat, promo_risk: b.promoRisk, event_risk: b.eventRisk,
-      stock_price: lastCloseOnOrBefore(priceCache.get(b.ticker), today),
-      index_price: lastCloseOnOrBefore(spySeries?.closes, today),
-    });
+    // rreshti i ditës — Google Trends kur është në feed sot; kandidatët e
+    // zbuluar proaktivisht (WW) mbulohen nga rreshtat e Wikipedia-s më poshtë.
+    if (w.discoveredVia !== 'wikipedia' || w.google.inFeed) {
+      newRows.push({
+        observed_at: today, available_at: today,
+        trend: w.term, source: 'google_trends', region: w.region,
+        interest: w.google.traffic ?? 50,
+        ticker: b.ticker, product: b.product, company: b.company,
+        materiality: mat, promo_risk: b.promoRisk, event_risk: b.eventRisk,
+        stock_price: lastCloseOnOrBefore(priceCache.get(b.ticker), today),
+        index_price: lastCloseOnOrBefore(spySeries?.closes, today),
+      });
+    }
 
     // rreshtat e serisë GDELT (30 ditë, histori publike — pa lookahead)
     if (series) {
@@ -568,8 +793,27 @@ async function doScan(): Promise<ScanResultSummary> {
       }
     }
 
+    // rreshtat e serisë Wikipedia (30 ditët e fundit — prova e kërkesës jo-lajne;
+    // edhe për kandidatët e zbuluar proaktivisht, me region WW)
+    if (wikiSeriesFor(w)) {
+      for (const p of wikiSeriesFor(w)!.slice(-30)) {
+        if (dayMs(p.date) > dayMs(today)) continue;
+        const recent7 = dayMs(p.date) > dayMs(today) - 7 * 86400000;
+        newRows.push({
+          observed_at: p.date, available_at: p.date,
+          trend: w.term, source: 'wikipedia', region: w.region,
+          interest: p.views,
+          ticker: b.ticker, product: b.product, company: b.company,
+          materiality: mat, promo_risk: b.promoRisk, event_risk: b.eventRisk,
+          stock_price: recent7 ? lastCloseOnOrBefore(priceCache.get(b.ticker), p.date) : null,
+          index_price: recent7 ? lastCloseOnOrBefore(spySeries?.closes, p.date) : null,
+        });
+      }
+    }
+
     // ── provat ──
-    // (a) rritja GDELT 7d vs baza 28d — provë e pavarur e kërkesës
+    // (a) rritja GDELT 7d vs baza 28d — VETËM konfirmim mediatik (jo burim
+    //     kërkese: s'jep pikë në score, s'numërohet në gate-in e burimeve)
     let growth: number | null = null;
     if (series && series.length) {
       const asOf = dayMs(today);
@@ -605,21 +849,29 @@ async function doScan(): Promise<ScanResultSummary> {
     const priceFresh = win !== null && !feedError;
     const priceVsIndex = win ? win.priceVsIndex : null;
 
-    // (d) score — komponentët e njëjtë; «e pamatshme» nuk është «0%»
-    const demandStrength = Math.max(growth ?? 0, w.google.inFeed ? 0.5 : 0);
+    // (d) score — Wikipedia është prova e kërkesës (demand); GDELT mbetet
+    //     vetëm te komponenti i konfirmimit mediatik. Qenia në feed S'JEP
+    //     më pikë falas (dikur jepte 12.5). Komponentët pa data japin 0
+    //     pikë DHE s'numërohen — componentsAvailable tregon sa prej 6 kan
+    //     data reale (materiality/quality/event janë vlerësime manuale).
     const breakdown: ScoreBreakdown = {
-      demand: 25 * clamp01(demandStrength),
+      demand: 0, // mbushet PAS wikiStats (më poshtë) — këtu vetëm deklarimi
       confirmation: confirmed ? 20 : (growth !== null && growth > 0 ? 8 : 0),
       materiality: 20 * mat,
       price: priceVsIndex === null ? 0 : priceVsIndex <= PRICE_WINDOW_OPEN ? 15 : priceVsIndex <= PRICE_WINDOW_CLOSED ? 8 : 0,
       quality: 10 * (1 - b.promoRisk) * (confirmed ? 1 : 0.5),
       event: 10 * (1 - b.eventRisk),
     };
-    const score = Math.round(breakdown.demand + breakdown.confirmation + breakdown.materiality + breakdown.price + breakdown.quality + breakdown.event);
+    let componentsAvailable = [
+      growth !== null, true, priceVsIndex !== null, true, true,
+    ].filter(Boolean).length; // +1 kur wikiStats ka growth — mbushet më poshtë
+    let score = 0;
 
     // ── makina e statusit (e varur nga provat) ──
     const reasons: string[] = [];
-    reasons.push(`Zbuluar në Google Trends ${w.region}: «${w.term}»${w.google.approxTraffic ? ` (trafik ~${w.google.approxTraffic})` : ''} → marka i përket ${b.company} (${b.ticker}).`);
+    reasons.push(w.discoveredVia === 'wikipedia'
+      ? `Zbuluar PROAKTIVISHT nga seria Wikipedia (rritje e vazhdueshme pageviews, ${w.region}) → marka i përket ${b.company} (${b.ticker}).`
+      : `Zbuluar në Google Trends ${w.region}: «${w.term}»${w.google.approxTraffic ? ` (trafik ~${w.google.approxTraffic})` : ''} → marka i përket ${b.company} (${b.ticker}).`);
 
     if (cause) {
       reasons.push(`Shkaku i trendit [${CAUSE_LABELS[cause.type]}]: ${cause.reason}${cause.articles.length ? ` (kontrolluar ${cause.checkedAt.slice(0, 10)}, ${cause.articles.length} tituj të ruajtur)` : ` (kontrolluar ${cause.checkedAt.slice(0, 10)})`}`);
@@ -643,6 +895,8 @@ async function doScan(): Promise<ScanResultSummary> {
       reasons.push(`Çmimet: burimi ${priceSource.get(b.ticker) ?? (spySeries?.source ?? '?')}, dritarja ${win.fromDate} → ${win.asOf} (të njëjtat data për aksionin dhe SPY): ${b.ticker} ${fmtPrice(win.fromStockPrice)} → ${fmtPrice(win.stockPrice)} (${pct(win.stockReturn)}), SPY ${fmtPrice(win.fromIndexPrice)} → ${fmtPrice(win.indexPrice)} (${pct(win.indexReturn)}) → diferencë ${pct(win.priceVsIndex)} ndaj indeksit.`);
     } else if (feedError) {
       reasons.push(`Çmimet: KRAHASIMI NUK U KRYE — feed-i dështoi [${feedError}] (kontrolluar ${today}). Mungesa e të dhënave NUK është «0%» ose «pa reagim» — thjesht e pamatshme; pa çmime të reja, nuk ka ngritje në RESEARCH.`);
+    } else if (priceSkipped.has(b.ticker)) {
+      reasons.push(`Çmimet: KRAHASIMI NUK U KRYE — kapërcyer nga buxheti kohor i skanimit (kontrolluar ${today}); radha e rrotulluar e matjeve e merr me përparësi në skanimin e radhës.`);
     } else {
       reasons.push(`Çmimet: s'ka ≥2 close të përbashkët aksion/SPY për dritaren ${PRICE_WINDOW_DAYS}-ditore — kontrolli i reagimit nuk u krye (e pamatshme, jo 0%).`);
     }
@@ -651,7 +905,7 @@ async function doScan(): Promise<ScanResultSummary> {
     const article = wikiArticleFor(b);
     const noArticle = article === null;
     const wikiFailed = article !== null && wikiErrors.has(article);
-    const wikiExcluded = !wikiBudgetKeys.has(w.key); // jashtë 10 kandidatëve të prioritizuar (buxheti kohor)
+    const wikiExcluded = !measuredBatchKeys.has(w.key); // jashtë radhës së matjes së këtij skanimi
     const wikiSeries = article !== null ? wikiCache.get(article) ?? null : null;
     let wstats = wikiSeries ? wikiStats(wikiSeries, today) : null;
     const wikiErr = noArticle
@@ -659,7 +913,7 @@ async function doScan(): Promise<ScanResultSummary> {
       : wikiFailed
         ? (wikiErrors.get(article as string) ?? 'fetch-i dështoi')
         : wikiExcluded && !wikiSeries
-          ? "jashtë buxhetit kohor të skanimit (10 kandidatët e parë të prioritizuar maten me Wikipedia/GDELT — radha rrotullohet me skanimet)"
+          ? `jashtë radhës së matjes së këtij skanimi (${MAX_GDELT_CANDIDATES} të parët sipas lastMeasuredAt — radha rrotullohet me skanimet)`
           : null;
     // carry-over: kur API dështoi, mbaj matjen e fundit të vlefshme (të datuar) —
     // pa democione për gabime infrastrukture (e njëjta filozofi si GDELT-u).
@@ -672,8 +926,25 @@ async function doScan(): Promise<ScanResultSummary> {
       carriedWiki = true;
     }
 
-    const firstSeenDate = prev?.firstSeenAt ?? now;
-    let retSince = stockCloses && spyCloses ? computeReturnSinceStart(stockCloses, spyCloses, firstSeenDate) : null;
+    // FILLIMI I TRENDIT — ankora e gate-it not_priced: dita e parë e rritjes
+    // së vazhdueshme në serinë Wikipedia (jo dita kur e pa SISTEMI termin);
+    // fallback firstSeenAt, i shënuar si i tillë (i mangët, jo i fshehur).
+    const wikiTrendStart = wikiSeries ? computeTrendStart(wikiSeries, today) : null;
+    const trendStart: TrendStart = wikiTrendStart
+      ? { at: wikiTrendStart, source: 'wiki' }
+      : prev?.trendStart ?? { at: (prev?.firstSeenAt ?? now).slice(0, 10), source: 'firstSeen' };
+    // kur fillimi i trendit bie mbrapa serisë 3M, merret historia 6M (rrallë —
+    // vetëm fallback-i firstSeen mund të bie kaq prapa; Wikipedia ka 90 ditë)
+    if (stockCloses && stockCloses.length
+        && dayMs(stockCloses[0].date) > dayMs(trendStart.at) + 3 * 86400000 && withinBudget()) {
+      try {
+        const s6 = await fetchPriceSeries(b.ticker, '6M');
+        priceCache.set(b.ticker, s6.closes);
+        priceSource.set(b.ticker, s6.source);
+      } catch { /* mbetet 3M — matja kufizohet në historinë që ka */ }
+    }
+    const stockClosesLong = priceCache.get(b.ticker) ?? stockCloses;
+    let retSince = stockClosesLong && spyCloses ? computeReturnSinceStart(stockClosesLong, spyCloses, trendStart.at) : null;
     let carriedSince = false;
     const ps = !retSince && !stockCloses ? prev?.sinceStart : undefined;
     if (ps && ps.relative !== null && ps.stockRet !== null && ps.indexRet !== null
@@ -717,6 +988,17 @@ async function doScan(): Promise<ScanResultSummary> {
     if (carriedSince) {
       reasons.push("Kthimi që nga fillimi i trendit: çmimet s'u morën këtë skanim — u mbajt matja e fundit (e datuar).");
     }
+    reasons.push(`Fillimi i trendit (ankora e «s'është çmuar»): ${trendStart.at} — ${trendStart.source === 'wiki'
+      ? 'dita e parë e rritjes së vazhdueshme në serinë Wikipedia (mediana 7d ≥ +15% mbi bazën 28d të matur 14 ditë më parë)'
+      : 'fallback: dita kur e pa sistemi për herë të parë — seria Wikipedia s\'mjafton për t\'gjetur fillimin e vërtetë'}.`);
+
+    // score (v5): demand nga Wikipedia (prova e kërkesës) — këtu, pas wikiStats
+    if (wstats && wstats.growth !== null) {
+      breakdown.demand = 25 * clamp01(wstats.growth);
+      componentsAvailable += 1;
+    }
+    score = Math.round(breakdown.demand + breakdown.confirmation + breakdown.materiality + breakdown.price + breakdown.quality + breakdown.event);
+    reasons.push(`Score ${score}/100 · ${componentsAvailable}/6 komponentë me data (demand = Wikipedia; konfirmimi = GDELT; materialiteti/çmimi/cilësia/eventi — vlerësime manuale ose dritare çmimesh) — vetëm RENDITJE, jo gate.`);
 
     // flamujt bllokues + makina e statusit (e varur nga gate-t)
     const promoBlock = b.promoRisk >= 0.7;
@@ -754,12 +1036,15 @@ async function doScan(): Promise<ScanResultSummary> {
       }
     }
 
-    // ftohja: kandidat aktiv pa matje të reja
+    // ftohja: kandidat aktiv pa matje të reja — POR jo sa kohë Wikipedia
+    // tregon rritje të vazhdueshme (një trend i ngadaltë s'ftohet vetëm
+    // se s'është më «i nxehtë» sot në feed).
     if (status !== 'REMOVED' && prev && prev.status !== 'REMOVED') {
       const lastSeen = Date.parse(prev.lastSeenAt);
-      if (Number.isFinite(lastSeen) && Date.now() - lastSeen > STALE_DAYS * 86400000 && !w.google.inFeed) {
+      if (Number.isFinite(lastSeen) && Date.now() - lastSeen > STALE_DAYS * 86400000
+          && !w.google.inFeed && !wikiAlive(wstats) && !wikiAlive(prev.wiki)) {
         status = 'REMOVED';
-        reasons.push(`DALJE: interesi u ftoh — pa matje të reja për më shumë se ${STALE_DAYS} ditë.`);
+        reasons.push(`DALJE: interesi u ftoh — pa matje të reja për më shumë se ${STALE_DAYS} ditë (as në feed, as rritje në Wikipedia).`);
       }
     }
 
@@ -780,6 +1065,14 @@ async function doScan(): Promise<ScanResultSummary> {
       materialityInfo: { exposurePct: null, reason: 'vlerësohet në këtë skanim', capBucket: b.cap, linkType: b.linkType ?? 'direct' },
       gates: [],
       alreadyMoved: false,
+      // ── fushat v5 ──
+      groupKey: groupKeyOf(w.term, b.ticker),
+      discoveredVia: w.discoveredVia,
+      lastMeasuredAt: null,
+      trendStart: null,
+      componentsAvailable: 6,
+      outcomeFromPromotion: emptyPromotionOutcome(),
+      catalyst: { nextEarningsDate: null, daysToEarnings: null, error: null, checkedAt: null },
     };
     if (!prev) newCandidates.push(w.key);
 
@@ -794,10 +1087,25 @@ async function doScan(): Promise<ScanResultSummary> {
       cand.lastChangedAt = now;
     }
 
+    // ngjitja e parë në RESEARCH → ankora e rezultatit nga promovimi (F);
+    // rikondensohet nga historia kur vjen nga një store i vjetër
+    if (!cand.outcomeFromPromotion?.promotedAt) {
+      const fromHistory = cand.history.find(h => h.to === 'RESEARCH')?.at ?? null;
+      if (status === 'RESEARCH' || fromHistory) {
+        cand.outcomeFromPromotion = { ...(cand.outcomeFromPromotion ?? emptyPromotionOutcome()), promotedAt: fromHistory ?? now };
+      }
+    }
+
     cand.status = status;
-    cand.lastSeenAt = w.google.inFeed ? now : (prev?.lastSeenAt ?? now);
-    if (w.google.inFeed) cand.lastSeenAt = now;
+    // freskimi i lastSeenAt: në feed SOT ose Wikipedia ende në rritje —
+    // një trend i ngadaltë s'ftohet vetëm se s'është më «i nxehtë» sot.
+    cand.lastSeenAt = (w.google.inFeed || wikiAlive(wstats) || wikiAlive(prev?.wiki)) ? now : (prev?.lastSeenAt ?? now);
+    if (measuredBatchKeys.has(w.key)) cand.lastMeasuredAt = now; // radha e matjes u krye këtë skanim
+    cand.groupKey = groupKeyOf(cand.trend, cand.ticker);
+    cand.trendStart = trendStart;
+    if (!cand.discoveredVia) cand.discoveredVia = w.discoveredVia;
     cand.score = score;
+    cand.componentsAvailable = componentsAvailable;
     cand.breakdown = breakdown;
     cand.reasons = reasons;
     cand.google = { inFeedToday: w.google.inFeed, approxTraffic: w.google.approxTraffic, traffic: w.google.traffic };
@@ -817,7 +1125,11 @@ async function doScan(): Promise<ScanResultSummary> {
       // feed-i dështoi / s'ka dritare: mbaj të vjetrat (të datuara qartë) + gabimi konkret
       cand.price = {
         ...(prev?.price ?? cand.price),
-        error: feedError ?? (stockCloses && spyCloses ? `vetëm ${new Set([...stockCloses.map(p => p.date), ...spyCloses.map(p => p.date)].filter((d, i, a) => a.indexOf(d) === i)).size} data të përbashkëta — duhen ≥2` : 'seritë e çmimeve mungojnë'),
+        error: feedError ?? (priceSkipped.has(b.ticker)
+          ? 'kapërcyer nga buxheti kohor i skanimit — radha e matjeve e merr në skanimin e radhës'
+          : stockCloses && spyCloses
+            ? `vetëm ${new Set([...stockCloses.map(p => p.date), ...spyCloses.map(p => p.date)].filter((d, i, a) => a.indexOf(d) === i)).size} data të përbashkëta — duhen ≥2`
+            : 'seritë e çmimeve mungojnë'),
         checkedAt: now,
       };
       if (!win) {
@@ -828,8 +1140,13 @@ async function doScan(): Promise<ScanResultSummary> {
       }
     }
 
-    // rezultati 5/20 ditë — përfshi refuzuarit (në këtë hap: aktivët)
-    updateOutcome(cand, stockCloses, spyCloses, now);
+    // rezultati 5/20 ditë — përfshi refuzuarit (në këtë hap: aktivët).
+    // Seritë e gjata (6M kur u ngjiten për trendStart) përdoren edhe këtu.
+    updateOutcome(cand, stockClosesLong, spyCloses, now);
+    // rezultati nga NGJITJA në RESEARCH — vetëm për të promovuarit
+    if (status === 'RESEARCH' || cand.outcomeFromPromotion?.promotedAt) {
+      updatePromotionOutcome(cand, stockClosesLong, spyCloses, now);
+    }
 
     // fushat e gate-ve (v4): matjet e reja ose gabimi konkret, kurrë të fabrikuara
     cand.wiki = wstats && wikiSeries
@@ -862,6 +1179,14 @@ async function doScan(): Promise<ScanResultSummary> {
     };
     cand.gates = gatesList;
     cand.alreadyMoved = alreadyMovedFlag;
+    // katalizatori i fitimeve — vetëm shfaqje/renditje, JO gate; pa çelës = null
+    const finn = earningsMap.get(b.ticker);
+    if (finnhubEnabled) {
+      const days = finn?.date ? Math.round((dayMs(finn.date) - dayMs(today)) / 86400000) : null;
+      cand.catalyst = { nextEarningsDate: finn?.date ?? null, daysToEarnings: days, error: finn?.error ?? null, checkedAt: now };
+    } else {
+      cand.catalyst = { ...(prev?.catalyst ?? { nextEarningsDate: null, daysToEarnings: null, error: null }), checkedAt: now };
+    }
 
     store.candidates[w.key] = cand;
   }
@@ -894,10 +1219,10 @@ async function doScan(): Promise<ScanResultSummary> {
   for (const [key, c] of Object.entries(store.candidates)) {
     if (matched.has(key) || c.status === 'REMOVED') continue;
     const lastSeen = Date.parse(c.lastSeenAt);
-    if (Number.isFinite(lastSeen) && Date.now() - lastSeen > STALE_DAYS * 86400000) {
+    if (Number.isFinite(lastSeen) && Date.now() - lastSeen > STALE_DAYS * 86400000 && !wikiAlive(c.wiki)) {
       c.status = 'REMOVED';
       c.lastChangedAt = now;
-      c.history.push({ at: now, from: 'WATCH', to: 'REMOVED', reason: `DALJE: interesi u ftoh — pa matje të reja për më shumë se ${STALE_DAYS} ditë.` });
+      c.history.push({ at: now, from: 'WATCH', to: 'REMOVED', reason: `DALJE: interesi u ftoh — pa matje të reja për më shumë se ${STALE_DAYS} ditë (as në feed, as rritje në Wikipedia).` });
       removed.push(key);
     }
   }
@@ -919,6 +1244,7 @@ async function doScan(): Promise<ScanResultSummary> {
   const record: ScanRecord = {
     at: now, durationMs: Date.now() - started, regions: [...REGIONS],
     termsScanned: allTerms.length, termsClassified: [...matched.values()].filter(w => w.google.inFeed).length,
+    discoveredWiki: wikiDiscovered,
     candidatesActive: activeCount, promoted: promoted.length, removed: removed.length,
     sources, errors,
   };
@@ -930,6 +1256,7 @@ async function doScan(): Promise<ScanResultSummary> {
     ok: googleOk, at: now, durationMs: record.durationMs, regions: [...REGIONS],
     termsScanned: allTerms.length,
     termsClassified: [...matched.values()].filter(w => w.google.inFeed).length,
+    discoveredWiki: wikiDiscovered,
     newCandidates, promoted, removed, activeCount, sources, errors, archived,
   };
 }
@@ -938,6 +1265,11 @@ async function doScan(): Promise<ScanResultSummary> {
 
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
+}
+
+/** Skeleti bosh i rezultatit nga promovimi (mbushet nga motori kur ngjitet). */
+function emptyPromotionOutcome() {
+  return { promotedAt: null, baseDate: null, baseStock: null, baseIndex: null, d5: null, d20: null, pendingNote: null, lastCheckedAt: null };
 }
 
 function fmtPrice(n: number): string {

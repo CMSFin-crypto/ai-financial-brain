@@ -212,7 +212,7 @@ process.env.SOCIAL_ARB_DATA_DIR = tmpDir;
 // leximi normalizon në v4 — import i vonuar pasi env të vendoset
 const { readStore } = await import('../src/lib/social-arb/store');
 const migrated = await readStore();
-check('Migrimi: versioni bëhet 4', migrated.version === 4);
+check('Migrimi: versioni bëhet 5', migrated.version === 5);
 check('Migrimi: kandidati ruhet', Object.keys(migrated.candidates).length === 1);
 const c = migrated.candidates['starbucks|SBUX|US'];
 check('Migrimi: fushat e vjetra të paprekura (score, history, outcome)', c.score === 62 && c.history.length === 1 && c.outcome.pendingNote === 'prit edhe 5 ditë tregtimi për d5');
