@@ -139,4 +139,19 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+  /* Scrollbar e hollë e dukshme — tregon që rreshti ka më shumë taba për t'u lëvizur me gisht ("slider") */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.18);
+    border-radius: 9999px;
+  }
 }
