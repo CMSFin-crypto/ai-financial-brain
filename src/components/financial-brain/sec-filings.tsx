@@ -88,14 +88,19 @@ type FilingItem = {
 };
 
 // ═══ Helpers ═══
+const MONTHS_SHORT_SQ = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gsh', 'Sht', 'Tet', 'Nën', 'Dhj'];
+
 function qLabel(q: QuarterData): string {
   const y = q.fiscalYear;
   return `Q${q.fiscalQuarter} ${y}`;
 }
 
+// Data e file-imit e lexueshme në shqip: "2026-07-31" → "31 Kor 2026"
 function shortDate(d?: string): string {
   if (!d) return '';
-  return d.substring(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  if (!m) return d.substring(0, 10);
+  return `${parseInt(m[3], 10)} ${MONTHS_SHORT_SQ[parseInt(m[2], 10) - 1] ?? m[2]} ${m[1]}`;
 }
 
 function pctChange(current: number | undefined, previous: number | undefined): number | null {
@@ -436,7 +441,7 @@ export function SecFilings() {
                                   </div>
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <Clock className="w-3 h-3 text-muted-foreground/60" />
-                                    <span className="text-[11px] text-muted-foreground">{f.filingDate}</span>
+                                    <span className="text-[11px] text-muted-foreground">{shortDate(f.filingDate)}</span>
                                     {f.act && <span className="text-[10px] text-muted-foreground/60 truncate">{f.act}</span>}
                                   </div>
                                 </div>
@@ -459,6 +464,10 @@ export function SecFilings() {
                     )}
                   </tbody>
                 </table>
+                {/* Shënim për datat/etiketat e tremujorave */}
+                <p className="mt-3 pt-2 border-t border-border/30 text-[10px] text-muted-foreground/70 leading-relaxed">
+                  Nën çdo tremujor shfaqet data e file-imit të raportit përkatës (10-Q/10-K). Kolonat <span className="font-semibold">Q4</span> = data e mbylljes së vitit fiskal — raporti 10-K nuk e ndan Q4-në veçmas, ndaj te të ardhurat/shitjet aty shfaqet "—"; vetëm rreshtat e bilancit kanë vlera për këto kolona.
+                </p>
               </div>
             </CardContent>
           </Card>

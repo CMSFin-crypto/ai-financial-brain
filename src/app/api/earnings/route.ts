@@ -1,79 +1,264 @@
 import { NextResponse } from 'next/server';
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-// Hardcoded realistic earnings data for 2026
-const EARNINGS_DATA = [
-  // July 2026
-  { ticker: 'AA', company: 'Alcoa Corp', date: '2026-07-08', time: 'BMO', epsEstimate: 0.32, epsActual: null },
-  { ticker: 'WMT', company: 'Walmart Inc', date: '2026-07-09', time: 'BMO', epsEstimate: 0.65, epsActual: null },
-  { ticker: 'JPM', company: 'JPMorgan Chase', date: '2026-07-10', time: 'BMO', epsEstimate: 4.18, epsActual: null },
-  { ticker: 'WFC', company: 'Wells Fargo', date: '2026-07-10', time: 'BMO', epsEstimate: 1.28, epsActual: null },
-  { ticker: 'C', company: 'Citigroup Inc', date: '2026-07-11', time: 'BMO', epsEstimate: 1.42, epsActual: null },
-  { ticker: 'GS', company: 'Goldman Sachs', date: '2026-07-11', time: 'BMO', epsEstimate: 8.52, epsActual: null },
-  { ticker: 'MS', company: 'Morgan Stanley', date: '2026-07-12', time: 'BMO', epsEstimate: 1.82, epsActual: null },
-  { ticker: 'DAL', company: 'Delta Air Lines', date: '2026-07-11', time: 'BMO', epsEstimate: 2.55, epsActual: null },
-  { ticker: 'USB', company: 'US Bancorp', date: '2026-07-12', time: 'BMO', epsEstimate: 0.95, epsActual: null },
-  { ticker: 'BLK', company: 'BlackRock Inc', date: '2026-07-12', time: 'BMO', epsEstimate: 11.25, epsActual: null },
-  { ticker: 'UNH', company: 'UnitedHealth Group', date: '2026-07-14', time: 'BMO', epsEstimate: 6.82, epsActual: null },
-  { ticker: 'BAC', company: 'Bank of America', date: '2026-07-15', time: 'BMO', epsEstimate: 0.85, epsActual: null },
-  { ticker: 'TSLA', company: 'Tesla Inc', date: '2026-07-16', time: 'AMC', epsEstimate: 0.92, epsActual: null },
-  { ticker: 'NFLX', company: 'Netflix Inc', date: '2026-07-16', time: 'AMC', epsEstimate: 5.12, epsActual: null },
-  { ticker: 'ASML', company: 'ASML Holding', date: '2026-07-16', time: 'AMC', epsEstimate: 5.85, epsActual: null },
-  { ticker: 'AAPL', company: 'Apple Inc', date: '2026-07-17', time: 'BMO', epsEstimate: 1.58, epsActual: null },
-  { ticker: 'INTC', company: 'Intel Corp', date: '2026-07-17', time: 'BMO', epsEstimate: 0.12, epsActual: null },
-  { ticker: 'BA', company: 'Boeing Co', date: '2026-07-18', time: 'BMO', epsEstimate: -1.85, epsActual: null },
-  { ticker: 'MSFT', company: 'Microsoft Corp', date: '2026-07-22', time: 'BMO', epsEstimate: 3.15, epsActual: null },
-  { ticker: 'GOOGL', company: 'Alphabet Inc', date: '2026-07-22', time: 'BMO', epsEstimate: 1.95, epsActual: null },
-  { ticker: 'META', company: 'Meta Platforms', date: '2026-07-23', time: 'BMO', epsEstimate: 5.28, epsActual: null },
-  { ticker: 'AMD', company: 'Advanced Micro Devices', date: '2026-07-23', time: 'BMO', epsEstimate: 0.68, epsActual: null },
-  { ticker: 'AMZN', company: 'Amazon.com Inc', date: '2026-07-24', time: 'BMO', epsEstimate: 1.12, epsActual: null },
-  { ticker: 'CAT', company: 'Caterpillar Inc', date: '2026-07-24', time: 'BMO', epsEstimate: 5.12, epsActual: null },
-  { ticker: 'CRM', company: 'Salesforce Inc', date: '2026-07-24', time: 'AMC', epsEstimate: 2.42, epsActual: null },
-  { ticker: 'SBUX', company: 'Starbucks Corp', date: '2026-07-29', time: 'BMO', epsEstimate: 0.92, epsActual: null },
-  { ticker: 'ADBE', company: 'Adobe Inc', date: '2026-07-15', time: 'AMC', epsEstimate: 3.78, epsActual: null },
-  { ticker: 'TXN', company: 'Texas Instruments', date: '2026-07-22', time: 'BMO', epsEstimate: 1.75, epsActual: null },
-  { ticker: 'QCOM', company: 'Qualcomm Inc', date: '2026-07-23', time: 'BMO', epsEstimate: 2.18, epsActual: null },
-  { ticker: 'MRVL', company: 'Marvell Technology', date: '2026-07-25', time: 'AMC', epsEstimate: 0.38, epsActual: null },
-  { ticker: 'ON', company: 'ON Semiconductor', date: '2026-07-28', time: 'BMO', epsEstimate: 0.82, epsActual: null },
-  { ticker: 'LRCX', company: 'Lam Research', date: '2026-07-23', time: 'AMC', epsEstimate: 2.95, epsActual: null },
-  { ticker: 'MU', company: 'Micron Technology', date: '2026-07-25', time: 'BMO', epsEstimate: 1.25, epsActual: null },
-  { ticker: 'COIN', company: 'Coinbase Global', date: '2026-07-31', time: 'AMC', epsEstimate: 1.15, epsActual: null },
-  { ticker: 'RIVN', company: 'Rivian Automotive', date: '2026-07-29', time: 'AMC', epsEstimate: -0.85, epsActual: null },
-  { ticker: 'SMCI', company: 'Super Micro Computer', date: '2026-07-30', time: 'AMC', epsEstimate: 0.55, epsActual: null },
-  // August 2026
-  { ticker: 'DIS', company: 'Walt Disney Co', date: '2026-08-06', time: 'BMO', epsEstimate: 1.22, epsActual: null },
-  { ticker: 'PYPL', company: 'PayPal Holdings', date: '2026-08-07', time: 'BMO', epsEstimate: 1.18, epsActual: null },
-  { ticker: 'UBER', company: 'Uber Technologies', date: '2026-08-06', time: 'BMO', epsEstimate: 0.32, epsActual: null },
-  { ticker: 'ABNB', company: 'Airbnb Inc', date: '2026-08-07', time: 'BMO', epsEstimate: 2.28, epsActual: null },
-  { ticker: 'SNAP', company: 'Snap Inc', date: '2026-08-07', time: 'AMC', epsEstimate: 0.05, epsActual: null },
-  { ticker: 'PLTR', company: 'Palantir Technologies', date: '2026-08-04', time: 'AMC', epsEstimate: 0.12, epsActual: null },
-  { ticker: 'SQ', company: 'Block Inc', date: '2026-08-01', time: 'BMO', epsEstimate: 0.85, epsActual: null },
+// ═══════════════════════════════════════════════════════════════
+// KALENDARI I FITIMEVE — data REALE të raportimeve (s'ka më hardcoded)
+//
+// Burimi primar:  Nasdaq Calendar API (api.nasdaq.com/api/calendar/earnings)
+//                 → datat e raportimeve të ardhshme, BMO/AMC, EPS consensus.
+// Fallback:       Yahoo Finance quoteSummary (calendarEvents + price)
+//                 për një listë tickera-sh popullore — data e raportimit
+//                 të radhës për secilën kompani.
+//                 Nëse asnjë burim s'përgjigjet → source:'none' (UI e shfaq
+//                 sinqerisht; s'falim të dhëna të trukuara).
+// Cache in-memory 60 min.
+// ═══════════════════════════════════════════════════════════════
+
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+const WINDOW_DAYS = 75;        // sa ditë përpara mbulohen (≈ 3 muaj)
+const CONCURRENCY = 12;        // kërkesa paralele në batch
+const REQ_TIMEOUT_MS = 5000;   // timeout për kërkesë
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
+export interface EarningEntry {
+  ticker: string;
+  company: string;
+  date: string;          // "2026-10-13" — data e raportimit
+  time: string;          // 'BMO' | 'AMC' | 'TBD'
+  epsEstimate: number | null;
+  epsActual: number | null;
+  estimated?: boolean;   // true = data është parashikim (jo e konfirmuar)
+}
+
+export interface EarningsPayload {
+  earnings: EarningEntry[];
+  byDate: Record<string, EarningEntry[]>;
+  months: string[];
+  totalEntries: number;
+  source: 'nasdaq' | 'yahoo' | 'none';
+  fetchedAt: string;
+}
+
+let cache: { data: EarningsPayload; at: number } | null = null;
+let inflight: Promise<EarningsPayload> | null = null;
+
+// ─── Ndihmës ───
+function localISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function parseEps(raw: unknown): number | null {
+  if (typeof raw !== 'string') return null;
+  const m = /-?\d+(?:\.\d+)?/.exec(raw.replace(/,/g, ''));
+  if (!m) return null;
+  const v = parseFloat(m[0]);
+  return Number.isFinite(v) ? v : null;
+}
+
+async function fetchJson(url: string, headers: Record<string, string>): Promise<unknown | null> {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), REQ_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal, cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ─── Burimi 1: Nasdaq — një kërkesë për çdo ditë tregtare ───
+function nasdaqTimeToSlot(time?: string): string {
+  if (time === 'time-pre-market') return 'BMO';
+  if (time === 'time-after-market') return 'AMC';
+  return 'TBD';
+}
+
+async function fetchFromNasdaq(dates: string[]): Promise<EarningEntry[] | null> {
+  const out: EarningEntry[] = [];
+  let okDays = 0;
+  const seen = new Set<string>();
+  const headers = {
+    'User-Agent': UA,
+    Accept: 'application/json, text/plain, */*',
+    Origin: 'https://www.nasdaq.com',
+    Referer: 'https://www.nasdaq.com/',
+  };
+
+  for (let i = 0; i < dates.length; i += CONCURRENCY) {
+    const batch = dates.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(async (date) => {
+      const json = await fetchJson(
+        `https://api.nasdaq.com/api/calendar/earnings?date=${date}&limit=200`,
+        headers
+      ) as { data?: { rows?: Array<{ symbol?: string; name?: string; time?: string; epsForecast?: string }> } } | null;
+      if (!json || !Array.isArray(json.data?.rows)) return null;
+      return json.data.rows
+        .map((r) => ({
+          ticker: String(r.symbol || '').trim().toUpperCase(),
+          company: String(r.name || '').trim(),
+          date,
+          time: nasdaqTimeToSlot(r.time),
+          epsEstimate: parseEps(r.epsForecast),
+          epsActual: null as number | null,
+          estimated: false,
+        }))
+        .filter((e) => e.ticker && /^[A-Z.\-]{1,6}$/.test(e.ticker));
+    }));
+    for (const r of results) {
+      if (!r) continue;
+      okDays++;
+      for (const e of r) {
+        const key = `${e.ticker}:${e.date}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(e);
+      }
+    }
+  }
+  return okDays > 0 ? out : null;
+}
+
+// ─── Burimi 2 (fallback): Yahoo Finance — data e raportit të radhës ───
+const FALLBACK_TICKERS = [
+  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'JPM', 'V',
+  'JNJ', 'WMT', 'PG', 'MA', 'HD', 'UNH', 'KO', 'PEP', 'BAC', 'ADBE',
+  'CRM', 'NFLX', 'AMD', 'INTC', 'CSCO', 'ORCL', 'AVGO', 'QCOM', 'PYPL', 'UBER',
+  'DIS', 'BA', 'CAT', 'GE', 'IBM', 'MCD', 'NKE', 'MRK', 'PFE', 'TMO',
+  'ABT', 'LLY', 'COST', 'TGT', 'LOW', 'CVX', 'XOM', 'COP', 'GS', 'MS',
+  'SCHW', 'SPGI', 'C', 'WFC', 'USB', 'PNC', 'AXP', 'BLK', 'COIN', 'PLTR',
+  'SOFI', 'HOOD', 'RIVN', 'SNOW', 'DDOG', 'NET', 'MDB', 'ABNB', 'LYFT', 'DASH',
+  'DKNG', 'SBUX', 'CMG', 'MU', 'TXN', 'AMAT', 'LRCX', 'KLAC', 'ADP', 'GILD',
+  'AMGN', 'BMY', 'CELG', 'FLT', 'DAL', 'LUV', 'MAR', 'AAL', 'UAL', 'T',
 ];
 
-export async function GET() {
+async function fetchFromYahoo(tickers: string[]): Promise<EarningEntry[] | null> {
   try {
-    const sorted = [...EARNINGS_DATA].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Cookie + crumb (Yahoo i kërkon për quoteSummary)
+    const ck = await fetch('https://fc.yahoo.com', {
+      headers: { 'User-Agent': UA },
+      cache: 'no-store',
+    }).catch(() => null);
+    const setCookie = ck?.headers.get('set-cookie') || '';
+    const mCookie = /([A-Za-z_-]+=[^;,\s]+)/.exec(setCookie);
+    const cookieStr = mCookie ? mCookie[1] : '';
 
-    // Get unique months
-    const months = [...new Set(sorted.map(e => e.date.slice(0, 7)))].sort();
-
-    // Group by date
-    const byDate: Record<string, typeof EARNINGS_DATA> = {};
-    sorted.forEach(e => {
-      if (!byDate[e.date]) byDate[e.date] = [];
-      byDate[e.date].push(e);
+    const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': UA, ...(cookieStr ? { Cookie: cookieStr } : {}) },
+      cache: 'no-store',
     });
+    const crumb = crumbRes.ok ? (await crumbRes.text()).trim() : '';
+    if (!crumb || crumb.length > 64) return null;
 
-    return NextResponse.json({
-      earnings: sorted,
-      byDate,
-      months,
-      totalEntries: sorted.length,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Gabim i panjohur';
-    console.error('Earnings error:', message);
-    return NextResponse.json({ error: 'Të dhënat e fitimeve nuk u gjetën.' }, { status: 500 });
+    const yHeaders = { 'User-Agent': UA, Accept: 'application/json', ...(cookieStr ? { Cookie: cookieStr } : {}) };
+    const today = new Date();
+    const maxDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + WINDOW_DAYS);
+    const out: EarningEntry[] = [];
+
+    for (let i = 0; i < tickers.length; i += CONCURRENCY) {
+      const batch = tickers.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(batch.map(async (ticker) => {
+        const j = await fetchJson(
+          `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=calendarEvents%2Cprice&crumb=${encodeURIComponent(crumb)}`,
+          yHeaders
+        ) as {
+          quoteSummary?: {
+            result?: Array<{
+              calendarEvents?: { earnings?: { earningsDate?: Array<{ fmt?: string }>; isEarningsDateEstimate?: boolean; earningsAverage?: { raw?: number } } };
+              price?: { shortName?: string };
+            }>;
+          };
+        } | null;
+        const r = j?.quoteSummary?.result?.[0];
+        const ce = r?.calendarEvents?.earnings;
+        const dateStr = ce?.earningsDate?.[0]?.fmt || '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+        const d = new Date(`${dateStr}T00:00:00`);
+        if (d < new Date(today.getFullYear(), today.getMonth(), today.getDate())) return null;
+        if (d > maxDate) return null;
+        return {
+          ticker,
+          company: r?.price?.shortName || ticker,
+          date: dateStr,
+          time: 'TBD',
+          epsEstimate: typeof ce?.earningsAverage?.raw === 'number' ? ce.earningsAverage.raw : null,
+          epsActual: null as number | null,
+          estimated: ce?.isEarningsDateEstimate !== false,
+        } as EarningEntry;
+      }));
+      for (const r of results) if (r) out.push(r);
+    }
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Ndërtimi i përgjigjes ───
+function buildPayload(earnings: EarningEntry[], source: EarningsPayload['source']): EarningsPayload {
+  const sorted = [...earnings].sort((a, b) =>
+    a.date.localeCompare(b.date) || (a.time === 'BMO' ? -1 : b.time === 'BMO' ? 1 : 0)
+  );
+  const byDate: Record<string, EarningEntry[]> = {};
+  for (const e of sorted) {
+    if (!byDate[e.date]) byDate[e.date] = [];
+    byDate[e.date].push(e);
+  }
+  const months = [...new Set(sorted.map((e) => e.date.slice(0, 7)))].sort();
+  return {
+    earnings: sorted,
+    byDate,
+    months,
+    totalEntries: sorted.length,
+    source,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+async function buildFresh(): Promise<EarningsPayload> {
+  const today = new Date();
+  const dates: string[] = [];
+  for (let i = 0; i <= WINDOW_DAYS; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) continue; // vetëm ditë tregtare
+    dates.push(localISODate(d));
+  }
+
+  let earnings = await fetchFromNasdaq(dates);
+  let source: EarningsPayload['source'] = 'nasdaq';
+  if (!earnings || earnings.length === 0) {
+    earnings = await fetchFromYahoo(FALLBACK_TICKERS);
+    source = 'yahoo';
+  }
+  if (!earnings || earnings.length === 0) {
+    return buildPayload([], 'none');
+  }
+  return buildPayload(earnings, source);
+}
+
+export async function GET() {
+  // Cache i ngrohtë
+  if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
+    return NextResponse.json({ ...cache.data, cached: true });
+  }
+  // Tjetër në fluturim — prite atë
+  if (inflight) {
+    return NextResponse.json({ ...(await inflight), cached: false });
+  }
+  inflight = buildFresh();
+  try {
+    const data = await inflight;
+    // Mos cache-o dështimet ('none') — provo përsëri herën tjetër
+    if (data.source !== 'none') {
+      cache = { data, at: Date.now() };
+    }
+    return NextResponse.json({ ...data, cached: false });
+  } finally {
+    inflight = null;
   }
 }

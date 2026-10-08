@@ -239,6 +239,13 @@ export async function fetchQuarterlyFinancials(ticker: string, maxQuarters = 12)
     //   3. Among same-frame, prefer latest 'filed' date
     const quarterMap = new Map<string, QuarterData>();
 
+    // ═══ Etiketat e sakta të tremujorave (fix datash) ═══
+    // Për çdo datë 'end' mbajmë entry-in nga FILING-u ORIGJINAL i asaj periudhe
+    // (më i hershmi i file-uar). Entry-t krahasuese ('comparative') nga filing-et
+    // e mëvonshme kishin fy/fp të gabuar — p.sh. tremujori Q3 FY2025 i Apple
+    // shihej si "Q3 2026" sepse merrej nga 10-Q i Q3 FY2026 ku figuron si krahasues.
+    const labelMap = new Map<string, { filed: string; fy: string; fp: string }>();
+
     // Helper: deduplicate entries for a single tag, preferring framed data
     function dedup(entries: FactEntry[]): Map<string, FactEntry> {
       const byEnd = new Map<string, FactEntry>();
@@ -266,6 +273,19 @@ export async function fetchQuarterlyFinancials(ticker: string, maxQuarters = 12)
         const entries: FactEntry[] = tagData.units?.[unit || 'USD'];
         if (!Array.isArray(entries)) continue;
 
+        // Gjej filing-un origjinal për çdo datë 'end' (më i hershmi i file-uar)
+        // — për etiketa të sakta (fy/fp) dhe datë të vërtetë file-imi.
+        for (const entry of entries) {
+          if (!entry.fp) continue;
+          const eFiled = entry.filed || '9999-99-99';
+          const cur = labelMap.get(entry.end);
+          const cFiled = cur ? (cur.filed || '9999-99-99') : '9999-99-99';
+          if (!cur || eFiled < cFiled ||
+              (eFiled === cFiled && cur.fp === 'FY' && entry.fp !== 'FY')) {
+            labelMap.set(entry.end, { filed: entry.filed || '', fy: entry.fy || '', fp: entry.fp });
+          }
+        }
+
         const deduped = dedup(entries);
         for (const [endDate, entry] of deduped) {
           if (!merged.has(endDate)) {
@@ -291,6 +311,25 @@ export async function fetchQuarterlyFinancials(ticker: string, maxQuarters = 12)
           (qd as Record<string, unknown>)[field] = entry.val;
         }
       }
+    }
+
+    // Zëvendëso etiketat/datat me ato të filing-ut origjinal:
+    // - fp = Q1..Q4  → tremujori direkt
+    // - fp = 'FY'    → 'end' është data e mbylljes së vitit fiskal = fundi i Q4
+    //                  (10-K nuk e ndan Q4-në veçmas — kolona do ketë vetëm bilanc)
+    // - filedDate    → data e vërtetë e file-imit të raportit të asaj periudhe
+    for (const [endDate, qd] of quarterMap) {
+      const li = labelMap.get(endDate);
+      if (!li) continue;
+      const mQ = /^Q([1-4])$/.exec(li.fp);
+      if (mQ) {
+        qd.fiscalQuarter = parseInt(mQ[1], 10);
+      } else if (li.fp === 'FY') {
+        qd.fiscalQuarter = 4;
+      }
+      const fy = parseInt(li.fy, 10);
+      qd.fiscalYear = Number.isFinite(fy) && fy > 1900 ? fy : parseInt(endDate.slice(0, 4), 10);
+      if (li.filed) qd.filedDate = li.filed;
     }
 
     // Calculate derived metrics

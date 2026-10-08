@@ -22,9 +22,10 @@ interface EarningEntry {
   ticker: string;
   company: string;
   date: string;
-  time: string;
-  epsEstimate: number;
+  time: string;            // 'BMO' | 'AMC' | 'TBD'
+  epsEstimate: number | null;
   epsActual: number | null;
+  estimated?: boolean;     // true = data është parashikim, jo e konfirmuar
 }
 
 interface EarningsData {
@@ -32,6 +33,8 @@ interface EarningsData {
   byDate: Record<string, EarningEntry[]>;
   months: string[];
   totalEntries: number;
+  source?: 'nasdaq' | 'yahoo' | 'none';
+  fetchedAt?: string;
 }
 
 const MONTH_NAMES_SQ = [
@@ -39,7 +42,18 @@ const MONTH_NAMES_SQ = [
   'Korrik', 'Gusht', 'Shtator', 'Tetor', 'Nëntor', 'Dhjetor',
 ];
 
+const MONTH_SHORT_SQ = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gsh', 'Sht', 'Tet', 'Nën', 'Dhj'];
+
 const DAY_NAMES_SQ = ['Diel', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
+
+// "2026-10-13" → "13 Tet" (ose me vit: "13 Tetor 2026")
+function formatDateSq(dateStr: string, long = false): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return dateStr;
+  const day = parseInt(m[3], 10);
+  const mi = parseInt(m[2], 10) - 1;
+  return long ? `${day} ${MONTH_NAMES_SQ[mi]} ${m[1]}` : `${day} ${MONTH_SHORT_SQ[mi]}`;
+}
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -167,7 +181,30 @@ export function EarningsCalendar() {
     );
   }
 
-  if (!data || !monthInfo) return null;
+  if (!data) return null;
+
+  // Burimet reale dështuan (Nasdaq/Yahoo) — shfaq gjendje të sinqertë, jo të dhëna të vjetra
+  if (data.source === 'none' || !monthInfo) {
+    return (
+      <Card className="border-amber-500/20 bg-amber-500/5">
+        <CardContent className="flex items-center gap-3 py-4">
+          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs text-amber-500 font-medium">Datat reale të raportimeve nuk u arritën të merren</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Burimet (Nasdaq / Yahoo Finance) nuk po përgjigjen tani — provo &quot;Rifresko&quot; pas pak minutash.</p>
+          </div>
+          <button
+            onClick={fetchData}
+            disabled={isRefreshing}
+            className="ml-auto flex-shrink-0 flex items-center gap-1 text-xs text-amber-500 hover:underline"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Rifresko
+          </button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const daysInMonth = getDaysInMonth(monthInfo.year, monthInfo.month);
   const firstDay = getFirstDayOfMonth(monthInfo.year, monthInfo.month);
@@ -181,6 +218,11 @@ export function EarningsCalendar() {
           <span className="text-xs text-muted-foreground">
             {data.totalEntries} raportime fitimesh
           </span>
+          {data.source && data.source !== 'none' && (
+            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-emerald-500/30 text-emerald-500">
+              Data reale · {data.source === 'nasdaq' ? 'Nasdaq' : 'Yahoo Finance'}
+            </Badge>
+          )}
         </div>
         <button
           onClick={fetchData}
@@ -273,7 +315,7 @@ export function EarningsCalendar() {
                           <div
                             key={e.ticker}
                             className={`w-1 h-1 rounded-full ${
-                              e.time === 'BMO' ? 'bg-emerald-500' : 'bg-violet-500'
+                              e.time === 'BMO' ? 'bg-emerald-500' : e.time === 'AMC' ? 'bg-violet-500' : 'bg-slate-400'
                             }`}
                           />
                         ))}
@@ -294,6 +336,10 @@ export function EarningsCalendar() {
                 <Moon className="w-3 h-3 text-violet-500" />
                 <TermPop term="bmo_amc"><span className="text-[10px] text-muted-foreground">Pas mbylljes (AMC)</span></TermPop>
               </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-slate-400" />
+                <span className="text-[10px] text-muted-foreground">Ora nuk është njoftuar</span>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -306,7 +352,7 @@ export function EarningsCalendar() {
                 <Clock className="w-4 h-4 text-blue-500" />
                 <h3 className="text-sm font-semibold">
                   {selectedDate
-                    ? `Fitime: ${selectedDate}`
+                    ? `Fitime: ${formatDateSq(selectedDate, true)}`
                     : `Fitime — ${MONTH_NAMES_SQ[monthInfo.month]} ${monthInfo.year}`
                   }
                 </h3>
@@ -326,17 +372,19 @@ export function EarningsCalendar() {
             <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
               <AnimatePresence mode="popLayout">
                 {(selectedDate ? selectedDateEarnings : monthEarnings)
+                  .slice() // mos e mutato array-n e state-it (byDate)
                   .sort((a, b) => {
                     // Sort by date, then by time (BMO first)
                     if (a.date !== b.date) return a.date.localeCompare(b.date);
                     return a.time === 'BMO' ? -1 : 1;
                   })
+                  .slice(0, selectedDate ? 200 : 120)
                   .map((entry, i) => (
                     <motion.div
                       key={`${entry.ticker}-${entry.date}`}
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.03 }}
+                      transition={{ delay: Math.min(i * 0.03, 0.5) }}
                       className={`flex items-center justify-between p-2.5 rounded-lg border transition-all cursor-pointer hover:shadow-sm ${
                         selectedDate === entry.date
                           ? 'border-blue-500/30 bg-blue-500/5'
@@ -352,13 +400,15 @@ export function EarningsCalendar() {
                           <p className="text-xs font-semibold truncate">{entry.company}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <span className="text-[10px] text-muted-foreground">
-                              {entry.date.slice(5)}
+                              {entry.estimated ? '~' : ''}{formatDateSq(entry.date)}
                             </span>
                             <Badge
                               className={`text-[8px] px-1.5 py-0 h-4 ${
                                 entry.time === 'BMO'
                                   ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                                  : 'bg-violet-500/10 text-violet-600 border-violet-500/20'
+                                  : entry.time === 'AMC'
+                                  ? 'bg-violet-500/10 text-violet-600 border-violet-500/20'
+                                  : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
                               }`}
                             >
                               {entry.time === 'BMO' ? (
@@ -366,10 +416,15 @@ export function EarningsCalendar() {
                                   <Sun className="w-2.5 h-2.5" />
                                   BMO
                                 </span>
-                              ) : (
+                              ) : entry.time === 'AMC' ? (
                                 <span className="flex items-center gap-0.5">
                                   <Moon className="w-2.5 h-2.5" />
                                   AMC
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-0.5">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  TBD
                                 </span>
                               )}
                             </Badge>
@@ -379,9 +434,9 @@ export function EarningsCalendar() {
                       <div className="text-right flex-shrink-0 ml-2">
                         <p className="text-[9px] text-muted-foreground"><TermPop term="eps_est">EPS Est.</TermPop></p>
                         <p className={`text-xs font-bold tabular-nums ${
-                          entry.epsEstimate < 0 ? 'text-red-500' : 'text-foreground'
+                          entry.epsEstimate != null && entry.epsEstimate < 0 ? 'text-red-500' : 'text-foreground'
                         }`}>
-                          ${entry.epsEstimate.toFixed(2)}
+                          {entry.epsEstimate != null ? `$${entry.epsEstimate.toFixed(2)}` : '—'}
                         </p>
                       </div>
                     </motion.div>
@@ -389,11 +444,25 @@ export function EarningsCalendar() {
               </AnimatePresence>
             </div>
 
+            {/* Cap note — shumë raportime në një muaj */}
+            {(selectedDate ? selectedDateEarnings : monthEarnings).length > (selectedDate ? 200 : 120) && (
+              <p className="text-[10px] text-muted-foreground text-center pt-2">
+                Shfaqen {selectedDate ? 200 : 120} të parat — kliko një ditë të caktuar në kalendar për listën e asaj dite.
+              </p>
+            )}
+
             {/* Empty state */}
             {(selectedDate ? selectedDateEarnings : monthEarnings).length === 0 && (
               <div className="text-center py-8">
                 <CalendarDays className="w-10 h-10 mx-auto mb-2 text-muted-foreground/20" />
-                <p className="text-xs text-muted-foreground">Nuk ka raportime fitimesh</p>
+                {data.source === 'none' ? (
+                  <>
+                    <p className="text-xs text-amber-500 font-medium">Burimet e datave nuk po përgjigjen tani</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">Datat reale s'u arritën të merren (Nasdaq/Yahoo). Provo "Rifresko" pas pak minutash.</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Nuk ka raportime fitimesh</p>
+                )}
               </div>
             )}
           </CardContent>
@@ -405,9 +474,9 @@ export function EarningsCalendar() {
         <div className="flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
           <p className="text-[10px] text-amber-600/80 leading-relaxed">
-            Kalendar i Fitimeve tregon datat e raportimit të ardhurave për kompanitë kryesore.
-            BMO = Before Market Open (para hapjes), AMC = After Market Close (pas mbylljes).
-            EPS = Fitimi për aksion. Datat janë parashikime dhe mund të ndryshohen.
+            Datat e raportimeve vijnë nga burime reale (Nasdaq / Yahoo Finance) dhe mbulojnë ~3 muajt e ardhshëm; rifreskohen automatikisht çdo orë.
+            Data me "~" është parashikim i konfirmuar nga kompania ende jo. BMO = Before Market Open (para hapjes), AMC = After Market Close (pas mbylljes), TBD = ora s'është njoftuar.
+            Datat mund të ndryshohen nga kompanitë.
           </p>
         </div>
       </div>
