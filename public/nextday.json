@@ -1,0 +1,261 @@
+{
+  "as_of": "2026-11-11",
+  "generated_at": 1794410825,
+  "target": "next-day return >= 3%",
+  "top_k": 5,
+  "predictions": [
+    {
+      "rank": 1,
+      "ticker": "SNDK",
+      "probability": 0.308,
+      "today_return": 0.1387,
+      "volume_rel": 0.5,
+      "rsi": 37.4,
+      "is_top_pick": true
+    },
+    {
+      "rank": 2,
+      "ticker": "BE",
+      "probability": 0.274,
+      "today_return": 0.1456,
+      "volume_rel": 0.4,
+      "rsi": 48.8,
+      "is_top_pick": true
+    },
+    {
+      "rank": 3,
+      "ticker": "STX",
+      "probability": 0.2452,
+      "today_return": 0.1014,
+      "volume_rel": 0.22,
+      "rsi": 40.0,
+      "is_top_pick": true
+    },
+    {
+      "rank": 4,
+      "ticker": "WDC",
+      "probability": 0.2398,
+      "today_return": 0.0745,
+      "volume_rel": 0.17,
+      "rsi": 41.7,
+      "is_top_pick": true
+    },
+    {
+      "rank": 5,
+      "ticker": "VRT",
+      "probability": 0.2355,
+      "today_return": 0.0583,
+      "volume_rel": 0.25,
+      "rsi": 52.7,
+      "is_top_pick": true
+    },
+    {
+      "rank": 6,
+      "ticker": "MRVL",
+      "probability": 0.2293,
+      "today_return": 0.0885,
+      "volume_rel": 0.33,
+      "rsi": 34.8,
+      "is_top_pick": false
+    },
+    {
+      "rank": 7,
+      "ticker": "AMD",
+      "probability": 0.2216,
+      "today_return": 0.0492,
+      "volume_rel": 0.46,
+      "rsi": 53.8,
+      "is_top_pick": false
+    },
+    {
+      "rank": 8,
+      "ticker": "MU",
+      "probability": 0.193,
+      "today_return": 0.1042,
+      "volume_rel": 0.38,
+      "rsi": 45.7,
+      "is_top_pick": false
+    },
+    {
+      "rank": 9,
+      "ticker": "LRCX",
+      "probability": 0.1856,
+      "today_return": 0.058,
+      "volume_rel": 0.18,
+      "rsi": 51.7,
+      "is_top_pick": false
+    },
+    {
+      "rank": 10,
+      "ticker": "NVDA",
+      "probability": 0.1847,
+      "today_return": 0.0301,
+      "volume_rel": 0.6,
+      "rsi": 26.6,
+      "is_top_pick": false
+    },
+    {
+      "rank": 11,
+      "ticker": "GLW",
+      "probability": 0.1799,
+      "today_return": 0.0649,
+      "volume_rel": 0.17,
+      "rsi": 46.6,
+      "is_top_pick": false
+    },
+    {
+      "rank": 12,
+      "ticker": "AXON",
+      "probability": 0.1761,
+      "today_return": 0.0381,
+      "volume_rel": 0.25,
+      "rsi": 23.7,
+      "is_top_pick": false
+    },
+    {
+      "rank": 13,
+      "ticker": "EXPE",
+      "probability": 0.1699,
+      "today_return": 0.0023,
+      "volume_rel": 0.16,
+      "rsi": 35.5,
+      "is_top_pick": false
+    },
+    {
+      "rank": 14,
+      "ticker": "MRNA",
+      "probability": 0.1689,
+      "today_return": 0.0,
+      "volume_rel": 0.12,
+      "rsi": 68.6,
+      "is_top_pick": false
+    },
+    {
+      "rank": 15,
+      "ticker": "ALT",
+      "probability": 0.1597,
+      "today_return": -0.0111,
+      "volume_rel": 0.19,
+      "rsi": 36.8,
+      "is_top_pick": false
+    },
+    {
+      "rank": 16,
+      "ticker": "PLTR",
+      "probability": 0.1527,
+      "today_return": 0.0173,
+      "volume_rel": 0.17,
+      "rsi": 30.9,
+      "is_top_pick": false
+    },
+    {
+      "rank": 17,
+      "ticker": "CAT",
+      "probability": 0.1432,
+      "today_return": 0.0162,
+      "volume_rel": 0.18,
+      "rsi": 31.6,
+      "is_top_pick": false
+    },
+    {
+      "rank": 18,
+      "ticker": "AVGO",
+      "probability": 0.1211,
+      "today_return": 0.0532,
+      "volume_rel": 0.38,
+      "rsi": 57.8,
+      "is_top_pick": false
+    },
+    {
+      "rank": 19,
+      "ticker": "TSM",
+      "probability": 0.1026,
+      "today_return": 0.0325,
+      "volume_rel": 0.35,
+      "rsi": 49.2,
+      "is_top_pick": false
+    },
+    {
+      "rank": 20,
+      "ticker": "TSLA",
+      "probability": 0.0991,
+      "today_return": 0.0376,
+      "volume_rel": 0.22,
+      "rsi": 56.1,
+      "is_top_pick": false
+    },
+    {
+      "rank": 21,
+      "ticker": "ASML",
+      "probability": 0.0965,
+      "today_return": 0.0215,
+      "volume_rel": 0.27,
+      "rsi": 48.7,
+      "is_top_pick": false
+    },
+    {
+      "rank": 22,
+      "ticker": "GOOGL",
+      "probability": 0.0766,
+      "today_return": 0.0111,
+      "volume_rel": 0.14,
+      "rsi": 30.7,
+      "is_top_pick": false
+    },
+    {
+      "rank": 23,
+      "ticker": "AMZN",
+      "probability": 0.0693,
+      "today_return": -0.0129,
+      "volume_rel": 0.19,
+      "rsi": 62.0,
+      "is_top_pick": false
+    },
+    {
+      "rank": 24,
+      "ticker": "MSFT",
+      "probability": 0.0581,
+      "today_return": -0.0244,
+      "volume_rel": 0.25,
+      "rsi": 49.7,
+      "is_top_pick": false
+    },
+    {
+      "rank": 25,
+      "ticker": "XOM",
+      "probability": 0.0432,
+      "today_return": 0.0126,
+      "volume_rel": 0.11,
+      "rsi": 36.8,
+      "is_top_pick": false
+    },
+    {
+      "rank": 26,
+      "ticker": "UNH",
+      "probability": 0.0372,
+      "today_return": -0.0168,
+      "volume_rel": 0.15,
+      "rsi": 32.0,
+      "is_top_pick": false
+    },
+    {
+      "rank": 27,
+      "ticker": "WMT",
+      "probability": 0.0324,
+      "today_return": -0.012,
+      "volume_rel": 0.13,
+      "rsi": 55.9,
+      "is_top_pick": false
+    },
+    {
+      "rank": 28,
+      "ticker": "JPM",
+      "probability": 0.0284,
+      "today_return": -0.0013,
+      "volume_rel": 0.08,
+      "rsi": 53.7,
+      "is_top_pick": false
+    }
+  ],
+  "disclaimer": "Statistical ranking, not financial advice. Validate with paper trading."
+}

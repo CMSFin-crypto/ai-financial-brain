@@ -58,6 +58,7 @@ import {
   TrendingDown,
   TrendingUp,
   Flag,
+  Clock,
 } from 'lucide-react';
 import { REVStrategy } from '@/components/financial-brain/rev-strategy';
 import { CTCDelivery } from '@/components/financial-brain/ctc-v2-delivery';
@@ -65,6 +66,7 @@ import { AnalyticsDashboard } from '@/components/financial-brain/analytics-dashb
 import { AdvancedAnalysis } from '@/components/financial-brain/advanced-analysis';
 import FearGreedIndex from '@/components/financial-brain/fear-greed-index';
 import { StockPredictor } from '@/components/financial-brain/stock-predictor';
+import NextDayTab from '@/components/NextDayTab';
 import Link from 'next/link';
 
 function KontrolTab({ icon, title, desc, pageUrl, status, dbActive }: { icon: React.ReactNode; title: string; desc: string; pageUrl: string; status?: React.ReactNode; dbActive?: boolean }) {
@@ -417,6 +419,9 @@ export default function Home() {
                   <TabsTrigger value="predictor" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BrainCircuit className="w-3.5 h-3.5 mr-1.5" />Predikues
                   </TabsTrigger>
+                  <TabsTrigger value="nextday" className="text-xs py-2 px-3 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Clock className="w-3.5 h-3.5 mr-1.5" />Dita Tjetër
+                  </TabsTrigger>
                 </TabsList>
               </div>
               {/* Category: Kontroll */}
@@ -533,6 +538,9 @@ export default function Home() {
                   </TabsTrigger>
                   <TabsTrigger value="predictor" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
                     <BrainCircuit className="w-3 h-3 mr-1" />Predikues
+                  </TabsTrigger>
+                  <TabsTrigger value="nextday" className="text-[10px] py-1.5 px-2.5 whitespace-nowrap flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+                    <Clock className="w-3 h-3 mr-1" />Dita Tjetër
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -1014,6 +1022,13 @@ export default function Home() {
                 </CardContent>
               </Card>
               <StockPredictor />
+            </motion.div>
+          </TabsContent>
+
+          {/* Tab: Parashikimi për ditën tjetër (Next-Day Predictions, LightGBM) */}
+          <TabsContent value="nextday" className="mt-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <NextDayTab />
             </motion.div>
           </TabsContent>
 
